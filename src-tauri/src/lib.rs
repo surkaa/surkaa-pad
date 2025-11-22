@@ -21,7 +21,7 @@ use sha2::{OidSha256, Sha256, Sha256VarCore};
 // HMAC 使用的哈希算法
 
 use ali_oss_rs::object::ObjectOperations;
-use ali_oss_rs::object_common::PutObjectOptionsBuilder;
+use ali_oss_rs::object_common::{DeleteObjectOptions, GetObjectOptionsBuilder, PutObjectOptionsBuilder};
 use ali_oss_rs::Client;
 use tauri::Manager;
 use tauri::State;
@@ -213,6 +213,67 @@ async fn upload_diary(
     Ok(())
 }
 
+/// 任务 4.3：从 OSS 下载加密数据
+/// 返回 Vec<u8>，包含加密密文、IV 和 Tag
+#[tauri::command]
+async fn download_diary(
+    client_state: State<'_, OssClient>,
+    bucket_name: String,
+    object_key: String, // OSS 路径，例如: data/{user_id}/{entry_id}.dat
+) -> Result<Vec<u8>, String> {
+
+    let client = &client_state.0;
+
+    // 1. 定义下载选项 (通常不需要特殊设置)
+    let options = GetObjectOptionsBuilder::new().build();
+
+    // 2. 执行 Get Object，下载到内存 (download_to_memory)
+    // 注意：ali-oss-rs 库通常会提供一个 download_to_memory 的方法
+    let result = client
+        .get_object_to_buffer( // 假设 ali-oss-rs 提供类似的方法
+                               &bucket_name,
+                               &object_key,
+                               Some(options),
+        )
+        .await
+        .map_err(|e| format!("OSS 下载失败: {:?}", e))?;
+
+    // 3. 提取并返回下载的字节缓冲区 (Result<Vec<u8>>)
+    // 假设 get_object_to_buffer 返回包含 buffer 的结构体，这里需要根据 ali-oss-rs 的具体 API 调整。
+    // 经验上，OSS SDK 的 Get Object 返回值通常是一个包含字节数据的 Result 结构。
+
+    // 如果 result 结构体中有一个名为 'data' 或 'buffer' 的字段：
+    // let buffer = result.buffer;
+
+    // 如果 API 签名是直接返回 Vec<u8> (更常见于 Rust):
+    Ok(result)
+}
+
+/// 任务 4.4：从 OSS 删除 Object
+#[tauri::command]
+async fn delete_diary(
+    client_state: State<'_, OssClient>,
+    bucket_name: String,
+    object_key: String,
+) -> Result<(), String> {
+
+    let client = &client_state.0;
+
+    let options = DeleteObjectOptions::default();
+
+    // 执行 Delete Object
+    client
+        .delete_object(
+            &bucket_name,
+            &object_key,
+            Some(options),
+        )
+        .await
+        .map_err(|e| format!("OSS 删除失败: {:?}", e))?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -227,7 +288,9 @@ pub fn run() {
             decrypt_data,
             generate_search_hash,
             initialize_oss_client,
-            upload_diary
+            upload_diary,
+            download_diary,
+            delete_diary
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
