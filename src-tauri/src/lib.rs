@@ -6,7 +6,8 @@ use ali_oss_rs::bucket::BucketOperations;
 use argon2::{password_hash::SaltString, Argon2, ParamsBuilder, PasswordHasher};
 use rand::RngCore;
 use std::fs;
-use std::sync::Mutex;
+// 引入 Arc 用于跨线程共享所有权
+use std::sync::{Arc, Mutex};
 // 用于生成随机 IV
 
 // 定义 IV 长度 (AES-GCM 标准 IV 长度为 12 字节)
@@ -14,7 +15,7 @@ const NONCE_LEN: usize = 12;
 // 定义派生密钥的长度（字节），AES-256 需要 32 字节
 const KEY_LEN: usize = 32;
 use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
-use hmac::digest::typenum::{UInt, UTerm, B0, B1};
+use hmac::digest::typenum::{B0, B1, UInt, UTerm};
 use hmac::{HmacCore, Mac};
 // 用于 HMAC
 use sha2::{OidSha256, Sha256VarCore};
@@ -28,7 +29,7 @@ use ali_oss_rs::Client;
 use rusqlite::{Connection, Result as SqlResult};
 use serde::Serialize;
 use tauri::Manager;
-use tauri::State; // 导入 Serialize
+use tauri::State;
 
 // 定义用于返回给前端的搜索结果结构体
 #[derive(Debug, Serialize)]
@@ -41,16 +42,21 @@ pub struct SearchResult {
 // 定义一个结构体来存储数据库连接，使用 Mutex 确保线程安全
 pub struct DbConnection(pub std::sync::Mutex<Connection>);
 
+// ---------------------------------------------------------
+// 修改点 1: 使用 Arc<Client> 包装，以便可以廉价克隆并跨 await 使用
+// ---------------------------------------------------------
+pub struct OssClient(pub Mutex<Option<Arc<Client>>>);
+
 #[tauri::command]
 fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
     // 1. 定义 Argon2 参数 (Params 只需要在这里创建一次)
     let memory_cost_kib = 1024 * 256;
 
     let params = ParamsBuilder::new()
-        .t_cost(2) // 迭代次数 (Time cost)
-        .m_cost(memory_cost_kib) // 内存消耗 (256 MiB)
-        .p_cost(4) // 并行度 (Parallelism)
-        .output_len(KEY_LEN) // 密钥长度 (32 字节)
+        .t_cost(2)
+        .m_cost(memory_cost_kib)
+        .p_cost(4)
+        .output_len(KEY_LEN)
         .build()
         .map_err(|e| format!("Argon2 参数错误: {}", e))?;
 
@@ -163,13 +169,12 @@ fn generate_search_hash(dek: Vec<u8>, keyword: String) -> Result<Vec<u8>, String
     Ok(code_bytes.to_vec())
 }
 
-// 定义一个结构体来存储 OSS 客户端
-pub struct OssClient(pub Client);
-
-/// 客户端初始化函数 (在应用启动/登录时调用)
+// ---------------------------------------------------------
+// 修改点 2: 初始化函数存入 Arc<Client>
+// ---------------------------------------------------------
 #[tauri::command]
 async fn initialize_oss_client(
-    app_handle: tauri::AppHandle,
+    client_state: State<'_, OssClient>,
     ak_id: String,
     ak_secret: String,
     region: String, // <--- 修正点：新的 Region 参数
@@ -194,14 +199,10 @@ async fn initialize_oss_client(
         )
     })?;
 
-    // 3. 将客户端存储到 Tauri 状态管理器中
-    // 注意：我们将只存储 Client，Bucket 名称必须在每次操作时从前端传入或单独存储。
-    app_handle.manage(OssClient(client));
-
-    // 4. (可选但推荐) 将 Bucket 名称也存入状态，避免前端重复传递
-    // 我们需要一个新的状态结构体来存储 Bucket 名称，这里我们先使用一个简单的方法：
-    // *由于只传 client 会导致后续命令缺失 bucket，我们将 client 的初始化移到 run() 中，并在 login 时更新 client*
-    // **简易处理：将 bucket 作为第五个参数在前端传递给后续 CRUD 操作。**
+    // 3. 更新全局状态
+    let mut client_guard = client_state.0.lock().map_err(|e| format!("无法获取锁: {}", e))?;
+    // 这里使用 Arc::new 包装
+    *client_guard = Some(Arc::new(client));
 
     Ok(())
 }
@@ -214,7 +215,14 @@ async fn upload_diary(
     object_key: String,      // OSS 路径，例如: data/{user_id}/{entry_id}.dat
     encrypted_data: Vec<u8>, // 加密后的 Vec<u8> (密文 + IV + Tag)
 ) -> Result<(), String> {
-    let client = &client_state.0;
+    // 1. 获取 Client 的 Arc 克隆
+    let client = {
+        let guard = client_state.0.lock().map_err(|e| format!("无法获取锁: {}", e))?;
+        // cloned() 会克隆 Arc，增加引用计数，这是非常快的操作
+        guard.as_ref().cloned().ok_or("OSS 客户端未初始化，请先登录")?
+    };
+    // 注意：这里花括号结束，`guard` 被 Drop，锁被释放。
+    // `client` 现在是一个 Arc<Client>，可以在 await 期间安全持有。
 
     // 1. 设置 PutObjectOptions (可选，但推荐设置 Content-Type)
     // 我们的文件是原始二进制数据 (.dat)，设置为 application/octet-stream
@@ -246,7 +254,10 @@ async fn download_diary(
     bucket_name: String,
     object_key: String, // OSS 路径，例如: data/{user_id}/{entry_id}.dat
 ) -> Result<Vec<u8>, String> {
-    let client = &client_state.0;
+    let client = {
+        let guard = client_state.0.lock().map_err(|e| format!("无法获取锁: {}", e))?;
+        guard.as_ref().cloned().ok_or("OSS 客户端未初始化，请先登录")?
+    };
 
     // 1. 定义下载选项 (通常不需要特殊设置)
     let options = GetObjectOptionsBuilder::new().build();
@@ -281,7 +292,10 @@ async fn delete_diary(
     bucket_name: String,
     object_key: String,
 ) -> Result<(), String> {
-    let client = &client_state.0;
+    let client = {
+        let guard = client_state.0.lock().map_err(|e| format!("无法获取锁: {}", e))?;
+        guard.as_ref().cloned().ok_or("OSS 客户端未初始化，请先登录")?
+    };
 
     let options = DeleteObjectOptions::default();
 
@@ -395,13 +409,7 @@ fn search_local_index(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        // 在这里初始化一个默认状态，稍后会被 initialize_oss_client 替换
-        .manage(OssClient(Client::new(
-            "dummy".to_string(),
-            "dummy".to_string(),
-            "dummy".to_string(),
-            "dummy".to_string(),
-        )))
+        .manage(OssClient(Mutex::new(None)))
         .setup(|app| {
             let conn = init_db(&app.handle()).expect("无法初始化数据库连接");
 
