@@ -1,12 +1,12 @@
-use std::fs;
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
+use ali_oss_rs::bucket::BucketOperations;
 use argon2::{password_hash::SaltString, Argon2, ParamsBuilder, PasswordHasher};
 use rand::RngCore;
+use std::fs;
 use std::sync::Mutex;
-use ali_oss_rs::bucket::BucketOperations;
 // 用于生成随机 IV
 
 // 定义 IV 长度 (AES-GCM 标准 IV 长度为 12 字节)
@@ -26,9 +26,9 @@ use ali_oss_rs::object_common::{
 };
 use ali_oss_rs::Client;
 use rusqlite::{Connection, Result as SqlResult};
+use serde::Serialize;
 use tauri::Manager;
-use tauri::State;
-use serde::Serialize; // 导入 Serialize
+use tauri::State; // 导入 Serialize
 
 // 定义用于返回给前端的搜索结果结构体
 #[derive(Debug, Serialize)]
@@ -176,7 +176,6 @@ async fn initialize_oss_client(
     endpoint: String,
     bucket: String, // <--- 修正点：将 bucket 作为一个单独的、用于后续操作的参数
 ) -> Result<(), String> {
-
     // 1. 创建 OSS 客户端实例
     // 严格按照新的签名顺序调用
     let client = Client::new(
@@ -188,10 +187,12 @@ async fn initialize_oss_client(
 
     // 2. 强制连接验证：执行 list_buckets
     // 这里我们必须使用一个简单的操作来验证连接。
-    client
-        .list_buckets(None)
-        .await
-        .map_err(|e| format!("OSS 连接或认证失败 (请检查 AK/SK/Region/Endpoint/网络): {:?}", e))?;
+    client.list_buckets(None).await.map_err(|e| {
+        format!(
+            "OSS 连接或认证失败 (请检查 AK/SK/Region/Endpoint/网络): {:?}",
+            e
+        )
+    })?;
 
     // 3. 将客户端存储到 Tauri 状态管理器中
     // 注意：我们将只存储 Client，Bucket 名称必须在每次操作时从前端传入或单独存储。
@@ -305,8 +306,7 @@ fn init_db(app_handle: &tauri::AppHandle) -> SqlResult<Connection> {
 
     // 2. 修正点：确保应用数据目录存在
     // 如果目录不存在，创建它及其所有父目录
-    fs::create_dir_all(&app_data_dir)
-        .expect("无法创建应用数据目录");
+    fs::create_dir_all(&app_data_dir).expect("无法创建应用数据目录");
 
     // 3. 创建或打开数据库连接
     // 使用 db_path 打开连接
@@ -314,12 +314,14 @@ fn init_db(app_handle: &tauri::AppHandle) -> SqlResult<Connection> {
 
     // 4. 创建索引表 (保持不变)
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS entries (
-            entry_id    TEXT PRIMARY KEY,
-            nonce       BLOB NOT NULL,
-            created_at  TEXT NOT NULL,
-            search_hash BLOB NOT NULL
-        )",
+        "CREATE TABLE IF NOT EXISTS index_hashes (
+        entry_id    TEXT NOT NULL,
+        nonce       BLOB NOT NULL,
+        created_at  TEXT NOT NULL,
+        search_hash BLOB NOT NULL,
+        -- 使用 entry_id 和 search_hash 组合作为唯一键，允许同一 entry_id 存储多个不同的哈希
+        PRIMARY KEY (entry_id, search_hash) 
+    )",
         (),
     )?;
 
@@ -335,16 +337,18 @@ fn save_local_index(
     created_at: String, // ISO 8601 格式
     search_hash: Vec<u8>,
 ) -> Result<(), String> {
-
     // 1. 获取数据库连接锁
-    let conn = db_state.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+    let conn = db_state
+        .0
+        .lock()
+        .map_err(|e| format!("获取数据库锁失败: {}", e))?;
 
     // 2. 执行插入操作
     conn.execute(
-        "INSERT INTO entries (entry_id, nonce, created_at, search_hash) VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO index_hashes (entry_id, nonce, created_at, search_hash) VALUES (?1, ?2, ?3, ?4)",
         (entry_id, nonce, created_at, search_hash),
     )
-        .map_err(|e| format!("索引写入失败: {}", e))?;
+    .map_err(|e| format!("索引写入失败: {}", e))?;
 
     Ok(())
 }
@@ -356,13 +360,15 @@ fn search_local_index(
     db_state: State<'_, DbConnection>,
     search_hash: Vec<u8>, // 要搜索的 HMAC-SHA256 指纹
 ) -> Result<Vec<SearchResult>, String> {
-
     // 1. 获取数据库连接锁
-    let conn = db_state.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+    let conn = db_state
+        .0
+        .lock()
+        .map_err(|e| format!("获取数据库锁失败: {}", e))?;
 
     // 2. 执行查询
     let mut stmt = conn
-        .prepare("SELECT entry_id, nonce, created_at FROM entries WHERE search_hash = ?1")
+        .prepare("SELECT entry_id, nonce, created_at FROM index_hashes WHERE search_hash = ?1")
         .map_err(|e| format!("数据库查询准备失败: {}", e))?;
 
     // 3. 映射结果

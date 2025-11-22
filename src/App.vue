@@ -3,18 +3,23 @@ import {ref} from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 // --- State Variables ---
-const akid = ref('');
+const masterPassword = ref('test');
+const akid = ref('LTAI5tK9YLg76q1NeitfSR5V');
 const aksecret = ref('');
 const region = ref('cn-guangzhou');
 const endpoint = ref('oss-cn-guangzhou.aliyuncs.com'); // 默认值
 const bucket = ref('surkaa'); // 默认值
-const masterPassword = ref('');
 
 // --- Global State (In-Memory for simplicity) ---
 // 存储派生密钥
 const dek = ref<number[]>([]);
 const saltBase64 = "aHR0cHM6Ly9nZW1pbmkuZ29vZ2xlLmNvbS9hcHAvMDU5MmNjODMwNzQ4MWQ0OA==".replace(/=/g, '');
 const statusMessage = ref('等待配置...');
+
+const isLoggedIn = ref(false); // 新增状态，控制视图切换
+const currentDiaryContent = ref(''); // 日记内容输入
+const keywordsInput = ref(''); // 关键词输入，以逗号分隔
+const USER_ID = "test_user_001"; // 硬编码用户ID
 
 // --- Functions ---
 
@@ -53,77 +58,179 @@ async function handleLogin() {
   } catch (error) {
     statusMessage.value = `OSS 初始化失败: ${error}`;
     console.error(error);
+    return;
+  }
+
+  isLoggedIn.value = true; // 切换视图到日记界面
+}
+
+/**
+ * 生成唯一的日记ID (基于时间戳)
+ */
+function generateEntryId(userId: string): string {
+  return `${userId}-${Date.now()}`;
+}
+
+
+/**
+ * 完整日记保存流程：加密、索引、上传
+ */
+async function handleSaveDiary() {
+  if (dek.value.length !== 32 || currentDiaryContent.value.length === 0) {
+    alert("DEK 未就绪或内容为空。");
+    return;
+  }
+
+  statusMessage.value = '正在保存日记：加密、索引、上传...';
+
+  const entry_id = generateEntryId(USER_ID);
+  const createdAt = new Date().toISOString();
+  const keywords = keywordsInput.value.split(',').map(k => k.trim()).filter(k => k.length > 0);
+
+  let iv: number[] = [];
+  let ciphertext: number[] = [];
+
+  try {
+    // --- 1. 内容加密 ---
+    [ciphertext, iv] = await invoke<[number[], number[]]>('encrypt_data', {
+      dek: dek.value,
+      plaintext: currentDiaryContent.value,
+    });
+    const fullEncryptedData = [...iv, ...ciphertext]; // 将 IV 和密文一起打包上传
+
+    // --- 2. 关键词哈希与索引存储 ---
+    for (const keyword of keywords) {
+      const search_hash = await invoke<number[]>('generate_search_hash', {
+        dek: dek.value,
+        keyword,
+      });
+
+      await invoke('save_local_index', {
+        entryId: entry_id,
+        nonce: iv,
+        createdAt: createdAt,
+        searchHash: search_hash,
+      });
+      console.log(`索引保存成功: ${keyword}`);
+    }
+
+    // --- 3. 上传到 OSS ---
+    const objectKey = `data/${USER_ID}/${entry_id}.dat`;
+    await invoke('upload_diary', {
+      bucketName: bucket.value,
+      objectKey,
+      encryptedData: fullEncryptedData,
+    });
+
+    statusMessage.value = `日记保存成功! ID: ${entry_id}，索引 ${keywords.length} 个。`;
+    currentDiaryContent.value = ''; // 清空内容
+    keywordsInput.value = '';
+  } catch (error) {
+    statusMessage.value = `日记保存失败: ${error}`;
+    console.error("保存错误:", error);
   }
 }
 </script>
 
 <template>
   <main class="container">
-  <h1>Surkaa Pad - 初始化</h1>
+    <h1>Surkaa Pad - {{ isLoggedIn ? '日记编辑器' : '初始化' }}</h1>
 
-  <div class="row">
-    <label for="password-input">主密码:</label>
-    <input
-        id="password-input"
-        v-model="masterPassword"
-        placeholder="输入主密码"
-        type="password"
-    />
-  </div>
+    <div v-if="!isLoggedIn">
+      <div class="row">
+        <label for="password-input">主密码:</label>
+        <input
+            id="password-input"
+            v-model="masterPassword"
+            placeholder="输入主密码"
+            type="password"
+        />
+      </div>
 
-  <div class="row">
-    <label for="akid-input">AccessKey ID:</label>
-    <input
-        id="akid-input"
-        v-model="akid"
-        placeholder="阿里云 AccessKey ID"
-    />
-  </div>
+      <div class="row">
+        <label for="akid-input">AccessKey ID:</label>
+        <input
+            id="akid-input"
+            v-model="akid"
+            placeholder="阿里云 AccessKey ID"
+        />
+      </div>
 
-  <div class="row">
-    <label for="aksecret-input">AccessKey Secret:</label>
-    <input
-        id="aksecret-input"
-        v-model="aksecret"
-        placeholder="阿里云 AccessKey Secret"
-        type="password"
-    />
-  </div>
+      <div class="row">
+        <label for="aksecret-input">AccessKey Secret:</label>
+        <input
+            id="aksecret-input"
+            v-model="aksecret"
+            placeholder="阿里云 AccessKey Secret"
+            type="password"
+        />
+      </div>
 
-  <div class="row">
-    <label for="region-input">地域 (Region):</label>
-    <input
-        id="region-input"
-        v-model="region"
-        placeholder="cn-guangzhou"
-    />
-  </div>
+      <div class="row">
+        <label for="region-input">地域 (Region):</label>
+        <input
+            id="region-input"
+            v-model="region"
+            placeholder="cn-guangzhou"
+        />
+      </div>
 
-  <div class="row">
-    <label for="endpoint-input">Endpoint:</label>
-    <input
-        id="endpoint-input"
-        v-model="endpoint"
-        placeholder="oss-cn-guangzhou.aliyuncs.com"
-    />
-  </div>
+      <div class="row">
+        <label for="endpoint-input">Endpoint:</label>
+        <input
+            id="endpoint-input"
+            v-model="endpoint"
+            placeholder="oss-cn-guangzhou.aliyuncs.com"
+        />
+      </div>
 
-  <div class="row">
-    <label for="bucket-input">Bucket:</label>
-    <input
-        id="bucket-input"
-        v-model="bucket"
-        placeholder="您的 Bucket 名称"
-    />
-  </div>
+      <div class="row">
+        <label for="bucket-input">Bucket:</label>
+        <input
+            id="bucket-input"
+            v-model="bucket"
+            placeholder="您的 Bucket 名称"
+        />
+      </div>
 
-  <button @click="handleLogin" :disabled="!masterPassword">
-    保存配置并登录
-  </button>
+      <button @click="handleLogin" :disabled="!masterPassword">
+        保存配置并登录
+      </button>
 
-  <p style="margin-top: 15px;">状态: {{ statusMessage }}</p>
-  <p v-if="dek.length > 0">DEK就绪 ({{ dek.length }} bytes)</p>
-</main>
+      <p style="margin-top: 15px;">状态: {{ statusMessage }}</p>
+      <p v-if="dek.length > 0">DEK就绪 ({{ dek.length }} bytes)</p>
+    </div>
+
+    <div v-else class="diary-editor">
+      <div class="row">
+        <label for="keywords-input">关键词 (以逗号分隔，用于搜索索引):</label>
+        <input
+            id="keywords-input"
+            v-model="keywordsInput"
+            placeholder="秘密, 会议, 战略"
+            style="width: 100%;"
+        />
+      </div>
+
+      <div class="row">
+        <label for="diary-content">日记内容:</label>
+        <textarea
+            id="diary-content"
+            v-model="currentDiaryContent"
+            rows="10"
+            placeholder="今天发生了..."
+            style="width: 100%;"
+        ></textarea>
+      </div>
+
+      <button @click="handleSaveDiary" :disabled="currentDiaryContent.length === 0">
+        加密并同步到云端 (OSS)
+      </button>
+
+      <p style="margin-top: 15px;">状态: {{ statusMessage }}</p>
+
+    </div>
+  </main>
 </template>
 
 <style scoped>
@@ -143,6 +250,27 @@ async function handleLogin() {
 }
 .row input {
   width: 100%;
+}
+
+/* 添加 textarea 的样式以匹配输入框 */
+textarea {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  color: #0f0f0f;
+  background-color: #ffffff;
+  transition: border-color 0.25s;
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+  outline: none;
+  resize: vertical; /* 允许垂直拖动调整大小 */
+}
+.diary-editor {
+  width: 600px; /* 增加编辑器的宽度 */
+  margin-left: auto;
+  margin-right: auto;
 }
 </style>
 <style>
