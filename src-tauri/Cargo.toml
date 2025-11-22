@@ -23,4 +23,9 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 argon2 = "0.5"
-
+# AES-GCM 加密库
+aes-gcm = "0.10"
+# 用于生成随机数 (如 IV)
+rand = "0.8"
+# 一个通用的 AEAD 接口
+aead = "0.5"
