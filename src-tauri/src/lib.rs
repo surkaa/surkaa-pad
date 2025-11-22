@@ -15,7 +15,15 @@ use rand::RngCore; // 用于生成随机 IV
 const NONCE_LEN: usize = 12;
 // 定义派生密钥的长度（字节），AES-256 需要 32 字节
 const KEY_LEN: usize = 32;
+use hmac::{Hmac, HmacCore, Mac};
+use hmac::digest::consts::{B0, B1};
+use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
+use hmac::digest::typenum::{UInt, UTerm};
+// 用于 HMAC
+use sha2::{OidSha256, Sha256, Sha256VarCore}; // HMAC 使用的哈希算法
 
+// 定义 HMAC 实例类型
+type HmacSha256 = Hmac<Sha256>;
 #[tauri::command]
 fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
     // 1. 定义 Argon2 参数 (Params 只需要在这里创建一次)
@@ -111,6 +119,23 @@ fn decrypt_data(dek: Vec<u8>, ciphertext: Vec<u8>, nonce_bytes: Vec<u8>) -> Resu
         .map_err(|_| "解密后的字节不是有效的 UTF-8 字符串".to_string())
 }
 
+#[tauri::command]
+fn generate_search_hash(dek: Vec<u8>, keyword: String) -> Result<Vec<u8>, String> {
+    // 1. 初始化 HMAC 实例 (DEK 作为密钥)
+    let mut mac = <CoreWrapper<HmacCore<CoreWrapper<CtVariableCoreWrapper<Sha256VarCore, UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, OidSha256>>>> as KeyInit>::new_from_slice(&dek)
+        .map_err(|_| "DEK 长度错误，无法初始化 HMAC".to_string())?;
+
+    // 2. 更新 MAC (计算关键词的哈希)
+    mac.update(keyword.as_bytes());
+
+    // 3. 提取结果 (即加密指纹)
+    let result = mac.finalize();
+    let code_bytes = result.into_bytes();
+
+    // HMAC-SHA256 总是生成 32 字节的输出
+    Ok(code_bytes.to_vec())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -119,7 +144,8 @@ pub fn run() {
             greet,
             derive_key,
             encrypt_data,
-            decrypt_data
+            decrypt_data,
+            generate_search_hash
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

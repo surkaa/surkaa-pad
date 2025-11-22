@@ -5,6 +5,27 @@ import { invoke } from "@tauri-apps/api/core";
 const greetMsg = ref("");
 const name = ref("");
 
+async function testSearchHash(dek: number[]) {
+  const keyword1 = "战略顾问";
+  const keyword2 = "战略顾问";
+  const keyword3 = "日记软件";
+
+  const hash1 = await invoke<number[]>('generate_search_hash', { dek, keyword: keyword1 });
+  const hash2 = await invoke<number[]>('generate_search_hash', { dek, keyword: keyword2 });
+  const hash3 = await invoke<number[]>('generate_search_hash', { dek, keyword: keyword3 });
+
+  console.log("--- 搜索哈希测试 ---");
+  console.log(`Hash 1 (战略顾问): 长度 ${hash1.length}`);
+
+  // 验证确定性
+  const isSame = hash1.every((val, index) => val === hash2[index]);
+  console.log(`Hash 1 == Hash 2: ${isSame}`); // 必须是 true
+
+  // 验证唯一性
+  const isDifferent = hash1.every((val, index) => val !== hash3[index]);
+  console.log(`Hash 1 != Hash 3: ${isDifferent}`); // 必须是 true (或大部分为 true)
+}
+
 async function testE2EChain() {
   const password = "0si3BxN9tLIq6Ych";
   // 实际项目中，你需要从 key_params.json 中读取 salt
@@ -46,6 +67,9 @@ async function testE2EChain() {
   } catch (e) {
     console.log("篡改测试成功：篡改后的数据解密失败（GCM Tag 验证失败）");
   }
+
+  // 6. 测试搜索哈希函数
+  await testSearchHash(dek);
 }
 </script>
 
