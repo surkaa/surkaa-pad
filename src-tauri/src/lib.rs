@@ -8,7 +8,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use argon2::{password_hash::SaltString, Argon2, Params, PasswordHasher};
+use argon2::{password_hash::SaltString, Argon2, ParamsBuilder, PasswordHasher};
 use rand::RngCore; // 用于生成随机 IV
 
 // 定义 IV 长度 (AES-GCM 标准 IV 长度为 12 字节)
@@ -17,9 +17,16 @@ const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 
 #[tauri::command]
-fn derive_key(password: &str, salt: &str) -> Result<String, String> {
+fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
     // 1. 定义 Argon2 参数 (Params 只需要在这里创建一次)
-    let params = Params::new(2, 1024 * 64, 4, Some(KEY_LEN))
+    let memory_cost_kib = 1024 * 256;
+
+    let params = ParamsBuilder::new()
+        .t_cost(2)      // 迭代次数 (Time cost)
+        .m_cost(memory_cost_kib) // 内存消耗 (256 MiB)
+        .p_cost(4)      // 并行度 (Parallelism)
+        .output_len(KEY_LEN) // 密钥长度 (32 字节)
+        .build()
         .map_err(|e| format!("Argon2 参数错误: {}", e))?;
 
     // 2. 创建 Argon2 实例 (params 的所有权被移动到这里)
@@ -52,7 +59,7 @@ fn derive_key(password: &str, salt: &str) -> Result<String, String> {
         ));
     }
 
-    Ok(String::try_from(dek.as_bytes().to_vec()).unwrap())
+    Ok(dek.as_bytes().to_vec())
 }
 
 /// 使用 DEK 对数据进行加密

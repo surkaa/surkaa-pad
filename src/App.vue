@@ -5,9 +5,47 @@ import { invoke } from "@tauri-apps/api/core";
 const greetMsg = ref("");
 const name = ref("");
 
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
+async function testE2EChain() {
+  const password = "0si3BxN9tLIq6Ych";
+  // 实际项目中，你需要从 key_params.json 中读取 salt
+  const saltBase64 = "aHR0cHM6Ly9nZW1pbmkuZ29vZ2xlLmNvbS9hcHAvMDU5MmNjODMwNzQ4MWQ0OA";
+
+  // 1. 派生密钥 (KDF)
+  const dek = await invoke<number[]>('derive_key', { password, salt: saltBase64 });
+  console.log('DEK 派生成功:', dek.length === 32);
+
+  // 2. 加密数据
+  const plaintext = "这是我的秘密日记内容。时间: " + new Date().toISOString();
+  const [ciphertext, iv] = await invoke<[number[], number[]]>('encrypt_data', {
+    dek,
+    plaintext
+  });
+  console.log(`加密成功。密文长度: ${ciphertext.length}, IV 长度: ${iv.length}`);
+
+  // 3. 解密数据
+  const decryptedText = await invoke<string>('decrypt_data', {
+    dek,
+    ciphertext,
+    nonceBytes: iv,
+  });
+
+  // 4. 验证
+  console.log('解密结果:', decryptedText);
+  console.log('验证成功:', decryptedText === plaintext);
+
+  // 5. 模拟数据篡改测试：
+  const tamperedCiphertext = [...ciphertext];
+  tamperedCiphertext[0] = tamperedCiphertext[0] + 1; // 改变密文的第一个字节
+  try {
+    await invoke<string>('decrypt_data', {
+      dek,
+      ciphertext: tamperedCiphertext,
+      nonceBytes: iv,
+    });
+    console.error("篡改测试失败：篡改后的数据仍能解密！");
+  } catch (e) {
+    console.log("篡改测试成功：篡改后的数据解密失败（GCM Tag 验证失败）");
+  }
 }
 </script>
 
@@ -28,7 +66,7 @@ async function greet() {
     </div>
     <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
 
-    <form class="row" @submit.prevent="greet">
+    <form class="row" @submit.prevent="testE2EChain">
       <input id="greet-input" v-model="name" placeholder="Enter a name..." />
       <button type="submit">Greet</button>
     </form>
