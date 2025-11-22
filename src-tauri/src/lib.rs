@@ -1,12 +1,11 @@
-const OSS_ENDPOINT: &str = "oss-cn-guangzhou.aliyuncs.com";
-const OSS_BUCKET: &str = "surkaa";
-
+use std::fs;
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
 use argon2::{password_hash::SaltString, Argon2, ParamsBuilder, PasswordHasher};
 use rand::RngCore;
+use std::sync::Mutex;
 // 用于生成随机 IV
 
 // 定义 IV 长度 (AES-GCM 标准 IV 长度为 12 字节)
@@ -15,20 +14,23 @@ const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
 use hmac::digest::typenum::{UInt, UTerm, B0, B1};
-use hmac::{Hmac, HmacCore, Mac};
+use hmac::{HmacCore, Mac};
 // 用于 HMAC
-use sha2::{OidSha256, Sha256, Sha256VarCore};
+use sha2::{OidSha256, Sha256VarCore};
 // HMAC 使用的哈希算法
 
 use ali_oss_rs::object::ObjectOperations;
-use ali_oss_rs::object_common::{DeleteObjectOptions, GetObjectOptionsBuilder, PutObjectOptionsBuilder};
+use ali_oss_rs::object_common::{
+    DeleteObjectOptions, GetObjectOptionsBuilder, PutObjectOptionsBuilder,
+};
 use ali_oss_rs::Client;
+use rusqlite::{Connection, Result as SqlResult};
 use tauri::Manager;
 use tauri::State;
-// 导入 State
 
-// 定义 HMAC 实例类型
-type HmacSha256 = Hmac<Sha256>;
+// 定义一个结构体来存储数据库连接，使用 Mutex 确保线程安全
+pub struct DbConnection(pub std::sync::Mutex<Connection>);
+
 #[tauri::command]
 fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
     // 1. 定义 Argon2 参数 (Params 只需要在这里创建一次)
@@ -163,14 +165,8 @@ async fn initialize_oss_client(
     endpoint: String,
     bucket: String,
 ) -> Result<(), String> {
-
     // 1. 创建 OSS 客户端实例
-    let client = Client::new(
-        ak_id,
-        ak_secret,
-        endpoint,
-        bucket,
-    );
+    let client = Client::new(ak_id, ak_secret, endpoint, bucket);
 
     // 2. 将客户端存储到 Tauri 状态管理器中
     // 检查是否已经存储过，如果是，则更新
@@ -184,11 +180,10 @@ async fn initialize_oss_client(
 #[tauri::command]
 async fn upload_diary(
     client_state: State<'_, OssClient>,
-    bucket_name: String, // <-- 修正：将 bucket_name 作为参数传入
-    object_key: String, // OSS 路径，例如: data/{user_id}/{entry_id}.dat
+    bucket_name: String,     // <-- 修正：将 bucket_name 作为参数传入
+    object_key: String,      // OSS 路径，例如: data/{user_id}/{entry_id}.dat
     encrypted_data: Vec<u8>, // 加密后的 Vec<u8> (密文 + IV + Tag)
 ) -> Result<(), String> {
-
     let client = &client_state.0;
 
     // 1. 设置 PutObjectOptions (可选，但推荐设置 Content-Type)
@@ -205,7 +200,7 @@ async fn upload_diary(
             &bucket_name, // 传入 bucket_name
             &object_key,
             encrypted_data, // buffer: B: Into<Vec<u8>>
-            Some(options), // options: Option<PutObjectOptions>
+            Some(options),  // options: Option<PutObjectOptions>
         )
         .await
         .map_err(|e| format!("OSS 上传失败: {}", e))?;
@@ -221,7 +216,6 @@ async fn download_diary(
     bucket_name: String,
     object_key: String, // OSS 路径，例如: data/{user_id}/{entry_id}.dat
 ) -> Result<Vec<u8>, String> {
-
     let client = &client_state.0;
 
     // 1. 定义下载选项 (通常不需要特殊设置)
@@ -230,10 +224,11 @@ async fn download_diary(
     // 2. 执行 Get Object，下载到内存 (download_to_memory)
     // 注意：ali-oss-rs 库通常会提供一个 download_to_memory 的方法
     let result = client
-        .get_object_to_buffer( // 假设 ali-oss-rs 提供类似的方法
-                               &bucket_name,
-                               &object_key,
-                               Some(options),
+        .get_object_to_buffer(
+            // 假设 ali-oss-rs 提供类似的方法
+            &bucket_name,
+            &object_key,
+            Some(options),
         )
         .await
         .map_err(|e| format!("OSS 下载失败: {:?}", e))?;
@@ -256,20 +251,71 @@ async fn delete_diary(
     bucket_name: String,
     object_key: String,
 ) -> Result<(), String> {
-
     let client = &client_state.0;
 
     let options = DeleteObjectOptions::default();
 
     // 执行 Delete Object
     client
-        .delete_object(
-            &bucket_name,
-            &object_key,
-            Some(options),
-        )
+        .delete_object(&bucket_name, &object_key, Some(options))
         .await
         .map_err(|e| format!("OSS 删除失败: {:?}", e))?;
+
+    Ok(())
+}
+
+// 数据库初始化函数：创建连接和表结构
+fn init_db(app_handle: &tauri::AppHandle) -> SqlResult<Connection> {
+    // 1. 确定数据库文件路径
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .expect("无法获取应用数据目录");
+
+    let db_path = app_data_dir.join("local_index.db"); // 完整的文件路径
+
+    // 2. 修正点：确保应用数据目录存在
+    // 如果目录不存在，创建它及其所有父目录
+    fs::create_dir_all(&app_data_dir)
+        .expect("无法创建应用数据目录");
+
+    // 3. 创建或打开数据库连接
+    // 使用 db_path 打开连接
+    let conn = Connection::open(&db_path)?;
+
+    // 4. 创建索引表 (保持不变)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS entries (
+            entry_id    TEXT PRIMARY KEY,
+            nonce       BLOB NOT NULL,
+            created_at  TEXT NOT NULL,
+            search_hash BLOB NOT NULL
+        )",
+        (),
+    )?;
+
+    Ok(conn)
+}
+
+/// 任务 4.7：将新日记条目的索引信息写入本地数据库
+#[tauri::command]
+fn save_local_index(
+    db_state: State<'_, DbConnection>, // 接收数据库状态
+    entry_id: String,
+    nonce: Vec<u8>,
+    created_at: String, // ISO 8601 格式
+    search_hash: Vec<u8>,
+) -> Result<(), String> {
+
+    // 1. 获取数据库连接锁
+    let conn = db_state.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+
+    // 2. 执行插入操作
+    conn.execute(
+        "INSERT INTO entries (entry_id, nonce, created_at, search_hash) VALUES (?1, ?2, ?3, ?4)",
+        (entry_id, nonce, created_at, search_hash),
+    )
+        .map_err(|e| format!("索引写入失败: {}", e))?;
 
     Ok(())
 }
@@ -280,8 +326,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // 在这里初始化一个默认状态，稍后会被 initialize_oss_client 替换
         .manage(OssClient(Client::new(
-            "dummy".to_string(), "dummy".to_string(), "dummy".to_string(), "dummy".to_string()
+            "dummy".to_string(),
+            "dummy".to_string(),
+            "dummy".to_string(),
+            "dummy".to_string(),
         )))
+        .setup(|app| {
+            let conn = init_db(&app.handle()).expect("无法初始化数据库连接");
+
+            app.manage(DbConnection(Mutex::new(conn)));
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             derive_key,
             encrypt_data,
@@ -290,7 +346,8 @@ pub fn run() {
             initialize_oss_client,
             upload_diary,
             download_diary,
-            delete_diary
+            delete_diary,
+            save_local_index
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

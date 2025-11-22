@@ -32,3 +32,4 @@ aead = "0.5"
 sha2 = "0.10.9"
 hmac = "0.12"
 ali-oss-rs = "0.2.3"
+rusqlite = { version = "0.31", features = ["bundled"] }
