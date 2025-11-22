@@ -17,8 +17,8 @@ const saltBase64 = "aHR0cHM6Ly9nZW1pbmkuZ29vZ2xlLmNvbS9hcHAvMDU5MmNjODMwNzQ4MWQ0
 const statusMessage = ref('等待配置...');
 
 const isLoggedIn = ref(false); // 新增状态，控制视图切换
-const currentDiaryContent = ref(''); // 日记内容输入
-const keywordsInput = ref(''); // 关键词输入，以逗号分隔
+const currentDiaryContent = ref('测试日志啊啊啊啊啊'); // 日记内容输入
+const keywordsInput = ref('秘密, 会议, 战略'); // 关键词输入，以逗号分隔
 const USER_ID = "test_user_001"; // 硬编码用户ID
 
 // --- Functions ---
@@ -207,7 +207,6 @@ async function handleSaveDiary() {
         <input
             id="keywords-input"
             v-model="keywordsInput"
-            placeholder="秘密, 会议, 战略"
             style="width: 100%;"
         />
       </div>
