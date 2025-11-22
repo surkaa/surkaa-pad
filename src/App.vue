@@ -20,6 +20,10 @@ const isLoggedIn = ref(false); // 新增状态，控制视图切换
 const currentDiaryContent = ref('测试日志啊啊啊啊啊'); // 日记内容输入
 const keywordsInput = ref('秘密, 会议, 战略'); // 关键词输入，以逗号分隔
 
+const searchKeyword = ref(''); // 搜索关键词输入
+const searchResults = ref<any[]>([]); // 搜索结果列表
+const searchStatus = ref('');
+
 // --- Functions ---
 
 /**
@@ -69,7 +73,6 @@ async function handleLogin() {
 function generateEntryId(): string {
   return `${Date.now()}`;
 }
-
 
 /**
  * 完整日记保存流程：加密、索引、上传
@@ -127,6 +130,81 @@ async function handleSaveDiary() {
   } catch (error) {
     statusMessage.value = `日记保存失败: ${error}`;
     console.error("保存错误:", error);
+  }
+}
+
+/**
+ * 搜索、下载和解密流程
+ */
+async function handleSearch() {
+  if (dek.value.length !== 32 || !searchKeyword.value) {
+    searchStatus.value = 'DEK 未就绪或搜索关键词为空。';
+    return;
+  }
+
+  searchStatus.value = '正在生成查询哈希并搜索本地索引...';
+
+  try {
+    // --- 1. 生成查询哈希 ---
+    const search_hash = await invoke<number[]>('generate_search_hash', {
+      dek: dek.value,
+      keyword: searchKeyword.value.trim(),
+    });
+
+    // --- 2. 搜索本地索引 ---
+    const matchedEntries = await invoke<any[]>('search_local_index', {
+      searchHash: search_hash,
+    });
+
+    if (matchedEntries.length === 0) {
+      searchStatus.value = `未找到匹配关键词 "${searchKeyword.value.trim()}" 的日记。`;
+      searchResults.value = [];
+      return;
+    }
+
+    searchStatus.value = `找到 ${matchedEntries.length} 条匹配结果，正在下载和解密...`;
+
+    const decryptedResults = [];
+
+    // --- 3. 下载和解密匹配结果 ---
+    for (const entry of matchedEntries) {
+      const entry_id = entry.entry_id;
+      const nonce = entry.nonce; // IV (Nonce) 来自本地索引
+
+      const objectKey = `data/${entry_id}.dat`; // 构造新的对象路径
+
+      // 3.1 下载密文
+      const fullEncryptedData = await invoke<number[]>('download_diary', {
+        bucketName: bucket.value,
+        objectKey,
+      });
+
+      // 3.2 提取密文和 Tag (密文 = fullEncryptedData 减去 nonce 的长度)
+      // 注：Rust 后端将 IV 和密文一起上传，所以我们要根据 IV 长度（12字节）拆分
+      const ivLength = 12; // AES-GCM IV 标准长度
+      const ciphertextWithTag = fullEncryptedData.slice(ivLength); // 密文+Tag
+
+      // 3.3 解密
+      const plaintext = await invoke<string>('decrypt_data', {
+        dek: dek.value,
+        ciphertext: ciphertextWithTag,
+        nonceBytes: nonce,
+      });
+
+      decryptedResults.push({
+        id: entry_id,
+        created: entry.created_at,
+        content: plaintext,
+      });
+    }
+
+    searchResults.value = decryptedResults;
+    searchStatus.value = `成功下载并解密 ${decryptedResults.length} 条日记。`;
+
+  } catch (error) {
+    searchStatus.value = `搜索/解密失败: ${error}`;
+    console.error("搜索错误:", error);
+    searchResults.value = [];
   }
 }
 </script>
@@ -201,6 +279,32 @@ async function handleSaveDiary() {
     </div>
 
     <div v-else class="diary-editor">
+      <hr style="margin-top: 30px; margin-bottom: 30px;">
+
+      <h2>日记搜索 (零知识)</h2>
+      <div class="row">
+        <label for="search-input">搜索关键词:</label>
+        <input
+            id="search-input"
+            v-model="searchKeyword"
+            placeholder="输入要搜索的关键词"
+            style="width: 100%;"
+        />
+      </div>
+
+      <button @click="handleSearch" :disabled="!searchKeyword">
+        搜索本地索引
+      </button>
+
+      <p style="margin-top: 15px;">搜索状态: {{ searchStatus }}</p>
+
+      <div v-if="searchResults.length > 0" style="margin-top: 20px; text-align: left;">
+        <div v-for="result in searchResults" :key="result.id" style="border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; border-radius: 8px;">
+          <small style="color: #666;">{{ result.created }}</small>
+          <p>{{ result.content }}</p>
+        </div>
+      </div>
+
       <div class="row">
         <label for="keywords-input">关键词 (以逗号分隔，用于搜索索引):</label>
         <input
