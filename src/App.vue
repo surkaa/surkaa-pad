@@ -19,7 +19,6 @@ const statusMessage = ref('等待配置...');
 const isLoggedIn = ref(false); // 新增状态，控制视图切换
 const currentDiaryContent = ref('测试日志啊啊啊啊啊'); // 日记内容输入
 const keywordsInput = ref('秘密, 会议, 战略'); // 关键词输入，以逗号分隔
-const USER_ID = "test_user_001"; // 硬编码用户ID
 
 // --- Functions ---
 
@@ -67,8 +66,8 @@ async function handleLogin() {
 /**
  * 生成唯一的日记ID (基于时间戳)
  */
-function generateEntryId(userId: string): string {
-  return `${userId}-${Date.now()}`;
+function generateEntryId(): string {
+  return `${Date.now()}`;
 }
 
 
@@ -83,7 +82,7 @@ async function handleSaveDiary() {
 
   statusMessage.value = '正在保存日记：加密、索引、上传...';
 
-  const entry_id = generateEntryId(USER_ID);
+  const entry_id = generateEntryId();
   const createdAt = new Date().toISOString();
   const keywords = keywordsInput.value.split(',').map(k => k.trim()).filter(k => k.length > 0);
 
@@ -115,7 +114,7 @@ async function handleSaveDiary() {
     }
 
     // --- 3. 上传到 OSS ---
-    const objectKey = `data/${USER_ID}/${entry_id}.dat`;
+    const objectKey = `data/${entry_id}.dat`;
     await invoke('upload_diary', {
       bucketName: bucket.value,
       objectKey,
