@@ -15,9 +15,8 @@ use rand::RngCore; // 用于生成随机 IV
 const NONCE_LEN: usize = 12;
 // 定义派生密钥的长度（字节），AES-256 需要 32 字节
 const KEY_LEN: usize = 32;
-use hmac::digest::consts::{B0, B1};
 use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
-use hmac::digest::typenum::{UInt, UTerm};
+use hmac::digest::typenum::{UInt, UTerm, B0, B1};
 use hmac::{Hmac, HmacCore, Mac};
 // 用于 HMAC
 use sha2::{OidSha256, Sha256, Sha256VarCore}; // HMAC 使用的哈希算法
