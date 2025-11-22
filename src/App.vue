@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref, onMounted} from "vue";
+import {onMounted, ref} from "vue";
 import {invoke} from "@tauri-apps/api/core";
 import {Store} from "@tauri-apps/plugin-store";
 
@@ -187,8 +187,7 @@ async function resetConfig() {
 
 async function loadDiaryList() {
   try {
-    const list = await invoke<any[]>('get_all_entries');
-    diaryList.value = list;
+    diaryList.value = await invoke<any[]>('get_all_entries');
   } catch (e) {
     console.error("加载列表失败", e);
   }
@@ -310,9 +309,42 @@ async function handleSearch() {
 }
 
 async function handleEntryClick(entry: any) {
-  console.log("点击了条目:", entry);
-  statusMessage.value = `选中 ID: ${entry.entry_id}。请在下方搜索框输入关联关键词来查看内容。`;
-  viewMode.value = 'editor';
+  if (!dek.value.length) return;
+
+  statusMessage.value = `正在下载并解密 ID: ${entry.entry_id}...`;
+  viewMode.value = 'editor'; // 切换到编辑/查看视图
+
+  // 清空之前的内容
+  currentEntryId.value = entry.entry_id;
+  currentDiaryContent.value = '加载中...';
+  keywordsInput.value = ''; // 暂时无法反查关键词，先置空
+
+  try {
+    const objectKey = `data/${entry.entry_id}.dat`;
+
+    // 1. 下载
+    const fullEncryptedData = await invoke<number[]>('download_diary', {
+      bucketName: bucket.value,
+      objectKey,
+    });
+
+    // 2. 解密
+    // 注意：利用从列表传过来的 entry.nonce
+    const ivLength = 12;
+    const ciphertextWithTag = fullEncryptedData.slice(ivLength);
+
+    currentDiaryContent.value = await invoke<string>('decrypt_data', {
+      dek: dek.value,
+      ciphertext: ciphertextWithTag,
+      nonceBytes: entry.nonce,
+    });
+    statusMessage.value = `加载成功 (ID: ${entry.entry_id})`;
+
+  } catch (e) {
+    statusMessage.value = `加载失败: ${e}`;
+    currentDiaryContent.value = '';
+    console.error(e);
+  }
 }
 
 </script>

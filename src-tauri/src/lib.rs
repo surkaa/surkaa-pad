@@ -48,6 +48,7 @@ pub struct SearchResult {
 pub struct DiaryMeta {
     entry_id: String,
     created_at: String,
+    nonce: Vec<u8>,
 }
 
 pub struct DbConnection(pub std::sync::Mutex<Connection>);
@@ -343,7 +344,7 @@ fn get_all_entries(db_state: State<'_, DbConnection>) -> Result<Vec<DiaryMeta>, 
 
     // 使用 DISTINCT 因为一个日记可能有多个关键词索引，我们只需要列出日记本身
     let mut stmt = conn
-        .prepare("SELECT DISTINCT entry_id, created_at FROM index_hashes ORDER BY created_at DESC")
+        .prepare("SELECT entry_id, created_at, nonce FROM index_hashes GROUP BY entry_id ORDER BY created_at DESC")
         .map_err(|e| format!("准备失败: {}", e))?;
 
     let results_iter = stmt
@@ -351,6 +352,7 @@ fn get_all_entries(db_state: State<'_, DbConnection>) -> Result<Vec<DiaryMeta>, 
             Ok(DiaryMeta {
                 entry_id: row.get(0)?,
                 created_at: row.get(1)?,
+                nonce: row.get(2)?,
             })
         })
         .map_err(|e| format!("执行失败: {}", e))?;
