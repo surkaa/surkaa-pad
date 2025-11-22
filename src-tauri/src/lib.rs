@@ -27,6 +27,15 @@ use ali_oss_rs::Client;
 use rusqlite::{Connection, Result as SqlResult};
 use tauri::Manager;
 use tauri::State;
+use serde::Serialize; // 导入 Serialize
+
+// 定义用于返回给前端的搜索结果结构体
+#[derive(Debug, Serialize)]
+pub struct SearchResult {
+    entry_id: String,
+    nonce: Vec<u8>, // IV，用于解密日记内容
+    created_at: String,
+}
 
 // 定义一个结构体来存储数据库连接，使用 Mutex 确保线程安全
 pub struct DbConnection(pub std::sync::Mutex<Connection>);
@@ -320,6 +329,42 @@ fn save_local_index(
     Ok(())
 }
 
+/// 任务 4.7：在本地数据库中查询匹配的加密索引
+/// 返回匹配的日记条目列表 (ID, IV, CreatedAt)
+#[tauri::command]
+fn search_local_index(
+    db_state: State<'_, DbConnection>,
+    search_hash: Vec<u8>, // 要搜索的 HMAC-SHA256 指纹
+) -> Result<Vec<SearchResult>, String> {
+
+    // 1. 获取数据库连接锁
+    let conn = db_state.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+
+    // 2. 执行查询
+    let mut stmt = conn
+        .prepare("SELECT entry_id, nonce, created_at FROM entries WHERE search_hash = ?1")
+        .map_err(|e| format!("数据库查询准备失败: {}", e))?;
+
+    // 3. 映射结果
+    let results_iter = stmt
+        .query_map([search_hash], |row| {
+            Ok(SearchResult {
+                entry_id: row.get(0)?,
+                nonce: row.get(1)?,
+                created_at: row.get(2)?,
+            })
+        })
+        .map_err(|e| format!("数据库查询执行失败: {}", e))?;
+
+    // 4. 收集所有结果
+    let mut results = Vec::new();
+    for result in results_iter {
+        results.push(result.map_err(|e| format!("处理查询结果失败: {}", e))?);
+    }
+
+    Ok(results)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -347,7 +392,8 @@ pub fn run() {
             upload_diary,
             download_diary,
             delete_diary,
-            save_local_index
+            save_local_index,
+            search_local_index
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
