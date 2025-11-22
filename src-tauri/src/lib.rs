@@ -6,6 +6,7 @@ use aes_gcm::{
 use argon2::{password_hash::SaltString, Argon2, ParamsBuilder, PasswordHasher};
 use rand::RngCore;
 use std::sync::Mutex;
+use ali_oss_rs::bucket::BucketOperations;
 // 用于生成随机 IV
 
 // 定义 IV 长度 (AES-GCM 标准 IV 长度为 12 字节)
@@ -168,20 +169,39 @@ pub struct OssClient(pub Client);
 /// 客户端初始化函数 (在应用启动/登录时调用)
 #[tauri::command]
 async fn initialize_oss_client(
-    app_handle: tauri::AppHandle, // 用于获取应用状态
+    app_handle: tauri::AppHandle,
     ak_id: String,
     ak_secret: String,
+    region: String, // <--- 修正点：新的 Region 参数
     endpoint: String,
-    bucket: String,
+    bucket: String, // <--- 修正点：将 bucket 作为一个单独的、用于后续操作的参数
 ) -> Result<(), String> {
-    // 1. 创建 OSS 客户端实例
-    let client = Client::new(ak_id, ak_secret, endpoint, bucket);
 
-    // 2. 将客户端存储到 Tauri 状态管理器中
-    // 检查是否已经存储过，如果是，则更新
+    // 1. 创建 OSS 客户端实例
+    // 严格按照新的签名顺序调用
+    let client = Client::new(
+        ak_id,
+        ak_secret,
+        region.clone(), // 传入 Region
+        endpoint,       // 传入 Endpoint
+    );
+
+    // 2. 强制连接验证：执行 list_buckets
+    // 这里我们必须使用一个简单的操作来验证连接。
+    client
+        .list_buckets(None)
+        .await
+        .map_err(|e| format!("OSS 连接或认证失败 (请检查 AK/SK/Region/Endpoint/网络): {:?}", e))?;
+
+    // 3. 将客户端存储到 Tauri 状态管理器中
+    // 注意：我们将只存储 Client，Bucket 名称必须在每次操作时从前端传入或单独存储。
     app_handle.manage(OssClient(client));
 
-    // 成功后返回
+    // 4. (可选但推荐) 将 Bucket 名称也存入状态，避免前端重复传递
+    // 我们需要一个新的状态结构体来存储 Bucket 名称，这里我们先使用一个简单的方法：
+    // *由于只传 client 会导致后续命令缺失 bucket，我们将 client 的初始化移到 run() 中，并在 login 时更新 client*
+    // **简易处理：将 bucket 作为第五个参数在前端传递给后续 CRUD 操作。**
+
     Ok(())
 }
 

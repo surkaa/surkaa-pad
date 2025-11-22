@@ -1,112 +1,149 @@
 <script setup lang="ts">
 import {ref} from "vue";
-import {invoke} from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 
-const greetMsg = ref("");
-const name = ref("");
+// --- State Variables ---
+const akid = ref('');
+const aksecret = ref('');
+const region = ref('cn-guangzhou');
+const endpoint = ref('oss-cn-guangzhou.aliyuncs.com'); // 默认值
+const bucket = ref('surkaa'); // 默认值
+const masterPassword = ref('');
 
-async function testSearchHash(dek: number[]) {
-  const keyword1 = "战略顾问";
-  const keyword2 = "战略顾问";
-  const keyword3 = "日记软件";
+// --- Global State (In-Memory for simplicity) ---
+// 存储派生密钥
+const dek = ref<number[]>([]);
+const saltBase64 = "aHR0cHM6Ly9nZW1pbmkuZ29vZ2xlLmNvbS9hcHAvMDU5MmNjODMwNzQ4MWQ0OA==".replace(/=/g, '');
+const statusMessage = ref('等待配置...');
 
-  const hash1 = await invoke<number[]>('generate_search_hash', {dek, keyword: keyword1});
-  const hash2 = await invoke<number[]>('generate_search_hash', {dek, keyword: keyword2});
-  const hash3 = await invoke<number[]>('generate_search_hash', {dek, keyword: keyword3});
+// --- Functions ---
 
-  console.log("--- 搜索哈希测试 ---");
-  console.log(`Hash 1 (战略顾问): 长度 ${hash1.length}`);
-
-  // 验证确定性
-  const isSame = hash1.every((val, index) => val === hash2[index]);
-  console.log(`Hash 1 == Hash 2: ${isSame}`); // 必须是 true
-
-  // 验证唯一性
-  const isDifferent = hash1.every((val, index) => val !== hash3[index]);
-  console.log(`Hash 1 != Hash 3: ${isDifferent}`); // 必须是 true (或大部分为 true)
-}
-
-async function testE2EChain() {
-  const password = "0si3BxN9tLIq6Ych";
-  // 实际项目中，你需要从 key_params.json 中读取 salt
-  const saltBase64 = "aHR0cHM6Ly9nZW1pbmkuZ29vZ2xlLmNvbS9hcHAvMDU5MmNjODMwNzQ4MWQ0OA";
+/**
+ * 完整登录和初始化流程
+ */
+async function handleLogin() {
+  statusMessage.value = '正在登录和初始化...';
 
   // 1. 派生密钥 (KDF)
-  const dek = await invoke<number[]>('derive_key', {password, salt: saltBase64});
-  console.log('DEK 派生成功:', dek.length === 32);
-
-  // 2. 加密数据
-  const plaintext = "这是我的秘密日记内容。时间: " + new Date().toISOString();
-  const [ciphertext, iv] = await invoke<[number[], number[]]>('encrypt_data', {
-    dek,
-    plaintext
-  });
-  console.log(`加密成功。密文长度: ${ciphertext.length}, IV 长度: ${iv.length}`);
-
-  // 3. 解密数据
-  const decryptedText = await invoke<string>('decrypt_data', {
-    dek,
-    ciphertext,
-    nonceBytes: iv,
-  });
-
-  // 4. 验证
-  console.log('解密结果:', decryptedText);
-  console.log('验证成功:', decryptedText === plaintext);
-
-  // 5. 模拟数据篡改测试：
-  const tamperedCiphertext = [...ciphertext];
-  tamperedCiphertext[0] = tamperedCiphertext[0] + 1; // 改变密文的第一个字节
   try {
-    await invoke<string>('decrypt_data', {
-      dek,
-      ciphertext: tamperedCiphertext,
-      nonceBytes: iv,
+    const derivedKey = await invoke<number[]>('derive_key', {
+      password: masterPassword.value,
+      salt: saltBase64
     });
-    console.error("篡改测试失败：篡改后的数据仍能解密！");
-  } catch (e) {
-    console.log("篡改测试成功：篡改后的数据解密失败（GCM Tag 验证失败）");
+    dek.value = derivedKey;
+    console.log('DEK 派生成功:', derivedKey.length === 32);
+    statusMessage.value = '密钥派生成功，正在初始化 OSS 客户端...';
+  } catch (error) {
+    statusMessage.value = `密钥派生失败: ${error}`;
+    console.error(error);
+    return;
   }
 
-  // 6. 测试搜索哈希函数
-  await testSearchHash(dek);
+  // 2. 初始化 OSS 客户端
+  try {
+    await invoke('initialize_oss_client', {
+      akId: akid.value,
+      akSecret: aksecret.value,
+      region: region.value,
+      endpoint: endpoint.value,
+      bucket: bucket.value,
+    });
+    statusMessage.value = 'OSS 客户端初始化成功！应用已准备就绪。';
+    console.log('OSS 客户端初始化成功');
+  } catch (error) {
+    statusMessage.value = `OSS 初始化失败: ${error}`;
+    console.error(error);
+  }
 }
 </script>
 
 <template>
   <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
+  <h1>Surkaa Pad - 初始化</h1>
 
-    <div class="row">
-      <a href="https://vitejs.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo"/>
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo"/>
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo"/>
-      </a>
-    </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
+  <div class="row">
+    <label for="password-input">主密码:</label>
+    <input
+        id="password-input"
+        v-model="masterPassword"
+        placeholder="输入主密码"
+        type="password"
+    />
+  </div>
 
-    <form class="row" @submit.prevent="testE2EChain">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..."/>
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
-  </main>
+  <div class="row">
+    <label for="akid-input">AccessKey ID:</label>
+    <input
+        id="akid-input"
+        v-model="akid"
+        placeholder="阿里云 AccessKey ID"
+    />
+  </div>
+
+  <div class="row">
+    <label for="aksecret-input">AccessKey Secret:</label>
+    <input
+        id="aksecret-input"
+        v-model="aksecret"
+        placeholder="阿里云 AccessKey Secret"
+        type="password"
+    />
+  </div>
+
+  <div class="row">
+    <label for="region-input">地域 (Region):</label>
+    <input
+        id="region-input"
+        v-model="region"
+        placeholder="cn-guangzhou"
+    />
+  </div>
+
+  <div class="row">
+    <label for="endpoint-input">Endpoint:</label>
+    <input
+        id="endpoint-input"
+        v-model="endpoint"
+        placeholder="oss-cn-guangzhou.aliyuncs.com"
+    />
+  </div>
+
+  <div class="row">
+    <label for="bucket-input">Bucket:</label>
+    <input
+        id="bucket-input"
+        v-model="bucket"
+        placeholder="您的 Bucket 名称"
+    />
+  </div>
+
+  <button @click="handleLogin" :disabled="!masterPassword">
+    保存配置并登录
+  </button>
+
+  <p style="margin-top: 15px;">状态: {{ statusMessage }}</p>
+  <p v-if="dek.length > 0">DEK就绪 ({{ dek.length }} bytes)</p>
+</main>
 </template>
 
 <style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
+/* 添加一些简单的布局样式 */
+.row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 15px;
+  width: 300px; /* 限制宽度 */
+  margin-left: auto;
+  margin-right: auto;
 }
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
+.row label {
+  margin-bottom: 5px;
+  font-weight: bold;
 }
-
+.row input {
+  width: 100%;
+}
 </style>
 <style>
 :root {
@@ -132,22 +169,6 @@ async function testE2EChain() {
   flex-direction: column;
   justify-content: center;
   text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
 }
 
 a {
