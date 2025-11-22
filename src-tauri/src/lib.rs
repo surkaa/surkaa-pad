@@ -15,10 +15,10 @@ use rand::RngCore; // 用于生成随机 IV
 const NONCE_LEN: usize = 12;
 // 定义派生密钥的长度（字节），AES-256 需要 32 字节
 const KEY_LEN: usize = 32;
-use hmac::{Hmac, HmacCore, Mac};
 use hmac::digest::consts::{B0, B1};
 use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
 use hmac::digest::typenum::{UInt, UTerm};
+use hmac::{Hmac, HmacCore, Mac};
 // 用于 HMAC
 use sha2::{OidSha256, Sha256, Sha256VarCore}; // HMAC 使用的哈希算法
 
@@ -30,9 +30,9 @@ fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
     let memory_cost_kib = 1024 * 256;
 
     let params = ParamsBuilder::new()
-        .t_cost(2)      // 迭代次数 (Time cost)
+        .t_cost(2) // 迭代次数 (Time cost)
         .m_cost(memory_cost_kib) // 内存消耗 (256 MiB)
-        .p_cost(4)      // 并行度 (Parallelism)
+        .p_cost(4) // 并行度 (Parallelism)
         .output_len(KEY_LEN) // 密钥长度 (32 字节)
         .build()
         .map_err(|e| format!("Argon2 参数错误: {}", e))?;
@@ -122,8 +122,18 @@ fn decrypt_data(dek: Vec<u8>, ciphertext: Vec<u8>, nonce_bytes: Vec<u8>) -> Resu
 #[tauri::command]
 fn generate_search_hash(dek: Vec<u8>, keyword: String) -> Result<Vec<u8>, String> {
     // 1. 初始化 HMAC 实例 (DEK 作为密钥)
-    let mut mac = <CoreWrapper<HmacCore<CoreWrapper<CtVariableCoreWrapper<Sha256VarCore, UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, OidSha256>>>> as KeyInit>::new_from_slice(&dek)
-        .map_err(|_| "DEK 长度错误，无法初始化 HMAC".to_string())?;
+    let mut mac = <CoreWrapper<
+        HmacCore<
+            CoreWrapper<
+                CtVariableCoreWrapper<
+                    Sha256VarCore,
+                    UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>,
+                    OidSha256,
+                >,
+            >,
+        >,
+    > as KeyInit>::new_from_slice(&dek)
+    .map_err(|_| "DEK 长度错误，无法初始化 HMAC".to_string())?;
 
     // 2. 更新 MAC (计算关键词的哈希)
     mac.update(keyword.as_bytes());

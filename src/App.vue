@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import {ref} from "vue";
+import {invoke} from "@tauri-apps/api/core";
 
 const greetMsg = ref("");
 const name = ref("");
@@ -10,9 +10,9 @@ async function testSearchHash(dek: number[]) {
   const keyword2 = "战略顾问";
   const keyword3 = "日记软件";
 
-  const hash1 = await invoke<number[]>('generate_search_hash', { dek, keyword: keyword1 });
-  const hash2 = await invoke<number[]>('generate_search_hash', { dek, keyword: keyword2 });
-  const hash3 = await invoke<number[]>('generate_search_hash', { dek, keyword: keyword3 });
+  const hash1 = await invoke<number[]>('generate_search_hash', {dek, keyword: keyword1});
+  const hash2 = await invoke<number[]>('generate_search_hash', {dek, keyword: keyword2});
+  const hash3 = await invoke<number[]>('generate_search_hash', {dek, keyword: keyword3});
 
   console.log("--- 搜索哈希测试 ---");
   console.log(`Hash 1 (战略顾问): 长度 ${hash1.length}`);
@@ -32,7 +32,7 @@ async function testE2EChain() {
   const saltBase64 = "aHR0cHM6Ly9nZW1pbmkuZ29vZ2xlLmNvbS9hcHAvMDU5MmNjODMwNzQ4MWQ0OA";
 
   // 1. 派生密钥 (KDF)
-  const dek = await invoke<number[]>('derive_key', { password, salt: saltBase64 });
+  const dek = await invoke<number[]>('derive_key', {password, salt: saltBase64});
   console.log('DEK 派生成功:', dek.length === 32);
 
   // 2. 加密数据
@@ -79,19 +79,19 @@ async function testE2EChain() {
 
     <div class="row">
       <a href="https://vitejs.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
+        <img src="/vite.svg" class="logo vite" alt="Vite logo"/>
       </a>
       <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
+        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo"/>
       </a>
       <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
+        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo"/>
       </a>
     </div>
     <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
 
     <form class="row" @submit.prevent="testE2EChain">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
+      <input id="greet-input" v-model="name" placeholder="Enter a name..."/>
       <button type="submit">Greet</button>
     </form>
     <p>{{ greetMsg }}</p>
@@ -185,6 +185,7 @@ button {
 button:hover {
   border-color: #396cd8;
 }
+
 button:active {
   border-color: #396cd8;
   background-color: #e8e8e8;
@@ -214,6 +215,7 @@ button {
     color: #ffffff;
     background-color: #0f0f0f98;
   }
+
   button:active {
     background-color: #0f0f0f69;
   }
