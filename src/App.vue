@@ -203,8 +203,9 @@ async function resetConfig() {
 
 async function loadDiaryList() {
   try {
-    const files = (await listFiles()).map((fn: string) => Number(fn.replace('.dat', '')));
-    // 从本地获取iv TODO 是否需要把 iv 存到 OSS 上？
+    const files = (await listFiles())
+        .filter((fn: string) => fn.endsWith('.dat'))
+        .map((fn: string) => Number(fn.replace('.dat', '')));
     const entries = await invoke<DiaryEntry[]>('get_all_entries');
     diaryList.value = entries
       .filter(e => files.includes(e.id))
