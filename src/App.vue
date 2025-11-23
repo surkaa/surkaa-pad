@@ -3,7 +3,7 @@ import {onMounted, ref} from "vue";
 import {invoke} from "@tauri-apps/api/core";
 import {Store} from "@tauri-apps/plugin-store";
 import {downloadFile, initOSS, uploadFile} from "./utils/alioss.ts";
-import {DiaryEntry} from "./types";
+import {DiaryEntry, SearchResult} from "./types";
 
 // --- 常量 ---
 const CONFIG_FILENAME = "settings.json";
@@ -37,7 +37,7 @@ const currentEntryId = ref('');   // 当前编辑的 ID (空代表新建)
 const currentDiaryContent = ref('');
 const keywordsInput = ref('');
 const searchKeyword = ref('');
-const searchResults = ref<any[]>([]);
+const searchResults = ref<SearchResult[]>([]);
 
 // ==========================================
 // 生命周期与初始化
