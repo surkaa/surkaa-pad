@@ -2,18 +2,18 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use ali_oss_rs::bucket::BucketOperations;
 use argon2::{password_hash::SaltString, Argon2, ParamsBuilder, PasswordHasher};
 use rand::RngCore;
 use std::fs;
 // 引入 Arc 用于跨线程共享所有权
 use std::sync::{Arc, Mutex};
+use aliyun_oss_client::{
+    types::{EndPoint, Key, Secret}, // 基础类型
+    Bucket,                         // Bucket 结构体
+    Client,                         // 客户端
+    Object,                         // 核心操作对象
+};
 // 用于生成随机 IV
-
-// 定义常量
-const NONCE_LEN: usize = 12;
-// 定义派生密钥的长度（字节），AES-256 需要 32 字节
-const KEY_LEN: usize = 32;
 
 use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
 use hmac::digest::typenum::{B0, B1, UInt, UTerm};
@@ -22,15 +22,15 @@ use hmac::{HmacCore, Mac};
 use sha2::{OidSha256, Sha256VarCore};
 // HMAC 使用的哈希算法
 
-use ali_oss_rs::object::ObjectOperations;
-use ali_oss_rs::object_common::{
-    DeleteObjectOptions, GetObjectOptionsBuilder, PutObjectOptionsBuilder,
-};
-use ali_oss_rs::Client;
 use rusqlite::{Connection, Result as SqlResult};
 use serde::Serialize;
 use tauri::Manager;
 use tauri::State;
+
+// 定义常量
+const NONCE_LEN: usize = 12;
+// 定义派生密钥的长度（字节），AES-256 需要 32 字节
+const KEY_LEN: usize = 32;
 
 // ---------------------------------------------------------
 // 结构体定义
@@ -182,20 +182,35 @@ async fn initialize_oss_client(
     ak_id: String,
     ak_secret: String,
     region: String,
-    endpoint: String,
-    _bucket: String, // 保留参数位但标记为未使用
+    _endpoint: String,
+    bucket: String,
 ) -> Result<(), String> {
-    let client = Client::new(
-        ak_id,
-        ak_secret,
-        region.clone(),
-        endpoint,
-    );
+    // 1. 解析 Endpoint
+    // 库要求 endpoint 字符串不能包含 "http://" 前缀，或者通过 new 自动处理
+    // 这里的 Endpoint::new 会解析 URL 字符串
+    let ep = EndPoint::new(&region)
+        .map_err(|e| format!("无效的 Endpoint: {}", e))?;
 
-    client.list_buckets(None).await.map_err(|e| {
-        format!("OSS 连接失败: {:?}", e)
-    })?;
+    // 2. 创建 Key 和 Secret
+    let key = Key::new(ak_id);
+    let secret = Secret::new(ak_secret);
 
+    // 3. 创建客户端
+    let mut client = Client::new(key, secret);
+
+    // 4. 创建 Bucket 对象并绑定到 Client (这样后续操作就不需要重复传 bucket_name)
+    let bucket_obj = Bucket::new(bucket, ep.clone());
+    client.set_bucket(bucket_obj);
+
+    // 5. 验证连接
+    // 我们使用 get_bucket_info 或者 get_buckets 来测试凭证有效性
+    // 这里使用 get_buckets 列出当前 Endpoint 下的 bucket
+    client
+        .get_buckets(&ep)
+        .await
+        .map_err(|e| format!("OSS 连接验证失败 (请检查AK/SK): {}", e))?;
+
+    // 6. 存入全局状态
     let mut client_guard = client_state.0.lock().map_err(|e| format!("锁失败: {}", e))?;
     *client_guard = Some(Arc::new(client));
 
@@ -205,7 +220,7 @@ async fn initialize_oss_client(
 #[tauri::command]
 async fn upload_diary(
     client_state: State<'_, OssClient>,
-    bucket_name: String,
+    _bucket_name: String,
     object_key: String,
     encrypted_data: Vec<u8>,
 ) -> Result<(), String> {
@@ -214,13 +229,13 @@ async fn upload_diary(
         guard.as_ref().cloned().ok_or("OSS 未初始化")?
     };
 
-    let options = PutObjectOptionsBuilder::new()
-        .mime_type("application/octet-stream")
-        .forbid_overwrite(true)
-        .build();
+    // 1. 创建 Object 实例
+    // 因为 client 已经绑定了默认 Bucket，这里只需要 Key
+    // README 示例: Object::new("abc2.txt")
 
-    client
-        .put_object_from_buffer(&bucket_name, &object_key, encrypted_data, Some(options))
+    // 2. 配置内容并上传
+    Object::new(&object_key)
+        .upload(encrypted_data, &client)
         .await
         .map_err(|e| format!("上传失败: {}", e))?;
 
@@ -230,7 +245,7 @@ async fn upload_diary(
 #[tauri::command]
 async fn download_diary(
     client_state: State<'_, OssClient>,
-    bucket_name: String,
+    _bucket_name: String,
     object_key: String,
 ) -> Result<Vec<u8>, String> {
     let client = {
@@ -238,20 +253,19 @@ async fn download_diary(
         guard.as_ref().cloned().ok_or("OSS 未初始化")?
     };
 
-    let options = GetObjectOptionsBuilder::new().build();
-
-    let result = client
-        .get_object_to_buffer(&bucket_name, &object_key, Some(options))
+    // 执行下载
+    let data = Object::new(&object_key)
+        .download(&client)
         .await
-        .map_err(|e| format!("下载失败: {:?}", e))?;
+        .map_err(|e| format!("下载失败: {}", e))?;
 
-    Ok(result)
+    Ok(data)
 }
 
 #[tauri::command]
 async fn delete_diary(
     client_state: State<'_, OssClient>,
-    bucket_name: String,
+    _bucket_name: String,
     object_key: String,
 ) -> Result<(), String> {
     let client = {
@@ -259,12 +273,10 @@ async fn delete_diary(
         guard.as_ref().cloned().ok_or("OSS 未初始化")?
     };
 
-    let options = DeleteObjectOptions::default();
-
-    client
-        .delete_object(&bucket_name, &object_key, Some(options))
+    Object::new(&object_key)
+        .delete(&client)
         .await
-        .map_err(|e| format!("删除失败: {:?}", e))?;
+        .map_err(|e| format!("删除失败: {}", e))?;
 
     Ok(())
 }
