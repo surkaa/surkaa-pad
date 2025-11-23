@@ -2,7 +2,7 @@
 import {onMounted, ref} from "vue";
 import {invoke} from "@tauri-apps/api/core";
 import {Store} from "@tauri-apps/plugin-store";
-import {downloadFile, initOSS, uploadFile} from "./utils/alioss.ts";
+import {downloadFile, initOSS, listFiles, uploadFile} from "./utils/alioss.ts";
 import {DiaryEntry, SearchResult} from "./types";
 
 // --- 常量 ---
@@ -203,7 +203,12 @@ async function resetConfig() {
 
 async function loadDiaryList() {
   try {
-    diaryList.value = await invoke<any[]>('get_all_entries');
+    const files = (await listFiles()).map((fn: string) => Number(fn.replace('.dat', '')));
+    // 从本地获取iv TODO 是否需要把 iv 存到 OSS 上？
+    const entries = await invoke<DiaryEntry[]>('get_all_entries');
+    diaryList.value = entries
+      .filter(e => files.includes(e.id))
+      .sort((a, b) => b.created_at - a.created_at);
   } catch (e) {
     console.error("加载列表失败", e);
   }
@@ -310,7 +315,6 @@ async function handleSearch() {
       decryptedResults.push({
         id: entry.id,
         created_at: entry.created_at,
-        nonce: entry.nonce,
         content: plaintext,
       });
     }
@@ -324,7 +328,7 @@ async function handleSearch() {
   }
 }
 
-async function handleEntryClick(entry: any) {
+async function handleEntryClick(entry: DiaryEntry) {
   if (!dek.value.length) return;
 
   statusMessage.value = `正在下载 ID: ${entry.id}...`;
@@ -350,7 +354,7 @@ async function handleEntryClick(entry: any) {
     currentDiaryContent.value = await invoke<string>('decrypt_data', {
       dek: dek.value,
       ciphertext: ciphertextWithTag,
-      nonceBytes: entry.nonce, // 使用列表中的 Nonce
+      nonceBytes: entry.nonce,
     });
     statusMessage.value = `加载成功`;
 

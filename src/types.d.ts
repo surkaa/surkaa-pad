@@ -1,12 +1,11 @@
 export type DiaryEntry = {
     id: number;
-    created_at: string;
+    created_at: number;
     nonce: number[];
 }
 
 export type SearchResult = {
     id: number;
-    created_at: string;
-    nonce: number[];
+    created_at: number;
     content: string;
 }
