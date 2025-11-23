@@ -388,7 +388,7 @@ async function handleEntryClick(entry: any) {
         <div class="diary-list">
           <div v-for="item in diaryList" :key="item.entry_id" class="diary-item" @click="handleEntryClick(item)">
             <span class="date">{{ new Date(item.created_at).toLocaleString() }}</span>
-            <span class="id-preview">ID: {{ item.entry_id.substring(0, 8) }}...</span>
+            <span class="id-preview">ID: {{ item.entry_id}}</span>
           </div>
           <p v-if="diaryList.length === 0" style="color:#999">暂无本地记录</p>
         </div>
