@@ -2,11 +2,11 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use argon2::{password_hash::SaltString, Argon2, ParamsBuilder, PasswordHasher};
+use argon2::{password_hash::SaltString, Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
 use rand::RngCore;
 use std::fs;
 // 引入 Arc 用于跨线程共享所有权
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 // 用于生成随机 IV
 
 use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
@@ -52,7 +52,7 @@ pub struct DbConnection(pub std::sync::Mutex<Connection>);
 // ---------------------------------------------------------
 
 #[tauri::command]
-fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
+async fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
     // 1. 定义 Argon2 参数 (Params 只需要在这里创建一次)
     let memory_cost_kib = 1024 * 256;
 
@@ -64,9 +64,9 @@ fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
         .build()
         .map_err(|e| format!("Argon2 参数错误: {}", e))?;
 
-    let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
 
-    let salt = SaltString::from_b64(&salt)
+    let salt = SaltString::from_b64(salt)
         .map_err(|e| format!("Salt 字符串无效或不是 Base64 编码: {}", e))?;
 
     let hash = argon2
@@ -76,7 +76,7 @@ fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
     let dek = hash.hash.ok_or_else(|| "无法提取哈希值".to_string())?;
 
     if dek.as_bytes().len() != KEY_LEN {
-        return Err(format!("派生密钥长度错误"));
+        return Err(format!("派生密钥长度错误: 期望 {}, 得到 {}", KEY_LEN, dek.as_bytes().len()));
     }
 
     Ok(dek.as_bytes().to_vec())
