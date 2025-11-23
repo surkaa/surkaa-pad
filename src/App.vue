@@ -247,7 +247,7 @@ async function handleSaveDiary() {
 
     // --- 修改点：使用前端上传 ---
     statusMessage.value = '正在上传到 OSS...';
-    const objectKey = `data/${id}.dat`;
+    const objectKey = `${id}.dat`;
 
     // fullEncryptedData 是 Rust 返回的 number[]
     await uploadFile(objectKey, fullEncryptedData);
@@ -292,7 +292,7 @@ async function handleSearch() {
     const decryptedResults = [] as SearchResult[];
 
     for (const entry of matchedEntries) {
-      const objectKey = `data/${entry.id}.dat`;
+      const objectKey = `${entry.id}.dat`;
 
       // 下载
       const fullEncryptedData = await downloadFile(objectKey);
@@ -335,7 +335,7 @@ async function handleEntryClick(entry: any) {
   keywordsInput.value = '';
 
   try {
-    const objectKey = `data/${entry.id}.dat`;
+    const objectKey = `${entry.id}.dat`;
 
     // --- 修改点：使用前端下载 ---
     const fullEncryptedData = await downloadFile(objectKey);
