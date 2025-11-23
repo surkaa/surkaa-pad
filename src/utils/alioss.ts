@@ -27,10 +27,27 @@ export async function initOSS(config: any) {
 async function checkConnection(): Promise<void> {
     if (!client) throw new Error("OSS 未初始化");
     try {
-        let a = await client.list();
-        console.log(a);
+        let bucket = await client.getBucket();
+        console.log(bucket);
     } catch (e) {
         throw new Error(`OSS 连接验证失败: ${e}`);
+    }
+}
+
+/**
+ * 列出文件
+ */
+export async function listFiles(prefix: string = ''): Promise<string[]> {
+    if (!client) throw new Error("OSS 未初始化");
+
+    try {
+        const result = await client.list();
+
+        const fileKeys = result.objects ? result.objects.map((obj: { name: string }) => obj.name) : [];
+        console.log(`列出文件成功, 前缀: ${prefix}, 文件数: ${fileKeys.length}`);
+        return fileKeys;
+    } catch (error) {
+        throw new Error(`列出文件失败 (${prefix}): ${error}`);
     }
 }
 
