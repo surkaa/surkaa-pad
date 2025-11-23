@@ -2,6 +2,7 @@
 import {onMounted, ref} from "vue";
 import {invoke} from "@tauri-apps/api/core";
 import {Store} from "@tauri-apps/plugin-store";
+import {downloadFile, initOSS, uploadFile} from "./utils/alioss.ts";
 
 // --- 常量 ---
 const CONFIG_FILENAME = "settings.json";
@@ -74,25 +75,25 @@ async function checkSavedConfig() {
 // 1. 首次设置
 async function handleFirstSetup() {
   if (!masterPassword.value || !store) return;
-  statusMessage.value = "正在验证并保存配置...";
+  statusMessage.value = "正在验证配置...";
 
   try {
-    // A. 派生密钥
     const derivedKey = await invoke<number[]>('derive_key', {
       password: masterPassword.value,
       salt: saltBase64
     });
 
-    // B. 验证 OSS 连接
-    await invoke('initialize_oss_client', {
-      akId: akid.value,
-      akSecret: aksecret.value,
+    // --- 修改点：前端初始化 OSS ---
+    // ali-oss 的 region 格式通常是 'oss-cn-guangzhou'
+    await initOSS({
+      accessKeyId: akid.value,
+      accessKeySecret: aksecret.value,
       region: region.value,
       endpoint: endpoint.value,
       bucket: bucket.value,
     });
+    // ---------------------------
 
-    // C. 加密配置
     const configObj = {
       akid: akid.value,
       aksecret: aksecret.value,
@@ -107,14 +108,13 @@ async function handleFirstSetup() {
       configJson: configJson
     });
 
-    // D. 保存到 Store
     await store.set(CONFIG_KEY, encryptedConfig);
-    await store.save(); // 必须调用 save 才能持久化写入磁盘
+    await store.save();
 
     dek.value = derivedKey;
     isLoggedIn.value = true;
     hasSavedConfig.value = true;
-    statusMessage.value = "配置已保存，登录成功。";
+    statusMessage.value = "登录成功。";
 
     await loadDiaryList();
 
@@ -145,21 +145,21 @@ async function handleUnlock() {
 
     const config = JSON.parse(configJson);
 
-    // 恢复变量
     akid.value = config.akid;
     aksecret.value = config.aksecret;
     region.value = config.region;
     endpoint.value = config.endpoint;
     bucket.value = config.bucket;
 
-    // 初始化 OSS
-    await invoke('initialize_oss_client', {
-      akId: config.akid,
-      akSecret: config.aksecret,
+    // --- 修改点：前端初始化 OSS ---
+    await initOSS({
+      accessKeyId: config.akid,
+      accessKeySecret: config.aksecret,
       region: config.region,
       endpoint: config.endpoint,
       bucket: config.bucket,
     });
+    // ---------------------------
 
     dek.value = derivedKey;
     isLoggedIn.value = true;
@@ -168,7 +168,7 @@ async function handleUnlock() {
     await loadDiaryList();
 
   } catch (e) {
-    statusMessage.value = `解锁失败: ${e} (密码错误或配置损坏)`;
+    statusMessage.value = `解锁失败: ${e}`;
     console.error(e);
   }
 }
@@ -203,7 +203,7 @@ function openNewEntry() {
 
 async function handleSaveDiary() {
   if (!dek.value.length || !currentDiaryContent.value) return;
-  statusMessage.value = '正在加密上传...';
+  statusMessage.value = '正在加密...';
 
   const entryId = currentEntryId.value || `${Date.now()}`;
   const createdAt = new Date().toISOString();
@@ -229,12 +229,13 @@ async function handleSaveDiary() {
       });
     }
 
+    // --- 修改点：使用前端上传 ---
+    statusMessage.value = '正在上传到 OSS...';
     const objectKey = `data/${entryId}.dat`;
-    await invoke('upload_diary', {
-      bucketName: bucket.value,
-      objectKey,
-      encryptedData: fullEncryptedData,
-    });
+
+    // fullEncryptedData 是 Rust 返回的 number[]
+    await uploadFile(objectKey, fullEncryptedData);
+    // ---------------------------
 
     statusMessage.value = "保存成功！";
     currentEntryId.value = '';
@@ -246,6 +247,7 @@ async function handleSaveDiary() {
 
   } catch (e) {
     statusMessage.value = `保存失败: ${e}`;
+    console.error(e);
   }
 }
 
@@ -277,10 +279,7 @@ async function handleSearch() {
       const objectKey = `data/${entry.entry_id}.dat`;
 
       // 下载
-      const fullEncryptedData = await invoke<number[]>('download_diary', {
-        bucketName: bucket.value,
-        objectKey,
-      });
+      const fullEncryptedData = await downloadFile(objectKey);
 
       // 解密
       const ivLength = 12;
@@ -311,34 +310,32 @@ async function handleSearch() {
 async function handleEntryClick(entry: any) {
   if (!dek.value.length) return;
 
-  statusMessage.value = `正在下载并解密 ID: ${entry.entry_id}...`;
-  viewMode.value = 'editor'; // 切换到编辑/查看视图
+  statusMessage.value = `正在下载 ID: ${entry.entry_id}...`;
+  viewMode.value = 'editor';
 
-  // 清空之前的内容
   currentEntryId.value = entry.entry_id;
   currentDiaryContent.value = '加载中...';
-  keywordsInput.value = ''; // 暂时无法反查关键词，先置空
+  keywordsInput.value = '';
 
   try {
     const objectKey = `data/${entry.entry_id}.dat`;
 
-    // 1. 下载
-    const fullEncryptedData = await invoke<number[]>('download_diary', {
-      bucketName: bucket.value,
-      objectKey,
-    });
+    // --- 修改点：使用前端下载 ---
+    const fullEncryptedData = await downloadFile(objectKey);
+    // ---------------------------
 
-    // 2. 解密
-    // 注意：利用从列表传过来的 entry.nonce
+    statusMessage.value = "正在解密...";
+
+    // 注意：Rust 期望接收 number[] 或 Vec<u8>，我们前端工具类已经确保返回 number[]
     const ivLength = 12;
     const ciphertextWithTag = fullEncryptedData.slice(ivLength);
 
     currentDiaryContent.value = await invoke<string>('decrypt_data', {
       dek: dek.value,
       ciphertext: ciphertextWithTag,
-      nonceBytes: entry.nonce,
+      nonceBytes: entry.nonce, // 使用列表中的 Nonce
     });
-    statusMessage.value = `加载成功 (ID: ${entry.entry_id})`;
+    statusMessage.value = `加载成功`;
 
   } catch (e) {
     statusMessage.value = `加载失败: ${e}`;
@@ -388,7 +385,7 @@ async function handleEntryClick(entry: any) {
         <div class="diary-list">
           <div v-for="item in diaryList" :key="item.entry_id" class="diary-item" @click="handleEntryClick(item)">
             <span class="date">{{ new Date(item.created_at).toLocaleString() }}</span>
-            <span class="id-preview">ID: {{ item.entry_id}}</span>
+            <span class="id-preview">ID: {{ item.entry_id }}</span>
           </div>
           <p v-if="diaryList.length === 0" style="color:#999">暂无本地记录</p>
         </div>
