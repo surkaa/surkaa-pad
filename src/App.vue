@@ -3,6 +3,7 @@ import {onMounted, ref} from "vue";
 import {invoke} from "@tauri-apps/api/core";
 import {Store} from "@tauri-apps/plugin-store";
 import {downloadFile, initOSS, uploadFile} from "./utils/alioss.ts";
+import {DiaryEntry} from "./types";
 
 // --- 常量 ---
 const CONFIG_FILENAME = "settings.json";
@@ -10,6 +11,7 @@ const CONFIG_KEY = "encrypted_oss_config";
 
 // --- 存储实例 (非响应式，初始化为 null) ---
 let store: Store | null = null;
+let isLoadingDerivedKey = false;
 
 // --- 状态变量 ---
 const hasSavedConfig = ref(false); // 是否存在本地配置
@@ -30,7 +32,7 @@ const saltBase64 = "aHR0cHM6Ly9nZW1pbmkuZ29vZ2xlLmNvbS9hcHAvMDU5MmNjODMwNzQ4MWQ0
 const statusMessage = ref('初始化中...');
 
 // --- 日记数据 ---
-const diaryList = ref<any[]>([]); // 日记列表
+const diaryList = ref<DiaryEntry[]>([]); // 日记列表
 const currentEntryId = ref('');   // 当前编辑的 ID (空代表新建)
 const currentDiaryContent = ref('');
 const keywordsInput = ref('');
@@ -78,6 +80,11 @@ async function handleFirstSetup() {
   statusMessage.value = "正在验证配置...";
 
   try {
+    if (isLoadingDerivedKey) {
+      statusMessage.value = "别急，正在验证配置...";
+      return;
+    }
+    isLoadingDerivedKey = true;
     const derivedKey = await invoke<number[]>('derive_key', {
       password: masterPassword.value,
       salt: saltBase64
@@ -121,6 +128,8 @@ async function handleFirstSetup() {
   } catch (e) {
     statusMessage.value = `设置失败: ${e}`;
     console.error(e);
+  } finally {
+    isLoadingDerivedKey = false;
   }
 }
 
@@ -130,6 +139,11 @@ async function handleUnlock() {
   statusMessage.value = "正在解锁...";
 
   try {
+    if (isLoadingDerivedKey) {
+      statusMessage.value = "别急";
+      return;
+    }
+    isLoadingDerivedKey = true;
     const derivedKey = await invoke<number[]>('derive_key', {
       password: masterPassword.value,
       salt: saltBase64
@@ -170,6 +184,8 @@ async function handleUnlock() {
   } catch (e) {
     statusMessage.value = `解锁失败: ${e}`;
     console.error(e);
+  } finally {
+    isLoadingDerivedKey = false;
   }
 }
 
