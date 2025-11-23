@@ -2,7 +2,9 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use argon2::{password_hash::SaltString, Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
+use argon2::{
+    password_hash::SaltString, Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version,
+};
 use rand::RngCore;
 use std::fs;
 // 引入 Arc 用于跨线程共享所有权
@@ -18,8 +20,7 @@ use sha2::{OidSha256, Sha256VarCore};
 
 use rusqlite::{Connection, Result as SqlResult};
 use serde::Serialize;
-use tauri::Manager;
-use tauri::State;
+use tauri::{Manager, State};
 
 // 定义常量
 const NONCE_LEN: usize = 12;
@@ -76,7 +77,11 @@ async fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
     let dek = hash.hash.ok_or_else(|| "无法提取哈希值".to_string())?;
 
     if dek.as_bytes().len() != KEY_LEN {
-        return Err(format!("派生密钥长度错误: 期望 {}, 得到 {}", KEY_LEN, dek.as_bytes().len()));
+        return Err(format!(
+            "派生密钥长度错误: 期望 {}, 得到 {}",
+            KEY_LEN,
+            dek.as_bytes().len()
+        ));
     }
 
     Ok(dek.as_bytes().to_vec())
@@ -196,7 +201,7 @@ fn save_local_index(
         "INSERT INTO index_hashes (id, nonce, created_at, search_hash) VALUES (?1, ?2, ?3, ?4)",
         (id, nonce, created_at, search_hash),
     )
-        .map_err(|e| format!("写入失败: {}", e))?;
+    .map_err(|e| format!("写入失败: {}", e))?;
 
     Ok(())
 }
@@ -237,7 +242,9 @@ fn get_all_entries(db_state: State<'_, DbConnection>) -> Result<Vec<DiaryMeta>, 
 
     // 使用 DISTINCT 因为一个日记可能有多个关键词索引，我们只需要列出日记本身
     let mut stmt = conn
-        .prepare("SELECT id, created_at, nonce FROM index_hashes GROUP BY id ORDER BY created_at DESC")
+        .prepare(
+            "SELECT id, created_at, nonce FROM index_hashes GROUP BY id ORDER BY created_at DESC",
+        )
         .map_err(|e| format!("准备失败: {}", e))?;
 
     let results_iter = stmt
