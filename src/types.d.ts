@@ -1,11 +1,12 @@
 export type DiaryEntry = {
-    entry_id: string;
-    created_at: string; // TODO convert timestamp
+    id: number;
+    created_at: string;
     nonce: number[];
 }
 
 export type SearchResult = {
-    entry_id: string;
-    created_at: string; // TODO convert timestamp
+    id: number;
+    created_at: string;
     nonce: number[];
+    content: string;
 }

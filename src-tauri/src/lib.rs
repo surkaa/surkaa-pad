@@ -32,20 +32,20 @@ const KEY_LEN: usize = 32;
 
 #[derive(Debug, Serialize)]
 pub struct SearchResult {
-    entry_id: String,
-    nonce: Vec<u8>, // IV，用于解密日记内容
-    created_at: String,
+    id: i64,
+    nonce: Vec<u8>,
+    created_at: i64,
 }
 
 // 新增：日记列表项结构体
 #[derive(Debug, Serialize)]
 pub struct DiaryMeta {
-    entry_id: String,
-    created_at: String,
+    id: i64,
     nonce: Vec<u8>,
+    created_at: i64,
 }
 
-pub struct DbConnection(pub std::sync::Mutex<Connection>);
+pub struct DbConnection(pub Mutex<Connection>);
 
 // ---------------------------------------------------------
 // 核心逻辑函数
@@ -170,11 +170,11 @@ fn init_db(app_handle: &tauri::AppHandle) -> SqlResult<Connection> {
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS index_hashes (
-        entry_id    TEXT NOT NULL,
-        nonce       BLOB NOT NULL,
-        created_at  TEXT NOT NULL,
-        search_hash BLOB NOT NULL,
-        PRIMARY KEY (entry_id, search_hash)
+        id          INTEGER NOT NULL,
+        nonce       BLOB    NOT NULL,
+        created_at  INTEGER NOT NULL,
+        search_hash BLOB    NOT NULL,
+        PRIMARY KEY (id, search_hash)
     )",
         (),
     )?;
@@ -185,16 +185,16 @@ fn init_db(app_handle: &tauri::AppHandle) -> SqlResult<Connection> {
 #[tauri::command]
 fn save_local_index(
     db_state: State<'_, DbConnection>,
-    entry_id: String,
+    id: i64,
     nonce: Vec<u8>,
-    created_at: String,
+    created_at: i64,
     search_hash: Vec<u8>,
 ) -> Result<(), String> {
     let conn = db_state.0.lock().map_err(|e| format!("锁失败: {}", e))?;
 
     conn.execute(
-        "INSERT INTO index_hashes (entry_id, nonce, created_at, search_hash) VALUES (?1, ?2, ?3, ?4)",
-        (entry_id, nonce, created_at, search_hash),
+        "INSERT INTO index_hashes (id, nonce, created_at, search_hash) VALUES (?1, ?2, ?3, ?4)",
+        (id, nonce, created_at, search_hash),
     )
         .map_err(|e| format!("写入失败: {}", e))?;
 
@@ -209,13 +209,13 @@ fn search_local_index(
     let conn = db_state.0.lock().map_err(|e| format!("锁失败: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT entry_id, nonce, created_at FROM index_hashes WHERE search_hash = ?1")
+        .prepare("SELECT id, nonce, created_at FROM index_hashes WHERE search_hash = ?1")
         .map_err(|e| format!("准备失败: {}", e))?;
 
     let results_iter = stmt
         .query_map([search_hash], |row| {
             Ok(SearchResult {
-                entry_id: row.get(0)?,
+                id: row.get(0)?,
                 nonce: row.get(1)?,
                 created_at: row.get(2)?,
             })
@@ -237,13 +237,13 @@ fn get_all_entries(db_state: State<'_, DbConnection>) -> Result<Vec<DiaryMeta>, 
 
     // 使用 DISTINCT 因为一个日记可能有多个关键词索引，我们只需要列出日记本身
     let mut stmt = conn
-        .prepare("SELECT entry_id, created_at, nonce FROM index_hashes GROUP BY entry_id ORDER BY created_at DESC")
+        .prepare("SELECT id, created_at, nonce FROM index_hashes GROUP BY id ORDER BY created_at DESC")
         .map_err(|e| format!("准备失败: {}", e))?;
 
     let results_iter = stmt
         .query_map([], |row| {
             Ok(DiaryMeta {
-                entry_id: row.get(0)?,
+                id: row.get(0)?,
                 created_at: row.get(1)?,
                 nonce: row.get(2)?,
             })

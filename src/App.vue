@@ -33,7 +33,7 @@ const statusMessage = ref('初始化中...');
 
 // --- 日记数据 ---
 const diaryList = ref<DiaryEntry[]>([]); // 日记列表
-const currentEntryId = ref('');   // 当前编辑的 ID (空代表新建)
+const currentEntryId = ref<number | null>(null);   // 当前编辑的 ID (空代表新建)
 const currentDiaryContent = ref('');
 const keywordsInput = ref('');
 const searchKeyword = ref('');
@@ -210,7 +210,7 @@ async function loadDiaryList() {
 }
 
 function openNewEntry() {
-  currentEntryId.value = '';
+  currentEntryId.value = null;
   currentDiaryContent.value = '';
   keywordsInput.value = '';
   viewMode.value = 'editor';
@@ -221,8 +221,8 @@ async function handleSaveDiary() {
   if (!dek.value.length || !currentDiaryContent.value) return;
   statusMessage.value = '正在加密...';
 
-  const entryId = currentEntryId.value || `${Date.now()}`;
-  const createdAt = new Date().toISOString();
+  const id = currentEntryId.value || Date.now();
+  const createdAt = Date.now();
   const keywords = keywordsInput.value.split(',').map(k => k.trim()).filter(k => k.length > 0);
 
   try {
@@ -238,7 +238,7 @@ async function handleSaveDiary() {
         keyword,
       });
       await invoke('save_local_index', {
-        entryId: entryId,
+        id,
         nonce: iv,
         createdAt: createdAt,
         searchHash: search_hash,
@@ -247,14 +247,14 @@ async function handleSaveDiary() {
 
     // --- 修改点：使用前端上传 ---
     statusMessage.value = '正在上传到 OSS...';
-    const objectKey = `data/${entryId}.dat`;
+    const objectKey = `data/${id}.dat`;
 
     // fullEncryptedData 是 Rust 返回的 number[]
     await uploadFile(objectKey, fullEncryptedData);
     // ---------------------------
 
     statusMessage.value = "保存成功！";
-    currentEntryId.value = '';
+    currentEntryId.value = null;
     currentDiaryContent.value = '';
     keywordsInput.value = '';
 
@@ -289,10 +289,10 @@ async function handleSearch() {
     }
 
     statusMessage.value = `找到 ${matchedEntries.length} 条，正在下载解密...`;
-    const decryptedResults = [];
+    const decryptedResults = [] as SearchResult[];
 
     for (const entry of matchedEntries) {
-      const objectKey = `data/${entry.entry_id}.dat`;
+      const objectKey = `data/${entry.id}.dat`;
 
       // 下载
       const fullEncryptedData = await downloadFile(objectKey);
@@ -308,8 +308,9 @@ async function handleSearch() {
       });
 
       decryptedResults.push({
-        id: entry.entry_id,
-        created: entry.created_at,
+        id: entry.id,
+        created_at: entry.created_at,
+        nonce: entry.nonce,
         content: plaintext,
       });
     }
@@ -326,15 +327,15 @@ async function handleSearch() {
 async function handleEntryClick(entry: any) {
   if (!dek.value.length) return;
 
-  statusMessage.value = `正在下载 ID: ${entry.entry_id}...`;
+  statusMessage.value = `正在下载 ID: ${entry.id}...`;
   viewMode.value = 'editor';
 
-  currentEntryId.value = entry.entry_id;
+  currentEntryId.value = entry.id;
   currentDiaryContent.value = '加载中...';
   keywordsInput.value = '';
 
   try {
-    const objectKey = `data/${entry.entry_id}.dat`;
+    const objectKey = `data/${entry.id}.dat`;
 
     // --- 修改点：使用前端下载 ---
     const fullEncryptedData = await downloadFile(objectKey);
@@ -399,9 +400,9 @@ async function handleEntryClick(entry: any) {
         </div>
 
         <div class="diary-list">
-          <div v-for="item in diaryList" :key="item.entry_id" class="diary-item" @click="handleEntryClick(item)">
+          <div v-for="item in diaryList" :key="item.id" class="diary-item" @click="handleEntryClick(item)">
             <span class="date">{{ new Date(item.created_at).toLocaleString() }}</span>
-            <span class="id-preview">ID: {{ item.entry_id }}</span>
+            <span class="id-preview">ID: {{ item.id }}</span>
           </div>
           <p v-if="diaryList.length === 0" style="color:#999">暂无本地记录</p>
         </div>
@@ -415,7 +416,7 @@ async function handleEntryClick(entry: any) {
 
         <div v-if="searchResults.length > 0" class="search-results">
           <div v-for="result in searchResults" :key="result.id" class="result-card">
-            <small>{{ result.created }}</small>
+            <small>{{ result.created_at }}</small>
             <p style="white-space: pre-wrap;">{{ result.content }}</p>
           </div>
         </div>
