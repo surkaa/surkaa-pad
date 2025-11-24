@@ -27,9 +27,20 @@ export type BatchIndexEntry = {
 /**
  * 日记文件头结构
  */
-export interface DiaryFileHeader {
+export type DiaryFileHeader = {
     totalLength: number;
     algorithm: string;
     nonce: number[]; // IV (12 字节)
     encHash: number[]; // 加密内容哈希 (32 字节)
+}
+
+/**
+ * 后端上传的加密数据结构
+ */
+export type EncryptData = {
+    total_length: number;
+    algorithm: string;
+    nonce: number[];
+    ciphertext: number[];
+    enc_hash: number[];
 }

@@ -3,6 +3,8 @@ import OSS from "ali-oss";
 import {DiaryFileHeader} from "../types";
 
 let client: InstanceType<typeof OSS> | null = null;
+// 引入 TextEncoder 用于将字符串转为字节
+const encoder = new TextEncoder();
 
 /**
  * 初始化 OSS 客户端
@@ -53,9 +55,9 @@ export async function listFiles(prefix: string = ''): Promise<string[]> {
 }
 
 /**
- * 上传文件 (支持 Rust 返回的加密字节数组)
+ * 上传文件
  */
-export async function uploadFile(objectKey: string, data: number[] | Uint8Array): Promise<void> {
+async function uploadRawData(objectKey: string, data: number[] | Uint8Array): Promise<void> {
     if (!client) throw new Error("OSS 未初始化");
 
     try {
@@ -69,15 +71,94 @@ export async function uploadFile(objectKey: string, data: number[] | Uint8Array)
 }
 
 /**
+ * 封装的日记文件上传函数：自动组装文件头和密文数据
+ * @param objectKey 文件路径/ID (例如: 1732388000000.dat)
+ * @param header 文件头结构化数据
+ * @param ciphertext 密文内容 (number[] 或 Uint8Array)
+ */
+export async function uploadDiaryFile(
+    objectKey: string,
+    header: DiaryFileHeader,
+    ciphertext: number[] | Uint8Array
+): Promise<void> {
+    // 1. 验证总长度
+    const ciphertextBytes = ciphertext instanceof Uint8Array ? ciphertext : new Uint8Array(ciphertext);
+    const expectedLength = header.totalLength + ciphertextBytes.length;
+
+    // 2. 组装文件头字节数据
+    const headerBytes = assembleFileHeader(header);
+
+    // 3. 校验最终文件头长度是否一致
+    if (headerBytes.length !== header.totalLength) {
+        throw new Error(`文件头组装失败：实际长度 ${headerBytes.length} 与预期长度 ${header.totalLength} 不符`);
+    }
+
+    // 4. 拼接最终上传数据 (文件头 + 密文)
+    const finalData = new Uint8Array(expectedLength);
+    finalData.set(headerBytes, 0);
+    finalData.set(ciphertextBytes, headerBytes.length);
+
+    // 5. 调用内部上传函数
+    await uploadRawData(objectKey, finalData);
+}
+
+
+/**
+ * 内部函数：根据 DiaryFileHeader 结构体，组装完整的字节数组
+ */
+function assembleFileHeader(header: DiaryFileHeader): Uint8Array {
+    // 1. 算法名字节
+    const algoNameBytes = encoder.encode(header.algorithm);
+    const algoNameLength = algoNameBytes.length;
+
+    // 2. 计算总长度 (确保 header.totalLength 是准确的)
+    // 2 (长度) + 1 (算法名长度) + N (算法名) + 12 (IV) + 32 (Hash)
+    // 假设此校验在 Rust 中完成，这里只使用 header.totalLength
+
+    const buffer = new ArrayBuffer(header.totalLength);
+    const dataView = new DataView(buffer);
+    const uint8Array = new Uint8Array(buffer);
+    let offset = 0;
+
+    // 1. 文件头总长度 (2 字节, Big Endian)
+    dataView.setUint16(offset, header.totalLength, false);
+    offset += 2;
+
+    // 2. 算法名称长度 (1 字节)
+    dataView.setUint8(offset, algoNameLength);
+    offset += 1;
+
+    // 3. 算法名称 (变长)
+    uint8Array.set(algoNameBytes, offset);
+    offset += algoNameLength;
+
+    // 4. IV (Nonce) (12 字节)
+    uint8Array.set(new Uint8Array(header.nonce), offset);
+    offset += 12;
+
+    // 5. 加密内容哈希 (32 字节)
+    uint8Array.set(new Uint8Array(header.encHash), offset);
+    // offset += 32; // 结束
+
+    return uint8Array;
+}
+
+/**
  * 下载文件 (返回 number[] 以便传回 Rust 解密)
  */
-export async function downloadFile(objectKey: string): Promise<number[]> {
+export async function downloadFile(objectKey: string, range?: {
+    start: number;
+    end: number;
+}): Promise<number[]> {
     if (!client) throw new Error("OSS 未初始化");
 
     try {
         // 下载文件，指定返回类型为 buffer
         const result = await client.get(objectKey, {
-            responseType: 'arraybuffer'
+            responseType: 'arraybuffer',
+            headers: range ? {
+                'Range': `bytes=${range.start}-${range.end}`
+            } : undefined
         });
 
         if (!result.content) {
@@ -112,12 +193,13 @@ export async function downloadFileHead(objectKey: string): Promise<DiaryFileHead
             }
         });
 
-        if (!result2Bytes.content || (result2Bytes.content as ArrayBuffer).byteLength !== 2) {
+        const content2Bytes = result2Bytes.content;
+        if (!content2Bytes || (content2Bytes as ArrayBuffer).byteLength !== 2) {
             throw new Error("下载前 2 字节内容不正确或为空");
         }
 
         // --- 2. 计算文件头长度 (使用 Big Endian, false) ---
-        const arrayBuffer2Bytes = result2Bytes.content as ArrayBuffer;
+        const arrayBuffer2Bytes = content2Bytes instanceof Uint8Array ? content2Bytes.buffer : content2Bytes;
         const dataView2Bytes = new DataView(arrayBuffer2Bytes);
         // ⭐ 修正点：使用 getUint16 来读取 2 字节长度
         const headerLength = dataView2Bytes.getUint16(0, false);
@@ -141,12 +223,13 @@ export async function downloadFileHead(objectKey: string): Promise<DiaryFileHead
             }
         });
 
-        if (!fullHeaderResult.content) {
+        const fullHeaderContent = fullHeaderResult.content;
+        if (!fullHeaderContent) {
             throw new Error("下载的完整文件头内容为空");
         }
 
         // --- 4. 解析完整的文件头 ---
-        const fullHeaderArrayBuffer = fullHeaderResult.content as ArrayBuffer;
+        const fullHeaderArrayBuffer = fullHeaderContent instanceof Uint8Array ? fullHeaderContent.buffer : fullHeaderContent;
         const fullHeaderUint8Array = new Uint8Array(fullHeaderArrayBuffer);
         const dataView = new DataView(fullHeaderArrayBuffer);
 

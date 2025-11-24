@@ -3831,6 +3831,7 @@ dependencies = [
  "aead",
  "aes-gcm",
  "argon2",
+ "digest",
  "hmac",
  "jieba-rs",
  "rand 0.8.5",

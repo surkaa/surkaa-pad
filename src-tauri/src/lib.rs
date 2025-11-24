@@ -15,8 +15,8 @@ use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
 use hmac::digest::typenum::{UInt, UTerm, B0, B1};
 use hmac::{HmacCore, Mac};
 // 用于 HMAC
-use sha2::{OidSha256, Sha256VarCore};
-// HMAC 使用的哈希算法
+use sha2::{OidSha256, Sha256, Sha256VarCore};
+use digest::Digest;
 
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Serialize, Deserialize};
@@ -27,6 +27,8 @@ use jieba_rs::Jieba;
 const NONCE_LEN: usize = 12;
 // 定义派生密钥的长度（字节），AES-256 需要 32 字节
 const KEY_LEN: usize = 32;
+const HASH_LEN: usize = 32; // SHA256 哈希长度
+const ALGORITHM_NAME: &str = "AES256-GCM_v1";
 
 // ---------------------------------------------------------
 // 结构体定义
@@ -51,6 +53,15 @@ pub struct KeywordToken {
 pub struct SearchIndexResult {
     pub id: i64,
     pub count: i64,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct EncryptData {
+    pub total_length: u16,
+    pub algorithm: String, // 例如: "AES256-GCM_v1"
+    pub nonce: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+    pub enc_hash: Vec<u8>,
 }
 
 // 前端批量传入的索引条目
@@ -101,7 +112,7 @@ async fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
-fn encrypt_data(dek: Vec<u8>, plaintext: String) -> Result<(Vec<u8>, Vec<u8>), String> {
+fn encrypt_data(dek: Vec<u8>, plaintext: String) -> Result<EncryptData, String> {
     let cipher = Aes256Gcm::new_from_slice(&dek).map_err(|_| "DEK 长度错误".to_string())?;
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
@@ -112,7 +123,28 @@ fn encrypt_data(dek: Vec<u8>, plaintext: String) -> Result<(Vec<u8>, Vec<u8>), S
         .encrypt(nonce, plaintext.as_bytes())
         .map_err(|e| format!("加密失败: {:?}", e))?;
 
-    Ok((ciphertext, nonce_bytes.to_vec()))
+    // --- 2. 计算加密内容哈希 (enc_hash) ---
+    let mut hasher = Sha256::new();
+    // 关键：哈希 Nonce + Ciphertext
+    hasher.update(&nonce_bytes);
+    hasher.update(&ciphertext);
+    let enc_hash = hasher.finalize().to_vec();
+
+    // --- 3. 计算文件头总长度 (total_length) ---
+    // 2 (Length) + 1 (AlgoLen) + N (AlgoName) + 12 (IV) + 32 (Hash)
+    let algo_name_len = ALGORITHM_NAME.len();
+    let total_length: u16 = (2 + 1 + algo_name_len + NONCE_LEN + HASH_LEN)
+        .try_into()
+        .map_err(|_| "文件头长度超出了 u16 限制".to_string())?;
+
+    // --- 4. 返回所有数据 ---
+    Ok(EncryptData {
+        total_length,
+        algorithm: ALGORITHM_NAME.to_string(),
+        nonce: nonce_bytes.to_vec(),
+        ciphertext,
+        enc_hash,
+    })
 }
 
 #[tauri::command]
@@ -129,35 +161,6 @@ fn decrypt_data(dek: Vec<u8>, ciphertext: Vec<u8>, nonce_bytes: Vec<u8>) -> Resu
         .map_err(|e| format!("解密失败: {:?}", e))?;
 
     String::from_utf8(decrypted_bytes).map_err(|_| "不是有效的 UTF-8".to_string())
-}
-
-// 配置加密与解密 (用于持久化存储)
-
-/// 加密配置信息 (JSON 字符串) -> 返回 [IV + 密文] 的组合字节
-#[tauri::command]
-fn encrypt_config(dek: Vec<u8>, config_json: String) -> Result<Vec<u8>, String> {
-    // 复用 encrypt_data
-    let (ciphertext, iv) = encrypt_data(dek, config_json)?;
-
-    // 将 IV 拼接到密文前面，方便存储
-    let mut result = iv;
-    result.extend(ciphertext);
-
-    Ok(result)
-}
-
-/// 解密配置信息 [IV + 密文] -> JSON 字符串
-#[tauri::command]
-fn decrypt_config(dek: Vec<u8>, encrypted_data: Vec<u8>) -> Result<String, String> {
-    if encrypted_data.len() < NONCE_LEN {
-        return Err("数据长度不足".to_string());
-    }
-
-    // 拆分 IV 和密文
-    let iv = encrypted_data[..NONCE_LEN].to_vec();
-    let ciphertext = encrypted_data[NONCE_LEN..].to_vec();
-
-    decrypt_data(dek, ciphertext, iv)
 }
 
 #[tauri::command]
@@ -304,8 +307,6 @@ pub fn run() {
             generate_search_hash,
             save_keyword_index_batch,
             search_local_index,
-            encrypt_config,
-            decrypt_config,
             tokenize_and_count
         ])
         .run(tauri::generate_context!())

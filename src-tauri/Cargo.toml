@@ -34,3 +34,4 @@ sha2 = "0.10.9"
 hmac = "0.12"
 rusqlite = { version = "0.31", features = ["bundled"] }
 jieba-rs = "0.8.1"
+digest = "0.10.7"

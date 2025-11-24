@@ -2,8 +2,8 @@
 import {onMounted, ref} from "vue";
 import {invoke} from "@tauri-apps/api/core";
 import {Store} from "@tauri-apps/plugin-store";
-import {downloadFile, initOSS, listFiles, uploadFile} from "./utils/alioss.ts";
-import {BatchIndexEntry, DiaryEntry, KeywordToken, PageSearchResult, SearchIndexResult} from "./types";
+import {downloadFile, downloadFileHead, initOSS, listFiles, uploadDiaryFile} from "./utils/alioss.ts";
+import {BatchIndexEntry, DiaryEntry, EncryptData, KeywordToken, PageSearchResult, SearchIndexResult} from "./types";
 
 // --- 常量 ---
 const CONFIG_FILENAME = "settings.json";
@@ -109,12 +109,12 @@ async function handleFirstSetup() {
     };
     const configJson = JSON.stringify(configObj);
 
-    const encryptedConfig = await invoke<number[]>('encrypt_config', {
+    const ed = await invoke<EncryptData>('encrypt_data', {
       dek: derivedKey,
-      configJson: configJson
+      plaintext: configJson
     });
 
-    await store.set(CONFIG_KEY, encryptedConfig);
+    await store.set(CONFIG_KEY, [...ed.nonce, ...ed.ciphertext]);
     await store.save();
 
     dek.value = derivedKey;
@@ -151,9 +151,12 @@ async function handleUnlock() {
     const encryptedConfig = await store.get<number[]>(CONFIG_KEY);
     if (!encryptedConfig) throw "配置文件丢失";
 
-    const configJson = await invoke<string>('decrypt_config', {
+    const nonceBytes = encryptedConfig.slice(0, 12);
+    const ciphertext = encryptedConfig.slice(12);
+    const configJson = await invoke<string>('decrypt_data', {
       dek: derivedKey,
-      encryptedData: encryptedConfig
+      ciphertext,
+      nonceBytes
     });
 
     const config = JSON.parse(configJson);
@@ -232,11 +235,10 @@ async function handleSaveDiary() {
   });
 
   try {
-    const [ciphertext, iv] = await invoke<[number[], number[]]>('encrypt_data', {
+    const ed = await invoke<EncryptData>('encrypt_data', {
       dek: dek.value,
       plaintext: currentDiaryContent.value,
     });
-    const fullEncryptedData = [...iv, ...ciphertext];
 
     const batchIndexes = [] as BatchIndexEntry[];
 
@@ -256,13 +258,16 @@ async function handleSaveDiary() {
       entries: batchIndexes,
     });
 
-    // --- 修改点：使用前端上传 ---
     statusMessage.value = '正在上传到 OSS...';
     const objectKey = `${id}.dat`;
 
-    // fullEncryptedData 是 Rust 返回的 number[]
-    await uploadFile(objectKey, fullEncryptedData);
-    // ---------------------------
+    await uploadDiaryFile(objectKey, {
+      totalLength: ed.total_length,
+      algorithm: ed.algorithm,
+      nonce: ed.nonce,
+      encHash: ed.enc_hash,
+    }, ed.ciphertext);
+    console.log("Uploaded encrypted data for ID:", id);
 
     statusMessage.value = "保存成功！";
     currentEntryId.value = null;
@@ -277,7 +282,6 @@ async function handleSaveDiary() {
   }
 }
 
-// 补全的 Search 函数
 async function handleSearch() {
   if (dek.value.length !== 32 || !searchKeyword.value) return;
   statusMessage.value = '正在搜索...';
@@ -305,12 +309,12 @@ async function handleSearch() {
       const objectKey = `${index.id}.dat`;
 
       // 下载
+      const head = await downloadFileHead(objectKey);
       const fullEncryptedData = await downloadFile(objectKey);
+      const nonceBytes = head.nonce;
 
-      // 解密
-      const ivLength = 12;
-      const nonceBytes = fullEncryptedData.slice(0, ivLength);
-      const ciphertext = fullEncryptedData.slice(ivLength);
+      const ciphertext = fullEncryptedData.slice(head.totalLength);
+      console.log("Downloaded encrypted data for ID:", index.id);
 
       const plaintext = await invoke<string>('decrypt_data', {
         dek: dek.value,
@@ -345,13 +349,12 @@ async function handleEntryClick(entry: DiaryEntry) {
   try {
     const objectKey = `${entry.id}.dat`;
 
+    const head = await downloadFileHead(objectKey);
     const fullEncryptedData = await downloadFile(objectKey);
-    statusMessage.value = "正在解密...";
 
-    // 注意：Rust 期望接收 number[] 或 Vec<u8>，我们前端工具类已经确保返回 number[]
-    const ivLength = 12;
-    const nonceBytes = fullEncryptedData.slice(0, ivLength);
-    const ciphertext = fullEncryptedData.slice(ivLength);
+    const nonceBytes = head.nonce;
+    const ciphertext = fullEncryptedData.slice(head.totalLength);
+    console.log("Downloaded encrypted data for ID:", entry.id);
 
     currentDiaryContent.value = await invoke<string>('decrypt_data', {
       dek: dek.value,
@@ -366,7 +369,6 @@ async function handleEntryClick(entry: DiaryEntry) {
     console.error(e);
   }
 }
-
 </script>
 
 <template>
