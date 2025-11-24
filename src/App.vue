@@ -206,10 +206,12 @@ async function loadDiaryList() {
     const files = (await listFiles())
         .filter((fn: string) => fn.endsWith('.dat'))
         .map((fn: string) => Number(fn.replace('.dat', '')));
-    const entries = await invoke<DiaryEntry[]>('get_all_entries');
-    diaryList.value = entries
-      .filter(e => files.includes(e.id))
-      .sort((a, b) => b.created_at - a.created_at);
+    diaryList.value = files
+        .map((id: number) => ({
+          id,
+          created_at: id,
+          nonce: []
+        }))
   } catch (e) {
     console.error("加载列表失败", e);
   }
@@ -342,20 +344,18 @@ async function handleEntryClick(entry: DiaryEntry) {
   try {
     const objectKey = `${entry.id}.dat`;
 
-    // --- 修改点：使用前端下载 ---
     const fullEncryptedData = await downloadFile(objectKey);
-    // ---------------------------
-
     statusMessage.value = "正在解密...";
 
     // 注意：Rust 期望接收 number[] 或 Vec<u8>，我们前端工具类已经确保返回 number[]
     const ivLength = 12;
-    const ciphertextWithTag = fullEncryptedData.slice(ivLength);
+    const nonceBytes = fullEncryptedData.slice(0, ivLength);
+    const ciphertext = fullEncryptedData.slice(ivLength);
 
     currentDiaryContent.value = await invoke<string>('decrypt_data', {
       dek: dek.value,
-      ciphertext: ciphertextWithTag,
-      nonceBytes: entry.nonce,
+      ciphertext,
+      nonceBytes,
     });
     statusMessage.value = `加载成功`;
 
