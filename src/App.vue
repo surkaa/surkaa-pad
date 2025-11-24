@@ -28,7 +28,7 @@ const bucket = ref('surkaa');
 
 // --- 全局状态 ---
 const dek = ref<number[]>([]);
-const saltBase64 = "aHR0cHM6Ly9nZW1pbmkuZ29vZ2xlLmNvbS9hcHAvMDU5MmNjODMwNzQ4MWQ0OA==".replace(/=/g, '');
+const saltBase64 = "NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg";
 const statusMessage = ref('初始化中...');
 
 // --- 日记数据 ---
