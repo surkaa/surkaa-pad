@@ -209,7 +209,6 @@ async function loadDiaryList() {
     diaryList.value = files
         .map((id: number) => ({
           id,
-          created_at: id,
           nonce: []
         }))
   } catch (e) {
@@ -286,7 +285,7 @@ async function handleSearch() {
       keyword: searchKeyword.value.trim(),
     });
 
-    const matchedEntries = await invoke<any[]>('search_local_index', {
+    const matchedEntries = await invoke<number[]>('search_local_index', {
       searchHash: search_hash,
     });
 
@@ -299,25 +298,25 @@ async function handleSearch() {
     statusMessage.value = `找到 ${matchedEntries.length} 条，正在下载解密...`;
     const decryptedResults = [] as SearchResult[];
 
-    for (const entry of matchedEntries) {
-      const objectKey = `${entry.id}.dat`;
+    for (const entryId of matchedEntries) {
+      const objectKey = `${entryId}.dat`;
 
       // 下载
       const fullEncryptedData = await downloadFile(objectKey);
 
       // 解密
       const ivLength = 12;
-      const ciphertextWithTag = fullEncryptedData.slice(ivLength);
+      const nonceBytes = fullEncryptedData.slice(0, ivLength);
+      const ciphertext = fullEncryptedData.slice(ivLength);
 
       const plaintext = await invoke<string>('decrypt_data', {
         dek: dek.value,
-        ciphertext: ciphertextWithTag,
-        nonceBytes: entry.nonce,
+        ciphertext,
+        nonceBytes,
       });
 
       decryptedResults.push({
-        id: entry.id,
-        created_at: entry.created_at,
+        id: entryId,
         content: plaintext,
       });
     }
@@ -406,7 +405,7 @@ async function handleEntryClick(entry: DiaryEntry) {
 
         <div class="diary-list">
           <div v-for="item in diaryList" :key="item.id" class="diary-item" @click="handleEntryClick(item)">
-            <span class="date">{{ new Date(item.created_at).toLocaleString() }}</span>
+            <span class="date">{{ new Date(item.id).toLocaleString() }}</span>
             <span class="id-preview">ID: {{ item.id }}</span>
           </div>
           <p v-if="diaryList.length === 0" style="color:#999">暂无本地记录</p>
@@ -421,7 +420,7 @@ async function handleEntryClick(entry: DiaryEntry) {
 
         <div v-if="searchResults.length > 0" class="search-results">
           <div v-for="result in searchResults" :key="result.id" class="result-card">
-            <small>{{ result.created_at }}</small>
+            <small>{{ new Date(result.id).toLocaleString() }}</small>
             <p style="white-space: pre-wrap;">{{ result.content }}</p>
           </div>
         </div>

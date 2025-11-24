@@ -31,19 +31,11 @@ const KEY_LEN: usize = 32;
 // 结构体定义
 // ---------------------------------------------------------
 
-#[derive(Debug, Serialize)]
-pub struct SearchResult {
-    id: i64,
-    nonce: Vec<u8>,
-    created_at: i64,
-}
-
 // 新增：日记列表项结构体
 #[derive(Debug, Serialize)]
 pub struct DiaryMeta {
     id: i64,
     nonce: Vec<u8>,
-    created_at: i64,
 }
 
 pub struct DbConnection(pub Mutex<Connection>);
@@ -176,8 +168,6 @@ fn init_db(app_handle: &tauri::AppHandle) -> SqlResult<Connection> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS index_hashes (
         id          INTEGER NOT NULL,
-        nonce       BLOB    NOT NULL,
-        created_at  INTEGER NOT NULL,
         search_hash BLOB    NOT NULL,
         PRIMARY KEY (id, search_hash)
     )",
@@ -191,15 +181,13 @@ fn init_db(app_handle: &tauri::AppHandle) -> SqlResult<Connection> {
 fn save_local_index(
     db_state: State<'_, DbConnection>,
     id: i64,
-    nonce: Vec<u8>,
-    created_at: i64,
     search_hash: Vec<u8>,
 ) -> Result<(), String> {
     let conn = db_state.0.lock().map_err(|e| format!("锁失败: {}", e))?;
 
     conn.execute(
-        "INSERT INTO index_hashes (id, nonce, created_at, search_hash) VALUES (?1, ?2, ?3, ?4)",
-        (id, nonce, created_at, search_hash),
+        "INSERT INTO index_hashes (id, search_hash) VALUES (?1, ?2)",
+        (id, search_hash),
     )
     .map_err(|e| format!("写入失败: {}", e))?;
 
@@ -210,56 +198,22 @@ fn save_local_index(
 fn search_local_index(
     db_state: State<'_, DbConnection>,
     search_hash: Vec<u8>,
-) -> Result<Vec<SearchResult>, String> {
+) -> Result<Vec<i64>, String> {
     let conn = db_state.0.lock().map_err(|e| format!("锁失败: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id, nonce, created_at FROM index_hashes WHERE search_hash = ?1")
+        .prepare("SELECT id FROM index_hashes WHERE search_hash = ?1")
         .map_err(|e| format!("准备失败: {}", e))?;
 
     let results_iter = stmt
         .query_map([search_hash], |row| {
-            Ok(SearchResult {
-                id: row.get(0)?,
-                nonce: row.get(1)?,
-                created_at: row.get(2)?,
-            })
+            Ok(row.get(0)?)
         })
         .map_err(|e| format!("执行失败: {}", e))?;
 
     let mut results = Vec::new();
     for result in results_iter {
         results.push(result.map_err(|e| format!("处理结果失败: {}", e))?);
-    }
-
-    Ok(results)
-}
-
-// 获取所有日记列表 (用于手机端展示)
-#[tauri::command]
-fn get_all_entries(db_state: State<'_, DbConnection>) -> Result<Vec<DiaryMeta>, String> {
-    let conn = db_state.0.lock().map_err(|e| format!("锁失败: {}", e))?;
-
-    // 使用 DISTINCT 因为一个日记可能有多个关键词索引，我们只需要列出日记本身
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, created_at, nonce FROM index_hashes GROUP BY id ORDER BY created_at DESC",
-        )
-        .map_err(|e| format!("准备失败: {}", e))?;
-
-    let results_iter = stmt
-        .query_map([], |row| {
-            Ok(DiaryMeta {
-                id: row.get(0)?,
-                created_at: row.get(1)?,
-                nonce: row.get(2)?,
-            })
-        })
-        .map_err(|e| format!("执行失败: {}", e))?;
-
-    let mut results = Vec::new();
-    for result in results_iter {
-        results.push(result.map_err(|e| format!("处理失败: {}", e))?);
     }
 
     Ok(results)
@@ -285,7 +239,6 @@ pub fn run() {
             search_local_index,
             encrypt_config,
             decrypt_config,
-            get_all_entries
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
