@@ -44,3 +44,11 @@ export type EncryptData = {
     ciphertext: number[];
     enc_hash: number[];
 }
+
+export interface OSSConfig {
+    accessKeyId: string;
+    accessKeySecret: string;
+    region: string;
+    endpoint: string;
+    bucket: string;
+}
