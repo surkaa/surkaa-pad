@@ -1,4 +1,4 @@
-//@ts-ignore
+//@ts-ignore https://help.aliyun.com/zh/oss/developer-reference/node-js-1
 import OSS from "ali-oss";
 
 let client: InstanceType<typeof OSS> | null = null;
@@ -92,6 +92,51 @@ export async function downloadFile(objectKey: string): Promise<number[]> {
         return numberArray;
     } catch (error) {
         throw new Error(`文件下载失败 (${objectKey}): ${error}`);
+    }
+}
+
+/**
+ * 下载文件的文件头 前四个字节是文件头长度 确定长度后再下载指定长度的文件头
+ */
+export async function downloadFileHead(objectKey: string): Promise<number[]> {
+    if (!client) throw new Error("OSS 未初始化");
+    try {
+        // 下载文件的前 4 个字节
+        const result = await client.get(objectKey, {
+            responseType: 'arraybuffer',
+            headers: {
+                'Range': 'bytes=0-3'
+            }
+        });
+
+        if (!result.content) {
+            throw new Error("下载的文件头内容为空");
+        }
+        // 计算文件头长度
+        const arrayBuffer = result.content as ArrayBuffer;
+        const dataView = new DataView(arrayBuffer);
+        const headerLength = dataView.getUint32(0, false); // 假设是大端序
+
+        // 下载完整的文件头
+        const fullHeaderResult = await client.get(objectKey, {
+            responseType: 'arraybuffer',
+            headers: {
+                'Range': `bytes=0-${headerLength - 1}`
+            }
+        });
+
+        if (!fullHeaderResult.content) {
+            throw new Error("下载的完整文件头内容为空");
+        }
+
+        const fullHeaderArrayBuffer = fullHeaderResult.content as ArrayBuffer;
+        const fullHeaderUint8Array = new Uint8Array(fullHeaderArrayBuffer);
+        const numberArray = Array.from(fullHeaderUint8Array);
+
+        console.log(`完整文件头下载成功: ${objectKey}, 文件头长度: ${numberArray.length} 字节`);
+        return numberArray;
+    } catch (error) {
+        throw new Error(`完整文件头下载失败 (${objectKey}): ${error}`);
     }
 }
 
