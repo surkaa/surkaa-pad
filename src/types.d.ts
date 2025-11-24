@@ -23,3 +23,13 @@ export type BatchIndexEntry = {
     search_hash: number[];
     count: number;
 }
+
+/**
+ * 日记文件头结构
+ */
+export interface DiaryFileHeader {
+    totalLength: number;
+    algorithm: string;
+    nonce: number[]; // IV (12 字节)
+    encHash: number[]; // 加密内容哈希 (32 字节)
+}
