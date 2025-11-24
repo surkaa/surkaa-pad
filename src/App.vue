@@ -3,7 +3,7 @@ import {onMounted, ref} from "vue";
 import {invoke} from "@tauri-apps/api/core";
 import {Store} from "@tauri-apps/plugin-store";
 import {downloadFile, initOSS, listFiles, uploadFile} from "./utils/alioss.ts";
-import {DiaryEntry, SearchResult} from "./types";
+import {BatchIndexEntry, DiaryEntry, KeywordToken, PageSearchResult, SearchIndexResult} from "./types";
 
 // --- 常量 ---
 const CONFIG_FILENAME = "settings.json";
@@ -35,9 +35,8 @@ const statusMessage = ref('初始化中...');
 const diaryList = ref<DiaryEntry[]>([]); // 日记列表
 const currentEntryId = ref<number | null>(null);   // 当前编辑的 ID (空代表新建)
 const currentDiaryContent = ref('');
-const keywordsInput = ref('');
 const searchKeyword = ref('');
-const searchResults = ref<SearchResult[]>([]);
+const searchResults = ref<PageSearchResult[]>([]);
 
 // ==========================================
 // 生命周期与初始化
@@ -219,7 +218,6 @@ async function loadDiaryList() {
 function openNewEntry() {
   currentEntryId.value = null;
   currentDiaryContent.value = '';
-  keywordsInput.value = '';
   viewMode.value = 'editor';
   statusMessage.value = '新建日记模式';
 }
@@ -229,8 +227,9 @@ async function handleSaveDiary() {
   statusMessage.value = '正在加密...';
 
   const id = currentEntryId.value || Date.now();
-  const createdAt = Date.now();
-  const keywords = keywordsInput.value.split(',').map(k => k.trim()).filter(k => k.length > 0);
+  const keywords = await invoke<KeywordToken[]>('tokenize_and_count', {
+    plaintext: currentDiaryContent.value
+  });
 
   try {
     const [ciphertext, iv] = await invoke<[number[], number[]]>('encrypt_data', {
@@ -239,18 +238,23 @@ async function handleSaveDiary() {
     });
     const fullEncryptedData = [...iv, ...ciphertext];
 
+    const batchIndexes = [] as BatchIndexEntry[];
+
     for (const keyword of keywords) {
       const search_hash = await invoke<number[]>('generate_search_hash', {
         dek: dek.value,
-        keyword,
+        keyword: keyword.word,
       });
-      await invoke('save_local_index', {
+      batchIndexes.push({
         id,
-        nonce: iv,
-        createdAt: createdAt,
-        searchHash: search_hash,
+        search_hash: search_hash,
+        count: keyword.count,
       });
     }
+
+    await invoke('save_keyword_index_batch', {
+      entries: batchIndexes,
+    });
 
     // --- 修改点：使用前端上传 ---
     statusMessage.value = '正在上传到 OSS...';
@@ -263,7 +267,6 @@ async function handleSaveDiary() {
     statusMessage.value = "保存成功！";
     currentEntryId.value = null;
     currentDiaryContent.value = '';
-    keywordsInput.value = '';
 
     await loadDiaryList();
     viewMode.value = 'list';
@@ -285,7 +288,7 @@ async function handleSearch() {
       keyword: searchKeyword.value.trim(),
     });
 
-    const matchedEntries = await invoke<number[]>('search_local_index', {
+    const matchedEntries = await invoke<SearchIndexResult[]>('search_local_index', {
       searchHash: search_hash,
     });
 
@@ -296,10 +299,10 @@ async function handleSearch() {
     }
 
     statusMessage.value = `找到 ${matchedEntries.length} 条，正在下载解密...`;
-    const decryptedResults = [] as SearchResult[];
+    const decryptedResults = [] as PageSearchResult[];
 
-    for (const entryId of matchedEntries) {
-      const objectKey = `${entryId}.dat`;
+    for (const index of matchedEntries) {
+      const objectKey = `${index.id}.dat`;
 
       // 下载
       const fullEncryptedData = await downloadFile(objectKey);
@@ -316,7 +319,7 @@ async function handleSearch() {
       });
 
       decryptedResults.push({
-        id: entryId,
+        id: index.id,
         content: plaintext,
       });
     }
@@ -338,7 +341,6 @@ async function handleEntryClick(entry: DiaryEntry) {
 
   currentEntryId.value = entry.id;
   currentDiaryContent.value = '加载中...';
-  keywordsInput.value = '';
 
   try {
     const objectKey = `${entry.id}.dat`;
@@ -428,7 +430,6 @@ async function handleEntryClick(entry: DiaryEntry) {
         <hr/>
 
         <h3>{{ currentEntryId ? '编辑/查看' : '新建日记' }}</h3>
-        <input v-model="keywordsInput" placeholder="关键词 (逗号分隔)"/>
         <textarea v-model="currentDiaryContent" rows="12" placeholder="写点什么..."></textarea>
         <button @click="handleSaveDiary" class="primary-btn">加密上传</button>
 

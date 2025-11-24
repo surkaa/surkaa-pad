@@ -19,7 +19,7 @@ use sha2::{OidSha256, Sha256VarCore};
 // HMAC 使用的哈希算法
 
 use rusqlite::{params, Connection, Result as SqlResult};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use tauri::{Manager, State};
 use jieba_rs::Jieba;
 
@@ -32,28 +32,33 @@ const KEY_LEN: usize = 32;
 // 结构体定义
 // ---------------------------------------------------------
 
-// 新增：日记列表项结构体
+pub struct DbConnection(pub Mutex<Connection>);
+
+// 返回给前端的结果
 #[derive(Debug, Serialize)]
 pub struct DiaryMeta {
     id: i64,
     nonce: Vec<u8>,
 }
 
-pub struct DbConnection(pub Mutex<Connection>);
-
-// 返回给前端的分词结果
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Serialize)]
 pub struct KeywordToken {
     pub word: String,
-    pub count: i32,
+    pub count: i64,
 }
 
-// 前端批量传给 Rust 保存的数据结构
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Serialize)]
+pub struct SearchIndexResult {
+    pub id: i64,
+    pub count: i64,
+}
+
+// 前端批量传入的索引条目
+#[derive(Debug, Deserialize)]
 pub struct BatchIndexEntry {
     pub id: i64,
     pub search_hash: Vec<u8>,
-    pub count: i32,
+    pub count: i64,
 }
 
 // ---------------------------------------------------------
@@ -185,7 +190,7 @@ fn init_db(app_handle: &tauri::AppHandle) -> SqlResult<Connection> {
         "CREATE TABLE IF NOT EXISTS index_hashes (
         id          INTEGER NOT NULL,
         search_hash BLOB    NOT NULL,
-        count INTEGER NOT NULL,
+        count       INTEGER NOT NULL,
         PRIMARY KEY (id, search_hash)
     )",
         (),
@@ -223,16 +228,18 @@ fn save_keyword_index_batch(
 fn search_local_index(
     db_state: State<'_, DbConnection>,
     search_hash: Vec<u8>,
-) -> Result<Vec<i64>, String> {
+) -> Result<Vec<SearchIndexResult>, String> {
     let conn = db_state.0.lock().map_err(|e| format!("锁失败: {}", e))?;
 
     let mut stmt = conn
-        .prepare("SELECT id FROM index_hashes WHERE search_hash = ?1")
+        .prepare("SELECT id, count FROM index_hashes WHERE search_hash = ?1 ORDER BY count DESC")
         .map_err(|e| format!("准备失败: {}", e))?;
 
     let results_iter = stmt
-        .query_map([search_hash], |row| {
-            Ok(row.get(0)?)
+        .query_map(params![search_hash], |row| {
+            let id: i64 = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            Ok(SearchIndexResult { id, count})
         })
         .map_err(|e| format!("执行失败: {}", e))?;
 
@@ -254,7 +261,7 @@ fn tokenize_and_count(plaintext: String) -> Result<Vec<KeywordToken>, String> {
     let tokens = jieba.cut_for_search(&plaintext, true);
 
     // 3. 词频统计
-    let mut word_counts: HashMap<String, i32> = HashMap::new();
+    let mut word_counts: HashMap<String, i64> = HashMap::new();
 
     for token in tokens {
         let word = token.to_lowercase();
