@@ -229,7 +229,7 @@ async function handleEntryClick(entry: DiaryEntry) {
 </template>
 
 <style scoped>
-/* 样式与 App.vue 保持一致 */
+/* TODO 优化样式管理并重构页面布局(现在的有点丑了), 方便未来引入暗色模式 */
 .app-panel {
   display: flex;
   flex-direction: column;
