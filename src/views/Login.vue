@@ -51,7 +51,7 @@ async function unlock() {
     <div v-if="!store.hasSavedConfig">
       <h3>首次配置</h3>
       <input v-model="accessKeyId" placeholder="AccessKey ID" />
-      <input v-model="aksecret" type="password" placeholder="AccessKey Secret" />
+      <input v-model="accessKeySecret" type="password" placeholder="AccessKey Secret" />
       <input v-model="region" placeholder="Region (e.g. cn-guangzhou)" />
       <input v-model="endpoint" placeholder="Endpoint" />
       <input v-model="bucket" placeholder="Bucket Name" />
