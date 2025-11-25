@@ -23,9 +23,9 @@ export const useAppStore = defineStore('app', () => {
     const ossConfig = ref<OSSConfig>({    // OSS 配置，用于初始化 alioss
         accessKeyId: '',
         accessKeySecret: '',
-        region: 'cn-guangzhou',
-        endpoint: 'oss-cn-guangzhou.aliyuncs.com',
-        bucket: 'surkaa'
+        region: '',
+        endpoint: '',
+        bucket: ''
     });
 
     // --- 业务数据 ---

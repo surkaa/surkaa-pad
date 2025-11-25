@@ -28,7 +28,7 @@ async function setupAndLogin() {
 
   try {
     await store.handleFirstSetup(masterPassword.value, config);
-    router.push({ name: 'Home' });
+    await router.push({name: 'Home'});
   } catch (e) {
     // 错误已在 store 中处理
   }
@@ -39,7 +39,7 @@ async function unlock() {
   if (!masterPassword.value) return;
   try {
     await store.handleUnlock(masterPassword.value);
-    router.push({ name: 'Home' });
+    await router.push({name: 'Home'});
   } catch (e) {
     // 错误已在 store 中处理
   }
