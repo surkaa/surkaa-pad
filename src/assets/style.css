@@ -1,120 +1,76 @@
-/* --- 基础变量定义 --- */
 :root {
-    --color-bg: #FAF8F5; /* 暖米白色 */
-    --color-text: #3D352F; /* 深棕墨色 */
-    --color-accent: #A88C7D; /* 陶土红棕色 */
-    --color-line: #E0D8D0; /* 极浅米灰色 */
-    --color-error: #C25E5E; /* 柔和红色 */
+    /* 颜色定义 */
+    --color-paper-light: #FBF9F6;  /* 主背景色 */
+    --color-wood-tone: #C4A484;    /* 辅助色/边框 */
+    --color-ink-dark: #333333;     /* 文字色 */
+    --color-highlight: #A2C498;    /* 高亮/选中 */
+    --color-line-light: #E0E0E0;   /* 分隔线 */
+    --color-error: #D9534F;        /* 错误提示 */
 
-    --font-base: "serif"; /* 衬线体，实际项目中可替换为特定字体 */
-    --font-mono: "monospace"; /* 等宽字体 */
-    --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.05); /* 柔和投影 */
-    --radius-base: 8px; /* 基础圆角 */
+    /* 字体定义 */
+    --font-serif: "LXGW WenKai", "Noto Serif SC", serif;
+    --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+    /* 尺寸与圆角 */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 16px;
+
+    /* 阴影 */
+    --shadow-subtle: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
-/* --- 全局样式 --- */
-body {
-    background-color: var(--color-bg);
-    color: var(--color-text);
-    font-family: var(--font-base), serif;
+html, body {
+    height: 100%;
+    width: 100%;
     margin: 0;
     padding: 0;
 }
 
-/* --- 基础组件：按钮 (Button) --- */
-.btn-primary {
-    background-color: var(--color-accent);
-    color: var(--color-bg);
-    border: none;
+body {
+    background-color: var(--color-paper-light);
+    color: var(--color-ink-dark);
+    font-family: var(--font-serif), serif;
+    line-height: 1.6;
+}
+
+/* 核心容器 - 居中卡片 */
+.form-box, .main-layout {
+    box-shadow: var(--shadow-subtle);
+    background-color: #FFFFFF; /* 略微偏白的纸张 */
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-line-light);
+}
+
+/* 按钮样式 */
+.btn {
     padding: 10px 20px;
-    border-radius: var(--radius-base);
+    border: none;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: background-color 0.2s;
+    font-family: var(--font-serif), serif;
+    transition: background-color 0.3s, transform 0.1s;
+}
+
+.btn-primary {
+    background-color: var(--color-wood-tone);
+    color: #FFFFFF;
 }
 
 .btn-primary:hover {
-    background-color: #927568; /* 略深色 */
+    background-color: #A48464; /* 深一点的木色 */
 }
 
-.btn-secondary {
-    background: none;
-    color: var(--color-accent);
-    border: 1px solid var(--color-accent);
-    padding: 10px 20px;
-    border-radius: var(--radius-base);
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.btn-secondary:hover {
-    background-color: var(--color-accent);
-    color: var(--color-bg);
-}
-
-/* --- 基础组件：输入框 (Input) --- */
+/* 输入框样式 */
 .input-field {
-    border: 1px solid var(--color-line);
-    background-color: var(--color-bg);
+    border: 1px solid var(--color-line-light);
+    border-radius: var(--radius-sm);
     padding: 10px;
-    border-radius: var(--radius-base);
-    font-family: var(--font-mono), serif; /* 强调技术配置 */
-    color: var(--color-text);
+    transition: border-color 0.3s;
+    background-color: #FFFFF8; /* 略微发黄的输入框 */
 }
 
-.input-sensitive {
-    /* 密码和密钥输入框的专用样式，例如更紧凑 */
-    font-family: var(--font-mono), serif;
-}
-
-/* --- 搜索组件：关键词 Token --- */
-.search-token {
-    display: inline-flex;
-    align-items: center;
-    background-color: #F0EEEB; /* 略浅于背景 */
-    border: 1px solid var(--color-line);
-    padding: 4px 8px;
-    margin-right: 5px;
-    border-radius: 12px; /* 更圆润 */
-    font-size: 0.9em;
-}
-
-.search-token-delete {
-    margin-left: 5px;
-    cursor: pointer;
-    color: var(--color-accent);
-}
-
-/* --- 列表页：时间轴 --- */
-.timeline-container {
-    background-color: #FDFCFB; /* 比背景略白，强调层次 */
-    border-right: 1px solid var(--color-line);
-}
-
-.timeline-entry {
-    padding: 15px;
-    cursor: pointer;
-    transition: background-color 0.15s, color 0.15s;
-    /* 仅显示时间，故无需复杂的卡片样式 */
-}
-
-.timeline-entry:hover {
-    background-color: #F5F0EB;
-}
-
-.timeline-entry.active {
-    background-color: rgba(var(--color-accent), 0.1); /* 浅色高亮 */
-    color: var(--color-accent);
-}
-
-/* --- 编辑器：写作区 --- */
-.editor-main {
-    padding: 50px 80px; /* 大量留白，营造信纸感 */
-    line-height: 1.8;
-    box-shadow: var(--shadow-soft);
-    background-color: #FFFFFF; /* 写作区使用纯白纸张 */
-}
-
-.editor-word-count {
-    font-size: 0.8em;
-    color: var(--color-line); /* 低调 */
+.input-field:focus {
+    border-color: var(--color-highlight);
+    outline: none;
 }

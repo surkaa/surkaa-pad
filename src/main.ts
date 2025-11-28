@@ -1,5 +1,8 @@
-import { createApp } from "vue";
-import App from "./App.vue";
+import {createApp} from "vue";
+import {createPinia} from "pinia";
+import Unlock from "./views/Unlock.vue";
 import '/src/assets/style.css';
 
-createApp(App).mount("#app");
+createApp(Unlock)
+    .use(createPinia())
+    .mount("#app");

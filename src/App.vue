@@ -5,12 +5,7 @@ import {Store} from "@tauri-apps/plugin-store";
 import {downloadFile, downloadFileHead, initOSS, listFiles, uploadDiaryFile} from "./utils/alioss.ts";
 import {BatchIndexEntry, DiaryEntry, EncryptData, KeywordToken, PageSearchResult, SearchIndexResult} from "./types";
 
-// --- 常量 ---
-const CONFIG_FILENAME = "settings.json";
-const CONFIG_KEY = "encrypted_oss_config";
-
 // --- 存储实例 (非响应式，初始化为 null) ---
-let store: Store | null = null;
 let isLoadingDerivedKey = false;
 
 // --- 状态变量 ---
