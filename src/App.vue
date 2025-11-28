@@ -20,8 +20,8 @@ const viewMode = ref<'list' | 'editor'>('list'); // 当前视图模式
 
 // --- 表单数据 ---
 const masterPassword = ref('');
-const akid = ref('');
-const aksecret = ref('');
+const accessKeyid = ref('');
+const accessKeysecret = ref('');
 const region = ref('cn-guangzhou');
 const endpoint = ref('oss-cn-guangzhou.aliyuncs.com');
 const bucket = ref('surkaa');
@@ -92,8 +92,8 @@ async function handleFirstSetup() {
     // --- 修改点：前端初始化 OSS ---
     // ali-oss 的 region 格式通常是 'oss-cn-guangzhou'
     await initOSS({
-      accessKeyId: akid.value,
-      accessKeySecret: aksecret.value,
+      accessKeyId: accessKeyid.value,
+      accessKeySecret: accessKeysecret.value,
       region: region.value,
       endpoint: endpoint.value,
       bucket: bucket.value,
@@ -101,8 +101,8 @@ async function handleFirstSetup() {
     // ---------------------------
 
     const configObj = {
-      akid: akid.value,
-      aksecret: aksecret.value,
+      accessKeyid: accessKeyid.value,
+      accessKeysecret: accessKeysecret.value,
       region: region.value,
       endpoint: endpoint.value,
       bucket: bucket.value
@@ -161,21 +161,13 @@ async function handleUnlock() {
 
     const config = JSON.parse(configJson);
 
-    akid.value = config.akid;
-    aksecret.value = config.aksecret;
+    accessKeyid.value = config.accessKeyid;
+    accessKeysecret.value = config.accessKeysecret;
     region.value = config.region;
     endpoint.value = config.endpoint;
     bucket.value = config.bucket;
 
-    // --- 修改点：前端初始化 OSS ---
-    await initOSS({
-      accessKeyId: config.akid,
-      accessKeySecret: config.aksecret,
-      region: config.region,
-      endpoint: config.endpoint,
-      bucket: config.bucket,
-    });
-    // ---------------------------
+    await initOSS(config);
 
     dek.value = derivedKey;
     isLoggedIn.value = true;
@@ -381,8 +373,8 @@ async function handleEntryClick(entry: DiaryEntry) {
     <div v-if="!isLoggedIn" class="login-panel">
       <div v-if="!hasSavedConfig">
         <h3>首次配置</h3>
-        <input v-model="akid" placeholder="AccessKey ID"/>
-        <input v-model="aksecret" type="password" placeholder="AccessKey Secret"/>
+        <input v-model="accessKeyid" placeholder="AccessKey ID"/>
+        <input v-model="accessKeysecret" type="password" placeholder="AccessKey Secret"/>
         <input v-model="region" placeholder="Region (e.g. cn-guangzhou)"/>
         <input v-model="endpoint" placeholder="Endpoint"/>
         <input v-model="bucket" placeholder="Bucket Name"/>
