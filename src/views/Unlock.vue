@@ -1,6 +1,8 @@
 <template>
   <main id="unlock">
     <h1>SurKaa-Pad</h1>
+    <!-- 分界线 -->
+    <hr>
     <section v-if="pipeline === 'wait-load-config'" id="wait-load-config">
       正在加载配置...
     </section>

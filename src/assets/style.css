@@ -109,3 +109,11 @@ body {
     justify-content: center;
     align-items: center;
 }
+
+/*分界线*/
+hr {
+    width: 100%;
+    border: none;
+    border-top: 1px solid var(--pad-border-color-200);
+    margin: 1rem 0;
+}
