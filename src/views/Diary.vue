@@ -3,7 +3,9 @@
 </script>
 
 <template>
-
+  <main id="diary">
+    diary
+  </main>
 </template>
 
 <style scoped>
