@@ -1,28 +1,30 @@
 <script setup lang="ts">
-import {computed, ref} from "vue";
+import {computed, onMounted, ref, watch} from "vue";
 import {DiaryEntry} from "../types";
+import {useAppStore} from "../stores/app.ts";
 
+const appStore = useAppStore();
 const searchTerm = ref('');
-const diaries = ref<DiaryEntry[]>([
-  {id: 1696118400000, nonce: []}, // 2023-10-01
-  {id: 1701388800000, nonce: []}, // 2023-12-01
-  {id: 1696204800000, nonce: []}, // 2023-10-02
-  {id: 1704067200000, nonce: []}, // 2024-01-01
-  {id: 1696291200000, nonce: []}, // 2023-10-03
-  {id: 1709280000000, nonce: []}, // 2024-03-01
-  {id: 1696377600000, nonce: []}, // 2023-10-04
-  {id: 1711958400000, nonce: []}, // 2024-04-01
-]);
+const diaries = ref<DiaryEntry[]>([]);
+const matchIds = ref<Set<number>>(new Set());
 
-const filteredDiaries = computed(() => {
-  // 随机选取部分日记条目以模拟筛选效果
-  const termLength = searchTerm.value.length;
-  let result = diaries.value.filter(
-      () => Math.random() < (termLength * 0.1)
-  );
-  // 按时间倒序排列
-  result.sort((a, b) => b.id - a.id);
-  return result;
+const filteredDiaries = computed<DiaryEntry[]>(() => {
+  if (matchIds.value.size == 0) return diaries.value;
+  return diaries.value.filter(diary => matchIds.value.has(diary.id));
+});
+
+function loadRemoteDiaryList() {
+  appStore.loadRemoteDiaryList().then((remoteDiaries) => {
+    diaries.value = remoteDiaries;
+  });
+}
+
+onMounted(() => {
+  loadRemoteDiaryList();
+  watch(searchTerm, async (term) => {
+    console.log(`Searching for term: ${term}`);
+    matchIds.value = await appStore.searchWithKeyword(term);
+  })
 });
 </script>
 

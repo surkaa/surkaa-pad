@@ -1,9 +1,9 @@
 // --- 常量 ---
 import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
-import {EncryptData, OssConfigType} from "../types";
+import {EncryptData, OssConfigType, SearchIndexResult} from "../types";
 import {invoke} from "@tauri-apps/api/core";
-import {initOSS} from "../utils/alioss.ts";
+import {initOSS, listFiles} from "../utils/alioss.ts";
 import {markRaw, ref} from "vue";
 
 const CONFIG_FILENAME = "settings.json";
@@ -110,10 +110,39 @@ export const useAppStore = defineStore('app', () => {
         dek.value = [];
     }
 
+    async function loadRemoteDiaryList() {
+        const files = (await listFiles())
+            .filter(fn => fn.endsWith('.dat'))
+            .map(fn => Number(fn.replace('.dat', '')));
+        return files.map(id => ({
+            id,
+            nonce: []
+        }));
+    }
+
+    async function searchWithKeyword(searchTerm: string) {
+        // 根据空格分词
+        const keywords = searchTerm.split(' ').filter(k => k.trim() !== '');
+        const matchedIds: Set<number> = new Set();
+        for (const keyword of keywords) {
+            const hash = await invoke<number[]>('generate_search_hash', {
+                dek: dek.value,
+                keyword
+            });
+            const results = await invoke<SearchIndexResult[]>('search_local_index', {
+                searchHash: hash,
+            });
+            results.forEach(m => matchedIds.add(m.id));
+        }
+        return matchedIds;
+    }
+
     return {
         getEncryptedConfig,
         saveConfigAndLogin,
         unlock,
-        resetConfig
+        resetConfig,
+        loadRemoteDiaryList,
+        searchWithKeyword
     }
 })
