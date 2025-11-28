@@ -101,9 +101,19 @@ export const useAppStore = defineStore('app', () => {
         dek.value = derivedKey;
     }
 
+    async function resetConfig() {
+        if (!store.value) {
+            throw new Error('Store 未初始化');
+        }
+        await store.value.delete(CONFIG_KEY);
+        await store.value.save();
+        dek.value = [];
+    }
+
     return {
         getEncryptedConfig,
         saveConfigAndLogin,
-        unlock
+        unlock,
+        resetConfig
     }
 })

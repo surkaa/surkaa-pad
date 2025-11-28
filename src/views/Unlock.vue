@@ -88,7 +88,15 @@ function unlock() {
 }
 
 function confirmReset() {
-
+  // 确认是否重置
+  if (confirm('确定要重置配置吗？这将删除所有本地配置。')) {
+    appStore.resetConfig()
+        .then(() => {
+          pipeline.value = 'config';
+          masterPassword.value = '';
+        })
+        .catch(err => alert(`重置配置失败：${err.message || err}`));
+  }
 }
 
 onMounted(async () => {
