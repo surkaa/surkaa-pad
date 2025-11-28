@@ -1,0 +1,120 @@
+/* --- 基础变量定义 --- */
+:root {
+    --color-bg: #FAF8F5; /* 暖米白色 */
+    --color-text: #3D352F; /* 深棕墨色 */
+    --color-accent: #A88C7D; /* 陶土红棕色 */
+    --color-line: #E0D8D0; /* 极浅米灰色 */
+    --color-error: #C25E5E; /* 柔和红色 */
+
+    --font-base: "serif"; /* 衬线体，实际项目中可替换为特定字体 */
+    --font-mono: "monospace"; /* 等宽字体 */
+    --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.05); /* 柔和投影 */
+    --radius-base: 8px; /* 基础圆角 */
+}
+
+/* --- 全局样式 --- */
+body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-base), serif;
+    margin: 0;
+    padding: 0;
+}
+
+/* --- 基础组件：按钮 (Button) --- */
+.btn-primary {
+    background-color: var(--color-accent);
+    color: var(--color-bg);
+    border: none;
+    padding: 10px 20px;
+    border-radius: var(--radius-base);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+    background-color: #927568; /* 略深色 */
+}
+
+.btn-secondary {
+    background: none;
+    color: var(--color-accent);
+    border: 1px solid var(--color-accent);
+    padding: 10px 20px;
+    border-radius: var(--radius-base);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background-color: var(--color-accent);
+    color: var(--color-bg);
+}
+
+/* --- 基础组件：输入框 (Input) --- */
+.input-field {
+    border: 1px solid var(--color-line);
+    background-color: var(--color-bg);
+    padding: 10px;
+    border-radius: var(--radius-base);
+    font-family: var(--font-mono), serif; /* 强调技术配置 */
+    color: var(--color-text);
+}
+
+.input-sensitive {
+    /* 密码和密钥输入框的专用样式，例如更紧凑 */
+    font-family: var(--font-mono), serif;
+}
+
+/* --- 搜索组件：关键词 Token --- */
+.search-token {
+    display: inline-flex;
+    align-items: center;
+    background-color: #F0EEEB; /* 略浅于背景 */
+    border: 1px solid var(--color-line);
+    padding: 4px 8px;
+    margin-right: 5px;
+    border-radius: 12px; /* 更圆润 */
+    font-size: 0.9em;
+}
+
+.search-token-delete {
+    margin-left: 5px;
+    cursor: pointer;
+    color: var(--color-accent);
+}
+
+/* --- 列表页：时间轴 --- */
+.timeline-container {
+    background-color: #FDFCFB; /* 比背景略白，强调层次 */
+    border-right: 1px solid var(--color-line);
+}
+
+.timeline-entry {
+    padding: 15px;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+    /* 仅显示时间，故无需复杂的卡片样式 */
+}
+
+.timeline-entry:hover {
+    background-color: #F5F0EB;
+}
+
+.timeline-entry.active {
+    background-color: rgba(var(--color-accent), 0.1); /* 浅色高亮 */
+    color: var(--color-accent);
+}
+
+/* --- 编辑器：写作区 --- */
+.editor-main {
+    padding: 50px 80px; /* 大量留白，营造信纸感 */
+    line-height: 1.8;
+    box-shadow: var(--shadow-soft);
+    background-color: #FFFFFF; /* 写作区使用纯白纸张 */
+}
+
+.editor-word-count {
+    font-size: 0.8em;
+    color: var(--color-line); /* 低调 */
+}
