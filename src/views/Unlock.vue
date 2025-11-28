@@ -82,7 +82,7 @@ function unlock() {
   if (loading.value) return;
   loading.value = true;
   appStore.unlock(masterPassword.value)
-      .then(() => router.push({name: 'diary-list'}))
+      .then(() => router.replace({name: 'diary-list'}))
       .catch(err => alert(`解锁失败：${err.message || err}`))
       .finally(() => loading.value = false);
 }
