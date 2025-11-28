@@ -19,7 +19,7 @@ const route = useRoute();
   width: 100%;
   flex: 1;
   overflow: hidden; // 隐藏动画带来的滚动条
-  background-color: var(--template-bg-color-400);
+  background-color: var(--pad-bg-color-400);
 
   .fade-transform-leave-active,
   .fade-transform-enter-active {
@@ -43,12 +43,12 @@ const route = useRoute();
   }
 
   &::-webkit-scrollbar-thumb {
-    background-color: var(--template-bg-color-300);
+    background-color: var(--pad-bg-color-300);
     border-radius: 4px;
   }
 
   &::-webkit-scrollbar-track {
-    background-color: var(--template-bg-color-100);
+    background-color: var(--pad-bg-color-100);
   }
 
   //endregion
