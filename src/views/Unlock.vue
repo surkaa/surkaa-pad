@@ -1,5 +1,6 @@
 <template>
   <main id="unlock">
+    <h1>SurKaa-Pad</h1>
     <section v-if="pipeline === 'wait-load-config'" id="wait-load-config">
       正在加载配置...
     </section>
@@ -40,10 +41,29 @@ onMounted(async () => {
 
 <style scoped lang="scss">
 #unlock {
-  width: 100%;
-  height: 100%;
+  --padding: clamp(16px, 4vw, 48px);
+  width: calc(100% - 2 * var(--padding));
+  height: calc(100% - 2 * var(--padding));
   display: flex;
   justify-content: center;
   align-items: center;
+  flex-direction: column;
+
+  h1 {
+    width: 100%;
+    text-align: left;
+    font-size: 32px;
+    color: var(--pad-text-color-100);
+  }
+
+  section {
+    flex: 1; // 占据剩下的全部高度
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: start;
+    font-size: 24px;
+    color: var(--pad-text-color-200);
+  }
 }
 </style>
