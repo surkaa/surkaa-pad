@@ -8,6 +8,7 @@ import {markRaw, ref} from "vue";
 
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
+const SALE = 'NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg';
 
 export const useAppStore = defineStore('app', () => {
     let store = ref<Store | null>(null);
@@ -28,7 +29,6 @@ export const useAppStore = defineStore('app', () => {
 
     async function saveConfigAndLogin(
         password: string,
-        salt: string,
         ossConfig: OssConfigType,
     ) {
         // 避免store为空
@@ -42,7 +42,7 @@ export const useAppStore = defineStore('app', () => {
         // 获取derivedKey
         const derivedKey = await invoke<number[]>('derive_key', {
             password,
-            salt
+            salt: SALE
         });
 
         // 加密oss配置
@@ -63,8 +63,47 @@ export const useAppStore = defineStore('app', () => {
         dek.value = derivedKey;
     }
 
+    async function unlock(masterPassword: string) {
+        // 避免store为空
+        if (!store.value) {
+            throw new Error('Store 未初始化');
+        }
+
+        // 获取derivedKey
+        const derivedKey = await invoke<number[]>('derive_key', {
+            password: masterPassword,
+            salt: SALE
+        });
+
+        // 获取加密的配置
+        const encryptedConfig = await getEncryptedConfig();
+        if (!encryptedConfig) {
+            throw new Error('未找到加密的配置，请先登录');
+        }
+
+        // 分离nonce和ciphertext
+        const nonceBytes = encryptedConfig.slice(0, 12);
+        const ciphertext = encryptedConfig.slice(12);
+
+        // 解密配置
+        const decryptedConfigJson = await invoke<string>('decrypt_data', {
+            dek: derivedKey,
+            ciphertext,
+            nonceBytes,
+        });
+
+        const ossConfig: OssConfigType = JSON.parse(decryptedConfigJson) as OssConfigType;
+
+        // 初始化OSS客户端
+        await initOSS(ossConfig);
+
+        // 保存dek到状态
+        dek.value = derivedKey;
+    }
+
     return {
         getEncryptedConfig,
-        saveConfigAndLogin
+        saveConfigAndLogin,
+        unlock
     }
 })
