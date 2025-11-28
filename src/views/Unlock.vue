@@ -22,7 +22,9 @@
         <input id="bucket-name" type="text" required placeholder="Bucket" v-model="ossConfig.bucket">
         <input id="endpoint" type="text" required placeholder="Endpoint" v-model="ossConfig.endpoint">
         <input id="region" type="text" required placeholder="Region" v-model="ossConfig.region">
-        <button type="submit">保存并登录</button>
+        <button type="submit" :disabled="loading" :class="{'loading': loading}">
+          {{ loading ? '正在验证并保存...' : '保存并登录' }}
+        </button>
       </form>
     </section>
 
@@ -38,20 +40,31 @@ import {useAppStore} from "../stores/app.ts";
 import {OssConfigType} from "../types";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
-const encryptedConfig = ref<string | null>(null);
+const encryptedConfig = ref<string>('');
 const ossConfig = ref<OssConfigType>({
   accessKeyId: '',
   accessKeySecret: '',
   bucket: '',
   endpoint: '',
-  region: ''
+  region: '',
 });
 const masterPassword = ref<string>('');
+const loading = ref<boolean>(false);
 
 const appStore = useAppStore();
 
 function saveConfigAndLogin() {
+  if (loading.value) return;
+  loading.value = true;
 
+  appStore.saveConfigAndLogin(
+      masterPassword.value,
+      'NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg',
+      ossConfig.value,
+  )
+    .then(() => pipeline.value = 'login')
+    .catch(err => alert(`保存配置失败：${err.message}`))
+    .finally(() => loading.value = false);
 }
 
 onMounted(async () => {
@@ -130,6 +143,16 @@ onMounted(async () => {
 
         &:hover {
           background-color: var(--pad-bg-color-500);
+        }
+
+        // loading时hover无效
+        &.loading:hover {
+          background-color: var(--pad-bg-color-400);
+          cursor: not-allowed;
+        }
+
+        &.loading {
+          opacity: 0.7;
         }
       }
     }
