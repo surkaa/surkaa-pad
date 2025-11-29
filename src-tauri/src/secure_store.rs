@@ -203,13 +203,7 @@ impl SecureDiaryStore {
         let mut manifest = self.get_diary_manifest(id.clone()).await?;
         manifest.attachments.push(attachment);
         manifest.updated_at = Utc::now().timestamp();
-        // 删除旧的 manifest
         let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
-        self.client
-            .delete_object(&manifest_key)
-            .await
-            .map_err(|e| format!("Failed to delete old manifest: {}", e))?;
-        // 序列化
         let manifest_json = serde_json::to_vec(&manifest)
             .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
         // 加密
@@ -232,10 +226,10 @@ impl SecureDiaryStore {
             .upload_object(&attachment_key, encrypted_bytes)
             .await
             .map_err(|e| format!("Failed to upload attachment: {}", e))?;
-        
+
         Ok(())
     }
-    
+
     /// 下载指定日记的指定附件
     pub async fn download_attachment(
         &self,
@@ -258,7 +252,7 @@ impl SecureDiaryStore {
 
         Ok(decrypted_data)
     }
-    
+
     /// 删除指定日记的指定附件
     pub async fn delete_attachment(
         &self,
