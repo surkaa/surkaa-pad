@@ -8,6 +8,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 const MANIFEST_FILE_NAME: &str = "manifest.enc";
+const ATTACHMENT_EXTENSION: &str = ".enc";
 
 pub struct SecureDiaryStore {
     client: Arc<OssClientManager>,
@@ -28,12 +29,10 @@ pub struct DiaryManifest {
 // 单个附件的元数据
 #[derive(Deserialize, Serialize)]
 pub struct AttachmentMeta {
-    pub file_path: String,
+    pub file_name: String,
     pub mime_type: String,
     pub size: u64,
-    pub key: Vec<u8>, // 用于加密该文件的独立 Key
-    pub iv: Vec<u8>,  // 用于加密该文件的独立 IV
-    pub hash: String, // 原始明文内容的哈希，用于校验
+    pub nonce: Vec<u8>, // 用于加密该文件的独立 IV
 }
 
 impl SecureDiaryStore {
@@ -141,7 +140,11 @@ impl SecureDiaryStore {
     }
 
     /// 仅更新日记的文本和元数据，不涉及附件
-    pub async fn update_diary_content_only(&self, id: String, new_content: &str) -> Result<(), String> {
+    pub async fn update_diary_content_only(
+        &self,
+        id: String,
+        new_content: &str,
+    ) -> Result<(), String> {
         // 先获取现有的 manifest
         let mut manifest = self.get_diary_manifest(id.clone()).await?;
 
@@ -172,5 +175,87 @@ impl SecureDiaryStore {
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
         Ok(())
+    }
+
+    /// 添加附件到指定日记
+    pub async fn add_attachment(
+        &self,
+        id: String,
+        attachment_bytes: Vec<u8>,
+        mime_type: String,
+    ) -> Result<(), String> {
+        let (encrypted_bytes, nonce) = self
+            .encryption
+            .encrypt(&attachment_bytes)
+            .await
+            .map_err(|e| format!("Failed to encrypt file key: {}", e))?;
+
+        let file_name = Uuid::new_v4().to_string() + ATTACHMENT_EXTENSION;
+
+        // 创建附件元数据
+        let attachment = AttachmentMeta {
+            file_name: file_name.clone(),
+            mime_type,
+            size: encrypted_bytes.len() as u64,
+            nonce: nonce.clone(),
+        };
+
+        let mut manifest = self.get_diary_manifest(id.clone()).await?;
+        manifest.attachments.push(attachment);
+        manifest.updated_at = Utc::now().timestamp();
+        // 删除旧的 manifest
+        let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
+        self.client
+            .delete_object(&manifest_key)
+            .await
+            .map_err(|e| format!("Failed to delete old manifest: {}", e))?;
+        // 序列化
+        let manifest_json = serde_json::to_vec(&manifest)
+            .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+        // 加密
+        let (ciphertext, manifest_nonce) = self
+            .encryption
+            .encrypt(&manifest_json)
+            .await
+            .map_err(|e| format!("Failed to encrypt manifest: {}", e))?;
+        let mut encrypted_manifest = manifest_nonce;
+        encrypted_manifest.extend_from_slice(&ciphertext);
+        // 上传新的 manifest
+        self.client
+            .upload_object(&manifest_key, encrypted_manifest)
+            .await
+            .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
+
+        // 上传附件
+        let attachment_key = format!("{}/{}", id, file_name);
+        self.client
+            .upload_object(&attachment_key, encrypted_bytes)
+            .await
+            .map_err(|e| format!("Failed to upload attachment: {}", e))?;
+        
+        Ok(())
+    }
+    
+    /// 下载指定日记的指定附件
+    pub async fn download_attachment(
+        &self,
+        id: String,
+        file_name: String,
+        nonce: Vec<u8>,
+    ) -> Result<Vec<u8>, String> {
+        let attachment_key = format!("{}/{}", id, file_name);
+        let encrypted_data = self
+            .client
+            .download_object(&attachment_key)
+            .await
+            .map_err(|e| format!("Failed to download attachment: {}", e))?;
+
+        let decrypted_data = self
+            .encryption
+            .decrypt(&encrypted_data, &nonce)
+            .await
+            .map_err(|e| format!("Failed to decrypt attachment: {}", e))?;
+
+        Ok(decrypted_data)
     }
 }

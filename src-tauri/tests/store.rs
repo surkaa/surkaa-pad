@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod secure_store {
+    use chrono::Utc;
     use std::sync::Arc;
     use surkaa_pad_lib::encryption::EncryptionManager;
     use surkaa_pad_lib::oss_manager::OssClientManager;
     use surkaa_pad_lib::secure_store::SecureDiaryStore;
     use tokio;
-    use chrono::Utc;
 
     const KEY: &str = "";
     const SECRET: &str = "";
@@ -72,7 +72,10 @@ mod secure_store {
             .expect("Failed to get diary manifest");
 
         assert_eq!(diary.id, new_id, "Diary ID does not match");
-        assert_eq!(diary.algorithm, "AES256-GCM_v1", "Diary algorithm does not match");
+        assert_eq!(
+            diary.algorithm, "AES256-GCM_v1",
+            "Diary algorithm does not match"
+        );
         assert_eq!(diary.content, content, "Diary content does not match");
         // 判断创建时间和更新时间是否在当前时间的一分钟内
         let now = Utc::now().timestamp();
@@ -84,7 +87,10 @@ mod secure_store {
             (now - diary.updated_at).abs() < 60,
             "Diary updated_at timestamp is not recent"
         );
-        assert!(diary.attachments.is_empty(), "Diary attachments should be empty");
+        assert!(
+            diary.attachments.is_empty(),
+            "Diary attachments should be empty"
+        );
 
         println!("Diary manifest verified successfully.");
     }
@@ -144,8 +150,69 @@ mod secure_store {
             .await
             .expect("Failed to get diary manifest");
 
-        assert_eq!(diary.content, updated_content, "Diary content was not updated correctly");
+        assert_eq!(
+            diary.content, updated_content,
+            "Diary content was not updated correctly"
+        );
 
         println!("Diary content updated and verified successfully.");
+    }
+
+    #[tokio::test]
+    async fn test_update_diary_attachments() {
+        let store = create_store().await;
+
+        let content = "This is the original diary content.";
+
+        let new_id = store
+            .create_diary(content)
+            .await
+            .expect("Failed to create diary");
+
+        println!("Created new diary with ID: {}", new_id);
+
+        // 更新日记附件
+        let attachment_bytes = b"Sample attachment data".to_vec();
+
+        // 添加附件
+        store
+            .add_attachment(new_id.clone(), attachment_bytes.clone(), "png".to_string())
+            .await
+            .expect("Failed to add attachment");
+
+        print!("Added attachment to diary ID: {}", new_id);
+
+        // 获取更新后的日记内容
+        let diary = store
+            .get_diary_manifest(new_id.clone())
+            .await
+            .expect("Failed to get diary manifest");
+
+        assert_eq!(
+            diary.attachments.len(),
+            1,
+            "Attachment was not added correctly"
+        );
+        let attachment = &diary.attachments[0];
+        assert_eq!(
+            attachment.mime_type, "png",
+            "Attachment file extension mismatch"
+        );
+
+        // 解密并验证附件内容
+        let downloaded_attachment = store
+            .download_attachment(
+                new_id.clone(),
+                attachment.file_name.clone(),
+                attachment.nonce.clone(),
+            )
+            .await
+            .expect("Failed to download attachment");
+
+        assert_eq!(
+            downloaded_attachment, attachment_bytes,
+            "Downloaded attachment content mismatch"
+        );
+        println!("Diary attachment added and verified successfully.");
     }
 }
