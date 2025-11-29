@@ -36,9 +36,11 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 jieba-rs = "0.8.1"
 digest = "0.10.7"
 aliyun-oss-client = "0.13.0-alpha9"
-tokio = "1.48.0"
-thiserror = "2.0.17"
-serde_json = "1.0.145"
+tokio = "1.48.0" # 异步运行时
+thiserror = "2.0.17" # 用于错误处理
+serde_json = "1.0.145" # 用于 JSON 处理
+chrono = "0.4.42" # 用于获取时间戳
+uuid = { version = "1.18.1", features = ["v4"] } # 用于生成唯一标识符
 
 [patch.crates-io]
 aliyun-oss-client = { path = "../vendor/aliyun-oss-client-modified" }

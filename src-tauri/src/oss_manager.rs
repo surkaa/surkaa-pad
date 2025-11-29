@@ -39,6 +39,7 @@ impl OssClientManager {
 
     /// 初始化 OSS 客户端并设置到状态中
     /// 包含 AK/SK 和连接的验证逻辑
+    /// https://oss.console.aliyun.com/overview
     pub async fn initialize(
         &self,
         access_key_id: &str,

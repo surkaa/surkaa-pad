@@ -4037,6 +4037,7 @@ dependencies = [
  "aes-gcm",
  "aliyun-oss-client",
  "argon2",
+ "chrono",
  "digest",
  "hmac",
  "jieba-rs",
@@ -4051,6 +4052,7 @@ dependencies = [
  "tauri-plugin-store",
  "thiserror 2.0.17",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
