@@ -1,36 +1,22 @@
+pub mod encryption;
 pub mod oss_manager;
 
-use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
-    Aes256Gcm, Nonce,
-};
-use argon2::{
-    password_hash::SaltString, Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version,
-};
-use rand::RngCore;
+use aes_gcm::aead::{KeyInit};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Mutex;
 
-use digest::Digest;
 use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
 use hmac::digest::typenum::{UInt, UTerm, B0, B1};
 use hmac::{HmacCore, Mac};
-use sha2::{OidSha256, Sha256, Sha256VarCore};
+use sha2::{OidSha256, Sha256VarCore};
 
+use crate::encryption::EncryptionManager;
 use crate::oss_manager::{OssClientManager, OssError};
 use jieba_rs::Jieba;
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
-
-// 定义常量
-const NONCE_LEN: usize = 12;
-// 定义派生密钥的长度（字节），AES-256 需要 32 字节
-const KEY_LEN: usize = 32;
-const HASH_LEN: usize = 32; // SHA256 哈希长度
-const ALGORITHM_NAME: &str = "AES256-GCM_v1";
-
 // ---------------------------------------------------------
 // 结构体定义
 // ---------------------------------------------------------
@@ -82,90 +68,18 @@ fn map_oss_err<T>(res: Result<T, OssError>) -> Result<T, String> {
 }
 
 #[tauri::command]
-async fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
-    // 1. 定义 Argon2 参数 (Params 只需要在这里创建一次)
-    let memory_cost_kib = 1024 * 256;
+async fn derive_key(
+    encryption: State<'_, Mutex<EncryptionManager>>,
+    password: &str,
+    salt: &str,
+) -> Result<(), String> {
+    let mut encryption = encryption
+        .lock()
+        .map_err(|e| format!("无法锁定 EncryptionManager: {}", e))?;
 
-    let params = ParamsBuilder::new()
-        .t_cost(2)
-        .m_cost(memory_cost_kib)
-        .p_cost(4)
-        .output_len(KEY_LEN)
-        .build()
-        .map_err(|e| format!("Argon2 参数错误: {}", e))?;
+    encryption.initial(password, salt).expect("无法派生密钥");
 
-    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-
-    let salt = SaltString::from_b64(salt)
-        .map_err(|e| format!("Salt 字符串无效或不是 Base64 编码: {}", e))?;
-
-    let hash = argon2
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| format!("密钥派生失败: {}", e))?;
-
-    let dek = hash.hash.ok_or_else(|| "无法提取哈希值".to_string())?;
-
-    if dek.as_bytes().len() != KEY_LEN {
-        return Err(format!(
-            "派生密钥长度错误: 期望 {}, 得到 {}",
-            KEY_LEN,
-            dek.as_bytes().len()
-        ));
-    }
-
-    Ok(dek.as_bytes().to_vec())
-}
-
-#[tauri::command]
-fn encrypt_data(dek: Vec<u8>, plaintext: String) -> Result<EncryptData, String> {
-    let cipher = Aes256Gcm::new_from_slice(&dek).map_err(|_| "DEK 长度错误".to_string())?;
-
-    let mut nonce_bytes = [0u8; NONCE_LEN];
-    OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
-
-    let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_bytes())
-        .map_err(|e| format!("加密失败: {:?}", e))?;
-
-    // --- 2. 计算加密内容哈希 (enc_hash) ---
-    let mut hasher = Sha256::new();
-    // 关键：哈希 Nonce + Ciphertext
-    hasher.update(&nonce_bytes);
-    hasher.update(&ciphertext);
-    let enc_hash = hasher.finalize().to_vec();
-
-    // --- 3. 计算文件头总长度 (total_length) ---
-    // 2 (Length) + 1 (AlgoLen) + N (AlgoName) + 12 (IV) + 32 (Hash)
-    let algo_name_len = ALGORITHM_NAME.len();
-    let total_length: u16 = (2 + 1 + algo_name_len + NONCE_LEN + HASH_LEN)
-        .try_into()
-        .map_err(|_| "文件头长度超出了 u16 限制".to_string())?;
-
-    // --- 4. 返回所有数据 ---
-    Ok(EncryptData {
-        total_length,
-        algorithm: ALGORITHM_NAME.to_string(),
-        nonce: nonce_bytes.to_vec(),
-        ciphertext,
-        enc_hash,
-    })
-}
-
-#[tauri::command]
-fn decrypt_data(dek: Vec<u8>, ciphertext: Vec<u8>, nonce_bytes: Vec<u8>) -> Result<String, String> {
-    let cipher = Aes256Gcm::new_from_slice(&dek).map_err(|_| "DEK 长度错误".to_string())?;
-
-    if nonce_bytes.len() != NONCE_LEN {
-        return Err("IV 长度不正确".to_string());
-    }
-    let nonce = Nonce::from_slice(&nonce_bytes);
-
-    let decrypted_bytes = cipher
-        .decrypt(nonce, ciphertext.as_ref())
-        .map_err(|e| format!("解密失败: {:?}", e))?;
-
-    String::from_utf8(decrypted_bytes).map_err(|_| "不是有效的 UTF-8".to_string())
+    Ok(())
 }
 
 #[tauri::command]
@@ -215,16 +129,16 @@ fn save_keyword_index_batch(
     let mut conn = db_state.0.lock().unwrap();
 
     // 使用事务以提高写入性能
-    let tx = conn.transaction().map_err(|e| format!("启动事务失败: {}", e))?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("启动事务失败: {}", e))?;
 
     // 使用 INSERT OR IGNORE 来处理复合主键冲突，实现避免重复数据（去重）
     let sql = "INSERT OR IGNORE INTO index_hashes (id, search_hash, count) VALUES (?, ?, ?)";
     for entry in entries {
         // 批量执行插入
-        tx.execute(
-            sql,
-            params![entry.id, entry.search_hash, entry.count],
-        ).map_err(|e| format!("插入索引失败: id={} error={}", entry.id, e))?;
+        tx.execute(sql, params![entry.id, entry.search_hash, entry.count])
+            .map_err(|e| format!("插入索引失败: id={} error={}", entry.id, e))?;
     }
 
     tx.commit().map_err(|e| format!("提交事务失败: {}", e))?;
@@ -247,7 +161,7 @@ fn search_local_index(
         .query_map(params![search_hash], |row| {
             let id: i64 = row.get(0)?;
             let count: i64 = row.get(1)?;
-            Ok(SearchIndexResult { id, count})
+            Ok(SearchIndexResult { id, count })
         })
         .map_err(|e| format!("执行失败: {}", e))?;
 
@@ -274,7 +188,11 @@ fn tokenize_and_count(plaintext: String) -> Result<Vec<KeywordToken>, String> {
     for token in tokens {
         let word = token.to_lowercase();
         // 过滤掉纯数字、单个字符和空白/标点符号，避免无效索引
-        if word.chars().all(|c| c.is_ascii_whitespace() || c.is_ascii_punctuation() || c.is_digit(10)) || word.chars().count() < 2 {
+        if word
+            .chars()
+            .all(|c| c.is_ascii_whitespace() || c.is_ascii_punctuation() || c.is_digit(10))
+            || word.chars().count() < 2
+        {
             continue;
         }
 
@@ -302,7 +220,9 @@ async fn initialize_oss(
     region: String,
     bucket: String,
 ) -> Result<(), String> {
-    let res = client_state.initialize(&access_key_id, &access_key_secret, &region, &bucket).await;
+    let res = client_state
+        .initialize(&access_key_id, &access_key_secret, &region, &bucket)
+        .await;
     map_oss_err(res)
 }
 
@@ -312,6 +232,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // 新增: 注册 Store 插件
         .plugin(tauri_plugin_store::Builder::default().build())
+        .manage(Mutex::new(EncryptionManager::new()))
         .manage(OssClientManager::default())
         .setup(|app| {
             let conn = init_db(&app.handle()).expect("无法初始化数据库连接");
@@ -320,8 +241,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             derive_key,
-            encrypt_data,
-            decrypt_data,
             generate_search_hash,
             save_keyword_index_batch,
             search_local_index,
