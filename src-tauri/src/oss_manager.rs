@@ -1,5 +1,6 @@
 use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Object, Secret};
 use std::sync::{Arc, Mutex};
+use chrono::{DateTime, Utc};
 use aliyun_oss_client::types::ObjectQuery;
 
 /// 错误类型封装
@@ -14,6 +15,14 @@ pub enum OssError {
     Uninitialized,
     #[error("内部锁失败")]
     LockError,
+}
+
+#[derive(Debug)]
+pub struct ObjectInfo {
+    filename: String,
+    size: u64,
+    etag: String,
+    modified: DateTime<Utc>,
 }
 
 // 帮助宏，将 aliyun-oss-client 的错误转换为 OssError::ApiError
@@ -121,7 +130,7 @@ impl OssClientManager {
     pub async fn list_objects(
         &self,
         prefix: &str,
-    ) -> Result<Vec<String>, OssError> {
+    ) -> Result<Vec<ObjectInfo>, OssError> {
         let client = self.get_client()?;
         let bucket = client.bucket().ok_or(OssError::Uninitialized)?;
 
@@ -140,7 +149,15 @@ impl OssClientManager {
         loop {
             // 将当前批次的对象路径添加到总列表中
             for object in current_objects.get_vec() {
-                all_objects.push(object.get_path().to_string());
+                let info = object.get_info(&client)
+                    .await
+                    .map_err(|e| OssError::ApiError(e.to_string()))?;
+                all_objects.push(ObjectInfo {
+                    filename: object.get_path().to_string(),
+                    size: info.size(),
+                    etag: info.etag().to_string(),
+                    modified: *info.last_modified()
+                });
             }
 
             // 检查是否有下一页
@@ -156,5 +173,23 @@ impl OssClientManager {
         }
 
         Ok(all_objects)
+    }
+}
+
+impl ObjectInfo {
+    pub fn filename(&self) -> &str {
+        &self.filename
+    }
+
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn etag(&self) -> &str {
+        &self.etag
+    }
+
+    pub fn modified(&self) -> DateTime<Utc> {
+        self.modified
     }
 }

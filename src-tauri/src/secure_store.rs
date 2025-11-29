@@ -50,9 +50,9 @@ impl SecureDiaryStore {
         // 去掉末尾的斜杠和文件名，只保留日记 ID
         let mut unique_ids = HashSet::new();
         for object in objects {
-            if let Some(pos) = object.find('/') {
+            if let Some(pos) = object.filename().find('/') {
                 // 提取日记 ID（使用切片）
-                let diary_id = &object[..pos];
+                let diary_id = &object.filename()[..pos];
 
                 // 将 ID 插入 HashSet。HashSet 自动保证唯一性。
                 unique_ids.insert(diary_id.to_string());
@@ -131,9 +131,9 @@ impl SecureDiaryStore {
 
         for object in objects {
             self.client
-                .delete_object(&object)
+                .delete_object(&object.filename())
                 .await
-                .map_err(|e| format!("Failed to delete object {}: {}", object, e))?;
+                .map_err(|e| format!("Failed to delete object {}: {}", object.filename(), e))?;
         }
 
         Ok(())
