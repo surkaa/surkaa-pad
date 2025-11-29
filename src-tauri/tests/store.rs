@@ -88,4 +88,33 @@ mod secure_store {
 
         println!("Diary manifest verified successfully.");
     }
+
+    #[tokio::test]
+    async fn test_delete_diary() {
+        let store = create_store().await;
+
+        let content = "This is a test diary content to be deleted.";
+
+        let new_id = store
+            .create_diary(content)
+            .await
+            .expect("Failed to create diary");
+
+        println!("Created new diary with ID: {}", new_id);
+
+        // 删除日记
+        store
+            .delete_diary(new_id.clone())
+            .await
+            .expect("Failed to delete diary");
+
+        // 验证日记已被删除
+        let result = store.get_diary_manifest(new_id.clone()).await;
+        assert!(
+            result.is_err(),
+            "Expected error when fetching deleted diary, but got success"
+        );
+
+        println!("Diary with ID: {} deleted successfully.", new_id);
+    }
 }

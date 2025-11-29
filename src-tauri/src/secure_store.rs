@@ -100,6 +100,7 @@ impl SecureDiaryStore {
         Ok(id)
     }
 
+    /// 获取并解密指定 ID 的日记 manifest
     pub async fn get_diary_manifest(&self, id: String) -> Result<DiaryManifest, String> {
         let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
         let encrypted_data = self
@@ -119,5 +120,23 @@ impl SecureDiaryStore {
             .map_err(|e| format!("Failed to parse manifest JSON: {}", e))?;
 
         Ok(manifest)
+    }
+
+    /// 删除指定 ID 的日记及其所有附件
+    pub async fn delete_diary(&self, id: String) -> Result<(), String> {
+        let objects = self
+            .client
+            .list_objects(&format!("{}/", id))
+            .await
+            .map_err(|e| format!("Failed to list diary objects: {}", e))?;
+
+        for object in objects {
+            self.client
+                .delete_object(&object)
+                .await
+                .map_err(|e| format!("Failed to delete object {}: {}", object, e))?;
+        }
+
+        Ok(())
     }
 }
