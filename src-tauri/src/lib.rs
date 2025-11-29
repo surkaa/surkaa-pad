@@ -1,5 +1,6 @@
 pub mod encryption;
 pub mod oss_manager;
+pub mod secure_store;
 
 use aes_gcm::aead::{KeyInit};
 use std::collections::HashMap;
