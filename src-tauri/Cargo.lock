@@ -4043,6 +4043,7 @@ dependencies = [
  "rand 0.8.5",
  "rusqlite",
  "serde",
+ "serde_json",
  "sha2",
  "tauri",
  "tauri-build",
