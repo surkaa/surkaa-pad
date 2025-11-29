@@ -11,12 +11,14 @@ const KEY_LEN: usize = 32;
 
 pub struct EncryptionManager {
     dek: Vec<u8>,
+    pub algorithm: String,
 }
 
 impl EncryptionManager {
     pub fn new() -> Self {
         EncryptionManager {
             dek: Vec::new(), // 初始化为空
+            algorithm: "AES256-GCM_v1".to_string(),
         }
     }
 
