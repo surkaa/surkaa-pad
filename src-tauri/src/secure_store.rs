@@ -139,9 +139,9 @@ impl SecureDiaryStore {
 
         Ok(())
     }
-    
+
     /// 仅更新日记的文本和元数据，不涉及附件
-    pub async fn update_diary_content(&self, id: String, new_content: &str) -> Result<(), String> {
+    pub async fn update_diary_content_only(&self, id: String, new_content: &str) -> Result<(), String> {
         // 先获取现有的 manifest
         let mut manifest = self.get_diary_manifest(id.clone()).await?;
 
