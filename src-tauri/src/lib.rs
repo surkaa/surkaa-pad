@@ -1,4 +1,4 @@
-mod oss_manager;
+pub mod oss_manager;
 
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},

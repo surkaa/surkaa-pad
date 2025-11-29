@@ -1,5 +1,6 @@
 use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Object, Secret};
 use std::sync::{Arc, Mutex};
+use aliyun_oss_client::types::ObjectQuery;
 
 /// 错误类型封装
 #[derive(Debug, thiserror::Error)]
@@ -113,5 +114,46 @@ impl OssClientManager {
         )?;
 
         Ok(())
+    }
+
+    /// 列出指定前缀下的所有对象路径 https://help.aliyun.com/zh/oss/developer-reference/listobjectsv2
+    pub async fn list_objects(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<String>, OssError> {
+        let client = self.get_client()?;
+        let bucket = client.bucket().ok_or(OssError::Uninitialized)?;
+
+        let mut all_objects = Vec::new();
+        let condition = {
+            let mut map = ObjectQuery::new();
+            map.insert(ObjectQuery::MAX_KEYS, "1000");
+            map.insert(ObjectQuery::PREFIX, prefix);
+            map
+        };
+
+        let mut current_objects = oss_api_err!(
+            bucket.get_objects(&condition, &client).await
+        )?;
+
+        loop {
+            // 将当前批次的对象路径添加到总列表中
+            for object in current_objects.get_vec() {
+                all_objects.push(object.get_path().to_string());
+            }
+
+            // 检查是否有下一页
+            if current_objects.next_token().is_some() {
+                // 如果有下一页，获取下一页数据
+                current_objects = oss_api_err!(
+                    current_objects.next_list(&condition, &client).await
+                )?;
+            } else {
+                // 没有下一页，跳出循环
+                break;
+            }
+        }
+
+        Ok(all_objects)
     }
 }

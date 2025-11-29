@@ -1,13 +1,24 @@
 #[cfg(test)]
 mod ali_oss_tests {
-    use std::sync::Arc;
-    use tokio;
     use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Object, Secret};
+    use std::sync::Arc;
+    use surkaa_pad_lib::oss_manager::OssClientManager;
+    use tokio;
 
     const KEY: &str = "";
     const SECRET: &str = "";
     const BUCKET_NAME: &str = "";
-    const ENDPOINT: &str = "cn-guangzhou";
+    const ENDPOINT: &str = "";
+
+    #[tokio::test]
+    async fn test_oss_manager_list_objects() {
+        let oss = OssClientManager::default();
+        oss.initialize(KEY, SECRET, ENDPOINT, BUCKET_NAME)
+            .await
+            .expect("Failed to initialize OSS client");
+        let objects = oss.list_objects("test").await.expect("Failed to list objects");
+        println!("Objects: {:?}", objects);
+    }
 
     fn init_oss_client(ep: EndPoint) -> Result<Arc<Client>, String> {
         let key = Key::new(KEY);
