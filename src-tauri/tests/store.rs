@@ -215,4 +215,56 @@ mod secure_store {
         );
         println!("Diary attachment added and verified successfully.");
     }
+
+    #[tokio::test]
+    async fn test_delete_attachment() {
+        let store = create_store().await;
+
+        let content = "This is the original diary content.";
+
+        let new_id = store
+            .create_diary(content)
+            .await
+            .expect("Failed to create diary");
+
+        println!("Created new diary with ID: {}", new_id);
+
+        // 添加附件
+        let attachment_bytes = b"Sample attachment data".to_vec();
+        store
+            .add_attachment(new_id.clone(), attachment_bytes, "txt".to_string())
+            .await
+            .expect("Failed to add attachment");
+
+        // 获取日记以获取附件信息
+        let diary = store
+            .get_diary_manifest(new_id.clone())
+            .await
+            .expect("Failed to get diary manifest");
+        assert_eq!(
+            diary.attachments.len(),
+            1,
+            "Attachment was not added correctly"
+        );
+        let attachment = &diary.attachments[0];
+
+        // 删除附件
+        store
+            .delete_attachment(new_id.clone(), attachment.file_name.clone())
+            .await
+            .expect("Failed to delete attachment");
+
+        // 验证附件已被删除
+        let updated_diary = store
+            .get_diary_manifest(new_id.clone())
+            .await
+            .expect("Failed to get updated diary manifest");
+
+        assert!(
+            updated_diary.attachments.is_empty(),
+            "Attachment was not deleted correctly"
+        );
+
+        println!("Attachment deleted successfully from diary ID: {}", new_id);
+    }
 }

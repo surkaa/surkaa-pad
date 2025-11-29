@@ -258,4 +258,43 @@ impl SecureDiaryStore {
 
         Ok(decrypted_data)
     }
+    
+    /// 删除指定日记的指定附件
+    pub async fn delete_attachment(
+        &self,
+        id: String,
+        file_name: String,
+    ) -> Result<(), String> {
+        // 更新 manifest，移除附件元数据
+        let mut manifest = self.get_diary_manifest(id.clone()).await?;
+        manifest.attachments.retain(|att| att.file_name != file_name);
+        manifest.updated_at = Utc::now().timestamp();
+
+        // 序列化
+        let manifest_json = serde_json::to_vec(&manifest)
+            .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+        // 加密
+        let (ciphertext, manifest_nonce) = self
+            .encryption
+            .encrypt(&manifest_json)
+            .await
+            .map_err(|e| format!("Failed to encrypt manifest: {}", e))?;
+        let mut encrypted_manifest = manifest_nonce;
+        encrypted_manifest.extend_from_slice(&ciphertext);
+        // 上传更新后的 manifest
+        let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
+        self.client
+            .upload_object(&manifest_key, encrypted_manifest)
+            .await
+            .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
+
+        // 删除附件对象
+        let attachment_key = format!("{}/{}", id, file_name);
+        self.client
+            .delete_object(&attachment_key)
+            .await
+            .map_err(|e| format!("Failed to delete attachment: {}", e))?;
+
+        Ok(())
+    }
 }
