@@ -8,7 +8,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "webview": "tauri dev"
+    "tauri::android::dev": "tauri android dev",
+    "tauri::webview::dev": "tauri dev"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
