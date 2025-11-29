@@ -99,14 +99,17 @@ impl SecureDiaryStore {
         Ok(id)
     }
 
+    /// 直接下载指定 ID 的加密 manifest 字节流用于缓存
+    pub async fn download_encrypted_manifest(&self, id: &str) -> Result<Vec<u8>, String> {
+        let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
+
+        self.client.download_object(&object_key).await
+            .map_err(|e| format!("Failed to download encrypted manifest for caching: {}", e))
+    }
+
     /// 获取并解密指定 ID 的日记 manifest
     pub async fn get_diary_manifest(&self, id: String) -> Result<DiaryManifest, String> {
-        let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
-        let encrypted_data = self
-            .client
-            .download_object(&object_key)
-            .await
-            .map_err(|e| format!("Failed to download manifest: {}", e))?;
+        let encrypted_data = self.download_encrypted_manifest(&id).await?;
 
         let manifest_bytes = self
             .encryption
