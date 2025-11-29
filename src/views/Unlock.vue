@@ -154,8 +154,7 @@ onMounted(async () => {
       gap: 12px;
 
       input {
-        width: 100%;
-        padding: 8px 12px;
+        padding: 1rem;
         font-size: 16px;
         border: 1px solid var(--pad-border-color-200);
         border-radius: 4px;

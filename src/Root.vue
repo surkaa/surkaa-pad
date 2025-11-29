@@ -29,6 +29,8 @@ const disableRefresh = () => {
   });
 };
 
+// TODO 解决移动端可以缩放的问题
+
 onMounted(disableRefresh);
 </script>
 
