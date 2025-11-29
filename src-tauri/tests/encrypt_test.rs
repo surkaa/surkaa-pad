@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod encrypt_test {
-    use surkaa_pad_lib::encryption::EncryptionManager;
+    use surkaa_pad_lib::encryption_manager::EncryptionManager;
     use tokio;
 
     #[tokio::test]

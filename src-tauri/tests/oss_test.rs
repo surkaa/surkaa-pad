@@ -2,7 +2,7 @@
 mod ali_oss_tests {
     use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Object, Secret};
     use std::sync::Arc;
-    use surkaa_pad_lib::oss_manager::OssClientManager;
+    use surkaa_pad_lib::oss_client_manager::OssClientManager;
     use tokio;
 
     const KEY: &str = "";

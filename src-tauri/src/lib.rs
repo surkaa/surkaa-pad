@@ -1,6 +1,6 @@
-pub mod encryption;
-pub mod oss_manager;
-pub mod secure_store;
+pub mod encryption_manager;
+pub mod oss_client_manager;
+pub mod secure_diary_store;
 
 use aes_gcm::aead::{KeyInit};
 use std::collections::HashMap;
@@ -12,8 +12,8 @@ use hmac::digest::typenum::{UInt, UTerm, B0, B1};
 use hmac::{HmacCore, Mac};
 use sha2::{OidSha256, Sha256VarCore};
 
-use crate::encryption::EncryptionManager;
-use crate::oss_manager::{OssClientManager, OssError};
+use crate::encryption_manager::EncryptionManager;
+use crate::oss_client_manager::{OssClientManager, OssError};
 use jieba_rs::Jieba;
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};

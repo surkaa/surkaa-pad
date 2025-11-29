@@ -2,9 +2,9 @@
 mod secure_store {
     use chrono::Utc;
     use std::sync::Arc;
-    use surkaa_pad_lib::encryption::EncryptionManager;
-    use surkaa_pad_lib::oss_manager::OssClientManager;
-    use surkaa_pad_lib::secure_store::SecureDiaryStore;
+    use surkaa_pad_lib::encryption_manager::EncryptionManager;
+    use surkaa_pad_lib::oss_client_manager::OssClientManager;
+    use surkaa_pad_lib::secure_diary_store::SecureDiaryStore;
     use tokio;
 
     const KEY: &str = "";
