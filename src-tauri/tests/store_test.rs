@@ -35,7 +35,7 @@ mod secure_store {
         let store = create_store().await;
 
         let diary_ids = store
-            .list_diary_ids()
+            .list_diaries()
             .await
             .expect("Failed to list diaries");
 
@@ -57,9 +57,12 @@ mod secure_store {
 
         // 验证新创建的日记是否在列表中
         let diary_ids = store
-            .list_diary_ids()
+            .list_diaries()
             .await
-            .expect("Failed to list diaries");
+            .expect("Failed to list diaries")
+            .into_iter()
+            .map(|obj| obj.filename().to_string())
+            .collect::<Vec<String>>();
         assert!(
             diary_ids.contains(&new_id),
             "New diary ID not found in the list"

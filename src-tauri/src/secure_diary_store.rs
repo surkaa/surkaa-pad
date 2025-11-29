@@ -1,9 +1,9 @@
 use crate::encryption_manager::EncryptionManager;
-use crate::oss_client_manager::OssClientManager;
+use crate::oss_client_manager::{ObjectInfo, OssClientManager};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -41,24 +41,23 @@ impl SecureDiaryStore {
     }
 
     /// 列出所有日记的主键（也就是创建时间戳）
-    pub async fn list_diary_ids(&self) -> Result<Vec<String>, String> {
+    pub async fn list_diaries(&self) -> Result<Vec<ObjectInfo>, String> {
         let objects = self
             .client
             .list_objects("")
             .await
             .map_err(|e| format!("Failed to list diaries: {}", e))?;
         // 去掉末尾的斜杠和文件名，只保留日记 ID
-        let mut unique_ids = HashSet::new();
+        let mut unique_objets: HashMap<String, ObjectInfo> = HashMap::new();
         for object in objects {
             if let Some(pos) = object.filename().find('/') {
                 // 提取日记 ID（使用切片）
                 let diary_id = &object.filename()[..pos];
-
-                // 将 ID 插入 HashSet。HashSet 自动保证唯一性。
-                unique_ids.insert(diary_id.to_string());
+                // 插入到 HashMap，确保唯一性
+                unique_objets.entry(diary_id.to_string()).or_insert(object);
             }
         }
-        Ok(unique_ids.into_iter().collect())
+        Ok(unique_objets.into_iter().map(|(_, v)| v).collect())
     }
 
     /// 根据内容创建新的日记并存储到云端
