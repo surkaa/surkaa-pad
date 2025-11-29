@@ -35,6 +35,7 @@ pub struct AttachmentMeta {
     pub nonce: Vec<u8>, // 用于加密该文件的独立 IV
 }
 
+/// 提供安全的日记存储功能 结合有日记存储方案的逻辑 只用于管理日记及其附件的增删改查
 impl SecureDiaryStore {
     pub fn new(client: Arc<OssClientManager>, encryption: EncryptionManager) -> Self {
         SecureDiaryStore { client, encryption }

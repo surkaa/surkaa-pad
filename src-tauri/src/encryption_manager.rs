@@ -14,6 +14,7 @@ pub struct EncryptionManager {
     pub algorithm: String,
 }
 
+/// 加密算法管理器实现 只用于加密和解密数据
 impl EncryptionManager {
     pub fn new() -> Self {
         EncryptionManager {

@@ -38,6 +38,7 @@ macro_rules! oss_api_err {
 #[derive(Default)]
 pub struct OssClientManager(pub Mutex<Option<Arc<Client>>>);
 
+/// 用于管理 OSS 客户端的实现 只用于上传、下载、删除和列出对象列表
 #[allow(dead_code)]
 impl OssClientManager {
     /// 辅助方法：获取 Arc<Client> 的线程安全克隆
