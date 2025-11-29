@@ -42,10 +42,10 @@ impl OssClientManager {
         &self,
         access_key_id: &str,
         access_key_secret: &str,
-        region: &str,
+        endpoint_url: &str,
         bucket_name: &str,
     ) -> Result<(), OssError> {
-        let ep = EndPoint::new(region)
+        let ep = EndPoint::new(endpoint_url)
             .map_err(|e| OssError::InvalidEndpoint(e.to_string()))?;
 
         let key = Key::new(access_key_id);
