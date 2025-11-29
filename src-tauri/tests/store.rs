@@ -117,4 +117,35 @@ mod secure_store {
 
         println!("Diary with ID: {} deleted successfully.", new_id);
     }
+
+    #[tokio::test]
+    async fn test_update_diary_content() {
+        let store = create_store().await;
+
+        let content = "This is the original diary content.";
+
+        let new_id = store
+            .create_diary(content)
+            .await
+            .expect("Failed to create diary");
+
+        println!("Created new diary with ID: {}", new_id);
+
+        // 更新日记内容
+        let updated_content = "This is the updated diary content.";
+        store
+            .update_diary_content(new_id.clone(), updated_content)
+            .await
+            .expect("Failed to update diary content");
+
+        // 获取更新后的日记内容
+        let diary = store
+            .get_diary_manifest(new_id.clone())
+            .await
+            .expect("Failed to get diary manifest");
+
+        assert_eq!(diary.content, updated_content, "Diary content was not updated correctly");
+
+        println!("Diary content updated and verified successfully.");
+    }
 }
