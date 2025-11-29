@@ -52,7 +52,7 @@ impl EncryptionManager {
         Ok(())
     }
 
-    /// 使用 DEK 加密数据，返回密文和随机生成的 nonce
+    /// 使用 DEK 加密数据，返回: (密文, nonce)
     pub async fn encrypt(&self, data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
         let cipher =
             Aes256Gcm::new_from_slice(&self.dek).map_err(|_| "DEK 长度错误".to_string())?;
