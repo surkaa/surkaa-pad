@@ -1,3 +1,5 @@
+mod oss_manager;
+
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
@@ -6,23 +8,21 @@ use argon2::{
     password_hash::SaltString, Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version,
 };
 use rand::RngCore;
-use std::fs;
-// 引入 Arc 用于跨线程共享所有权
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::fs;
+use std::sync::Mutex;
 
+use digest::Digest;
 use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
 use hmac::digest::typenum::{UInt, UTerm, B0, B1};
 use hmac::{HmacCore, Mac};
-// 用于 HMAC
 use sha2::{OidSha256, Sha256, Sha256VarCore};
-use digest::Digest;
 
-use rusqlite::{params, Connection, Result as SqlResult};
-use serde::{Serialize, Deserialize};
-use tauri::{Manager, State};
+use crate::oss_manager::{OssClientManager, OssError};
 use jieba_rs::Jieba;
-use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Secret};
+use rusqlite::{params, Connection, Result as SqlResult};
+use serde::{Deserialize, Serialize};
+use tauri::{Manager, State};
 
 // 定义常量
 const NONCE_LEN: usize = 12;
@@ -36,7 +36,6 @@ const ALGORITHM_NAME: &str = "AES256-GCM_v1";
 // ---------------------------------------------------------
 
 pub struct DbConnection(pub Mutex<Connection>);
-pub struct OssClient(pub Mutex<Option<Arc<Client>>>);
 
 // 返回给前端的结果
 #[derive(Debug, Serialize)]
@@ -77,6 +76,10 @@ pub struct BatchIndexEntry {
 // ---------------------------------------------------------
 // 核心逻辑函数
 // ---------------------------------------------------------
+// Tauri 错误转换器
+fn map_oss_err<T>(res: Result<T, OssError>) -> Result<T, String> {
+    res.map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 async fn derive_key(password: &str, salt: &str) -> Result<Vec<u8>, String> {
@@ -292,34 +295,15 @@ fn tokenize_and_count(plaintext: String) -> Result<Vec<KeywordToken>, String> {
 }
 
 #[tauri::command]
-async fn initialize_oss_client(
-    client_state: State<'_, OssClient>,
-    ak_id: String,
-    ak_secret: String,
+async fn initialize_oss(
+    client_state: State<'_, OssClientManager>,
+    access_key_id: String,
+    access_key_secret: String,
     region: String,
     bucket: String,
 ) -> Result<(), String> {
-    let ep = EndPoint::new(&region)
-        .map_err(|e| format!("无效的 Endpoint: {}", e))?;
-
-    let key = Key::new(ak_id);
-    let secret = Secret::new(ak_secret);
-
-    let mut client = Client::new(key, secret);
-
-    let bucket_obj = Bucket::new(bucket, ep.clone());
-    client.set_bucket(bucket_obj);
-
-    // 验证连接
-    client
-        .get_buckets(&ep)
-        .await
-        .map_err(|e| format!("OSS 连接验证失败 (请检查AK/SK): {}", e))?;
-
-    let mut client_guard = client_state.0.lock().map_err(|e| format!("锁失败: {}", e))?;
-    *client_guard = Some(Arc::new(client));
-
-    Ok(())
+    let res = client_state.initialize(&access_key_id, &access_key_secret, &region, &bucket).await;
+    map_oss_err(res)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -328,7 +312,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // 新增: 注册 Store 插件
         .plugin(tauri_plugin_store::Builder::default().build())
-        .manage(OssClient(Mutex::new(None)))
+        .manage(OssClientManager::default())
         .setup(|app| {
             let conn = init_db(&app.handle()).expect("无法初始化数据库连接");
             app.manage(DbConnection(Mutex::new(conn)));
@@ -340,9 +324,9 @@ pub fn run() {
             decrypt_data,
             generate_search_hash,
             save_keyword_index_batch,
-            initialize_oss_client,
             search_local_index,
-            tokenize_and_count
+            tokenize_and_count,
+            initialize_oss,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

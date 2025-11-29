@@ -4048,6 +4048,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-store",
+ "thiserror 2.0.17",
  "tokio",
 ]
 
