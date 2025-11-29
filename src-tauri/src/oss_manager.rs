@@ -40,16 +40,16 @@ impl OssClientManager {
     /// 包含 AK/SK 和连接的验证逻辑
     pub async fn initialize(
         &self,
-        ak_id: &str,
-        ak_secret: &str,
+        access_key_id: &str,
+        access_key_secret: &str,
         region: &str,
         bucket_name: &str,
     ) -> Result<(), OssError> {
         let ep = EndPoint::new(region)
             .map_err(|e| OssError::InvalidEndpoint(e.to_string()))?;
 
-        let key = Key::new(ak_id);
-        let secret = Secret::new(ak_secret);
+        let key = Key::new(access_key_id);
+        let secret = Secret::new(access_key_secret);
         let mut client = Client::new(key, secret);
 
         // 1. 验证连接
