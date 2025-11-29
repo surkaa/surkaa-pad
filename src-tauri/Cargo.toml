@@ -35,3 +35,8 @@ hmac = "0.12"
 rusqlite = { version = "0.31", features = ["bundled"] }
 jieba-rs = "0.8.1"
 digest = "0.10.7"
+aliyun-oss-client = "0.13.0-alpha9"
+tokio = "1.48.0"
+
+[patch.crates-io]
+aliyun-oss-client = { path = "../vendor/aliyun-oss-client-modified" }

@@ -8,7 +8,7 @@ use argon2::{
 use rand::RngCore;
 use std::fs;
 // 引入 Arc 用于跨线程共享所有权
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
 use hmac::digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
@@ -22,6 +22,7 @@ use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Serialize, Deserialize};
 use tauri::{Manager, State};
 use jieba_rs::Jieba;
+use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Secret};
 
 // 定义常量
 const NONCE_LEN: usize = 12;
@@ -35,6 +36,7 @@ const ALGORITHM_NAME: &str = "AES256-GCM_v1";
 // ---------------------------------------------------------
 
 pub struct DbConnection(pub Mutex<Connection>);
+pub struct OssClient(pub Mutex<Option<Arc<Client>>>);
 
 // 返回给前端的结果
 #[derive(Debug, Serialize)]
@@ -289,12 +291,44 @@ fn tokenize_and_count(plaintext: String) -> Result<Vec<KeywordToken>, String> {
     Ok(sorted_results)
 }
 
+#[tauri::command]
+async fn initialize_oss_client(
+    client_state: State<'_, OssClient>,
+    ak_id: String,
+    ak_secret: String,
+    region: String,
+    bucket: String,
+) -> Result<(), String> {
+    let ep = EndPoint::new(&region)
+        .map_err(|e| format!("无效的 Endpoint: {}", e))?;
+
+    let key = Key::new(ak_id);
+    let secret = Secret::new(ak_secret);
+
+    let mut client = Client::new(key, secret);
+
+    let bucket_obj = Bucket::new(bucket, ep.clone());
+    client.set_bucket(bucket_obj);
+
+    // 验证连接
+    client
+        .get_buckets(&ep)
+        .await
+        .map_err(|e| format!("OSS 连接验证失败 (请检查AK/SK): {}", e))?;
+
+    let mut client_guard = client_state.0.lock().map_err(|e| format!("锁失败: {}", e))?;
+    *client_guard = Some(Arc::new(client));
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         // 新增: 注册 Store 插件
         .plugin(tauri_plugin_store::Builder::default().build())
+        .manage(OssClient(Mutex::new(None)))
         .setup(|app| {
             let conn = init_db(&app.handle()).expect("无法初始化数据库连接");
             app.manage(DbConnection(Mutex::new(conn)));
@@ -306,6 +340,7 @@ pub fn run() {
             decrypt_data,
             generate_search_hash,
             save_keyword_index_batch,
+            initialize_oss_client,
             search_local_index,
             tokenize_and_count
         ])
