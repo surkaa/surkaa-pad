@@ -126,7 +126,7 @@ impl OssClientManager {
         Ok(())
     }
 
-    /// 列出指定前缀下的所有对象路径 https://help.aliyun.com/zh/oss/developer-reference/listobjectsv2
+    /// 列出指定前缀下的所有对象路径 自动去掉文件夹末尾的斜杠 https://help.aliyun.com/zh/oss/developer-reference/listobjectsv2
     pub async fn list_objects(
         &self,
         prefix: &str,
@@ -152,8 +152,10 @@ impl OssClientManager {
                 let info = object.get_info(&client)
                     .await
                     .map_err(|e| OssError::ApiError(e.to_string()))?;
+                // 去掉文件夹末尾的斜杠
+                let filename = object.get_path().trim_end_matches('/').to_string();
                 all_objects.push(ObjectInfo {
-                    filename: object.get_path().to_string(),
+                    filename,
                     size: info.size(),
                     etag: info.etag().to_string(),
                     modified: *info.last_modified()
