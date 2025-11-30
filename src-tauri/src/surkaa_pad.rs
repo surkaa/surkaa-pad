@@ -1,11 +1,11 @@
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use std::collections::HashMap;
-use std::fs::{create_dir_all, read_dir, write};
+use std::fs::{create_dir_all, read_dir, remove_dir_all, write};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::Manager;
 
 const CACHE_DIARY_DIR: &str = "diary_cache";
+const ATTACHMENT_EXTENSION: &str = ".enc";
 
 // 内存缓存：解密后的明文日记列表，用于搜索和展示
 // 使用 HashMap 以 ID 为 Key，方便快速查找
@@ -16,106 +16,148 @@ pub struct DiaryMemoryCache {
     pub loaded: Mutex<bool>,
 }
 
+impl DiaryMemoryCache {
+    pub fn new() -> Self {
+        Self {
+            diaries: Mutex::new(HashMap::new()),
+            loaded: Mutex::new(false),
+        }
+    }
+}
+
 pub struct AppState {
-    pub store: SecureDiaryStore,
-    pub cache: DiaryMemoryCache,
-    pub app_handle: tauri::AppHandle, // 用于获取路径
+    store: SecureDiaryStore,
+    cache: DiaryMemoryCache,
+    // app_handle: tauri::AppHandle, // 用于获取路径
 }
 
 impl AppState {
+    pub fn new(store: SecureDiaryStore /*, app_handle: tauri::AppHandle*/) -> Self {
+        Self {
+            store,
+            cache: DiaryMemoryCache::new(),
+            // app_handle,
+        }
+    }
+
     /// 获取应用的日记缓存目录
-    fn get_diary_cache_dir(&self) -> PathBuf {
-        let path = self
-            .app_handle
-            .path()
-            .app_data_dir()
-            .unwrap()
-            .join(CACHE_DIARY_DIR);
-
-        if !path.exists() {
-            create_dir_all(&path).expect("Failed to create diary cache directory");
-        }
-        path
+    pub fn get_diary_cache_dir(&self) -> PathBuf {
+        // let path = self
+        //     .app_handle
+        //     .path()
+        //     .app_data_dir()
+        //     .unwrap()
+        //     .join(CACHE_DIARY_DIR);
+        //
+        // if !path.exists() {
+        //     create_dir_all(&path).expect("Failed to create diary cache directory");
+        // }
+        // path
+        // 为了测试避免使用tauri::AppHandle，手动创建一个 C:\Users\SurKaa\AppData\Roaming\cn.surkaa.pad 的PathBuf
+        PathBuf::from(format!(
+            "{}\\AppData\\Roaming\\cn.surkaa.pad\\{}",
+            std::env::var("USERPROFILE").unwrap(),
+            CACHE_DIARY_DIR
+        ))
     }
 
-    /// 获取本地缓存的所有日记文件名 返回 uuid&etag 文件名格式为 {uuid}_{etag}.enc
-    fn get_cached_diary_filenames(&self) -> Result<HashMap<String, String>, String> {
-        let cache_dir = self.get_diary_cache_dir();
-        if !cache_dir.exists() {
-            return Ok(HashMap::new());
+    // 清空缓存目录内容
+    fn clear_cache_dir(&self, cache_dir: &PathBuf) -> Result<(), String> {
+        if cache_dir.exists() {
+            // 使用 remove_dir_all 删除目录及其内容，再重建
+            remove_dir_all(cache_dir)
+                .map_err(|e| format!("Failed to delete cache directory: {}", e))?;
         }
-        if !cache_dir.is_dir() {
-            return Err("Cache directory is not a directory".to_string());
-        }
-        let mut cached_files = HashMap::new();
-
-        let entries = read_dir(cache_dir)
-            .map_err(|e| format!("Failed to read cache directory: {}", e))?;
-
-        for entry in entries {
-            let filename = entry
-                .map_err(|e| format!("Failed to read directory entry: {}", e))?
-                .file_name()
-                .to_string_lossy()
-                .to_string();
-            if let Some((uuid_etag, _)) = filename.rsplit_once('.') {
-                if let Some((uuid, etag)) = uuid_etag.rsplit_once('_') {
-                    cached_files.insert(uuid.to_string(), etag.to_string());
-                }
-            }
-        }
-        Ok(cached_files)
-    }
-
-    /// 下载并保存日记文件到本地缓存
-    async fn download_and_save(&self, id: &str, file_path: &str) -> Result<(), String> {
-        let manifest_bytes = self.store.download_encrypted_manifest(id).await?;
-        write(&file_path, &manifest_bytes)
-            .map_err(|e| format!("Failed to write cache file: {}", e))?;
+        // 重建目录
+        create_dir_all(cache_dir)
+            .map_err(|e| format!("Failed to create cache directory: {}", e))?;
         Ok(())
     }
 
-    /// 从 OSS 同步日记到本地缓存
+    /// 将本地文件加载到内存缓存中
+    async fn load_cache_to_memory(&self) -> Result<(), String> {
+        let cache_dir = self.get_diary_cache_dir();
+        let mut map = self.cache.diaries.lock().unwrap();
+        map.clear(); // 清空旧数据，准备加载新数据
+
+        if !cache_dir.exists() {
+            *self.cache.loaded.lock().unwrap() = true;
+            return Ok(());
+        }
+
+        // 遍历缓存目录下的所有 .enc 文件
+        let entries =
+            read_dir(cache_dir).map_err(|e| format!("Failed to read cache directory: {}", e))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+            let path = entry.path();
+
+            // 确保只处理 .enc 文件
+            if path.extension().and_then(|s| s.to_str()) == Some("enc") {
+                // 1. 读取本地密文
+                let encrypted_data = std::fs::read(&path)
+                    .map_err(|e| format!("Failed to read cached file {}: {}", path.display(), e))?;
+
+                // 2. 解析文件名以获取 UUID (例如从 uuid_etag.enc 中获取 uuid)
+                let filename = path.file_stem().unwrap().to_str().unwrap();
+                let uuid = filename
+                    .rsplit_once('_')
+                    .map(|(uuid, _)| uuid)
+                    .unwrap_or(filename);
+
+                // 3. 解密和反序列化
+                if let Ok(manifest) = self.store.decrypt_bytes_to_manifest(&encrypted_data).await {
+                    // 4. 存入内存
+                    map.insert(uuid.to_string(), manifest);
+                } else {
+                    // 记录错误，但继续处理其他文件
+                    eprintln!("Warning: Failed to decrypt cached file: {}", path.display());
+                }
+            }
+        }
+
+        *self.cache.loaded.lock().unwrap() = true;
+        Ok(())
+    }
+
+    /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
     pub async fn sync_from_oss(&self) -> Result<(), String> {
         let cache_dir = self.get_diary_cache_dir();
 
-        // 获取 OSS 上的所有 ID
+        // 先加载本地文件到内存
+        self.load_cache_to_memory().await?;
+
+        // 清理本地缓存
+        self.clear_cache_dir(&cache_dir)?;
+
+        // 获取远程列表并全部下载到硬盘
         let remote_diaries = self.store.list_diaries().await?;
-        // 获取本地缓存的所有
-        let cached_files = self.get_cached_diary_filenames()?;
 
-        // 遍历远程 ID
-        for diary in remote_diaries.iter() {
-            let file_path = cache_dir.join(format!("{}_{}.enc", diary.filename(), diary.etag()));
+        for (uuid, diary) in remote_diaries.iter() {
+            let remote_etag = diary.etag();
 
-            if !file_path.exists() {
-                // 如果本地不存在该文件，则下载
-                self.download_and_save(&diary.filename(), file_path.to_str().unwrap())
-                    .await?;
-            } else {
-                // 如果本地存在该文件，检查 ETag 是否匹配
-                if let Some(cached_etag) = cached_files.get(&diary.filename().to_string()) {
-                    if cached_etag != &diary.etag() {
-                        // ETag 不匹配，重新下载
-                        self.download_and_save(&diary.filename(), file_path.to_str().unwrap())
-                            .await?;
-                    }
-                } else {
-                    // 本地缓存中没有该文件，重新下载
-                    self.download_and_save(&diary.filename(), file_path.to_str().unwrap())
-                        .await?;
-                }
-            }
-        }
+            let new_filename = format!("{}_{}{}", uuid, remote_etag, ATTACHMENT_EXTENSION);
+            let new_file_path = cache_dir.join(&new_filename);
 
-        // 删除掉本地缓存中不再存在于 OSS 上的日记文件
-        for (cached_uuid, _) in cached_files {
-            if !remote_diaries.iter().any(|d| d.filename() == cached_uuid) {
-                let file_path = cache_dir.join(format!("{}_*.enc", cached_uuid));
-                let _ = std::fs::remove_file(file_path);
-            }
+            // 并且该方法内部包含了下载和解密逻辑
+            let (manifest, manifest_bytes) =
+                self.store.get_diary_manifest(uuid.to_string()).await?;
+
+            // 写入本地文件系统
+            write(&new_file_path, &manifest_bytes)
+                .map_err(|e| format!("Failed to write cache file {}: {}", new_filename, e))?;
+
+            // 更新内存缓存
+            let mut map = self.cache.diaries.lock().unwrap();
+            map.insert(uuid.to_string(), manifest);
         }
 
         Ok(())
+    }
+
+    pub fn list_cached_diaries(&self) -> Vec<DiaryManifest> {
+        let map = self.cache.diaries.lock().unwrap();
+        map.values().cloned().collect()
     }
 }
