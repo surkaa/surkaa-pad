@@ -103,7 +103,9 @@ impl SecureDiaryStore {
     pub async fn download_encrypted_manifest(&self, id: &str) -> Result<Vec<u8>, String> {
         let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
 
-        self.client.download_object(&object_key).await
+        self.client
+            .download_object(&object_key)
+            .await
             .map_err(|e| format!("Failed to download encrypted manifest for caching: {}", e))
     }
 
@@ -257,14 +259,12 @@ impl SecureDiaryStore {
     }
 
     /// 删除指定日记的指定附件
-    pub async fn delete_attachment(
-        &self,
-        id: String,
-        file_name: String,
-    ) -> Result<(), String> {
+    pub async fn delete_attachment(&self, id: String, file_name: String) -> Result<(), String> {
         // 更新 manifest，移除附件元数据
         let mut manifest = self.get_diary_manifest(id.clone()).await?;
-        manifest.attachments.retain(|att| att.file_name != file_name);
+        manifest
+            .attachments
+            .retain(|att| att.file_name != file_name);
         manifest.updated_at = Utc::now().timestamp();
 
         // 序列化
