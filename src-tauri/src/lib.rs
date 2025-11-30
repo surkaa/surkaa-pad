@@ -1,3 +1,4 @@
+pub mod app;
 pub mod encryption_manager;
 pub mod oss_client_manager;
 pub mod secure_diary_store;
