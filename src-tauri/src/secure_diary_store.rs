@@ -42,7 +42,7 @@ impl SecureDiaryStore {
     }
 
     /// 列出所有日记的主键（也就是创建时间戳）
-    pub async fn list_diaries(&self) -> Result<Vec<ObjectInfo>, String> {
+    pub async fn list_diaries(&self) -> Result<HashMap<String, ObjectInfo>, String> {
         let objects = self
             .client
             .list_objects("")
@@ -58,7 +58,7 @@ impl SecureDiaryStore {
                 unique_objets.entry(diary_id.to_string()).or_insert(object);
             }
         }
-        Ok(unique_objets.into_iter().map(|(_, v)| v).collect())
+        Ok(unique_objets)
     }
 
     /// 根据内容创建新的日记并存储到云端
