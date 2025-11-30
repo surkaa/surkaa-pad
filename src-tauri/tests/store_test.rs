@@ -67,7 +67,7 @@ mod secure_store {
         );
 
         // 获取刚创建的日记内容
-        let diary = store
+        let (diary, _) = store
             .get_diary_manifest(new_id.clone())
             .await
             .expect("Failed to get diary manifest");
@@ -146,7 +146,7 @@ mod secure_store {
             .expect("Failed to update diary content");
 
         // 获取更新后的日记内容
-        let diary = store
+        let (diary, _) = store
             .get_diary_manifest(new_id.clone())
             .await
             .expect("Failed to get diary manifest");
@@ -184,7 +184,7 @@ mod secure_store {
         print!("Added attachment to diary ID: {}", new_id);
 
         // 获取更新后的日记内容
-        let diary = store
+        let (diary, _) = store
             .get_diary_manifest(new_id.clone())
             .await
             .expect("Failed to get diary manifest");
@@ -238,7 +238,7 @@ mod secure_store {
             .expect("Failed to add attachment");
 
         // 获取日记以获取附件信息
-        let diary = store
+        let (diary, _) = store
             .get_diary_manifest(new_id.clone())
             .await
             .expect("Failed to get diary manifest");
@@ -256,7 +256,7 @@ mod secure_store {
             .expect("Failed to delete attachment");
 
         // 验证附件已被删除
-        let updated_diary = store
+        let (updated_diary, _) = store
             .get_diary_manifest(new_id.clone())
             .await
             .expect("Failed to get updated diary manifest");

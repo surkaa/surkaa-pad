@@ -110,20 +110,12 @@ impl SecureDiaryStore {
     }
 
     /// 获取并解密指定 ID 的日记 manifest
-    pub async fn get_diary_manifest(&self, id: String) -> Result<DiaryManifest, String> {
+    pub async fn get_diary_manifest(&self, id: String) -> Result<(DiaryManifest, Vec<u8>), String> {
         let encrypted_data = self.download_encrypted_manifest(&id).await?;
 
-        let manifest_bytes = self
-            .encryption
-            .decrypt_from_full_ciphertext(&encrypted_data)
-            .await
-            .map_err(|e| format!("Failed to decrypt manifest: {}", e))?;
+        let manifest = self.decrypt_bytes_to_manifest(&encrypted_data).await?;
 
-        // 反序列化 JSON
-        let manifest = from_slice(&manifest_bytes)
-            .map_err(|e| format!("Failed to parse manifest JSON: {}", e))?;
-
-        Ok(manifest)
+        Ok((manifest, encrypted_data))
     }
 
     /// 删除指定 ID 的日记及其所有附件
@@ -151,7 +143,7 @@ impl SecureDiaryStore {
         new_content: &str,
     ) -> Result<(), String> {
         // 先获取现有的 manifest
-        let mut manifest = self.get_diary_manifest(id.clone()).await?;
+        let (mut manifest, _) = self.get_diary_manifest(id.clone()).await?;
 
         // 更新内容和更新时间
         manifest.content = new_content.to_string();
@@ -205,7 +197,7 @@ impl SecureDiaryStore {
             nonce: nonce.clone(),
         };
 
-        let mut manifest = self.get_diary_manifest(id.clone()).await?;
+        let (mut manifest, _) = self.get_diary_manifest(id.clone()).await?;
         manifest.attachments.push(attachment);
         manifest.updated_at = Utc::now().timestamp();
         let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
@@ -261,7 +253,7 @@ impl SecureDiaryStore {
     /// 删除指定日记的指定附件
     pub async fn delete_attachment(&self, id: String, file_name: String) -> Result<(), String> {
         // 更新 manifest，移除附件元数据
-        let mut manifest = self.get_diary_manifest(id.clone()).await?;
+        let (mut manifest, _) = self.get_diary_manifest(id.clone()).await?;
         manifest
             .attachments
             .retain(|att| att.file_name != file_name);
@@ -293,5 +285,23 @@ impl SecureDiaryStore {
             .map_err(|e| format!("Failed to delete attachment: {}", e))?;
 
         Ok(())
+    }
+    
+    /// 将加密的字节流解密为 DiaryManifest 结构体 本应为私有方法 但为了缓存加载需要公开
+    pub async fn decrypt_bytes_to_manifest(
+        &self,
+        encrypted_data: &Vec<u8>,
+    ) -> Result<DiaryManifest, String> {
+        let manifest_bytes = self
+            .encryption
+            .decrypt_from_full_ciphertext(encrypted_data)
+            .await
+            .map_err(|e| format!("Failed to decrypt manifest: {}", e))?;
+
+        // 反序列化 JSON
+        let manifest = from_slice(&manifest_bytes)
+            .map_err(|e| format!("Failed to parse manifest JSON: {}", e))?;
+
+        Ok(manifest)
     }
 }
