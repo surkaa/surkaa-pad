@@ -1,48 +1,22 @@
-export type DiaryEntry = {
-    id: number;
-    nonce: number[];
-}
-
-export type PageSearchResult = {
-    id: number;
+export type DiaryManifest = {
+    id: string;
+    // 加密算法名称
+    algorithm: string;
+    // 日记正文
     content: string;
+    createdAt: number;
+    updatedAt: number;
+    // 附件列表
+    attachments: AttachmentMeta[];
 }
 
-export type SearchIndexResult = {
-    id: number;
-    count: number;
-}
-
-export type KeywordToken = {
-    word: string;
-    count: number;
-}
-
-export type BatchIndexEntry = {
-    id: number;
-    search_hash: number[];
-    count: number;
-}
-
-/**
- * 日记文件头结构
- */
-export type DiaryFileHeader = {
-    totalLength: number;
-    algorithm: string;
-    nonce: number[]; // IV (12 字节)
-    encHash: number[]; // 加密内容哈希 (32 字节)
-}
-
-/**
- * 后端上传的加密数据结构
- */
-export type EncryptData = {
-    total_length: number;
-    algorithm: string;
+// 单个附件的元数据
+export type AttachmentMeta = {
+    fileName: string;
+    mimeType: string;
+    size: number;
+    // 用于加密该文件的独立 IV
     nonce: number[];
-    ciphertext: number[];
-    enc_hash: number[];
 }
 
 export type OssConfigType = {
