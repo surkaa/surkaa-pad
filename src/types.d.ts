@@ -48,7 +48,6 @@ export type EncryptData = {
 export type OssConfigType = {
     accessKeyId: string;
     accessKeySecret: string;
-    bucket: string;
+    bucketName: string;
     endpoint: string;
-    region: string;
 }

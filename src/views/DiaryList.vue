@@ -23,7 +23,7 @@ onMounted(() => {
   loadRemoteDiaryList();
   watch(searchTerm, async (term) => {
     console.log(`Searching for term: ${term}`);
-    matchIds.value = await appStore.searchWithKeyword(term);
+    // matchIds.value = await appStore.searchWithKeyword(term);
   })
 });
 </script>

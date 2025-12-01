@@ -51,13 +51,12 @@ import {OssConfigType} from "../types";
 import {useRouter} from "vue-router";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
-const encryptedConfig = ref<string>('');
+const encryptedConfig = ref<number[]>([]);
 const ossConfig = ref<OssConfigType>({
   accessKeyId: '',
   accessKeySecret: '',
-  bucket: '',
+  bucketName: '',
   endpoint: '',
-  region: '',
 });
 const masterPassword = ref<string>('');
 const loading = ref<boolean>(false);
@@ -82,6 +81,7 @@ function unlock() {
   if (loading.value) return;
   loading.value = true;
   appStore.unlock(masterPassword.value)
+      .then(() => appStore.initOss(encryptedConfig.value))
       .then(() => router.replace({name: 'diary-list'}))
       .catch(err => alert(`解锁失败：${err.message || err}`))
       .finally(() => loading.value = false);
