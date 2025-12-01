@@ -46,6 +46,31 @@ async fn list_local_list(
     Ok(diaries)
 }
 
+/// 从 OSS 同步日记到本地缓存
+/// # Arguments
+/// 无需手动传参数
+/// # Returns
+/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+async fn sync_from_oss(
+    cache: State<'_, DiaryMemoryCache>,
+    em: State<'_, EncryptionManager>,
+    client: State<'_, OssClientManager>,
+    store: State<'_, SecureDiaryStore>,
+    app_state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    app_state
+        .sync_from_oss(
+            cache.deref(),
+            em.deref(),
+            client.deref(),
+            store.deref(),
+            &app_handle,
+        )
+        .await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
