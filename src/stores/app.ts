@@ -1,7 +1,7 @@
 // --- 常量 ---
 import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
-import {OssConfigType} from "../types";
+import {DiaryManifest, OssConfigType} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {listFiles} from "../utils/alioss.ts";
 import {markRaw, ref} from "vue";

@@ -26,10 +26,10 @@
       <!-- 表单 -->
       <form @submit.prevent="saveConfigAndLogin">
         <input id="master-password" type="password" required placeholder="Master Password" v-model="masterPassword">
-        <input id="access-key-id" type="text" required placeholder="AccessKey ID" v-model="ossConfig.accessKeyId">
+        <input id="access-key-id" type="text" required placeholder="AccessKey ID" v-model="ossConfig.akid">
         <input id="access-key-secret" type="password" required placeholder="AccessKey Secret"
-               v-model="ossConfig.accessKeySecret">
-        <input id="bucket-name" type="text" required placeholder="Bucket" v-model="ossConfig.bucketName">
+               v-model="ossConfig.aks">
+        <input id="bucket-name" type="text" required placeholder="Bucket" v-model="ossConfig.bucket">
         <input id="endpoint" type="text" required placeholder="Endpoint" v-model="ossConfig.endpoint">
         <button type="submit" :disabled="loading" :class="{'loading': loading}">
           {{ loading ? '正在验证并保存...' : '保存并登录' }}
@@ -52,9 +52,9 @@ import {useRouter} from "vue-router";
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
 const ossConfig = ref<OssConfigType>({
-  accessKeyId: '',
-  accessKeySecret: '',
-  bucketName: '',
+  akid: '',
+  aks: '',
+  bucket: '',
   endpoint: '',
 });
 const masterPassword = ref<string>('');
@@ -71,8 +71,18 @@ function saveConfigAndLogin() {
       masterPassword.value,
       ossConfig.value,
   )
-      .then(() => {
+      .then(() => appStore.getEncryptedConfig())
+      .then((ec) => {
+        if (!ec) throw new Error('无法获取加密配置');
+        encryptedConfig.value = ec;
         alert("保存成功，请登录以验证主密码。");
+        masterPassword.value = '';
+        ossConfig.value = {
+          akid: '',
+          aks: '',
+          bucket: '',
+          endpoint: '',
+        };
         pipeline.value = 'login';
       })
       .catch(err => alert(`保存配置失败：${err.message || err}`))

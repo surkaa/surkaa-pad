@@ -20,8 +20,8 @@ export type AttachmentMeta = {
 }
 
 export type OssConfigType = {
-    accessKeyId: string;
-    accessKeySecret: string;
-    bucketName: string;
+    akid: string;
+    aks: string;
+    bucket: string;
     endpoint: string;
 }
