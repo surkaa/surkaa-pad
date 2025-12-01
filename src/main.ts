@@ -1,9 +1,10 @@
-import { createApp } from "vue";
-import App from "./App.vue";
+import {createApp} from "vue";
 import {createPinia} from "pinia";
+import Root from "./Root.vue";
+import '/src/assets/style.css';
 import router from "./router";
 
-const app = createApp(App);
-app.use(createPinia()); // <-- 初始化 Pinia
-app.use(router);       // <-- 启用路由
-app.mount('#app');
+createApp(Root)
+    .use(createPinia())
+    .use(router)
+    .mount("#app");

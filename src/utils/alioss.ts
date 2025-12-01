@@ -1,6 +1,6 @@
 //@ts-ignore https://help.aliyun.com/zh/oss/developer-reference/node-js-1
 import OSS from "ali-oss";
-import {DiaryFileHeader, OSSConfig} from "../types";
+import {DiaryFileHeader, OssConfigType} from "../types";
 
 let client: InstanceType<typeof OSS> | null = null;
 // 引入 TextEncoder 用于将字符串转为字节
@@ -9,7 +9,7 @@ const encoder = new TextEncoder();
 /**
  * 初始化 OSS 客户端
  */
-export async function initOSS(config: OSSConfig) {
+export async function initOSS(config: OssConfigType) {
     client = new OSS({
         ...config,
         authorizationV4: true,

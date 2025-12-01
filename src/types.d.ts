@@ -45,10 +45,10 @@ export type EncryptData = {
     enc_hash: number[];
 }
 
-export interface OSSConfig {
+export type OssConfigType = {
     accessKeyId: string;
     accessKeySecret: string;
-    region: string;
-    endpoint: string;
     bucket: string;
+    endpoint: string;
+    region: string;
 }
