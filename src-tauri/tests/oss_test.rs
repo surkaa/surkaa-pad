@@ -1,19 +1,21 @@
 #[cfg(test)]
 mod ali_oss_tests {
+    use std::env;
     use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Object, Secret};
     use std::sync::Arc;
     use surkaa_pad_lib::oss_client_manager::OssClientManager;
     use tokio;
 
-    const KEY: &str = "";
-    const SECRET: &str = "";
-    const BUCKET_NAME: &str = "";
-    const ENDPOINT: &str = "";
-
     #[tokio::test]
     async fn test_oss_manager_list_objects() {
         let oss = OssClientManager::default();
-        oss.initialize(KEY, SECRET, ENDPOINT, BUCKET_NAME)
+
+        let key = env::var("ALIYUN_KEY").expect("ALIYUN_KEY 环境变量未设置");
+        let secret = env::var("ALIYUN_SECRET").expect("ALIYUN_SECRET 环境变量未设置");
+        let bucket_name = env::var("ALIYUN_BUCKET_NAME").expect("ALIYUN_BUCKET_NAME 环境变量未设置");
+        let endpoint = env::var("ALIYUN_ENDPOINT").expect("ALIYUN_ENDPOINT 环境变量未设置");
+
+        oss.initialize(&key, &secret, &bucket_name, &endpoint)
             .await
             .expect("Failed to initialize OSS client");
         let objects = oss.list_objects("test").await.expect("Failed to list objects");
@@ -21,10 +23,13 @@ mod ali_oss_tests {
     }
 
     fn init_oss_client(ep: EndPoint) -> Result<Arc<Client>, String> {
-        let key = Key::new(KEY);
-        let secret = Secret::new(SECRET);
+        let key = env::var("ALIYUN_KEY").expect("ALIYUN_KEY 环境变量未设置");
+        let secret = env::var("ALIYUN_SECRET").expect("ALIYUN_SECRET 环境变量未设置");
+        let bucket_name = env::var("ALIYUN_BUCKET_NAME").expect("ALIYUN_BUCKET_NAME 环境变量未设置");
+        let key = Key::new(key);
+        let secret = Secret::new(secret);
 
-        let bucket = Bucket::new(BUCKET_NAME, ep);
+        let bucket = Bucket::new(bucket_name, ep);
         let mut  client = Client::new(key, secret);
         client.set_bucket(bucket);
 
@@ -33,7 +38,9 @@ mod ali_oss_tests {
 
     #[tokio::test]
     async fn test_init_oss_client() {
-        let ep = EndPoint::new(ENDPOINT)
+        let endpoint = env::var("ALIYUN_ENDPOINT").expect("ALIYUN_ENDPOINT 环境变量未设置");
+
+        let ep = EndPoint::new(&endpoint)
             .map_err(|e| format!("无效的 Endpoint: {}", e))
             .unwrap();
         let client = init_oss_client(ep.clone()).expect("Failed to initialize OSS client");
@@ -45,7 +52,8 @@ mod ali_oss_tests {
 
     #[tokio::test]
     async fn test_upload_and_download_and_delete() {
-        let ep = EndPoint::new(ENDPOINT)
+        let endpoint = env::var("ALIYUN_ENDPOINT").expect("ALIYUN_ENDPOINT 环境变量未设置");
+        let ep = EndPoint::new(&endpoint)
             .map_err(|e| format!("无效的 Endpoint: {}", e))
             .unwrap();
         let client = init_oss_client(ep.clone()).expect("Failed to initialize OSS client");
