@@ -71,6 +71,25 @@ async fn sync_from_oss(
         .await
 }
 
+/// 根据日记内容搜索日记
+/// # Arguments
+/// * `keyword` - 搜索关键词
+/// # Returns
+/// * `Result<Vec<DiaryManifest>, String>` - 成功时返回匹配的日记列表，失败时返回错误信息
+#[tauri::command]
+async fn search_diaries(
+    cache: State<'_, &DiaryMemoryCache>,
+    keyword: &str,
+) -> Result<Vec<DiaryManifest>, String> {
+    let map = cache.diaries.lock().await;
+    let results: Vec<DiaryManifest> = map
+        .values()
+        .filter(|diary| diary.content.contains(keyword))
+        .cloned()
+        .collect();
+    Ok(results)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -85,7 +104,12 @@ pub fn run() {
             app.manage(AppState::default());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![unlock, list_local_list])
+        .invoke_handler(tauri::generate_handler![
+            unlock,
+            list_local_list,
+            sync_from_oss,
+            search_diaries,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
