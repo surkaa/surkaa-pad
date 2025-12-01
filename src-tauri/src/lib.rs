@@ -107,6 +107,25 @@ async fn save_diary(
         .await
 }
 
+/// 更新日记的内容
+/// # Arguments
+/// * `uuid` - 日记 UUID
+/// * `new_content` - 新的日记内容
+/// # Returns
+/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+async fn update_diary_content_only(
+    encryption: State<'_, EncryptionManager>,
+    client: State<'_, OssClientManager>,
+    store: State<'_, SecureDiaryStore>,
+    uuid: String,
+    new_content: &str,
+) -> Result<(), String> {
+    store
+        .update_diary_content_only(encryption.deref(), client.deref(), uuid, new_content)
+        .await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -127,6 +146,7 @@ pub fn run() {
             sync_from_oss,
             search_diaries,
             save_diary,
+            update_diary_content_only,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
