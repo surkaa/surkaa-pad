@@ -15,7 +15,7 @@ mod ali_oss_tests {
         let bucket_name = env::var("ALIYUN_BUCKET_NAME").expect("ALIYUN_BUCKET_NAME 环境变量未设置");
         let endpoint = env::var("ALIYUN_ENDPOINT").expect("ALIYUN_ENDPOINT 环境变量未设置");
 
-        oss.initialize(&key, &secret, &bucket_name, &endpoint)
+        oss.initialize(&key, &secret, &endpoint, &bucket_name)
             .await
             .expect("Failed to initialize OSS client");
         let objects = oss.list_objects("test").await.expect("Failed to list objects");
