@@ -9,6 +9,7 @@ use uuid::Uuid;
 const MANIFEST_FILE_NAME: &str = "manifest.enc";
 const ATTACHMENT_EXTENSION: &str = ".enc";
 
+#[derive(Default)]
 pub struct SecureDiaryStore {}
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
@@ -120,7 +121,9 @@ impl SecureDiaryStore {
     ) -> Result<(DiaryManifest, Vec<u8>), String> {
         let encrypted_data = self.download_encrypted_manifest(client, &id).await?;
 
-        let manifest = self.decrypt_bytes_to_manifest(encryption, &encrypted_data).await?;
+        let manifest = self
+            .decrypt_bytes_to_manifest(encryption, &encrypted_data)
+            .await?;
 
         Ok((manifest, encrypted_data))
     }
@@ -151,7 +154,9 @@ impl SecureDiaryStore {
         new_content: &str,
     ) -> Result<(), String> {
         // 先获取现有的 manifest
-        let (mut manifest, _) = self.get_diary_manifest(encryption, client, id.clone()).await?;
+        let (mut manifest, _) = self
+            .get_diary_manifest(encryption, client, id.clone())
+            .await?;
 
         // 更新内容和更新时间
         manifest.content = new_content.to_string();
@@ -205,7 +210,9 @@ impl SecureDiaryStore {
             nonce: nonce.clone(),
         };
 
-        let (mut manifest, _) = self.get_diary_manifest(encryption, client, id.clone()).await?;
+        let (mut manifest, _) = self
+            .get_diary_manifest(encryption, client, id.clone())
+            .await?;
         manifest.attachments.push(attachment);
         manifest.updated_at = Utc::now().timestamp();
         let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
@@ -266,7 +273,9 @@ impl SecureDiaryStore {
         file_name: String,
     ) -> Result<(), String> {
         // 更新 manifest，移除附件元数据
-        let (mut manifest, _) = self.get_diary_manifest(encryption, client, id.clone()).await?;
+        let (mut manifest, _) = self
+            .get_diary_manifest(encryption, client, id.clone())
+            .await?;
         manifest
             .attachments
             .retain(|att| att.file_name != file_name);

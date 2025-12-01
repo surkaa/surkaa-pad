@@ -19,6 +19,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(EncryptionManager::new());
             app.manage(OssClientManager::default());
+            app.manage(SecureDiaryStore::default());
             app.manage(DiaryMemoryCache::new());
             app.manage(AppState::default());
             Ok(())
