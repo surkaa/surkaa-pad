@@ -1,29 +1,30 @@
 <script setup lang="ts">
 import {computed, onMounted, ref, watch} from "vue";
-import {DiaryEntry} from "../types";
+import {DiaryManifest} from "../types";
 import {useAppStore} from "../stores/app.ts";
 
 const appStore = useAppStore();
 const searchTerm = ref('');
-const diaries = ref<DiaryEntry[]>([]);
-const matchIds = ref<Set<number>>(new Set());
+const diaries = ref<DiaryManifest[]>([]);
+const matchIds = ref<Set<string>>(new Set());
 
-const filteredDiaries = computed<DiaryEntry[]>(() => {
+const filteredDiaries = computed<DiaryManifest[]>(() => {
   if (matchIds.value.size == 0) return diaries.value;
   return diaries.value.filter(diary => matchIds.value.has(diary.id));
 });
 
-function loadRemoteDiaryList() {
-  appStore.loadRemoteDiaryList().then((remoteDiaries) => {
+function loadLocalDiaries() {
+  appStore.loadLocalDiaries().then((remoteDiaries) => {
     diaries.value = remoteDiaries;
   });
 }
 
 onMounted(() => {
-  loadRemoteDiaryList();
+  loadLocalDiaries();
   watch(searchTerm, async (term) => {
     console.log(`Searching for term: ${term}`);
-    // matchIds.value = await appStore.searchWithKeyword(term);
+    const matchIdArr = await appStore.searchWithKeyword(term);
+    matchIds.value = new Set(matchIdArr);
   })
 });
 </script>

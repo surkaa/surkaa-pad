@@ -3,7 +3,6 @@ import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
 import {DiaryManifest, OssConfigType} from "../types";
 import {invoke} from "@tauri-apps/api/core";
-import {listFiles} from "../utils/alioss.ts";
 import {markRaw, ref} from "vue";
 
 const CONFIG_FILENAME = "settings.json";
@@ -80,14 +79,12 @@ export const useAppStore = defineStore('app', () => {
         await store.value.save();
     }
 
-    async function loadRemoteDiaryList() {
-        const files = (await listFiles())
-            .filter(fn => fn.endsWith('.dat'))
-            .map(fn => Number(fn.replace('.dat', '')));
-        return files.map(id => ({
-            id,
-            nonce: []
-        }));
+    async function loadLocalDiaries(): Promise<DiaryManifest[]> {
+        return await invoke<DiaryManifest[]>('list_local_diaries');
+    }
+
+    async function searchWithKeyword(keyword: string): Promise<string[]> {
+        return await invoke<string[]>('search_diaries', {keyword});
     }
 
     return {
@@ -96,6 +93,7 @@ export const useAppStore = defineStore('app', () => {
         initOss,
         saveConfigAndLogin,
         resetConfig,
-        loadRemoteDiaryList
+        loadLocalDiaries,
+        searchWithKeyword
     }
 })
