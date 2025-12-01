@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all, write};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::{AppHandle, Manager};
 
 const CACHE_DIARY_DIR: &str = "diary_cache";
 const ATTACHMENT_EXTENSION: &str = ".enc";
@@ -27,44 +28,22 @@ impl DiaryMemoryCache {
     }
 }
 
-pub struct AppState {
-    encryption: EncryptionManager,
-    client: OssClientManager,
-    store: SecureDiaryStore,
-    cache: DiaryMemoryCache,
-    app_handle: tauri::AppHandle, // 用于获取路径
-}
+#[derive(Default)]
+pub struct AppState {}
 
 impl AppState {
-    pub fn new(encryption: EncryptionManager, client: OssClientManager, store: SecureDiaryStore, app_handle: tauri::AppHandle) -> Self {
-        Self {
-            encryption,
-            client,
-            store,
-            cache: DiaryMemoryCache::new(),
-            app_handle,
-        }
-    }
-
     /// 获取应用的日记缓存目录
-    pub fn get_diary_cache_dir(&self) -> PathBuf {
-        // let path = self
-        //     .app_handle
-        //     .path()
-        //     .app_data_dir()
-        //     .unwrap()
-        //     .join(CACHE_DIARY_DIR);
-        //
-        // if !path.exists() {
-        //     create_dir_all(&path).expect("Failed to create diary cache directory");
-        // }
-        // path
-        // 为了测试避免使用tauri::AppHandle，手动创建一个 C:\Users\SurKaa\AppData\Roaming\cn.surkaa.pad 的PathBuf
-        PathBuf::from(format!(
-            "{}\\AppData\\Roaming\\cn.surkaa.pad\\{}",
-            std::env::var("USERPROFILE").unwrap(),
-            CACHE_DIARY_DIR
-        ))
+    pub fn get_diary_cache_dir(&self, app_handle: &AppHandle) -> PathBuf {
+        let path = app_handle
+            .path()
+            .app_data_dir()
+            .unwrap()
+            .join(CACHE_DIARY_DIR);
+
+        if !path.exists() {
+            create_dir_all(&path).expect("Failed to create diary cache directory");
+        }
+        path
     }
 
     // 清空缓存目录内容
@@ -81,13 +60,19 @@ impl AppState {
     }
 
     /// 将本地文件加载到内存缓存中
-    async fn load_cache_to_memory(&self) -> Result<(), String> {
-        let cache_dir = self.get_diary_cache_dir();
-        let mut map = self.cache.diaries.lock().unwrap();
+    async fn load_cache_to_memory(
+        &self,
+        cache: &DiaryMemoryCache,
+        encryption: &EncryptionManager,
+        store: &SecureDiaryStore,
+        app_handle: &AppHandle,
+    ) -> Result<(), String> {
+        let cache_dir = self.get_diary_cache_dir(app_handle);
+        let mut map = cache.diaries.lock().unwrap();
         map.clear(); // 清空旧数据，准备加载新数据
 
         if !cache_dir.exists() {
-            *self.cache.loaded.lock().unwrap() = true;
+            *cache.loaded.lock().unwrap() = true;
             return Ok(());
         }
 
@@ -113,10 +98,10 @@ impl AppState {
                     .unwrap_or(filename);
 
                 // 3. 解密和反序列化
-                if let Ok(manifest) = self.store.decrypt_bytes_to_manifest(
-                    &self.encryption,
-                    &encrypted_data
-                ).await {
+                if let Ok(manifest) = store
+                    .decrypt_bytes_to_manifest(&encryption, &encrypted_data)
+                    .await
+                {
                     // 4. 存入内存
                     map.insert(uuid.to_string(), manifest);
                 } else {
@@ -126,22 +111,30 @@ impl AppState {
             }
         }
 
-        *self.cache.loaded.lock().unwrap() = true;
+        *cache.loaded.lock().unwrap() = true;
         Ok(())
     }
 
     /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
-    pub async fn sync_from_oss(&self) -> Result<(), String> {
-        let cache_dir = self.get_diary_cache_dir();
+    pub async fn sync_from_oss(
+        &self,
+        cache: &DiaryMemoryCache,
+        encryption: &EncryptionManager,
+        client: &OssClientManager,
+        store: &SecureDiaryStore,
+        app_handle: &AppHandle,
+    ) -> Result<(), String> {
+        let cache_dir = self.get_diary_cache_dir(app_handle);
 
         // 先加载本地文件到内存
-        self.load_cache_to_memory().await?;
+        self.load_cache_to_memory(cache, encryption, store, app_handle)
+            .await?;
 
         // 清理本地缓存
         self.clear_cache_dir(&cache_dir)?;
 
         // 获取远程列表并全部下载到硬盘
-        let remote_diaries = self.store.list_diaries(&self.client).await?;
+        let remote_diaries = store.list_diaries(client).await?;
 
         for (uuid, diary) in remote_diaries.iter() {
             let remote_etag = diary.etag();
@@ -150,23 +143,24 @@ impl AppState {
             let new_file_path = cache_dir.join(&new_filename);
 
             // 并且该方法内部包含了下载和解密逻辑
-            let (manifest, manifest_bytes) =
-                self.store.get_diary_manifest(&self.encryption, &self.client, uuid.to_string()).await?;
+            let (manifest, manifest_bytes) = store
+                .get_diary_manifest(&encryption, &client, uuid.to_string())
+                .await?;
 
             // 写入本地文件系统
             write(&new_file_path, &manifest_bytes)
                 .map_err(|e| format!("Failed to write cache file {}: {}", new_filename, e))?;
 
             // 更新内存缓存
-            let mut map = self.cache.diaries.lock().unwrap();
+            let mut map = cache.diaries.lock().unwrap();
             map.insert(uuid.to_string(), manifest);
         }
 
         Ok(())
     }
 
-    pub fn list_cached_diaries(&self) -> Vec<DiaryManifest> {
-        let map = self.cache.diaries.lock().unwrap();
+    pub fn list_cached_diaries(&self, cache: &DiaryMemoryCache) -> Vec<DiaryManifest> {
+        let map = cache.diaries.lock().unwrap();
         map.values().cloned().collect()
     }
 }
