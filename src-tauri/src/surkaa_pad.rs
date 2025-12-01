@@ -126,10 +126,6 @@ impl AppState {
     ) -> Result<(), String> {
         let cache_dir = self.get_diary_cache_dir(app_handle);
 
-        // 先加载本地文件到内存
-        self.load_cache_to_memory(cache, encryption, store, app_handle)
-            .await?;
-
         // 清理本地缓存
         self.clear_cache_dir(&cache_dir)?;
 
