@@ -146,14 +146,14 @@ async fn sync_from_oss(
 async fn search_diaries(
     cache: State<'_, &DiaryMemoryCache>,
     keyword: &str,
-) -> Result<Vec<DiaryManifest>, String> {
+) -> Result<Vec<String>, String> {
     let map = cache.diaries.lock().await;
     let results: Vec<DiaryManifest> = map
         .values()
         .filter(|diary| diary.content.contains(keyword))
         .cloned()
         .collect();
-    Ok(results)
+    Ok(results.into_iter().map(|diary| diary.id).collect())
 }
 
 //------------
