@@ -26,6 +26,10 @@ async fn unlock(
     em_state.initial(master_password, salt).await
 }
 
+//------------
+// 日记查询与同步
+//------------
+
 /// 列出本地缓存的日记列表
 /// # Arguments
 /// 无需手动传参数
@@ -90,6 +94,10 @@ async fn search_diaries(
     Ok(results)
 }
 
+//------------
+// 日记操作相关
+//------------
+
 /// 根据内容保存日记
 /// # Arguments
 /// * `content` - 日记内容
@@ -137,8 +145,77 @@ async fn delete_diary(
     store: State<'_, SecureDiaryStore>,
     uuid: String,
 ) -> Result<(), String> {
+    store.delete_diary(client.deref(), uuid).await
+}
+
+//------------
+// 附件操作相关
+//------------
+
+/// 添加附件
+/// # Arguments
+/// * `uuid` - 日记 UUID
+/// * `attachment_bytes` - 附件字节数据
+/// * `mine_type` - 附件 MIME 类型
+/// # Returns
+/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+async fn add_attachment(
+    encryption: State<'_, EncryptionManager>,
+    client: State<'_, OssClientManager>,
+    store: State<'_, SecureDiaryStore>,
+    uuid: String,
+    attachment_bytes: Vec<u8>,
+    mine_type: String,
+) -> Result<(), String> {
     store
-        .delete_diary(client.deref(), uuid)
+        .add_attachment(
+            encryption.deref(),
+            client.deref(),
+            uuid,
+            attachment_bytes,
+            mine_type,
+        )
+        .await
+}
+
+/// 下载附件
+/// # Arguments
+/// * `uuid` - 日记 UUID
+/// * `file_name` - 附件 ID
+/// * `nonce` - 解密iv
+/// # Returns
+/// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
+#[tauri::command]
+async fn download_attachment(
+    encryption: State<'_, EncryptionManager>,
+    client: State<'_, OssClientManager>,
+    store: State<'_, SecureDiaryStore>,
+    uuid: String,
+    file_name: String,
+    nonce: Vec<u8>,
+) -> Result<Vec<u8>, String> {
+    store
+        .download_attachment(encryption.deref(), client.deref(), uuid, file_name, nonce)
+        .await
+}
+
+/// 删除附件
+/// # Arguments
+/// * `uuid` - 日记 UUID
+/// * `file_name` - 附件 ID
+/// # Returns
+/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+async fn delete_attachment(
+    encryption: State<'_, EncryptionManager>,
+    client: State<'_, OssClientManager>,
+    store: State<'_, SecureDiaryStore>,
+    uuid: String,
+    file_name: String,
+) -> Result<(), String> {
+    store
+        .delete_attachment(encryption.deref(), client.deref(), uuid, file_name)
         .await
 }
 
@@ -164,6 +241,9 @@ pub fn run() {
             save_diary,
             update_diary_content_only,
             delete_diary,
+            add_attachment,
+            download_attachment,
+            delete_attachment
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
