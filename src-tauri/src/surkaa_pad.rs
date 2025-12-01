@@ -60,7 +60,7 @@ impl AppState {
     }
 
     /// 将本地文件加载到内存缓存中
-    async fn load_cache_to_memory(
+    pub async fn load_cache_to_memory(
         &self,
         cache: &DiaryMemoryCache,
         encryption: &EncryptionManager,

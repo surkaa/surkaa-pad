@@ -5,15 +5,14 @@ pub mod surkaa_pad;
 
 use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::OssClientManager;
-use crate::secure_diary_store::SecureDiaryStore;
+use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use crate::surkaa_pad::{AppState, DiaryMemoryCache};
 use std::sync::{Arc, Mutex};
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_store::Builder;
 
 /// 解锁加密管理器
 /// # Arguments
-/// * `em_state` - Tauri 状态管理中的 EncryptionManager 的 Arc<Mutex<>> 包装
 /// * `master_password` - 主密码
 /// * `salt` - 盐值
 /// # Returns
@@ -33,6 +32,30 @@ async fn unlock(
     em.initial(master_password, salt).map_err(|e| e.to_string())
 }
 
+/// 列出本地缓存的日记列表
+/// # Arguments
+/// 无需手动传参数
+/// # Returns
+/// * `Result<Vec<DiaryManifest>, String>` - 成功时返回日记列表，失败时返回错误信息
+#[tauri::command]
+async fn list_local_list(
+    cache: State<'_, DiaryMemoryCache>,
+    encryption: State<'_, Arc<Mutex<EncryptionManager>>>,
+    store: State<'_, SecureDiaryStore>,
+    app_state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<Vec<DiaryManifest>, String> {
+    // 获取 Mutex 锁，这会返回一个 MutexGuard
+    let em = encryption
+        .lock()
+        .map_err(|e| format!("无法锁定 EncryptionManager: {}", e))?;
+    app_state
+        .load_cache_to_memory(&*cache, &*em, &*store, &app_handle)
+        .await?;
+    let diaries = app_state.list_cached_diaries(&*cache);
+    Ok(diaries)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -47,7 +70,7 @@ pub fn run() {
             app.manage(AppState::default());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![unlock,])
+        .invoke_handler(tauri::generate_handler![unlock, list_local_list,])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
