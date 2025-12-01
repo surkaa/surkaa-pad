@@ -29,9 +29,8 @@
         <input id="access-key-id" type="text" required placeholder="AccessKey ID" v-model="ossConfig.accessKeyId">
         <input id="access-key-secret" type="password" required placeholder="AccessKey Secret"
                v-model="ossConfig.accessKeySecret">
-        <input id="bucket-name" type="text" required placeholder="Bucket" v-model="ossConfig.bucket">
+        <input id="bucket-name" type="text" required placeholder="Bucket" v-model="ossConfig.bucketName">
         <input id="endpoint" type="text" required placeholder="Endpoint" v-model="ossConfig.endpoint">
-        <input id="region" type="text" required placeholder="Region" v-model="ossConfig.region">
         <button type="submit" :disabled="loading" :class="{'loading': loading}">
           {{ loading ? '正在验证并保存...' : '保存并登录' }}
         </button>
@@ -223,7 +222,6 @@ onMounted(async () => {
       gap: 12px;
 
       input {
-        width: 100%;
         padding: 8px 12px;
         font-size: 16px;
         border: 1px solid var(--pad-border-color-200);
