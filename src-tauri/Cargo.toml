@@ -33,7 +33,6 @@ aead = "0.5"
 sha2 = "0.10.9"
 hmac = "0.12"
 rusqlite = { version = "0.31", features = ["bundled"] }
-jieba-rs = "0.8.1"
 digest = "0.10.7"
 aliyun-oss-client = "0.13.0-alpha9"
 tokio = "1.48.0" # 异步运行时

@@ -15,7 +15,6 @@ use sha2::{OidSha256, Sha256VarCore};
 
 use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::{OssClientManager, OssError};
-use jieba_rs::Jieba;
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
@@ -176,45 +175,6 @@ fn search_local_index(
 }
 
 #[tauri::command]
-fn tokenize_and_count(plaintext: String) -> Result<Vec<KeywordToken>, String> {
-    // 1. 初始化分词器
-    let jieba = Jieba::new();
-
-    // 2. 分词 (使用 Search 模式)
-    // 自动切分出长词和短词的组合
-    let tokens = jieba.cut_for_search(&plaintext, true);
-
-    // 3. 词频统计
-    let mut word_counts: HashMap<String, i64> = HashMap::new();
-
-    for token in tokens {
-        let word = token.to_lowercase();
-        // 过滤掉纯数字、单个字符和空白/标点符号，避免无效索引
-        if word
-            .chars()
-            .all(|c| c.is_ascii_whitespace() || c.is_ascii_punctuation() || c.is_digit(10))
-            || word.chars().count() < 2
-        {
-            continue;
-        }
-
-        *word_counts.entry(word).or_insert(0) += 1;
-    }
-
-    // 4. 格式化返回结果
-    let results: Vec<KeywordToken> = word_counts
-        .into_iter()
-        .map(|(word, count)| KeywordToken { word, count })
-        .collect();
-
-    // 降序排序
-    let mut sorted_results = results;
-    sorted_results.sort_by(|a, b| b.count.cmp(&a.count));
-
-    Ok(sorted_results)
-}
-
-#[tauri::command]
 async fn initialize_oss(
     client_state: State<'_, OssClientManager>,
     access_key_id: String,
@@ -246,7 +206,6 @@ pub fn run() {
             generate_search_hash,
             save_keyword_index_batch,
             search_local_index,
-            tokenize_and_count,
             initialize_oss,
         ])
         .run(tauri::generate_context!())
