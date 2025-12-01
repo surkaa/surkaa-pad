@@ -90,6 +90,23 @@ async fn search_diaries(
     Ok(results)
 }
 
+/// 根据内容保存日记
+/// # Arguments
+/// * `content` - 日记内容
+/// # Returns
+/// * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
+#[tauri::command]
+async fn save_diary(
+    encryption: State<'_, EncryptionManager>,
+    client: State<'_, OssClientManager>,
+    store: State<'_, SecureDiaryStore>,
+    content: &str,
+) -> Result<String, String> {
+    store
+        .create_diary(encryption.deref(), client.deref(), content)
+        .await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -109,6 +126,7 @@ pub fn run() {
             list_local_list,
             sync_from_oss,
             search_diaries,
+            save_diary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
