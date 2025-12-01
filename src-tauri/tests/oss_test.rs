@@ -6,11 +6,6 @@ mod ali_oss_tests {
     use surkaa_pad_lib::oss_client_manager::OssClientManager;
     use tokio;
 
-    const KEY: &str = "";
-    const SECRET: &str = "";
-    const BUCKET_NAME: &str = "";
-    const ENDPOINT: &str = "";
-
     #[tokio::test]
     async fn test_oss_manager_list_objects() {
         let oss = OssClientManager::default();
