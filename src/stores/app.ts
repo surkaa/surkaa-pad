@@ -1,7 +1,7 @@
 // --- 常量 ---
 import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
-import {EncryptData, OssConfigType} from "../types";
+import {OssConfigType} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {listFiles} from "../utils/alioss.ts";
 import {markRaw, ref} from "vue";
@@ -43,15 +43,14 @@ export const useAppStore = defineStore('app', () => {
 
         // 加密oss配置
         const configJson = JSON.stringify(ossConfig);
-        const encryptedConfig = await invoke<EncryptData>('encrypt_data', {
-            plaintext: configJson
+        const [encrypted_data, nonce] = await invoke<[number[], number[]]>('encrypt_data', {
+            data: configJson
         });
 
+        const encryptedConfig = [...nonce, ...encrypted_data];
+
         // 保存加密后的配置
-        await store.value.set(CONFIG_KEY, [
-            ...encryptedConfig.nonce,
-            ...encryptedConfig.ciphertext
-        ]);
+        await store.value.set(CONFIG_KEY, encryptedConfig);
         await store.value.save();
     }
 

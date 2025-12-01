@@ -72,7 +72,10 @@ function saveConfigAndLogin() {
       masterPassword.value,
       ossConfig.value,
   )
-      .then(() => pipeline.value = 'login')
+      .then(() => {
+        alert("保存成功，请登录以验证主密码。");
+        pipeline.value = 'login';
+      })
       .catch(err => alert(`保存配置失败：${err.message || err}`))
       .finally(() => loading.value = false);
 }
