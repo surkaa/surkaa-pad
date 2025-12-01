@@ -67,7 +67,7 @@ impl SecureDiaryStore {
         // 创建一个简单的 manifest
         let manifest = DiaryManifest {
             id: id.clone(),
-            algorithm: encryption.algorithm.clone(),
+            algorithm: encryption.algorithm().await,
             content: content.to_string(),
             created_at: Utc::now().timestamp(),
             updated_at: Utc::now().timestamp(),

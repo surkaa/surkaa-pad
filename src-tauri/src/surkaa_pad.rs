@@ -4,8 +4,8 @@ use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all, write};
 use std::path::PathBuf;
-use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
+use tokio::sync::Mutex;
 
 const CACHE_DIARY_DIR: &str = "diary_cache";
 const ATTACHMENT_EXTENSION: &str = ".enc";
@@ -68,11 +68,11 @@ impl AppState {
         app_handle: &AppHandle,
     ) -> Result<(), String> {
         let cache_dir = self.get_diary_cache_dir(app_handle);
-        let mut map = cache.diaries.lock().unwrap();
+        let mut map = cache.diaries.lock().await;
         map.clear(); // 清空旧数据，准备加载新数据
 
         if !cache_dir.exists() {
-            *cache.loaded.lock().unwrap() = true;
+            *cache.loaded.lock().await = true;
             return Ok(());
         }
 
@@ -111,7 +111,7 @@ impl AppState {
             }
         }
 
-        *cache.loaded.lock().unwrap() = true;
+        *cache.loaded.lock().await = true;
         Ok(())
     }
 
@@ -152,15 +152,15 @@ impl AppState {
                 .map_err(|e| format!("Failed to write cache file {}: {}", new_filename, e))?;
 
             // 更新内存缓存
-            let mut map = cache.diaries.lock().unwrap();
+            let mut map = cache.diaries.lock().await;
             map.insert(uuid.to_string(), manifest);
         }
 
         Ok(())
     }
 
-    pub fn list_cached_diaries(&self, cache: &DiaryMemoryCache) -> Vec<DiaryManifest> {
-        let map = cache.diaries.lock().unwrap();
+    pub async fn list_cached_diaries(&self, cache: &DiaryMemoryCache) -> Vec<DiaryManifest> {
+        let map = cache.diaries.lock().await;
         map.values().cloned().collect()
     }
 }
