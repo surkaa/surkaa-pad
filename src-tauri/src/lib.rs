@@ -126,6 +126,22 @@ async fn update_diary_content_only(
         .await
 }
 
+/// 删除日记
+/// # Arguments
+/// * `uuid` - 日记 UUID
+/// # Returns
+/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+async fn delete_diary(
+    client: State<'_, OssClientManager>,
+    store: State<'_, SecureDiaryStore>,
+    uuid: String,
+) -> Result<(), String> {
+    store
+        .delete_diary(client.deref(), uuid)
+        .await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -147,6 +163,7 @@ pub fn run() {
             search_diaries,
             save_diary,
             update_diary_content_only,
+            delete_diary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
