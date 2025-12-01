@@ -4,26 +4,39 @@ use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use argon2::password_hash::SaltString;
 use argon2::{Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::sync::Mutex;
+
 // 定义常量
 const NONCE_LEN: usize = 12;
 // 定义派生密钥的长度（字节），AES-256 需要 32 字节
 const KEY_LEN: usize = 32;
 
-pub struct EncryptionManager {
+pub struct EncryptionManagerInner {
     dek: Vec<u8>,
     pub algorithm: String,
+}
+
+#[derive(Clone)]
+pub struct EncryptionManager {
+    inner: Arc<Mutex<EncryptionManagerInner>>,
+    initialized: Arc<AtomicBool>, // 追踪是否初始化
 }
 
 /// 加密算法管理器实现 只用于加密和解密数据
 impl EncryptionManager {
     pub fn new() -> Self {
         EncryptionManager {
-            dek: Vec::new(), // 初始化为空
-            algorithm: "AES256-GCM_v1".to_string(),
+            inner: Arc::new(Mutex::new(EncryptionManagerInner {
+                dek: Vec::new(),
+                algorithm: "AES256-GCM_v1".to_string(),
+            })),
+            initialized: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub fn initial(&mut self, master_password: &str, salt: &str) -> Result<(), String> {
+    pub async fn initial(&self, master_password: &str, salt: &str) -> Result<(), String> {
         let memory_cost_kib = 1024 * 256;
 
         let params = ParamsBuilder::new()
@@ -49,17 +62,32 @@ impl EncryptionManager {
             return Err("派生的密钥长度不正确".to_string());
         }
 
+        // 锁定 Mutex 来修改内部状态
+        let mut inner_guard = self.inner.lock().await;
+
         // 存储 DEK
-        self.dek = dek.as_bytes().to_vec();
+        inner_guard.dek = dek.as_bytes().to_vec();
+
+        // 标记为已初始化
+        self.initialized.store(true, Ordering::SeqCst);
 
         Ok(())
     }
 
     /// 使用 DEK 加密数据，返回: (密文, nonce)
     pub async fn encrypt(&self, data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
-        let cipher =
-            Aes256Gcm::new_from_slice(&self.dek).map_err(|_| "DEK 长度错误".to_string())?;
+        // 检查是否初始化
+        if !self.initialized.load(Ordering::SeqCst) {
+            return Err("EncryptionManager 未初始化".to_string());
+        }
 
+        // 锁定 Mutex 来读取内部状态
+        let inner_guard = self.inner.lock().await;
+
+        let cipher = Aes256Gcm::new_from_slice(&inner_guard.dek)
+            .map_err(|_| "DEK 长度错误".to_string())?;
+
+        // ... (加密逻辑不变) ...
         let mut nonce_bytes = [0u8; NONCE_LEN];
         OsRng.fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -68,14 +96,14 @@ impl EncryptionManager {
             .encrypt(nonce, data)
             .map_err(|e| format!("加密失败: {:?}", e))?;
 
-        // 返回密文和随机生成的 nonce
         Ok((ciphertext, nonce_bytes.to_vec()))
     }
 
     /// 使用 DEK 和提供的 nonce 解密数据
     pub async fn decrypt(&self, ciphertext: &[u8], nonce_bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let inner_guard = self.inner.lock().await;
         let cipher =
-            Aes256Gcm::new_from_slice(&self.dek).map_err(|_| "DEK 长度错误".to_string())?;
+            Aes256Gcm::new_from_slice(&inner_guard.dek).map_err(|_| "DEK 长度错误".to_string())?;
         if nonce_bytes.len() != NONCE_LEN {
             return Err("IV 长度不正确".to_string());
         }
@@ -95,5 +123,10 @@ impl EncryptionManager {
         // 分割 nonce 和实际密文
         let (nonce_bytes, actual_ciphertext) = ciphertext.split_at(NONCE_LEN);
         self.decrypt(actual_ciphertext, nonce_bytes).await
+    }
+
+    pub async fn algorithm(&self) -> String {
+        let inner_guard = self.inner.lock().await;
+        inner_guard.algorithm.clone()
     }
 }

@@ -10,9 +10,10 @@ mod encrypt_test {
         let salt = "dGVzdF9zYWx0";
         
         // 初始化加密管理器并派生密钥
-        let mut manager = EncryptionManager::new();
+        let manager = EncryptionManager::new();
         manager
             .initial(password, salt)
+            .await
             .expect("Key derivation failed");
 
         // 加密

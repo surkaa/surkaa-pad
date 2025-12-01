@@ -18,10 +18,11 @@ mod secure_store {
             .await
             .expect("Failed to initialize OSS client");
 
-        let mut encryption = EncryptionManager::new();
+        let encryption = EncryptionManager::new();
 
         encryption
             .initial("strong_password", "dGVzdF9zYWx0")
+            .await
             .expect("Failed to initialize encryption manager");
 
         (encryption, oss, SecureDiaryStore {})
