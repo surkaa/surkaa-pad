@@ -1,3 +1,5 @@
+use crate::encryption_manager::EncryptionManager;
+use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all, write};
@@ -26,17 +28,21 @@ impl DiaryMemoryCache {
 }
 
 pub struct AppState {
+    encryption: EncryptionManager,
+    client: OssClientManager,
     store: SecureDiaryStore,
     cache: DiaryMemoryCache,
-    // app_handle: tauri::AppHandle, // 用于获取路径
+    app_handle: tauri::AppHandle, // 用于获取路径
 }
 
 impl AppState {
-    pub fn new(store: SecureDiaryStore /*, app_handle: tauri::AppHandle*/) -> Self {
+    pub fn new(encryption: EncryptionManager, client: OssClientManager, store: SecureDiaryStore, app_handle: tauri::AppHandle) -> Self {
         Self {
+            encryption,
+            client,
             store,
             cache: DiaryMemoryCache::new(),
-            // app_handle,
+            app_handle,
         }
     }
 
@@ -107,7 +113,10 @@ impl AppState {
                     .unwrap_or(filename);
 
                 // 3. 解密和反序列化
-                if let Ok(manifest) = self.store.decrypt_bytes_to_manifest(&encrypted_data).await {
+                if let Ok(manifest) = self.store.decrypt_bytes_to_manifest(
+                    &self.encryption,
+                    &encrypted_data
+                ).await {
                     // 4. 存入内存
                     map.insert(uuid.to_string(), manifest);
                 } else {
@@ -132,7 +141,7 @@ impl AppState {
         self.clear_cache_dir(&cache_dir)?;
 
         // 获取远程列表并全部下载到硬盘
-        let remote_diaries = self.store.list_diaries().await?;
+        let remote_diaries = self.store.list_diaries(&self.client).await?;
 
         for (uuid, diary) in remote_diaries.iter() {
             let remote_etag = diary.etag();
@@ -142,7 +151,7 @@ impl AppState {
 
             // 并且该方法内部包含了下载和解密逻辑
             let (manifest, manifest_bytes) =
-                self.store.get_diary_manifest(uuid.to_string()).await?;
+                self.store.get_diary_manifest(&self.encryption, &self.client, uuid.to_string()).await?;
 
             // 写入本地文件系统
             write(&new_file_path, &manifest_bytes)

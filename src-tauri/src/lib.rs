@@ -3,8 +3,7 @@ pub mod encryption_manager;
 pub mod oss_client_manager;
 pub mod secure_diary_store;
 
-use aes_gcm::aead::{KeyInit};
-use std::collections::HashMap;
+use aes_gcm::aead::KeyInit;
 use std::fs;
 use std::sync::Mutex;
 
