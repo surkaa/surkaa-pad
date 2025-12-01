@@ -63,25 +63,25 @@ async fn decrypt_data(
 
 /// 初始化 OSS 客户端
 /// # Arguments
-/// * `access_key_id` - 访问密钥 ID
-/// * `access_key_secret` - 访问密钥 Secret
-/// * `endpoint_name` - OSS 端点
+/// * `akid` - 访问密钥 ID
+/// * `aks` - 访问密钥 Secret
 /// * `bucket` - 存储桶名称
+/// * `endpoint` - OSS 端点
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn init_oss_client(
     client_state: State<'_, OssClientManager>,
-    access_key_id: &str,
-    access_key_secret: &str,
-    endpoint_name: &str,
+    akid: &str,
+    aks: &str,
     bucket: &str,
+    endpoint: &str,
 ) -> Result<(), String> {
     client_state
         .initialize(
-            access_key_id,
-            access_key_secret,
-            endpoint_name,
+            akid,
+            aks,
+            endpoint,
             bucket,
         )
         .await
