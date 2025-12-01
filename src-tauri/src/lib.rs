@@ -39,9 +39,9 @@ async fn unlock(
 #[tauri::command]
 async fn encrypt_data(
     em_state: State<'_, EncryptionManager>,
-    data: Vec<u8>,
+    data: String,
 ) -> Result<(Vec<u8>, Vec<u8>), String> {
-    em_state.encrypt(&data).await
+    em_state.encrypt(&data.as_bytes()).await
 }
 
 /// 解密数据
@@ -55,8 +55,10 @@ async fn decrypt_data(
     em_state: State<'_, EncryptionManager>,
     ciphertext: Vec<u8>,
     nonce: Vec<u8>,
-) -> Result<Vec<u8>, String> {
-    em_state.decrypt(&ciphertext, &nonce).await
+) -> Result<String, String> {
+    let decrypted_bytes = em_state.decrypt(&ciphertext, &nonce).await?;
+    let decrypted_string = String::from_utf8(decrypted_bytes).map_err(|e| e.to_string())?;
+    Ok(decrypted_string)
 }
 
 /// 初始化 OSS 客户端
