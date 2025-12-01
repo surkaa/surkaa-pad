@@ -98,7 +98,7 @@ async fn init_oss_client(
 /// # Returns
 /// * `Result<Vec<DiaryManifest>, String>` - 成功时返回日记列表，失败时返回错误信息
 #[tauri::command]
-async fn list_local_list(
+async fn list_local_diaries(
     cache: State<'_, DiaryMemoryCache>,
     em: State<'_, EncryptionManager>,
     store: State<'_, SecureDiaryStore>,
@@ -300,7 +300,7 @@ pub fn run() {
             encrypt_data,
             decrypt_data,
             init_oss_client,
-            list_local_list,
+            list_local_diaries,
             sync_from_oss,
             search_diaries,
             save_diary,
