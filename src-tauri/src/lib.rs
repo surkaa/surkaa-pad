@@ -11,6 +11,11 @@ use std::ops::Deref;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_store::Builder;
 
+//------------
+// 解锁与加密解密 以及初始化云端存储客户端
+// TODO 未来是否可以直接在rust层操作配置文件？免去向前端直接提供加密与解密的命令
+//------------
+
 /// 解锁加密管理器
 /// # Arguments
 /// * `master_password` - 主密码
@@ -24,6 +29,61 @@ async fn unlock(
     salt: &str,
 ) -> Result<(), String> {
     em_state.initial(master_password, salt).await
+}
+
+/// 加密数据
+/// # Arguments
+/// * `data` - 待加密的数据
+/// # Returns
+/// * `Result<(Vec<u8>, Vec<u8>), String>` - 成功时返回 (密文, nonce)，失败时返回错误信息
+#[tauri::command]
+async fn encrypt_data(
+    em_state: State<'_, EncryptionManager>,
+    data: Vec<u8>,
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    em_state.encrypt(&data).await
+}
+
+/// 解密数据
+/// # Arguments
+/// * `ciphertext` - 密文
+/// * `nonce` - 解密用的 nonce
+/// # Returns
+/// * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
+#[tauri::command]
+async fn decrypt_data(
+    em_state: State<'_, EncryptionManager>,
+    ciphertext: Vec<u8>,
+    nonce: Vec<u8>,
+) -> Result<Vec<u8>, String> {
+    em_state.decrypt(&ciphertext, &nonce).await
+}
+
+/// 初始化 OSS 客户端
+/// # Arguments
+/// * `access_key_id` - 访问密钥 ID
+/// * `access_key_secret` - 访问密钥 Secret
+/// * `endpoint_name` - OSS 端点
+/// * `bucket` - 存储桶名称
+/// # Returns
+/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+async fn init_oss_client(
+    client_state: State<'_, OssClientManager>,
+    access_key_id: &str,
+    access_key_secret: &str,
+    endpoint_name: &str,
+    bucket: &str,
+) -> Result<(), String> {
+    client_state
+        .initialize(
+            access_key_id,
+            access_key_secret,
+            endpoint_name,
+            bucket,
+        )
+        .await
+        .map_err(|e| e.to_string())
 }
 
 //------------
@@ -235,6 +295,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             unlock,
+            encrypt_data,
+            decrypt_data,
+            init_oss_client,
             list_local_list,
             sync_from_oss,
             search_diaries,
