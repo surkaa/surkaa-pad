@@ -2,7 +2,9 @@
 import {computed, onMounted, ref, watch} from "vue";
 import {DiaryManifest} from "../types";
 import {useAppStore} from "../stores/app.ts";
+import {useRouter} from "vue-router";
 
+const router = useRouter();
 const appStore = useAppStore();
 const searchTerm = ref('');
 const diaries = ref<DiaryManifest[]>([]);
@@ -17,6 +19,21 @@ function loadLocalDiaries() {
   appStore.loadLocalDiaries().then((remoteDiaries) => {
     diaries.value = remoteDiaries;
   });
+}
+
+async function syncFromOss() {
+  await appStore.syncFromOss()
+}
+
+function openDiary(diary: DiaryManifest) {
+  router.push({
+    name: 'DiaryDetail',
+    state: {diary}
+  });
+}
+
+function newDiary() {
+  router.push({name: 'DiaryDetail'});
 }
 
 onMounted(() => {

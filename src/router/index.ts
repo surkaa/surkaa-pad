@@ -4,22 +4,22 @@ import DiaryList from "../views/DiaryList.vue";
 import Diary from "../views/Diary.vue";
 
 const routes: RouteRecordRaw[] = [{
-    name: 'unlock',
+    name: 'Unlock',
     path: '/',
     component: Unlock,
     meta: {
         title: '解锁屏幕'
     }
 }, {
-    name: 'diary-list',
+    name: 'DiaryList',
     path: '/diary-list',
     component: DiaryList,
     meta: {
         title: '日志列表'
     }
 }, {
-    name: 'diary',
-    path: '/diary/:id',
+    name: 'DiaryDetail',
+    path: '/diary-detail',
     component: Diary,
     meta: {
         title: '日志详情'

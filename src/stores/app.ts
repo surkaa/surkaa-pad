@@ -87,6 +87,10 @@ export const useAppStore = defineStore('app', () => {
         return await invoke<string[]>('search_diaries', {keyword});
     }
 
+    async function syncFromOss() {
+        return await invoke<void>('sync_from_oss');
+    }
+
     return {
         getEncryptedConfig,
         unlock,
@@ -94,6 +98,7 @@ export const useAppStore = defineStore('app', () => {
         saveConfigAndLogin,
         resetConfig,
         loadLocalDiaries,
-        searchWithKeyword
+        searchWithKeyword,
+        syncFromOss
     }
 })
