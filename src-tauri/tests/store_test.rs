@@ -6,10 +6,10 @@ mod secure_store {
     use surkaa_pad_lib::secure_diary_store::SecureDiaryStore;
     use tokio;
 
-    const KEY: &str = "LTAI5tK9YLg76q1NeitfSR5V";
-    const SECRET: &str = "LIvwNVKuZg1JQMmNKs2msvQ7QoEinS";
-    const BUCKET_NAME: &str = "surkaa";
-    const ENDPOINT: &str = "cn-guangzhou";
+    const KEY: &str = "";
+    const SECRET: &str = "";
+    const BUCKET_NAME: &str = "";
+    const ENDPOINT: &str = "";
 
     async fn create_store() -> (EncryptionManager, OssClientManager, SecureDiaryStore) {
         // 初始化 OSS 客户端管理器
