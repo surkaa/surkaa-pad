@@ -305,10 +305,10 @@ onUnmounted(() => {
           @change="handleImageSelect"
       />
       <button id="diary-detail-header-save-btn" @click="saveDiary" :disabled="saveLoading">
-        {{ saveLoading ? "保存中..." : (isNew ? "保存日记" : "更新日记") }}
+        {{ saveLoading ? "保存中..." : (isNew ? "保存" : "更新") }}
       </button>
       <button id="diary-detail-header-delete-btn" @click="deleteDiary" :disabled="delLoading">
-        {{ delLoading ? "删除中..." : "删除日记" }}
+        {{ delLoading ? "删除中..." : "删除" }}
       </button>
     </section>
     <section id="diary-detail-main">
@@ -349,11 +349,24 @@ $diary-editor-padding: 10px;
     padding: 10px;
     background-color: var(--pad-bg-color-300);
     border-bottom: 1px solid var(--pad-border-color-400);
+    gap: 10px;
 
     button {
       padding: 5px 10px;
       font-size: 14px;
       cursor: pointer;
+    }
+
+    // 第一个按钮靠左，其他靠右
+    #diary-detail-header-back-btn {
+      margin-right: auto;
+    }
+
+    // 删除按钮样式
+    #diary-detail-header-delete-btn {
+      margin-left: 20px;
+      background-color: var(--pad-danger-color);
+      color: white;
     }
   }
 
@@ -373,7 +386,6 @@ $diary-editor-padding: 10px;
       background-color: var(--pad-bg-color-100);
       color: var(--pad-text-color-100);
       font-family: inherit;
-      border: 1px solid var(--pad-border-color-100);
       text-align: left;
 
       :deep(img.diary-img) {
@@ -396,7 +408,7 @@ $diary-editor-padding: 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 10px;
+    padding: 4px 10px;
     background-color: var(--pad-bg-color-300);
     border-top: 1px solid var(--pad-border-color-400);
   }
