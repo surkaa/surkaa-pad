@@ -86,11 +86,11 @@ mod secure_store {
         // 判断创建时间和更新时间是否在当前时间的一分钟内
         let now = Utc::now().timestamp();
         assert!(
-            (now - diary.created_at).abs() < 60,
+            (now - diary.created).abs() < 60,
             "Diary created_at timestamp is not recent"
         );
         assert!(
-            (now - diary.updated_at).abs() < 60,
+            (now - diary.updated).abs() < 60,
             "Diary updated_at timestamp is not recent"
         );
         assert!(
@@ -207,7 +207,7 @@ mod secure_store {
         );
         let attachment = &diary.attachments[0];
         assert_eq!(
-            attachment.mime_type, "png",
+            attachment.mimetype, "png",
             "Attachment file extension mismatch"
         );
 
@@ -217,7 +217,7 @@ mod secure_store {
                 &e,
                 &c,
                 new_id.clone(),
-                attachment.file_name.clone(),
+                attachment.filename.clone(),
                 attachment.nonce.clone(),
             )
             .await
@@ -264,7 +264,7 @@ mod secure_store {
 
         // 删除附件
         store
-            .delete_attachment(&e, &c, new_id.clone(), attachment.file_name.clone())
+            .delete_attachment(&e, &c, new_id.clone(), attachment.filename.clone())
             .await
             .expect("Failed to delete attachment");
 

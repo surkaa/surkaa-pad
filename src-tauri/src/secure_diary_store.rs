@@ -18,16 +18,16 @@ pub struct DiaryManifest {
     pub id: String,
     pub algorithm: String, // 加密算法名称
     pub content: String,   // 日记正文
-    pub created_at: i64,
-    pub updated_at: i64,
+    pub created: i64,
+    pub updated: i64,
     pub attachments: Vec<AttachmentMeta>, // 附件列表
 }
 
 // 单个附件的元数据
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct AttachmentMeta {
-    pub file_name: String,
-    pub mime_type: String,
+    pub filename: String,
+    pub mimetype: String,
     pub size: u64,
     pub nonce: Vec<u8>, // 用于加密该文件的独立 IV
 }
@@ -69,8 +69,8 @@ impl SecureDiaryStore {
             id: id.clone(),
             algorithm: encryption.algorithm().await,
             content: content.to_string(),
-            created_at: Utc::now().timestamp(),
-            updated_at: Utc::now().timestamp(),
+            created: Utc::now().timestamp(),
+            updated: Utc::now().timestamp(),
             attachments: Vec::new(),
         };
 
@@ -160,7 +160,7 @@ impl SecureDiaryStore {
 
         // 更新内容和更新时间
         manifest.content = new_content.to_string();
-        manifest.updated_at = Utc::now().timestamp();
+        manifest.updated = Utc::now().timestamp();
 
         // 序列化为 JSON
         let manifest_json = serde_json::to_vec(&manifest)
@@ -204,8 +204,8 @@ impl SecureDiaryStore {
 
         // 创建附件元数据
         let attachment = AttachmentMeta {
-            file_name: file_name.clone(),
-            mime_type,
+            filename: file_name.clone(),
+            mimetype: mime_type,
             size: encrypted_bytes.len() as u64,
             nonce: nonce.clone(),
         };
@@ -214,7 +214,7 @@ impl SecureDiaryStore {
             .get_diary_manifest(encryption, client, id.clone())
             .await?;
         manifest.attachments.push(attachment);
-        manifest.updated_at = Utc::now().timestamp();
+        manifest.updated = Utc::now().timestamp();
         let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
         let manifest_json = serde_json::to_vec(&manifest)
             .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
@@ -278,8 +278,8 @@ impl SecureDiaryStore {
             .await?;
         manifest
             .attachments
-            .retain(|att| att.file_name != file_name);
-        manifest.updated_at = Utc::now().timestamp();
+            .retain(|att| att.filename != file_name);
+        manifest.updated = Utc::now().timestamp();
 
         // 序列化
         let manifest_json = serde_json::to_vec(&manifest)

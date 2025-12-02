@@ -17,7 +17,7 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
     result = diaries.value.filter(diary => matchIds.value.has(diary.id));
   }
   // 默认按创建时间倒序排列 (最新的在上面)
-  return result.slice().sort((a, b) => b.createdAt - a.createdAt);
+  return result.slice().sort((a, b) => b.created - a.created);
 });
 
 function loadLocalDiaries() {
@@ -114,7 +114,7 @@ onMounted(() => {
             @click="openDiary(diary)"
         >
           <div class="card-header">
-            <span class="date">{{ formatDate(diary.createdAt) }}</span>
+            <span class="date">{{ formatDate(diary.created) }}</span>
             <span v-if="diary.attachments?.length" class="attachment-icon">📎</span>
           </div>
           <p class="preview-content">
