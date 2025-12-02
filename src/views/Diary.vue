@@ -161,25 +161,43 @@ async function deleteDiary() {
   }
 }
 
-// 触发添加图片
-function triggerAddImage() {
-  fileInputRef.value?.click();
+// 根据文件类型确定 Marker 前缀
+function getTagPrefix(mimeType: string): 'IMG' | 'VID' | 'AUD' | null {
+  if (mimeType.startsWith('image/')) return 'IMG';
+  if (mimeType.startsWith('video/')) return 'VID';
+  if (mimeType.startsWith('audio/')) return 'AUD';
+  return null;
+}
+
+// 触发添加媒体（图片/视频/音频）
+function triggerAddMedia(accept: string) {
+  if (isNew.value) {
+    alert("请先保存一次日记再上传媒体文件（需要生成日记ID）");
+    return;
+  }
+  if (fileInputRef.value) {
+    fileInputRef.value.accept = accept; // 设置允许选择的文件类型
+    fileInputRef.value.click();
+  }
 }
 
 // 处理图片选择与上传
-async function handleImageSelect(event: Event) {
-  if (isNew.value) {
-    alert("请先保存一次日记再上传图片（需要生成日记ID）");
-    return;
-  }
-
+async function handleMediaSelect(event: Event) {
   const input = event.target as HTMLInputElement;
   if (!input.files || input.files.length === 0) return;
 
+  if (isNew.value) {
+    alert("请先保存一次日记再上传图片（需要生成日记ID）");
+    input.value = "";
+    return;
+  }
+
   const file = input.files[0];
-  // 简单的 MIME 类型检查
-  if (!file.type.startsWith("image/")) {
-    alert("请选择图片文件");
+  const tagPrefix = getTagPrefix(file.type);
+
+  if (!tagPrefix) {
+    alert("不支持的文件类型: " + file.type);
+    input.value = "";
     return;
   }
 
@@ -212,8 +230,7 @@ async function handleImageSelect(event: Event) {
     diary.value = updatedManifest;
 
     // 在光标位置插入图片
-    insertImageToEditor(file, newFile.filename);
-
+    insertImageToEditor(file, newFile.filename, tagPrefix);
   } catch (e) {
     console.error("上传图片失败", e);
     alert("上传图片失败: " + e);
@@ -223,22 +240,34 @@ async function handleImageSelect(event: Event) {
 }
 
 // 将图片插入到编辑器光标处
-function insertImageToEditor(file: File, filename: string) {
+function insertImageToEditor(file: File, filename: string, tagPrefix: 'IMG' | 'VID' | 'AUD') {
   if (!editorRef.value) return;
 
   // 临时的 Blob URL 用于显示
   const url = URL.createObjectURL(file);
+  let mediaElement: HTMLImageElement | HTMLVideoElement | HTMLAudioElement;
 
-  // 创建 img 标签
-  const img = document.createElement('img');
-  img.src = url;
-  img.className = 'diary-img'; // 对应 CSS 样式
-  img.dataset.filename = filename; // 重要：存下文件名
-  // 设置为块级元素
-  img.style.display = 'block';
-  img.style.width = '100%';
-  img.style.marginTop = '10px';
-  img.style.marginBottom = '10px';
+  // 1. 创建元素
+  if (tagPrefix === 'IMG') {
+    mediaElement = document.createElement('img');
+  } else if (tagPrefix === 'VID') {
+    mediaElement = document.createElement('video');
+    mediaElement.setAttribute('controls', 'true');
+    mediaElement.style.display = 'block';
+    mediaElement.style.width = '100%';
+  } else if (tagPrefix === 'AUD') {
+    mediaElement = document.createElement('audio');
+    mediaElement.setAttribute('controls', 'true');
+  } else {
+    return; // 不支持的类型
+  }
+
+  // 2. 设置通用属性
+  mediaElement.src = url;
+  mediaElement.className = `diary-media ${tagPrefix.toLowerCase()}`;
+  mediaElement.dataset.filename = filename;
+  mediaElement.style.marginTop = '10px';
+  mediaElement.style.marginBottom = '10px';
 
   editorRef.value.focus();
 
@@ -246,23 +275,18 @@ function insertImageToEditor(file: File, filename: string) {
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0) {
     const range = selection.getRangeAt(0);
-
-    // 检查选区是否在编辑器内
-    if (editorRef.value.contains(range.commonAncestorContainer)) {
-      range.deleteContents();
-      range.insertNode(img);
-      range.setStartAfter(img);
-      range.setEndAfter(img);
-      range.collapse(true);
-
-      selection.removeAllRanges();
-      selection.addRange(range);
-    } else {
-      // 如果光标不在编辑器里，追加到最后
-      editorRef.value.appendChild(img);
-    }
+    range.deleteContents();
+    range.insertNode(mediaElement);
+    // 插入换行符并将光标移到其后
+    const br = document.createElement('br');
+    range.setStartAfter(mediaElement);
+    range.insertNode(br);
+    range.setStartAfter(br);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
   } else {
-    editorRef.value.appendChild(img);
+    editorRef.value.appendChild(mediaElement);
   }
 }
 
@@ -294,15 +318,21 @@ onUnmounted(() => {
   <main id="diary-detail">
     <section id="diary-detail-header">
       <button id="diary-detail-header-back-btn" @click="back">返回</button>
-      <button @click="triggerAddImage" :disabled="isNew">
+      <button @click="triggerAddMedia('image/*')" :disabled="isNew">
         插入图片 {{ isNew ? '(需先保存)' : '' }}
+      </button>
+      <button @click="triggerAddMedia('video/*')" :disabled="isNew">
+        插入视频 {{ isNew ? '(需先保存)' : '' }}
+      </button>
+      <button @click="triggerAddMedia('audio/*')" :disabled="isNew">
+        插入音频 {{ isNew ? '(需先保存)' : '' }}
       </button>
       <input
           type="file"
           ref="fileInputRef"
           style="display: none"
           accept="image/*"
-          @change="handleImageSelect"
+          @change="handleMediaSelect"
       />
       <button id="diary-detail-header-save-btn" @click="saveDiary" :disabled="saveLoading">
         {{ saveLoading ? "保存中..." : (isNew ? "保存" : "更新") }}
@@ -388,17 +418,25 @@ $diary-editor-padding: 10px;
       font-family: inherit;
       text-align: left;
 
-      :deep(img.diary-img) {
-        display: block;
-        width: 100%;
+      // 泛化媒体样式
+      :deep(.diary-media) {
+        max-width: 100%;
         margin: 10px 0;
         border-radius: 4px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         cursor: default;
+      }
 
-        &:hover {
-          box-shadow: 0 0 0 2px var(--pad-shadow-color-100); /* 选中效果 */
-        }
+      // 视频和音频的特殊样式
+      :deep(video.diary-media) {
+        width: 100%;
+        height: auto;
+        background-color: black;
+      }
+
+      :deep(audio.diary-media) {
+        width: 100%;
+        height: 50px; /* 通常音频文件较短 */
       }
     }
   }
