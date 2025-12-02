@@ -191,7 +191,6 @@ onMounted(() => {
     }
 
     .sync-btn {
-      background: none;
       border: 1px solid var(--pad-border-color-200);
       border-radius: 8px;
       width: 42px;
@@ -201,7 +200,7 @@ onMounted(() => {
       align-items: center;
       justify-content: center;
       color: var(--pad-text-color-300);
-      background-color: var(--pad-bg-color-200);
+      background: var(--pad-bg-color-200) none;
       transition: all 0.2s;
 
       &:hover:not(:disabled) {
