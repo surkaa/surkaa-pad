@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { DiaryManifest, AttachmentMeta } from "../types";
-import { invoke } from "@tauri-apps/api/core";
-import { useRouter } from "vue-router";
+import {computed, onMounted, ref} from "vue";
+import {DiaryManifest, AttachmentMeta} from "../types";
+import {invoke} from "@tauri-apps/api/core";
+import {useRouter} from "vue-router";
 import {formatTimestamp} from "../utils/time.ts";
 
 const router = useRouter();
@@ -87,7 +87,7 @@ async function deleteDiary() {
 
   delLoading.value = true;
   try {
-    await invoke("delete_diary", { uuid: diary.value.id });
+    await invoke("delete_diary", {uuid: diary.value.id});
     console.log("日记删除成功");
     alert("日记删除成功");
     back();
@@ -347,14 +347,12 @@ hr {
 .danger-btn {
   background-color: var(--pad-danger-color);
   color: var(--pad-bg-color-100);
-  &:hover:not(:disabled) {
-    background-color: darken(#D9534F, 10%); // 红色加深
-  }
 }
 
 .info-btn {
   background-color: var(--pad-info-color);
   color: var(--pad-bg-color-100);
+
   &:hover:not(:disabled) {
     background-color: var(--pad-primary-color);
   }
@@ -456,6 +454,7 @@ hr {
     .btn {
       margin: 0;
     }
+
     .disabled {
       background-color: var(--pad-bg-color-400);
       color: var(--pad-text-color-500);
