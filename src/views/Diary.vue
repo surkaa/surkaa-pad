@@ -363,8 +363,8 @@ $diary-editor-padding: 10px;
     background-color: var(--pad-bg-color-100);
 
     .custom-editor {
-      width: calc(100% - 4 * $diary-editor-padding);
-      min-height: calc(100% - 4 * $diary-editor-padding);
+      width: calc(100% - 2 * $diary-editor-padding);
+      min-height: calc(100% - 2 * $diary-editor-padding);
       outline: none;
       overflow-y: auto;
       white-space: pre-wrap;
