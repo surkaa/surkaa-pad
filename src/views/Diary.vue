@@ -22,6 +22,12 @@ const saveLoading = ref(false);
 const delLoading = ref(false);
 const isNew = computed(() => !diary.value.id); // 判断是否为新建日记
 
+// 附件操作的 Loading 状态
+const attachLoading = ref(false);
+
+// 使用 Map 存储每个附件的下载 Loading 状态: key=filename, value=boolean
+const downloadLoading = ref(new Map<string, boolean>());
+
 const contentLen = computed(() => {
   return diary.value.content ? diary.value.content.length : 0;
 });
@@ -106,16 +112,17 @@ async function handleAttachFile(event: Event) {
     alert("请先保存日记内容后再添加附件！");
     return;
   }
+  if (attachLoading.value) return; // 防止重复点击
 
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
 
-  // 模拟文件读取 (在实际 Tauri 应用中，可能需要更安全的 FS 操作)
-  // 这里简化为 base64 或 ArrayBuffer 转换
+  attachLoading.value = true;
+  input.value = ''; // 立即清空 input，准备下一次选择
+
   try {
-    // 假设我们能获取文件的字节数据 (Vec<u8>) 和 MIME 类型
-    const fileBuffer = await file.arrayBuffer(); // 假设这是字节数据
+    const fileBuffer = await file.arrayBuffer();
     const mimeType = file.type || 'application/octet-stream';
     const bytes = Array.from(new Uint8Array(fileBuffer));
 
@@ -142,39 +149,20 @@ async function handleAttachFile(event: Event) {
 
   } catch (e) {
     console.error("添加附件失败:", e);
-    alert("添加附件失败。");
+    alert("添加附件失败。请检查文件大小或网络。");
+  } finally {
+    attachLoading.value = false;
   }
 }
 
 // 下载附件
-async function handleDownloadAttachment(attachment: AttachmentMeta) {
-  try {
-    const fileBytes = await invoke<number[]>("download_attachment", {
-      uuid: diary.value.id,
-      filename: attachment.filename,
-      nonce: attachment.nonce
-    });
-
-    // 模拟文件下载 (将字节数据转换为 Blob 并下载)
-    const blob = new Blob([new Uint8Array(fileBytes)], { type: attachment.mimetype });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = attachment.filename;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    a.remove();
-
-    console.log(`附件 "${attachment.filename}" 下载成功`);
-
-  } catch (e) {
-    console.error("下载附件失败:", e);
-    alert("下载附件失败: " + e);
-  }
+async function handleDownloadAttachment(_attachment: AttachmentMeta) {
 }
 
-// 删除附件
+// async function saveAndOpen(blob: Blob, filename: string): Promise<string> {
+//
+// }
+
 async function handleDeleteAttachment(attachment: AttachmentMeta) {
   if (!confirm(`确认删除附件 "${attachment.filename}" 吗?`)) return;
 
@@ -184,7 +172,6 @@ async function handleDeleteAttachment(attachment: AttachmentMeta) {
       filename: attachment.filename
     });
 
-    // 从本地列表中移除
     diary.value.attachments = diary.value.attachments.filter(
         (a) => a.filename !== attachment.filename
     );
@@ -197,8 +184,6 @@ async function handleDeleteAttachment(attachment: AttachmentMeta) {
 }
 
 onMounted(() => {
-  console.log('Diary OnMounted');
-  // 检查路由状态中是否有日记对象，用于编辑现有日记
   if (history.state.diary) {
     diary.value = history.state.diary;
   }
@@ -218,7 +203,7 @@ onMounted(() => {
         <button
             class="btn danger-btn"
             @click="deleteDiary"
-            :disabled="delLoading"
+            :disabled="delLoading || saveLoading || attachLoading"
         >
           {{ isNew ? '放弃' : (delLoading ? '删除中...' : '删除') }}
         </button>
@@ -226,20 +211,21 @@ onMounted(() => {
         <button
             class="btn primary-btn"
             @click="saveDiary"
-            :disabled="saveLoading"
+            :disabled="saveLoading || delLoading || attachLoading"
         >
           {{ saveLoading ? '保存中...' : '保存' }}
         </button>
       </div>
     </header>
 
-    <hr />
+    <hr/>
 
     <section class="content-area">
       <textarea
           v-model="diary.content"
           placeholder="记录你的一天..."
           autofocus
+          :disabled="saveLoading || delLoading || attachLoading"
       ></textarea>
 
       <div class="metadata">
@@ -255,20 +241,39 @@ onMounted(() => {
         <li v-for="att in diary.attachments" :key="att.filename" class="attachment-item">
           <span class="file-name">{{ att.filename }} ({{ (att.size / 1024).toFixed(2) }} KB)</span>
           <div class="att-actions">
-            <button class="btn info-btn small-btn" @click="handleDownloadAttachment(att)">下载</button>
-            <button class="btn danger-btn small-btn" @click="handleDeleteAttachment(att)">删除</button>
+            <button
+                class="btn info-btn small-btn"
+                @click="handleDownloadAttachment(att)"
+                :disabled="downloadLoading.get(att.filename) || delLoading || saveLoading || attachLoading"
+            >
+              <span v-if="downloadLoading.get(att.filename)" class="spinning">⟳</span>
+              <span v-else>下载</span>
+            </button>
+
+            <button
+                class="btn danger-btn small-btn"
+                @click="handleDeleteAttachment(att)"
+                :disabled="downloadLoading.get(att.filename) || delLoading || saveLoading || attachLoading"
+            >
+              删除
+            </button>
           </div>
         </li>
 
         <li class="attachment-add">
-          <label for="file-upload" class="btn primary-btn small-btn" :class="{ 'disabled': isNew }">
-            + 添加附件
+          <label
+              for="file-upload"
+              class="btn primary-btn small-btn"
+              :class="{ 'disabled': isNew || attachLoading }"
+          >
+            <span v-if="attachLoading" class="spinning">⟳</span>
+            <span v-else>+ 添加附件</span>
           </label>
           <input
               id="file-upload"
               type="file"
               @change="handleAttachFile"
-              :disabled="isNew"
+              :disabled="isNew || attachLoading"
               style="display: none;"
           />
         </li>
