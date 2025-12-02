@@ -63,7 +63,13 @@ function initObserver() {
 
 // 返回上一级页面
 function back(needRefresh = false) {
-  // TODO: 提示保存未保存的更改？
+  const content = editorRef.value?.innerHTML || "";
+  console.log("返回日记列表, needRefresh=", needRefresh, " isNew=", isNew.value, " content.length=", content?.length);
+  if (!needRefresh && isNew.value && content) {
+    // 提示保存未保存的更改
+    const confirmLeave = confirm("确认返回？未保存的更改将会丢失。");
+    if (!confirmLeave) return;
+  }
   router.replace({
     name: "DiaryList",
     state: {refresh: needRefresh}
@@ -426,7 +432,7 @@ $diary-editor-padding: 10px;
         max-width: 100%;
         margin: 10px 0;
         border-radius: 4px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         cursor: default;
       }
 
