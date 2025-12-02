@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod secure_store {
+mod app_state_test {
     use std::env;
     use surkaa_pad_lib::encryption_manager::EncryptionManager;
     use surkaa_pad_lib::oss_client_manager::OssClientManager;
