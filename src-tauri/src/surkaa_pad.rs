@@ -2,6 +2,7 @@ use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use std::collections::HashMap;
+use std::env::current_dir;
 use std::fs::{create_dir_all, read_dir, remove_dir_all, write};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
@@ -33,12 +34,19 @@ pub struct AppState {}
 
 impl AppState {
     /// 获取应用的日记缓存目录
-    pub fn get_diary_cache_dir(&self, app_handle: &AppHandle) -> PathBuf {
-        let path = app_handle
-            .path()
-            .app_data_dir()
-            .unwrap()
-            .join(CACHE_DIARY_DIR);
+    pub fn get_diary_cache_dir(&self, app_handle: Option<&AppHandle>) -> PathBuf {
+        let path = if let Some(app_handle) = app_handle {
+            app_handle
+                .path()
+                .app_data_dir()
+                .unwrap()
+                .join(CACHE_DIARY_DIR)
+        } else {
+            let mut path = current_dir().expect("Failed to get current directory");
+            path.push(CACHE_DIARY_DIR);
+
+            path
+        };
 
         if !path.exists() {
             create_dir_all(&path).expect("Failed to create diary cache directory");
@@ -65,7 +73,7 @@ impl AppState {
         cache: &DiaryMemoryCache,
         encryption: &EncryptionManager,
         store: &SecureDiaryStore,
-        app_handle: &AppHandle,
+        app_handle: Option<&AppHandle>,
     ) -> Result<(), String> {
         let cache_dir = self.get_diary_cache_dir(app_handle);
         let mut map = cache.diaries.lock().await;
@@ -122,7 +130,7 @@ impl AppState {
         encryption: &EncryptionManager,
         client: &OssClientManager,
         store: &SecureDiaryStore,
-        app_handle: &AppHandle,
+        app_handle: Option<&AppHandle>,
     ) -> Result<(), String> {
         let cache_dir = self.get_diary_cache_dir(app_handle);
 

@@ -13,7 +13,7 @@ const ATTACHMENT_EXTENSION: &str = ".enc";
 pub struct SecureDiaryStore {}
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct DiaryManifest {
     pub id: String,
     pub algorithm: String, // 加密算法名称
@@ -24,7 +24,7 @@ pub struct DiaryManifest {
 }
 
 // 单个附件的元数据
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct AttachmentMeta {
     pub file_name: String,
     pub mime_type: String,

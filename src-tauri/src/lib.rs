@@ -106,7 +106,7 @@ async fn list_local_diaries(
     app_handle: AppHandle,
 ) -> Result<Vec<DiaryManifest>, String> {
     app_state
-        .load_cache_to_memory(cache.deref(), em.deref(), store.deref(), &app_handle)
+        .load_cache_to_memory(cache.deref(), em.deref(), store.deref(), Some(&app_handle))
         .await?;
     let diaries = app_state.list_cached_diaries(cache.deref()).await;
     Ok(diaries)
@@ -132,7 +132,7 @@ async fn sync_from_oss(
             em.deref(),
             client.deref(),
             store.deref(),
-            &app_handle,
+            Some(&app_handle),
         )
         .await
 }

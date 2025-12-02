@@ -15,6 +15,8 @@ mod secure_store {
         let secret = env::var("ALIYUN_SECRET").expect("ALIYUN_SECRET 环境变量未设置");
         let bucket_name = env::var("ALIYUN_BUCKET_NAME").expect("ALIYUN_BUCKET_NAME 环境变量未设置");
         let endpoint = env::var("ALIYUN_ENDPOINT").expect("ALIYUN_ENDPOINT 环境变量未设置");
+        let mp = env::var("MASTER_PASSWORD").unwrap();
+        let salt = env::var("SALT").unwrap();
 
         oss.initialize(&key, &secret, &endpoint, &bucket_name)
             .await
@@ -23,7 +25,7 @@ mod secure_store {
         let encryption = EncryptionManager::new();
 
         encryption
-            .initial("strong_password", "dGVzdF9zYWx0")
+            .initial(&mp, &salt)
             .await
             .expect("Failed to initialize encryption manager");
 
