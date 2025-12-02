@@ -57,7 +57,7 @@ function newDiary() {
 
 // 格式化时间辅助函数
 function formatDate(timestamp: number) {
-  return new Date(timestamp).toLocaleString('zh-CN', {
+  return new Date(timestamp * 1000).toLocaleString('zh-CN', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -226,6 +226,7 @@ onMounted(() => {
   .scroll-container {
     flex-grow: 1;
     overflow-y: auto;
+    padding-top: 8px;
     padding-bottom: 80px; /* 为 FAB 留出空间 */
 
     /* 隐藏滚动条但保留功能 */
@@ -288,7 +289,6 @@ onMounted(() => {
 
       /* 多行文本截断 */
       display: -webkit-box;
-      -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
       text-overflow: ellipsis;
