@@ -74,9 +74,9 @@ async function saveDiary() {
   saveLoading.value = true;
   if (!editorRef.value) return;
 
-  const currentImages = Array.from(editorRef.value.querySelectorAll('img.diary-img'))
-      .map(img => (img as HTMLElement).dataset.filename)
-      .filter(name => name !== undefined) as string[];
+  const currentMedias = Array.from(editorRef.value.querySelectorAll('.diary-media'))
+      .map(el => (el as HTMLElement).dataset.filename)
+      .filter(fn => fn) as string[];
 
   // 从 DOM 解析回纯文本 + 标记
   diary.value.content = parseHtmlToText(editorRef.value);
@@ -93,7 +93,7 @@ async function saveDiary() {
     if (!isNew.value && diary.value.attachments) {
       const filesToDelete = diary.value.attachments.filter(att => {
         // 如果附件在当前编辑器里找不到，说明被删了
-        return !currentImages.includes(att.filename);
+        return !currentMedias.includes(att.filename);
       });
 
       if (filesToDelete.length > 0) {

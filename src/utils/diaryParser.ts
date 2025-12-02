@@ -35,6 +35,8 @@ export async function parseTextToHtml(
         const tagType = match[1];       // IMG, VID, or AUD
         const filename = match[2];      // abc.png
 
+        const elementTag = TAG_MAP[tagType as keyof typeof TAG_MAP];
+
         // 找到对应的附件信息以获取 nonce 用于下载时解密
         const attachment = attachments.find(a => a.filename === filename);
         if (!attachment) {
@@ -55,8 +57,6 @@ export async function parseTextToHtml(
             });
             const url = URL.createObjectURL(blob);
 
-            const elementTag = TAG_MAP[tagType as keyof typeof TAG_MAP];
-
             // 动态创建媒体元素
             let mediaHtml: string;
             if (elementTag === 'img') {
@@ -72,7 +72,10 @@ export async function parseTextToHtml(
             return {marker: fullMarker, html: mediaHtml};
         } catch (e) {
             console.error(`加载媒体文件失败: ${filename}`, e);
-            return {marker: fullMarker, html: `<div class="media-error">[加载失败: ${filename}]</div>`};
+            return {
+                marker: fullMarker,
+                html: `<div class="media-error" data-tag="${elementTag}" data-filename="${attachment.filename}">[加载失败: ${filename}]</div>`
+            };
         }
     });
 
@@ -95,7 +98,8 @@ export function parseHtmlToText(htmlElement: HTMLElement): string {
     // 使用 Clone 节点的方法来处理，不影响界面
     const clone = htmlElement.cloneNode(true) as HTMLElement;
 
-    const mediaElements = clone.querySelectorAll('.diary-media');
+    // 选择.diary-media和.media-error元素进行替换
+    const mediaElements = clone.querySelectorAll('.diary-media, .media-error');
     mediaElements.forEach(media => {
         const filename = media.getAttribute('data-filename');
         const tagName = media.tagName.toUpperCase(); // IMG, VIDEO, AUDIO
@@ -105,6 +109,12 @@ export function parseHtmlToText(htmlElement: HTMLElement): string {
             if (tagName === 'IMG') tagPrefix = 'IMG';
             else if (tagName === 'VIDEO') tagPrefix = 'VID';
             else if (tagName === 'AUDIO') tagPrefix = 'AUD';
+            else if (media.classList.contains('media-error')) {
+                const dataTag = media.getAttribute('data-tag');
+                if (dataTag === 'img') tagPrefix = 'IMG';
+                else if (dataTag === 'video') tagPrefix = 'VID';
+                else if (dataTag === 'audio') tagPrefix = 'AUD';
+            }
 
             if (tagPrefix) {
                 const textNode = document.createTextNode(`<<${tagPrefix}:${filename}>>`);
@@ -114,26 +124,13 @@ export function parseHtmlToText(htmlElement: HTMLElement): string {
         }
     });
 
-    // --- 2. 换行符修正 (新增逻辑) ---
-
     let htmlString = clone.innerHTML;
-
-    // a) 将 <br> 标签替换为单个换行符 \n (通常出现在段落内的强制换行)
     htmlString = htmlString.replace(/<br\s*\/?>/gi, '\n');
-
-    // b) 将 <div> 和 <p> 的**开头**标签替换为两个换行符 \n\n
-    // 这是解决段落丢失的核心。它标志着新段落的开始。
     htmlString = htmlString.replace(/<(?:p|div)\s*[^>]*>/gi, '\n');
-
-    // c) 移除所有剩余的 HTML 标签（包括关闭标签 </div>, </p> 和所有行内标签）
-    // 此时，段落分隔符 \n\n 已经被保留。
     htmlString = htmlString.replace(/<[^>]+>/g, '');
-
-    // d) 清理冗余的换行符
-    // 压缩三个或更多连续的换行符到 \n\n (标准段落分隔)，这会处理多个空行或连续的空块。
-    // /g 确保全局替换，/i 确保不区分大小写。
     htmlString = htmlString.replace(/(\n\s*){3,}/g, '\n');
-
-    // 最终返回清理后的字符串，并去除首尾可能存在的空白或换行符
+    // 把`&lt;`和`&gt;`还原
+    htmlString = htmlString.replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
     return htmlString.trim();
 }
