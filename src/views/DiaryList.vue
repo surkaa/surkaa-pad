@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, ref, watch} from "vue";
+import {computed, onMounted, ref, toRaw, watch} from "vue";
 import {DiaryManifest} from "../types";
 import {useAppStore} from "../stores/app.ts";
 import {useRouter} from "vue-router";
@@ -46,7 +46,7 @@ async function syncFromOss() {
 function openDiary(diary: DiaryManifest) {
   router.push({
     name: 'DiaryDetail',
-    state: {diary}
+    state: {diary: toRaw(diary)}
   });
 }
 
