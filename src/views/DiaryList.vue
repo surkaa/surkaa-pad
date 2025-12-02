@@ -12,6 +12,7 @@ const diaries = ref<DiaryManifest[]>([]);
 const matchIds = ref<Set<string>>(new Set());
 const isSyncing = ref(false); // 新增同步状态Loading
 
+const MAX_DIARY_PREVIEW_LENGTH = 10;
 const filteredDiaries = computed<DiaryManifest[]>(() => {
   let result = diaries.value;
   if (matchIds.value.size > 0) {
@@ -112,7 +113,7 @@ onMounted(() => {
             <span v-if="diary.attachments?.length" class="attachment-icon">📎</span>
           </div>
           <p class="preview-content">
-            {{ diary.content || '无标题日记' }}
+            {{ diary.content.slice(0, MAX_DIARY_PREVIEW_LENGTH) }}{{ diary.content.length > MAX_DIARY_PREVIEW_LENGTH ? '...' : '' }}
           </p>
         </li>
       </transition-group>
