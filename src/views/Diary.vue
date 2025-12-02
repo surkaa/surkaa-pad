@@ -188,7 +188,7 @@ async function handleMediaSelect(event: Event) {
     const arrayBuffer = await file.arrayBuffer();
     const bytes = Array.from(new Uint8Array(arrayBuffer));
 
-    // 调用后端上传
+    // 调用后端上传 TODO 处理大文件
     const updatedManifest = await invoke<DiaryManifest>("add_attachment", {
       uuid: diary.value.id,
       bytes,
