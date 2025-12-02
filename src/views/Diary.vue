@@ -57,7 +57,7 @@ async function saveDiary() {
       console.log("更新日记", diary.value);
       await invoke("update_diary_content_only", {
         uuid: diary.value.id,
-        new_content: diary.value.content
+        newContent: diary.value.content
       });
       diary.value.updated = Date.now(); // 模拟后端更新时间
       console.log("日记更新成功");
