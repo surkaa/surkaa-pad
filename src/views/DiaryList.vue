@@ -119,8 +119,11 @@ onMounted(() => {
         </li>
       </transition-group>
 
-      <div v-if="filteredDiaries.length === 0" class="empty-state">
+      <div v-if="filteredDiaries.length === 0 && !isSyncing" class="empty-state">
         <p>这里空空如也 🍂</p>
+      </div>
+      <div v-else-if="filteredDiaries.length === 0" class="empty-state">
+        <p>正在同步中，请稍候... ⏳</p>
       </div>
     </section>
 
