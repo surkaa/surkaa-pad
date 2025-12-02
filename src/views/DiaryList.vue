@@ -62,7 +62,11 @@ function newDiary() {
 
 onMounted(() => {
   console.log("DiaryList mounted, loading local diaries");
-  syncFromOss();
+  if (history.state.refresh) {
+    syncFromOss();
+  } else {
+    loadLocalDiaries();
+  }
   watch(searchTerm, async (term) => {
     console.log(`Searching for term: ${term}`);
     // 如果搜索词为空，清空匹配集，显示所有

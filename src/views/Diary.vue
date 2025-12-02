@@ -62,10 +62,11 @@ function initObserver() {
 }
 
 // 返回上一级页面
-function back() {
+function back(needRefresh = false) {
   // TODO: 提示保存未保存的更改？
   router.replace({
-    name: "DiaryList"
+    name: "DiaryList",
+    state: {refresh: needRefresh}
   });
 }
 
@@ -154,7 +155,7 @@ async function deleteDiary() {
     await invoke("delete_diary", {uuid: diary.value.id});
     console.log("日记删除成功");
     alert("日记删除成功");
-    back();
+    back(true);
   } catch (e) {
     console.error("删除日记失败", e);
     alert("删除日记失败: " + e);
