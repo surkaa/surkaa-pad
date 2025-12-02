@@ -188,7 +188,7 @@ async function handleMediaSelect(event: Event) {
     const arrayBuffer = await file.arrayBuffer();
     const bytes = Array.from(new Uint8Array(arrayBuffer));
 
-    // 调用后端上传 TODO 处理大文件
+    // 调用后端上传 TODO 处理大文件 测试目前可上传的最大文件的大小 未来考虑使用u64来尝试 再不行就分片上传
     const updatedManifest = await invoke<DiaryManifest>("add_attachment", {
       uuid: diary.value.id,
       bytes,
@@ -314,6 +314,7 @@ onMounted(async () => {
       </button>
     </section>
     <section id="diary-detail-main">
+      <!-- TODO 考虑封装一个统一的渲染器 v-model传入内容并可以设置内容 未来再考虑有没有必要直接将DiaryManifest中的content从字符串转成对象列表的形式 -->
       <div
           id="diary-editor"
           ref="editorRef"
