@@ -47,8 +47,6 @@ export async function parseTextToHtml(
             const blob = new Blob([new Uint8Array(bytes)], {type: attachment.mimetype || 'image/png'});
             const url = URL.createObjectURL(blob);
 
-            // 生成 img 标签，注意加上 data-filename 方便保存时还原
-            // style="display:block; width:100%" 满足你占满宽度的需求
             const imgTag = `<img src="${url}" data-filename="${filename}" class="diary-img" alt="${attachment.filename}"/>`;
             return {marker: fullMarker, html: imgTag};
         } catch (e) {

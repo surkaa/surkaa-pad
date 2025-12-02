@@ -314,7 +314,7 @@ $diary-editor-padding: 10px;
 
       :deep(img.diary-img) {
         display: block;
-        max-width: 100%;
+        width: 100%;
         margin: 10px 0;
         border-radius: 4px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
