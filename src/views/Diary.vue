@@ -43,16 +43,13 @@ async function saveDiary() {
   if (!editorRef.value) return;
 
   // 从 DOM 解析回纯文本 + 标记
-  const contentToSave = parseHtmlToText(editorRef.value);
+  diary.value.content = parseHtmlToText(editorRef.value);
 
   if (!diary.value.content || diary.value.content.length === 0) {
     alert("日记内容不能为空");
     saveLoading.value = false;
     return;
   }
-
-  // 更新 content 数据
-  diary.value.content = contentToSave;
 
   try {
     if (isNew.value) {
@@ -150,7 +147,9 @@ async function handleImageSelect(event: Event) {
     const newFile = updatedManifest.attachments.find(a => !oldFiles.includes(a.filename));
 
     if (!newFile) {
-      throw new Error("无法获取新上传的文件名");
+      // throw new Error("无法获取新上传的文件名");
+      alert("上传成功，但无法获取新上传的文件名");
+      return;
     }
 
     // 更新本地数据
@@ -196,13 +195,8 @@ function insertImageToEditor(file: File, filename: string) {
     if (editorRef.value.contains(range.commonAncestorContainer)) {
       range.deleteContents();
       range.insertNode(img);
-      // 插入后把光标移动到图片后面，并加个换行，方便继续输入
       range.setStartAfter(img);
       range.setEndAfter(img);
-      // 插入一个换行符，不然光标可能卡在图片旁边
-      const br = document.createElement('br');
-      range.insertNode(br);
-      range.setStartAfter(br);
       range.collapse(true);
 
       selection.removeAllRanges();
