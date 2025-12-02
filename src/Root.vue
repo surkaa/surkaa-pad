@@ -37,9 +37,7 @@ onMounted(disableRefresh);
 <template>
   <router-view v-slot="{ Component }">
     <transition name="fade-transform" mode="out-in">
-      <keep-alive>
-        <component :key="route.path" :is="Component"/>
-      </keep-alive>
+      <component :key="route.path" :is="Component"/>
     </transition>
   </router-view>
 </template>

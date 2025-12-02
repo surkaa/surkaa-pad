@@ -52,7 +52,10 @@ function openDiary(diary: DiaryManifest) {
 
 // 绑定到悬浮按钮
 function newDiary() {
-  router.push({name: 'DiaryDetail'});
+  router.push({
+    name: 'DiaryDetail',
+    state: {diary: undefined}
+  });
 }
 
 // 格式化时间辅助函数
