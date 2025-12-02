@@ -144,7 +144,7 @@ async fn sync_from_oss(
 /// * `Result<Vec<DiaryManifest>, String>` - 成功时返回匹配的日记列表，失败时返回错误信息
 #[tauri::command]
 async fn search_diaries(
-    cache: State<'_, &DiaryMemoryCache>,
+    cache: State<'_, DiaryMemoryCache>,
     keyword: &str,
 ) -> Result<Vec<String>, String> {
     let map = cache.diaries.lock().await;
