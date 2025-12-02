@@ -127,4 +127,51 @@ onMounted(() => {
 </template>
 
 <style scoped lang="scss">
+#diary-detail {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  #diary-detail-header, #diary-detail-footer {
+    height: 50px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+    background-color: var(--pad-bg-color-300);
+    border-bottom: 1px solid var(--pad-border-color-400);
+
+    button {
+      padding: 5px 10px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+  }
+
+  #diary-detail-main {
+    flex: 1;
+    padding: 10px;
+    background-color: var(--pad-bg-color-100);
+
+    #diary-detail-content {
+      width: 100%;
+      height: 100%;
+      border: none;
+      resize: none;
+      font-size: 16px;
+      line-height: 1.5;
+      outline: none;
+      background-color: var(--pad-bg-color-100);
+      font-family: 'Segoe UI', serif;
+    }
+  }
+
+  #diary-detail-footer-left, #diary-detail-footer-right {
+    display: flex;
+    gap: 2rem;
+    font-size: 12px;
+    color: var(--pad-text-color-300);
+  }
+}
 </style>
