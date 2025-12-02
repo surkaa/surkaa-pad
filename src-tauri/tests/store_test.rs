@@ -50,12 +50,12 @@ mod secure_store {
 
         let content = "This is a test diary content.";
 
-        let new_id = store
+        let new_diary = store
             .create_diary(&e, &c, content)
             .await
             .expect("Failed to create diary");
 
-        println!("Created new diary with ID: {}", new_id);
+        println!("Created new diary with ID: {}", new_diary.id);
 
         // 验证新创建的日记是否在列表中
         let diary_ids = store
@@ -66,18 +66,18 @@ mod secure_store {
             .map(|(id, _)| id)
             .collect::<Vec<String>>();
         assert!(
-            diary_ids.contains(&new_id),
+            diary_ids.contains(&new_diary.id),
             "New diary ID not found in the list: {}",
             diary_ids.join(", ")
         );
 
         // 获取刚创建的日记内容
         let (diary, _) = store
-            .get_diary_manifest(&e, &c, new_id.clone())
+            .get_diary_manifest(&e, &c, new_diary.id)
             .await
             .expect("Failed to get diary manifest");
 
-        assert_eq!(diary.id, new_id, "Diary ID does not match");
+        assert_eq!(diary.id, new_diary.id, "Diary ID does not match");
         assert_eq!(
             diary.algorithm, "AES256-GCM_v1",
             "Diary algorithm does not match"
@@ -107,27 +107,27 @@ mod secure_store {
 
         let content = "This is a test diary content to be deleted.";
 
-        let new_id = store
+        let new_diary = store
             .create_diary(&e, &c, content)
             .await
             .expect("Failed to create diary");
 
-        println!("Created new diary with ID: {}", new_id);
+        println!("Created new diary with ID: {}", new_diary.id);
 
         // 删除日记
         store
-            .delete_diary(&c, new_id.clone())
+            .delete_diary(&c, new_diary.id.to_string())
             .await
             .expect("Failed to delete diary");
 
         // 验证日记已被删除
-        let result = store.get_diary_manifest(&e, &c, new_id.clone()).await;
+        let result = store.get_diary_manifest(&e, &c, new_diary.id.to_string()).await;
         assert!(
             result.is_err(),
             "Expected error when fetching deleted diary, but got success"
         );
 
-        println!("Diary with ID: {} deleted successfully.", new_id);
+        println!("Diary with ID: {} deleted successfully.", new_diary.id);
     }
 
     #[tokio::test]
@@ -136,23 +136,23 @@ mod secure_store {
 
         let content = "This is the original diary content.";
 
-        let new_id = store
+        let new_diary = store
             .create_diary(&e, &c, content)
             .await
             .expect("Failed to create diary");
 
-        println!("Created new diary with ID: {}", new_id);
+        println!("Created new diary with ID: {}", new_diary.id);
 
         // 更新日记内容
         let updated_content = "This is the updated diary content.";
         store
-            .update_diary_content_only(&e, &c, new_id.clone(), updated_content)
+            .update_diary_content_only(&e, &c, new_diary.id.to_string(), updated_content)
             .await
             .expect("Failed to update diary content");
 
         // 获取更新后的日记内容
         let (diary, _) = store
-            .get_diary_manifest(&e, &c, new_id.clone())
+            .get_diary_manifest(&e, &c, new_diary.id.to_string())
             .await
             .expect("Failed to get diary manifest");
 
@@ -170,12 +170,12 @@ mod secure_store {
 
         let content = "This is the original diary content.";
 
-        let new_id = store
+        let new_diary = store
             .create_diary(&e, &c, content)
             .await
             .expect("Failed to create diary");
 
-        println!("Created new diary with ID: {}", new_id);
+        println!("Created new diary with ID: {}", new_diary.id);
 
         // 更新日记附件
         let attachment_bytes = b"Sample attachment data".to_vec();
@@ -185,18 +185,18 @@ mod secure_store {
             .add_attachment(
                 &e,
                 &c,
-                new_id.clone(),
+                new_diary.id.to_string(),
                 attachment_bytes.clone(),
                 "png".to_string(),
             )
             .await
             .expect("Failed to add attachment");
 
-        print!("Added attachment to diary ID: {}", new_id);
+        print!("Added attachment to diary ID: {}", new_diary.id.to_string());
 
         // 获取更新后的日记内容
         let (diary, _) = store
-            .get_diary_manifest(&e, &c, new_id.clone())
+            .get_diary_manifest(&e, &c, new_diary.id.to_string())
             .await
             .expect("Failed to get diary manifest");
 
@@ -216,7 +216,7 @@ mod secure_store {
             .download_attachment(
                 &e,
                 &c,
-                new_id.clone(),
+                new_diary.id.to_string(),
                 attachment.filename.clone(),
                 attachment.nonce.clone(),
             )
@@ -236,23 +236,23 @@ mod secure_store {
 
         let content = "This is the original diary content.";
 
-        let new_id = store
+        let new_diary = store
             .create_diary(&e, &c, content)
             .await
             .expect("Failed to create diary");
 
-        println!("Created new diary with ID: {}", new_id);
+        println!("Created new diary with ID: {}", new_diary.id);
 
         // 添加附件
         let attachment_bytes = b"Sample attachment data".to_vec();
         store
-            .add_attachment(&e, &c, new_id.clone(), attachment_bytes, "txt".to_string())
+            .add_attachment(&e, &c, new_diary.id.to_string(), attachment_bytes, "txt".to_string())
             .await
             .expect("Failed to add attachment");
 
         // 获取日记以获取附件信息
         let (diary, _) = store
-            .get_diary_manifest(&e, &c, new_id.clone())
+            .get_diary_manifest(&e, &c, new_diary.id.to_string())
             .await
             .expect("Failed to get diary manifest");
         assert_eq!(
@@ -264,13 +264,13 @@ mod secure_store {
 
         // 删除附件
         store
-            .delete_attachment(&e, &c, new_id.clone(), attachment.filename.clone())
+            .delete_attachment(&e, &c, new_diary.id.to_string(), attachment.filename.clone())
             .await
             .expect("Failed to delete attachment");
 
         // 验证附件已被删除
         let (updated_diary, _) = store
-            .get_diary_manifest(&e, &c, new_id.clone())
+            .get_diary_manifest(&e, &c, new_diary.id.to_string())
             .await
             .expect("Failed to get updated diary manifest");
 
@@ -279,6 +279,6 @@ mod secure_store {
             "Attachment was not deleted correctly"
         );
 
-        println!("Attachment deleted successfully from diary ID: {}", new_id);
+        println!("Attachment deleted successfully from diary ID: {}", new_diary.id);
     }
 }
