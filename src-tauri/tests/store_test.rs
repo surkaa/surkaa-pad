@@ -73,7 +73,7 @@ mod secure_store {
 
         // 获取刚创建的日记内容
         let (diary, _) = store
-            .get_diary_manifest(&e, &c, new_diary.id)
+            .get_diary_manifest(&e, &c, new_diary.id.to_string())
             .await
             .expect("Failed to get diary manifest");
 
