@@ -320,15 +320,15 @@ onUnmounted(() => {
 <template>
   <main id="diary-detail">
     <section id="diary-detail-header">
-      <button id="diary-detail-header-back-btn" @click="back">返回</button>
+      <button id="diary-detail-header-back-btn" @click="back()">返回</button>
       <button @click="triggerAddMedia('image/*')" :disabled="isNew">
-        插入图片 {{ isNew ? '(需先保存)' : '' }}
+        图片
       </button>
       <button @click="triggerAddMedia('video/*')" :disabled="isNew">
-        插入视频 {{ isNew ? '(需先保存)' : '' }}
+        视频
       </button>
       <button @click="triggerAddMedia('audio/*')" :disabled="isNew">
-        插入音频 {{ isNew ? '(需先保存)' : '' }}
+        音频
       </button>
       <input
           type="file"
