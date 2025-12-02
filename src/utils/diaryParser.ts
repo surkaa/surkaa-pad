@@ -95,9 +95,7 @@ export function parseHtmlToText(htmlElement: HTMLElement): string {
     // 使用 Clone 节点的方法来处理，不影响界面
     const clone = htmlElement.cloneNode(true) as HTMLElement;
 
-    // 查找所有媒体元素：img, video, audio
-    const mediaElements = clone.querySelectorAll('img.diary-media, video.diary-media, audio.diary-media');
-
+    const mediaElements = clone.querySelectorAll('.diary-media');
     mediaElements.forEach(media => {
         const filename = media.getAttribute('data-filename');
         const tagName = media.tagName.toUpperCase(); // IMG, VIDEO, AUDIO
@@ -110,10 +108,32 @@ export function parseHtmlToText(htmlElement: HTMLElement): string {
 
             if (tagPrefix) {
                 const textNode = document.createTextNode(`<<${tagPrefix}:${filename}>>`);
+                // 用 TextNode 替换整个媒体元素
                 media.parentNode?.replaceChild(textNode, media);
             }
         }
     });
 
-    return clone.innerText;
+    // --- 2. 换行符修正 (新增逻辑) ---
+
+    let htmlString = clone.innerHTML;
+
+    // a) 将 <br> 标签替换为单个换行符 \n (通常出现在段落内的强制换行)
+    htmlString = htmlString.replace(/<br\s*\/?>/gi, '\n');
+
+    // b) 将 <div> 和 <p> 的**开头**标签替换为两个换行符 \n\n
+    // 这是解决段落丢失的核心。它标志着新段落的开始。
+    htmlString = htmlString.replace(/<(?:p|div)\s*[^>]*>/gi, '\n');
+
+    // c) 移除所有剩余的 HTML 标签（包括关闭标签 </div>, </p> 和所有行内标签）
+    // 此时，段落分隔符 \n\n 已经被保留。
+    htmlString = htmlString.replace(/<[^>]+>/g, '');
+
+    // d) 清理冗余的换行符
+    // 压缩三个或更多连续的换行符到 \n\n (标准段落分隔)，这会处理多个空行或连续的空块。
+    // /g 确保全局替换，/i 确保不区分大小写。
+    htmlString = htmlString.replace(/(\n\s*){3,}/g, '\n');
+
+    // 最终返回清理后的字符串，并去除首尾可能存在的空白或换行符
+    return htmlString.trim();
 }
