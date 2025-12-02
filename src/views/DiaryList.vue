@@ -54,14 +54,15 @@ function openDiary(diary: DiaryManifest) {
 
 // 绑定到悬浮按钮
 function newDiary() {
-  router.push({
+  router.replace({
     name: 'DiaryDetail',
     state: {diary: undefined}
   });
 }
 
 onMounted(() => {
-  loadLocalDiaries();
+  console.log("DiaryList mounted, loading local diaries");
+  syncFromOss();
   watch(searchTerm, async (term) => {
     console.log(`Searching for term: ${term}`);
     // 如果搜索词为空，清空匹配集，显示所有
@@ -71,7 +72,7 @@ onMounted(() => {
     }
     const matchIdArr = await appStore.searchWithKeyword(term);
     matchIds.value = new Set(matchIdArr);
-  })
+  });
 });
 </script>
 

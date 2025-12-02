@@ -64,7 +64,9 @@ function initObserver() {
 // 返回上一级页面
 function back() {
   // TODO: 提示保存未保存的更改？
-  router.back();
+  router.replace({
+    name: "DiaryList"
+  });
 }
 
 // 保存或者更新日记
