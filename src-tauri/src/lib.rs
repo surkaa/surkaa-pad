@@ -217,8 +217,8 @@ async fn delete_diary(
 /// 添加附件
 /// # Arguments
 /// * `uuid` - 日记 UUID
-/// * `attachment_bytes` - 附件字节数据
-/// * `mine_type` - 附件 MIME 类型
+/// * `bytes` - 附件字节数据
+/// * `minetype` - 附件 MIME 类型
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
@@ -227,16 +227,16 @@ async fn add_attachment(
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
     uuid: String,
-    attachment_bytes: Vec<u8>,
-    mine_type: String,
+    bytes: Vec<u8>,
+    minetype: String,
 ) -> Result<(), String> {
     store
         .add_attachment(
             encryption.deref(),
             client.deref(),
             uuid,
-            attachment_bytes,
-            mine_type,
+            bytes,
+            minetype,
         )
         .await
 }
@@ -244,7 +244,7 @@ async fn add_attachment(
 /// 下载附件
 /// # Arguments
 /// * `uuid` - 日记 UUID
-/// * `file_name` - 附件 ID
+/// * `filename` - 附件 ID
 /// * `nonce` - 解密iv
 /// # Returns
 /// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
@@ -254,18 +254,18 @@ async fn download_attachment(
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
     uuid: String,
-    file_name: String,
+    filename: String,
     nonce: Vec<u8>,
 ) -> Result<Vec<u8>, String> {
     store
-        .download_attachment(encryption.deref(), client.deref(), uuid, file_name, nonce)
+        .download_attachment(encryption.deref(), client.deref(), uuid, filename, nonce)
         .await
 }
 
 /// 删除附件
 /// # Arguments
 /// * `uuid` - 日记 UUID
-/// * `file_name` - 附件 ID
+/// * `filename` - 附件 ID
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
@@ -274,10 +274,10 @@ async fn delete_attachment(
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
     uuid: String,
-    file_name: String,
+    filename: String,
 ) -> Result<(), String> {
     store
-        .delete_attachment(encryption.deref(), client.deref(), uuid, file_name)
+        .delete_attachment(encryption.deref(), client.deref(), uuid, filename)
         .await
 }
 
