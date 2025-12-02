@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, ref} from "vue";
+import {computed, onMounted, ref} from "vue";
 import {DiaryManifest} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {useRouter} from "vue-router";
@@ -18,8 +18,6 @@ const DEFAULT_DIARY: DiaryManifest = {
   attachments: []
 } as const;
 
-// observer 实例
-let observer: MutationObserver | null = null;
 const diary = ref<DiaryManifest>(DEFAULT_DIARY);
 const saveLoading = ref(false);
 const delLoading = ref(false);
@@ -33,33 +31,6 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 const contentLen = computed(() => {
   return diary.value.content ? diary.value.content.length : 0;
 });
-
-function initObserver() {
-  if (!editorRef.value) return;
-
-  observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      // 检测是否有节点被移除
-      if (mutation.removedNodes.length > 0) {
-        mutation.removedNodes.forEach((node) => {
-          // 判断移除的是否是我们的图片
-          if (node.nodeName === 'IMG' && (node as Element).classList.contains('diary-img')) {
-            const imgNode = node as HTMLImageElement;
-            const filename = imgNode.dataset.filename;
-            console.log(`检测到图片被移除: ${filename}`);
-            // TODO 暂时不自动删除附件，等保存日记时统一处理
-          }
-        });
-      }
-    });
-  });
-
-  // 开始监听 editorRef 的子节点变化
-  observer.observe(editorRef.value, {
-    childList: true, // 监听子节点增删
-    subtree: true    // 监听所有后代节点（防止图片嵌套在 div 里被一起删掉）
-  });
-}
 
 // 返回上一级页面
 function back(needRefresh = false) {
@@ -312,15 +283,7 @@ onMounted(async () => {
       );
     }
   }
-  initObserver();
 });
-
-onUnmounted(() => {
-  if (observer) {
-    observer.disconnect();
-    observer = null;
-  }
-})
 </script>
 
 <template>
