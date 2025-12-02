@@ -84,14 +84,14 @@ mod secure_store {
         );
         assert_eq!(diary.content, content, "Diary content does not match");
         // 判断创建时间和更新时间是否在当前时间的一分钟内
-        let now = Utc::now().timestamp();
+        let now = Utc::now().timestamp_millis();
         assert!(
-            (now - diary.created).abs() < 60,
-            "Diary created_at timestamp is not recent"
+            (now - diary.created).abs() < 60000,
+            "Diary created_at timestamp_millis is not recent"
         );
         assert!(
-            (now - diary.updated).abs() < 60,
-            "Diary updated_at timestamp is not recent"
+            (now - diary.updated).abs() < 60000,
+            "Diary updated_at timestamp_millis is not recent"
         );
         assert!(
             diary.attachments.is_empty(),

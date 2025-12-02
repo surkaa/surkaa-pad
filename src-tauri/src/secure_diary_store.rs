@@ -69,8 +69,8 @@ impl SecureDiaryStore {
             id: id.clone(),
             algorithm: encryption.algorithm().await,
             content: content.to_string(),
-            created: Utc::now().timestamp(),
-            updated: Utc::now().timestamp(),
+            created: Utc::now().timestamp_millis(),
+            updated: Utc::now().timestamp_millis(),
             attachments: Vec::new(),
         };
 
@@ -160,7 +160,7 @@ impl SecureDiaryStore {
 
         // 更新内容和更新时间
         manifest.content = new_content.to_string();
-        manifest.updated = Utc::now().timestamp();
+        manifest.updated = Utc::now().timestamp_millis();
 
         // 序列化为 JSON
         let manifest_json = serde_json::to_vec(&manifest)
@@ -214,7 +214,7 @@ impl SecureDiaryStore {
             .get_diary_manifest(encryption, client, id.clone())
             .await?;
         manifest.attachments.push(attachment);
-        manifest.updated = Utc::now().timestamp();
+        manifest.updated = Utc::now().timestamp_millis();
         let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
         let manifest_json = serde_json::to_vec(&manifest)
             .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
@@ -279,7 +279,7 @@ impl SecureDiaryStore {
         manifest
             .attachments
             .retain(|att| att.filename != file_name);
-        manifest.updated = Utc::now().timestamp();
+        manifest.updated = Utc::now().timestamp_millis();
 
         // 序列化
         let manifest_json = serde_json::to_vec(&manifest)
