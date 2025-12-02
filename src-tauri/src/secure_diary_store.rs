@@ -62,7 +62,7 @@ impl SecureDiaryStore {
         encryption: &EncryptionManager,
         client: &OssClientManager,
         content: &str,
-    ) -> Result<String, String> {
+    ) -> Result<DiaryManifest, String> {
         let id = Uuid::new_v4().to_string();
         // 创建一个简单的 manifest
         let manifest = DiaryManifest {
@@ -95,7 +95,7 @@ impl SecureDiaryStore {
             .await
             .map_err(|e| format!("Failed to upload manifest: {}", e))?;
 
-        Ok(id)
+        Ok(manifest)
     }
 
     /// 直接下载指定 ID 的加密 manifest 字节流用于缓存
@@ -152,7 +152,7 @@ impl SecureDiaryStore {
         client: &OssClientManager,
         id: String,
         new_content: &str,
-    ) -> Result<(), String> {
+    ) -> Result<DiaryManifest, String> {
         // 先获取现有的 manifest
         let (mut manifest, _) = self
             .get_diary_manifest(encryption, client, id.clone())
@@ -183,7 +183,7 @@ impl SecureDiaryStore {
             .await
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
-        Ok(())
+        Ok(manifest)
     }
 
     /// 添加附件到指定日记
@@ -194,7 +194,7 @@ impl SecureDiaryStore {
         id: String,
         attachment_bytes: Vec<u8>,
         mime_type: String,
-    ) -> Result<(), String> {
+    ) -> Result<DiaryManifest, String> {
         let (encrypted_bytes, nonce) = encryption
             .encrypt(&attachment_bytes)
             .await
@@ -238,7 +238,7 @@ impl SecureDiaryStore {
             .await
             .map_err(|e| format!("Failed to upload attachment: {}", e))?;
 
-        Ok(())
+        Ok(manifest)
     }
 
     /// 下载指定日记的指定附件
@@ -271,7 +271,7 @@ impl SecureDiaryStore {
         client: &OssClientManager,
         id: String,
         file_name: String,
-    ) -> Result<(), String> {
+    ) -> Result<DiaryManifest, String> {
         // 更新 manifest，移除附件元数据
         let (mut manifest, _) = self
             .get_diary_manifest(encryption, client, id.clone())
@@ -305,7 +305,7 @@ impl SecureDiaryStore {
             .await
             .map_err(|e| format!("Failed to delete attachment: {}", e))?;
 
-        Ok(())
+        Ok(manifest)
     }
 
     /// 将加密的字节流解密为 DiaryManifest 结构体 本应为私有方法 但为了缓存加载需要公开

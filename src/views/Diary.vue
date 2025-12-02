@@ -49,24 +49,21 @@ async function saveDiary() {
     if (isNew.value) {
       // 新建日记
       console.log("新建日记", diary.value);
-      const id = await invoke<string>("save_diary", {
+      const d = await invoke<DiaryManifest>("save_diary", {
         content: diary.value.content
       });
-      diary.value.id = id;
-      // 模拟后端更新时间
-      diary.value.created = Date.now();
-      diary.value.updated = Date.now();
-      console.log("日记保存成功, ID:", id);
+      diary.value = d;
+      console.log("日记保存成功, Diary: ", d);
       alert("日记保存成功");
     } else {
       // 更新日记
-      console.log("更新日记", diary.value);
-      await invoke("update_diary_content_only", {
+      console.log("更新日记, Old Diary: ", diary.value);
+      const d = await invoke<DiaryManifest>("update_diary_content_only", {
         uuid: diary.value.id,
         newContent: diary.value.content
       });
-      diary.value.updated = Date.now(); // 模拟后端更新时间
-      console.log("日记更新成功");
+      diary.value = d;
+      console.log("日记更新成功, Diary: ", d);
       alert("日记更新成功");
     }
   } catch (e) {
@@ -106,7 +103,6 @@ async function deleteDiary() {
 // 附件管理函数
 // ----------------------------------------------------
 
-// 模拟文件选择和读取，然后调用添加附件
 async function handleAttachFile(event: Event) {
   if (isNew.value) {
     alert("请先保存日记内容后再添加附件！");
@@ -129,21 +125,13 @@ async function handleAttachFile(event: Event) {
     console.log(`添加附件: ${file.name}, 类型: ${mimeType}, 大小: ${file.size}`);
 
     // 调用后端添加附件命令
-    await invoke("add_attachment", {
+    const d = await invoke<DiaryManifest>("add_attachment", {
       uuid: diary.value.id,
       bytes: bytes,
       minetype: mimeType
     });
-
-    // 成功后，需要后端返回新的附件列表或新附件的元数据
-    // 这里的实现是简化的，假设我们知道文件名
-    const newAttachment: AttachmentMeta = {
-      filename: file.name, // 实际应用中文件名可能是哈希ID
-      mimetype: mimeType,
-      size: file.size,
-      nonce: [] // 实际需要后端返回的 nonce
-    };
-    diary.value.attachments.push(newAttachment);
+    diary.value = d;
+    console.log("附件添加成功, 更新后的 Diary: ", d);
     input.value = ''; // 清空 input 以便再次上传同一文件
     alert(`附件 "${file.name}" 添加成功！`);
 
@@ -167,14 +155,13 @@ async function handleDeleteAttachment(attachment: AttachmentMeta) {
   if (!confirm(`确认删除附件 "${attachment.filename}" 吗?`)) return;
 
   try {
-    await invoke("delete_attachment", {
+    const d = await invoke<DiaryManifest>("delete_attachment", {
       uuid: diary.value.id,
       filename: attachment.filename
     });
 
-    diary.value.attachments = diary.value.attachments.filter(
-        (a) => a.filename !== attachment.filename
-    );
+    diary.value = d;
+    console.log("附件删除成功, 更新后的 Diary: ", d);
     alert(`附件 "${attachment.filename}" 删除成功`);
 
   } catch (e) {
@@ -353,7 +340,7 @@ hr {
   background-color: var(--pad-primary-color);
   color: var(--pad-bg-color-100); // 确保在浅色背景上文字清晰
   &:hover:not(:disabled) {
-    background-color: darken(#C4A484, 10%); // 木色加深
+    background-color: var(--pad-primary-color);
   }
 }
 
@@ -369,7 +356,7 @@ hr {
   background-color: var(--pad-info-color);
   color: var(--pad-bg-color-100);
   &:hover:not(:disabled) {
-    background-color: darken(#ADB5BD, 10%); // 灰色加深
+    background-color: var(--pad-primary-color);
   }
 }
 

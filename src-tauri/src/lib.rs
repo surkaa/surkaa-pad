@@ -171,7 +171,7 @@ async fn save_diary(
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
     content: &str,
-) -> Result<String, String> {
+) -> Result<DiaryManifest, String> {
     store
         .create_diary(encryption.deref(), client.deref(), content)
         .await
@@ -190,7 +190,7 @@ async fn update_diary_content_only(
     store: State<'_, SecureDiaryStore>,
     uuid: String,
     new_content: &str,
-) -> Result<(), String> {
+) -> Result<DiaryManifest, String> {
     store
         .update_diary_content_only(encryption.deref(), client.deref(), uuid, new_content)
         .await
@@ -229,7 +229,7 @@ async fn add_attachment(
     uuid: String,
     bytes: Vec<u8>,
     minetype: String,
-) -> Result<(), String> {
+) -> Result<DiaryManifest, String> {
     store
         .add_attachment(
             encryption.deref(),
@@ -275,7 +275,7 @@ async fn delete_attachment(
     store: State<'_, SecureDiaryStore>,
     uuid: String,
     filename: String,
-) -> Result<(), String> {
+) -> Result<DiaryManifest, String> {
     store
         .delete_attachment(encryption.deref(), client.deref(), uuid, filename)
         .await
