@@ -3,6 +3,7 @@ import {computed, onMounted, ref, toRaw, watch} from "vue";
 import {DiaryManifest} from "../types";
 import {useAppStore} from "../stores/app.ts";
 import {useRouter} from "vue-router";
+import {formatTimestamp} from "../utils/time.ts";
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -58,16 +59,6 @@ function newDiary() {
   });
 }
 
-// 格式化时间辅助函数
-function formatDate(timestamp: number) {
-  return new Date(timestamp * 1000).toLocaleString('zh-CN', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
-
 onMounted(() => {
   loadLocalDiaries();
   watch(searchTerm, async (term) => {
@@ -117,7 +108,7 @@ onMounted(() => {
             @click="openDiary(diary)"
         >
           <div class="card-header">
-            <span class="date">{{ formatDate(diary.created) }}</span>
+            <span class="date">{{ formatTimestamp(diary.created) }}</span>
             <span v-if="diary.attachments?.length" class="attachment-icon">📎</span>
           </div>
           <p class="preview-content">
