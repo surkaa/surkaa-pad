@@ -42,6 +42,7 @@ chrono = "0.4.42" # 用于获取时间戳
 uuid = { version = "1.18.1", features = ["v4"] } # 用于生成唯一标识符
 # 用于加载环境变量
 dotenvy = "0.15.7"
+tauri-plugin-fs = "2.4.4"
 
 [patch.crates-io]
 aliyun-oss-client = { path = "../vendor/aliyun-oss-client-modified" }
