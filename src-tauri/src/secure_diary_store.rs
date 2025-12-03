@@ -101,7 +101,7 @@ impl SecureDiaryStore {
 
         // 保存到本地
         let digest = md5::compute(&encrypted_manifest);
-        let etag = format!("{:x}", digest);
+        let etag = format!("{:X}", digest);
         let filename = format!("{}_{}{}", id, etag, ATTACHMENT_EXTENSION);
         let cache_dir = app_state.get_diary_cache_dir(app_handle);
         let file_path = cache_dir.join(&filename);
@@ -163,11 +163,13 @@ impl SecureDiaryStore {
         &self,
         encryption: &EncryptionManager,
         client: &OssClientManager,
+        app_state: &AppState,
+        app_handle: Option<&AppHandle>,
         id: String,
         new_content: &str,
     ) -> Result<DiaryManifest, String> {
         // 先获取现有的 manifest
-        let (mut manifest, _) = self
+        let (mut manifest, old_bytes) = self
             .get_diary_manifest(encryption, client, id.clone())
             .await?;
 
@@ -192,9 +194,28 @@ impl SecureDiaryStore {
         // 上传到 OSS，覆盖原有的 manifest
         let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
         client
-            .upload_object(&object_key, encrypted_manifest)
+            .upload_object(&object_key, encrypted_manifest.clone())
             .await
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
+
+        // 更新本地缓存
+        let digest = md5::compute(&encrypted_manifest);
+        let etag = format!("{:X}", digest);
+        let filename = format!("{}_{}{}", id, etag, ATTACHMENT_EXTENSION);
+        let cache_dir = app_state.get_diary_cache_dir(app_handle);
+        let file_path = cache_dir.join(&filename);
+        std::fs::write(&file_path, &encrypted_manifest)
+            .map_err(|e| format!("Failed to write cache file {}: {}", filename, e))?;
+
+        // 删除旧的缓存文件
+        let old_digest = md5::compute(&old_bytes);
+        let old_etag = format!("{:X}", old_digest);
+        let old_filename = format!("{}_{}{}", id, old_etag, ATTACHMENT_EXTENSION);
+        let old_file_path = cache_dir.join(&old_filename);
+        if old_file_path.exists() {
+            std::fs::remove_file(&old_file_path)
+                .map_err(|e| format!("Failed to delete old cache file {}: {}", old_filename, e))?;
+        }
 
         Ok(manifest)
     }

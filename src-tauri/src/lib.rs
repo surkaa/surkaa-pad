@@ -192,11 +192,13 @@ async fn update_diary_content_only(
     encryption: State<'_, EncryptionManager>,
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
+    app_state: State<'_, AppState>,
+    app_handle: AppHandle,
     uuid: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
     store
-        .update_diary_content_only(encryption.deref(), client.deref(), uuid, new_content)
+        .update_diary_content_only(encryption.deref(), client.deref(), app_state.deref(), Some(&app_handle), uuid, new_content)
         .await
 }
 
