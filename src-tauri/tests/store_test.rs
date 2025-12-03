@@ -120,7 +120,7 @@ mod secure_store {
 
         // 删除日记
         store
-            .delete_diary(&c, new_diary.id.to_string())
+            .delete_diary(&c, &app_state, None, new_diary.id.to_string())
             .await
             .expect("Failed to delete diary");
 

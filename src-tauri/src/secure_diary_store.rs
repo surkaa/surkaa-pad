@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
 use tauri::AppHandle;
+use tauri_plugin_log::log;
 use uuid::Uuid;
 
 const MANIFEST_FILE_NAME: &str = "manifest.enc";
@@ -142,7 +143,13 @@ impl SecureDiaryStore {
     }
 
     /// 删除指定 ID 的日记及其所有附件
-    pub async fn delete_diary(&self, client: &OssClientManager, id: String) -> Result<(), String> {
+    pub async fn delete_diary(
+        &self,
+        client: &OssClientManager,
+        app_state: &AppState,
+        app_handle: Option<&AppHandle>,
+        id: String,
+    ) -> Result<(), String> {
         let objects = client
             .list_objects(&format!("{}/", id))
             .await
@@ -153,6 +160,19 @@ impl SecureDiaryStore {
                 .delete_object(&object.filename())
                 .await
                 .map_err(|e| format!("Failed to delete object {}: {}", object.filename(), e))?;
+
+            // 如果以 MANIFEST_FILE_NAME 结尾，说明是 manifest 文件
+            if object.filename().ends_with(MANIFEST_FILE_NAME) {
+                let filename = format!("{}_{}{}", id, object.etag(), ATTACHMENT_EXTENSION);
+                log::info!("Also deleting cached file {}", filename);
+                let cache_dir = app_state.get_diary_cache_dir(app_handle);
+                let file_path = cache_dir.join(&filename);
+                if file_path.exists() {
+                    std::fs::remove_file(&file_path)
+                        .map_err(|e| format!("Failed to delete cached file {}: {}", filename, e))?;
+                    log::info!("Deleted cached file {}", filename);
+                }
+            }
         }
 
         Ok(())

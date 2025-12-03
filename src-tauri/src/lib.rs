@@ -220,9 +220,11 @@ async fn update_diary_content_only(
 async fn delete_diary(
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
+    app_state: State<'_, AppState>,
+    app_handle: AppHandle,
     uuid: String,
 ) -> Result<(), String> {
-    store.delete_diary(client.deref(), uuid).await
+    store.delete_diary(client.deref(), app_state.deref(), Some(&app_handle), uuid).await
 }
 
 //------------
