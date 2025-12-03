@@ -153,7 +153,14 @@ mod secure_store {
         // 更新日记内容
         let updated_content = "This is the updated diary content.";
         store
-            .update_diary_content_only(&e, &c, &app_state, None, new_diary.id.to_string(), updated_content)
+            .update_diary_content_only(
+                &e,
+                &c,
+                &app_state,
+                None,
+                new_diary.id.to_string(),
+                updated_content,
+            )
             .await
             .expect("Failed to update diary content");
 

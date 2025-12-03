@@ -1,12 +1,12 @@
 use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::{ObjectInfo, OssClientManager};
+use crate::surkaa_pad::AppState;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
 use tauri::AppHandle;
 use uuid::Uuid;
-use crate::surkaa_pad::AppState;
 
 const MANIFEST_FILE_NAME: &str = "manifest.enc";
 const ATTACHMENT_EXTENSION: &str = ".enc";
@@ -310,9 +310,7 @@ impl SecureDiaryStore {
         let (mut manifest, _) = self
             .get_diary_manifest(encryption, client, id.clone())
             .await?;
-        manifest
-            .attachments
-            .retain(|att| att.filename != file_name);
+        manifest.attachments.retain(|att| att.filename != file_name);
         manifest.updated = Utc::now().timestamp_millis();
 
         // 序列化

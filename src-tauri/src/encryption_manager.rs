@@ -4,8 +4,8 @@ use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use argon2::password_hash::SaltString;
 use argon2::{Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // 定义常量
@@ -84,8 +84,8 @@ impl EncryptionManager {
         // 锁定 Mutex 来读取内部状态
         let inner_guard = self.inner.lock().await;
 
-        let cipher = Aes256Gcm::new_from_slice(&inner_guard.dek)
-            .map_err(|_| "DEK 长度错误".to_string())?;
+        let cipher =
+            Aes256Gcm::new_from_slice(&inner_guard.dek).map_err(|_| "DEK 长度错误".to_string())?;
 
         // ... (加密逻辑不变) ...
         let mut nonce_bytes = [0u8; NONCE_LEN];

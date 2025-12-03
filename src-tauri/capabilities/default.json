@@ -62,6 +62,7 @@
     "fs:allow-video-write-recursive",
     "fs:allow-write-file",
     "fs:write-all",
-    "fs:write-files"
+    "fs:write-files",
+    "log:default"
   ]
 }

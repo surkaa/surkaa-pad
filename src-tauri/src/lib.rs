@@ -3,14 +3,14 @@ pub mod oss_client_manager;
 pub mod secure_diary_store;
 pub mod surkaa_pad;
 
-use std::fs::{read, remove_file};
 use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use crate::surkaa_pad::{AppState, DiaryMemoryCache};
+use std::fs::{read, remove_file};
 use std::ops::Deref;
-use tauri::{AppHandle, Manager, State};
 use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_store::Builder;
 
 //------------
@@ -80,12 +80,7 @@ async fn init_oss_client(
     endpoint: &str,
 ) -> Result<(), String> {
     client_state
-        .initialize(
-            akid,
-            aks,
-            endpoint,
-            bucket,
-        )
+        .initialize(akid, aks, endpoint, bucket)
         .await
         .map_err(|e| e.to_string())
 }
@@ -177,7 +172,13 @@ async fn save_diary(
     content: &str,
 ) -> Result<DiaryManifest, String> {
     store
-        .create_diary(encryption.deref(), client.deref(), app_state.deref(), Some(&app_handle), content)
+        .create_diary(
+            encryption.deref(),
+            client.deref(),
+            app_state.deref(),
+            Some(&app_handle),
+            content,
+        )
         .await
 }
 
@@ -198,7 +199,14 @@ async fn update_diary_content_only(
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
     store
-        .update_diary_content_only(encryption.deref(), client.deref(), app_state.deref(), Some(&app_handle), uuid, new_content)
+        .update_diary_content_only(
+            encryption.deref(),
+            client.deref(),
+            app_state.deref(),
+            Some(&app_handle),
+            uuid,
+            new_content,
+        )
         .await
 }
 
@@ -238,26 +246,19 @@ async fn add_attachment(
     minetype: String,
 ) -> Result<DiaryManifest, String> {
     // 获取临时文件的完整路径
-    let temp_path = app_handle.path()
+    let temp_path = app_handle
+        .path()
         .resolve(&filename, BaseDirectory::Temp)
         .map_err(|e| format!("无法解析临时文件路径: {}", e))?;
 
     // 在 Rust 中安全地读取大文件字节 (Vec<u8>)
-    let bytes: Vec<u8> = read(&temp_path)
-        .map_err(|e| format!("无法读取临时文件: {}", e))?;
+    let bytes: Vec<u8> = read(&temp_path).map_err(|e| format!("无法读取临时文件: {}", e))?;
 
     // 删除缓存文件
-    remove_file(temp_path)
-        .map_err(|e| format!("无法删除临时文件: {}", e))?;
+    remove_file(temp_path).map_err(|e| format!("无法删除临时文件: {}", e))?;
 
     store
-        .add_attachment(
-            encryption.deref(),
-            client.deref(),
-            uuid,
-            bytes,
-            minetype,
-        )
+        .add_attachment(encryption.deref(), client.deref(), uuid, bytes, minetype)
         .await
 }
 
@@ -304,6 +305,11 @@ async fn delete_attachment(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         // 注册 Store 插件
         .plugin(Builder::default().build())

@@ -38,6 +38,7 @@ uuid = { version = "1.18.1", features = ["v4"] } # 用于生成唯一标识符
 dotenvy = "0.15.7"
 tauri-plugin-fs = "2.4.4"
 md5 = "0.8.0"
+tauri-plugin-log = "2"
 
 [patch.crates-io]
 aliyun-oss-client = { path = "../vendor/aliyun-oss-client-modified" }

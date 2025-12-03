@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod ali_oss_tests {
-    use std::env;
     use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Object, Secret};
+    use std::env;
     use std::sync::Arc;
     use surkaa_pad_lib::oss_client_manager::OssClientManager;
     use tokio;
@@ -12,13 +12,17 @@ mod ali_oss_tests {
         dotenvy::dotenv().ok();
         let key = env::var("ALIYUN_KEY").expect("ALIYUN_KEY 环境变量未设置");
         let secret = env::var("ALIYUN_SECRET").expect("ALIYUN_SECRET 环境变量未设置");
-        let bucket_name = env::var("ALIYUN_BUCKET_NAME").expect("ALIYUN_BUCKET_NAME 环境变量未设置");
+        let bucket_name =
+            env::var("ALIYUN_BUCKET_NAME").expect("ALIYUN_BUCKET_NAME 环境变量未设置");
         let endpoint = env::var("ALIYUN_ENDPOINT").expect("ALIYUN_ENDPOINT 环境变量未设置");
 
         oss.initialize(&key, &secret, &endpoint, &bucket_name)
             .await
             .expect("Failed to initialize OSS client");
-        let objects = oss.list_objects("test").await.expect("Failed to list objects");
+        let objects = oss
+            .list_objects("test")
+            .await
+            .expect("Failed to list objects");
         println!("Objects: {:?}", objects);
     }
 
@@ -26,12 +30,13 @@ mod ali_oss_tests {
         dotenvy::dotenv().ok();
         let key = env::var("ALIYUN_KEY").expect("ALIYUN_KEY 环境变量未设置");
         let secret = env::var("ALIYUN_SECRET").expect("ALIYUN_SECRET 环境变量未设置");
-        let bucket_name = env::var("ALIYUN_BUCKET_NAME").expect("ALIYUN_BUCKET_NAME 环境变量未设置");
+        let bucket_name =
+            env::var("ALIYUN_BUCKET_NAME").expect("ALIYUN_BUCKET_NAME 环境变量未设置");
         let key = Key::new(key);
         let secret = Secret::new(secret);
 
         let bucket = Bucket::new(bucket_name, ep);
-        let mut  client = Client::new(key, secret);
+        let mut client = Client::new(key, secret);
         client.set_bucket(bucket);
 
         Ok(Arc::new(client))
@@ -77,7 +82,11 @@ mod ali_oss_tests {
             .map_err(|e| e.to_string())
             .expect("Download failed");
 
-        assert_eq!(downloaded_data.len(), 100, "Downloaded data length mismatch");
+        assert_eq!(
+            downloaded_data.len(),
+            100,
+            "Downloaded data length mismatch"
+        );
         assert_eq!(downloaded_data, data, "Downloaded data mismatch");
 
         Object::new(key)
