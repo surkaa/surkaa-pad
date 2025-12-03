@@ -23,6 +23,7 @@ const diary = ref<DiaryManifest>(DEFAULT_DIARY);
 const renderLoading = ref(false);
 const saveLoading = ref(false);
 const delLoading = ref(false);
+const uploadLoading = ref(false);
 const isNew = computed(() => !diary.value.id); // 判断是否为新建日记
 
 // 编辑器 DOM 引用
@@ -221,6 +222,7 @@ async function handleMediaSelect(event: Event) {
   console.log("选择的图片文件: ", file);
 
   try {
+    uploadLoading.value = true;
     // 读取文件字节
     const arrayBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
@@ -263,6 +265,7 @@ async function handleMediaSelect(event: Event) {
     alert("上传图片失败: " + e);
   } finally {
     input.value = "";
+    uploadLoading.value = false;
   }
 }
 
@@ -371,8 +374,9 @@ onMounted(async () => {
       </button>
     </section>
     <section id="diary-detail-main">
-      <div v-if="renderLoading" id="loading-overlay">
-        <p>正在加载日记内容和附件...</p>
+      <div v-if="renderLoading || uploadLoading" id="loading-overlay">
+        <p v-if="renderLoading">正在加载日记内容和附件...</p>
+        <p v-else-if="uploadLoading">正在上传媒体文件...</p>
       </div>
       <div
           id="diary-editor"
@@ -481,7 +485,7 @@ $diary-editor-padding: 10px;
     overflow-y: auto;
     position: relative; /* 用于定位蒙版 */
 
-    /* 2. 蒙版样式 */
+    /* 蒙版样式 */
     #loading-overlay {
       position: absolute;
       top: 0;
