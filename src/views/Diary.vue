@@ -380,7 +380,7 @@ onMounted(async () => {
           contenteditable="true"
           class="custom-editor"
           spellcheck="false"
-          :style="{ visibility: renderLoading ? 'hidden' : 'visible' }"
+          :style="{ display: renderLoading ? 'none' : 'block' }"
       ></div>
     </section>
     <section id="diary-detail-footer">
@@ -401,6 +401,7 @@ $diary-editor-padding: 10px;
 #diary-detail {
   width: 100%;
   height: 100%;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
 
@@ -409,7 +410,7 @@ $diary-editor-padding: 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px;
+    padding: 2px 10px;
     background-color: var(--pad-bg-color-300);
     border-bottom: 1px solid var(--pad-border-color-400);
     gap: 10px;
@@ -476,6 +477,35 @@ $diary-editor-padding: 10px;
     flex: 1;
     padding: 10px;
     background-color: var(--pad-bg-color-100);
+    // 滚动条
+    overflow-y: auto;
+    position: relative; /* 用于定位蒙版 */
+
+    /* 2. 蒙版样式 */
+    #loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 50; /* 确保高于编辑器内容 */
+
+      /* 蒙版外观：半透明白色/灰色 */
+      background-color: rgba(255, 255, 255, 0.9); /* 90% 透明度 */
+
+      /* 内容居中 */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      p {
+        color: #333;
+        font-weight: bold;
+        padding: 10px 20px;
+        border-radius: 4px;
+        background-color: #f0f0f0; /* 让提示文字更醒目 */
+      }
+    }
 
     .custom-editor {
       width: calc(100% - 2 * $diary-editor-padding);
@@ -519,7 +549,7 @@ $diary-editor-padding: 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 10px;
+    padding: 2px 10px;
     background-color: var(--pad-bg-color-300);
     border-top: 1px solid var(--pad-border-color-400);
   }
