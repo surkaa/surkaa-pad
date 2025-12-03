@@ -2,6 +2,7 @@ use aliyun_oss_client::types::ObjectQuery;
 use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Object, Secret};
 use chrono::{DateTime, Utc};
 use std::sync::{Arc};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
@@ -12,24 +13,29 @@ pub struct ObjectInfo {
     modified: DateTime<Utc>,
 }
 
+#[derive(Default)]
+pub struct ClientInner {
+    client: Option<Arc<Client>>,
+}
+
 /// 核心状态管理结构体
 /// 使用 Mutex 允许在多个 Tauri 命令线程中安全地共享和修改客户端实例。
-#[derive(Default)]
-pub struct OssClientManager(pub Mutex<Option<Arc<Client>>>);
+#[derive(Default, Clone)]
+pub struct OssClientManager {
+    inner: Arc<Mutex<ClientInner>>,
+    initialized: Arc<AtomicBool>,
+}
 
 /// 用于管理 OSS 客户端的实现 只用于上传、下载、删除和列出对象列表
 #[allow(dead_code)]
 impl OssClientManager {
-    /// 辅助方法：获取 Arc<Client> 的线程安全克隆
-    async fn get_client(&self) -> Result<Arc<Client>, String> {
-        let guard = self
-            .0
-            .lock()
-            .await;
-        guard
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "OSS client is not initialized".to_string())
+    pub fn new() -> Self {
+        OssClientManager {
+            inner: Arc::new(Mutex::new(ClientInner {
+                client: None,
+            })),
+            initialized: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// 初始化 OSS 客户端并设置到状态中
@@ -60,21 +66,28 @@ impl OssClientManager {
         client.set_bucket(bucket);
 
         // 3. 将客户端存入 Mutex
-        let mut client_guard = self
-            .0
-            .lock()
-            .await;
-        *client_guard = Some(Arc::new(client));
+        let mut inner_guard = self.inner.lock().await;
+        inner_guard.client = Some(Arc::new(client));
+        self.initialized.store(true, Ordering::SeqCst);
 
         Ok(())
     }
 
     /// 上传数据到 OSS
     pub async fn upload_object(&self, object_key: &str, data: Vec<u8>) -> Result<(), String> {
-        let client = self.get_client().await?;
+        if !self.initialized.load(Ordering::SeqCst) {
+            return Err("OSS client is not initialized".to_string());
+        }
+
+        // 锁定 Mutex 获取客户端
+        let inner_guard = self.inner.lock().await;
+        let client = inner_guard
+            .client
+            .as_ref()
+            .ok_or_else(|| "OSS client is not initialized".to_string())?;
 
         Object::new(object_key)
-            .upload(data, &client)
+            .upload(data, client)
             .await
             .map_err(|e| format!("Failed to upload object: {}", e))?;
 
@@ -83,7 +96,16 @@ impl OssClientManager {
 
     /// 从 OSS 下载数据
     pub async fn download_object(&self, object_key: &str) -> Result<Vec<u8>, String> {
-        let client = self.get_client().await?;
+        if !self.initialized.load(Ordering::SeqCst) {
+            return Err("OSS client is not initialized".to_string());
+        }
+
+        // 锁定 Mutex 获取客户端
+        let inner_guard = self.inner.lock().await;
+        let client = inner_guard
+            .client
+            .as_ref()
+            .ok_or_else(|| "OSS client is not initialized".to_string())?;
 
         let data = Object::new(object_key)
             .download(&client)
@@ -95,7 +117,16 @@ impl OssClientManager {
 
     /// 删除 OSS 对象
     pub async fn delete_object(&self, object_key: &str) -> Result<(), String> {
-        let client = self.get_client().await?;
+        if !self.initialized.load(Ordering::SeqCst) {
+            return Err("OSS client is not initialized".to_string());
+        }
+
+        // 锁定 Mutex 获取客户端
+        let inner_guard = self.inner.lock().await;
+        let client = inner_guard
+            .client
+            .as_ref()
+            .ok_or_else(|| "OSS client is not initialized".to_string())?;
 
         Object::new(object_key)
             .delete(&client)
@@ -107,7 +138,16 @@ impl OssClientManager {
 
     /// 列出指定前缀下的所有对象路径 自动去掉文件夹末尾的斜杠 https://help.aliyun.com/zh/oss/developer-reference/listobjectsv2
     pub async fn list_objects(&self, prefix: &str) -> Result<Vec<ObjectInfo>, String> {
-        let client = self.get_client().await?;
+        if !self.initialized.load(Ordering::SeqCst) {
+            return Err("OSS client is not initialized".to_string());
+        }
+
+        // 锁定 Mutex 获取客户端
+        let inner_guard = self.inner.lock().await;
+        let client = inner_guard
+            .client
+            .as_ref()
+            .ok_or_else(|| "OSS client is not initialized".to_string())?;
         let bucket = client
             .bucket()
             .ok_or_else(|| "Bucket is not set in OSS client".to_string())?;
