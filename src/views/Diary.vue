@@ -28,6 +28,47 @@ const isNew = computed(() => !diary.value.id); // 判断是否为新建日记
 const editorRef = ref<HTMLElement | null>(null);
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const showMediaMenu = ref(false);
+
+function toggleMediaMenu() {
+  // 切换菜单显示状态
+  showMediaMenu.value = !showMediaMenu.value;
+}
+
+// 媒体选择后的通用处理函数 (用于关闭菜单)
+function mediaSelected() {
+  showMediaMenu.value = false;
+}
+
+// 触发图片选择
+function triggerAddImage() {
+  if (isNew.value) { /* 提醒逻辑 */ return; }
+  if (fileInputRef.value) {
+    fileInputRef.value.accept = 'image/*';
+    fileInputRef.value.click();
+  }
+  mediaSelected(); // 关闭菜单
+}
+
+// 触发视频选择
+function triggerAddVideo() {
+  if (isNew.value) { /* 提醒逻辑 */ return; }
+  if (fileInputRef.value) {
+    fileInputRef.value.accept = 'video/*';
+    fileInputRef.value.click();
+  }
+  mediaSelected(); // 关闭菜单
+}
+
+// 触发录音选择
+function triggerAddAudio() {
+  if (isNew.value) { /* 提醒逻辑 */ return; }
+  if (fileInputRef.value) {
+    fileInputRef.value.accept = 'audio/*';
+    fileInputRef.value.click();
+  }
+  mediaSelected(); // 关闭菜单
+}
 
 const contentLen = computed(() => {
   return diary.value.content ? diary.value.content.length : 0;
@@ -148,18 +189,6 @@ function getTagPrefix(mimeType: string): 'IMG' | 'VID' | 'AUD' | null {
   if (mimeType.startsWith('video/')) return 'VID';
   if (mimeType.startsWith('audio/')) return 'AUD';
   return null;
-}
-
-// 触发添加媒体（图片/视频/音频）
-function triggerAddMedia(accept: string) {
-  if (isNew.value) {
-    alert("请先保存一次日记再上传媒体文件（需要生成日记ID）");
-    return;
-  }
-  if (fileInputRef.value) {
-    fileInputRef.value.accept = accept; // 设置允许选择的文件类型
-    fileInputRef.value.click();
-  }
 }
 
 // 处理图片选择与上传
@@ -301,15 +330,20 @@ onMounted(async () => {
   <main id="diary-detail">
     <section id="diary-detail-header">
       <button id="diary-detail-header-back-btn" @click="back()">返回</button>
-      <button @click="triggerAddMedia('image/*')" :disabled="isNew">
-        图片
-      </button>
-      <button @click="triggerAddMedia('video/*')" :disabled="isNew">
-        视频
-      </button>
-      <button @click="triggerAddMedia('audio/*')" :disabled="isNew">
-        音频
-      </button>
+      <div id="media-menu-container">
+        <button
+            @click="toggleMediaMenu"
+            :disabled="saveLoading || isNew"
+        >
+          添加 ▼
+        </button>
+
+        <div v-if="showMediaMenu" id="media-menu-dropdown">
+          <button @click="triggerAddImage">图片</button>
+          <button @click="triggerAddVideo">视频</button>
+          <button @click="triggerAddAudio">录音</button>
+        </div>
+      </div>
       <input
           type="file"
           ref="fileInputRef"
@@ -382,6 +416,44 @@ $diary-editor-padding: 10px;
     #diary-detail-header-delete-btn {
       background-color: var(--pad-danger-color);
       color: white;
+    }
+
+    #media-menu-container {
+      position: relative; /* 容器相对定位 */
+      display: inline-block;
+
+    }
+
+    #media-menu-dropdown {
+      position: absolute;
+      top: 100%; /* 定位在按钮下方 */
+      left: 0;
+      z-index: 10; /* 确保菜单位于其他元素之上 */
+
+      /* 菜单外观 */
+      background-color: white;
+      border: 1px solid #ddd;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      min-width: 120px;
+      border-radius: 4px;
+      padding: 5px 0;
+
+      /* 菜单内按钮布局 */
+      button {
+        display: block; /* 垂直排列 */
+        width: 100%;
+        padding: 8px 15px;
+        border: none;
+        background: none;
+        text-align: left;
+        cursor: pointer;
+        font-size: 14px;
+        color: #333;
+
+        &:hover {
+          background-color: #f0f0f0;
+        }
+      }
     }
   }
 
