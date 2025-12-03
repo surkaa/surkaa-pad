@@ -5,7 +5,7 @@ import {invoke} from "@tauri-apps/api/core";
 import {useRouter} from "vue-router";
 import {formatTimestamp} from "../utils/time.ts";
 import {parseHtmlToText, parseTextToHtml} from "../utils/diaryParser.ts";
-import { writeFile, BaseDirectory } from '@tauri-apps/plugin-fs';
+import {writeFile, BaseDirectory} from '@tauri-apps/plugin-fs';
 
 const router = useRouter();
 
@@ -20,6 +20,7 @@ const DEFAULT_DIARY: DiaryManifest = {
 } as const;
 
 const diary = ref<DiaryManifest>(DEFAULT_DIARY);
+const renderLoading = ref(false);
 const saveLoading = ref(false);
 const delLoading = ref(false);
 const isNew = computed(() => !diary.value.id); // 判断是否为新建日记
@@ -42,7 +43,9 @@ function mediaSelected() {
 
 // 触发图片选择
 function triggerAddImage() {
-  if (isNew.value) { /* 提醒逻辑 */ return; }
+  if (isNew.value) { /* 提醒逻辑 */
+    return;
+  }
   if (fileInputRef.value) {
     fileInputRef.value.accept = 'image/*';
     fileInputRef.value.click();
@@ -52,7 +55,9 @@ function triggerAddImage() {
 
 // 触发视频选择
 function triggerAddVideo() {
-  if (isNew.value) { /* 提醒逻辑 */ return; }
+  if (isNew.value) { /* 提醒逻辑 */
+    return;
+  }
   if (fileInputRef.value) {
     fileInputRef.value.accept = 'video/*';
     fileInputRef.value.click();
@@ -62,7 +67,9 @@ function triggerAddVideo() {
 
 // 触发录音选择
 function triggerAddAudio() {
-  if (isNew.value) { /* 提醒逻辑 */ return; }
+  if (isNew.value) { /* 提醒逻辑 */
+    return;
+  }
   if (fileInputRef.value) {
     fileInputRef.value.accept = 'audio/*';
     fileInputRef.value.click();
@@ -316,11 +323,16 @@ onMounted(async () => {
 
     // 将纯文本转为 HTML (带图片)
     if (editorRef.value) {
-      editorRef.value.innerHTML = await parseTextToHtml(
-          diary.value.content,
-          diary.value.id,
-          diary.value.attachments
-      );
+      try {
+        renderLoading.value = true;
+        editorRef.value.innerHTML = await parseTextToHtml(
+            diary.value.content,
+            diary.value.id,
+            diary.value.attachments
+        );
+      } finally {
+        renderLoading.value = false;
+      }
     }
   }
 });
@@ -359,13 +371,16 @@ onMounted(async () => {
       </button>
     </section>
     <section id="diary-detail-main">
-      <!-- TODO 考虑封装一个统一的渲染器 v-model传入内容并可以设置内容 未来再考虑有没有必要直接将DiaryManifest中的content从字符串转成对象列表的形式 -->
+      <div v-if="renderLoading" id="loading-overlay">
+        <p>正在加载日记内容和附件...</p>
+      </div>
       <div
           id="diary-editor"
           ref="editorRef"
           contenteditable="true"
           class="custom-editor"
           spellcheck="false"
+          :style="{ visibility: renderLoading ? 'hidden' : 'visible' }"
       ></div>
     </section>
     <section id="diary-detail-footer">
