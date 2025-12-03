@@ -219,25 +219,47 @@ impl SecureDiaryStore {
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
         // 更新本地缓存
-        let digest = md5::compute(&encrypted_manifest);
-        let etag = format!("{:X}", digest);
-        let filename = format!("{}_{}{}", id, etag, ATTACHMENT_EXTENSION);
-        let cache_dir = app_state.get_diary_cache_dir(app_handle);
-        let file_path = cache_dir.join(&filename);
-        std::fs::write(&file_path, &encrypted_manifest)
-            .map_err(|e| format!("Failed to write cache file {}: {}", filename, e))?;
+        self.replace_local_cache_file(
+            app_state,
+            app_handle,
+            &id,
+            &old_bytes,
+            &encrypted_manifest,
+        ).expect("Failed to update local cache file");
 
-        // 删除旧的缓存文件
-        let old_digest = md5::compute(&old_bytes);
+        Ok(manifest)
+    }
+
+    fn replace_local_cache_file(
+        &self,
+        app_state: &AppState,
+        app_handle: Option<&AppHandle>,
+        id: &str,
+        old_bytes: &Vec<u8>,
+        new_bytes: &Vec<u8>,
+    ) -> Result<(), String> {
+        let old_digest = md5::compute(old_bytes);
         let old_etag = format!("{:X}", old_digest);
         let old_filename = format!("{}_{}{}", id, old_etag, ATTACHMENT_EXTENSION);
+        let new_digest = md5::compute(new_bytes);
+        let new_etag = format!("{:X}", new_digest);
+        let new_filename = format!("{}_{}{}", id, new_etag, ATTACHMENT_EXTENSION);
+
+        let cache_dir = app_state.get_diary_cache_dir(app_handle);
+
+        // 删除旧文件
         let old_file_path = cache_dir.join(&old_filename);
         if old_file_path.exists() {
             std::fs::remove_file(&old_file_path)
                 .map_err(|e| format!("Failed to delete old cache file {}: {}", old_filename, e))?;
         }
 
-        Ok(manifest)
+        // 写入新文件
+        let new_file_path = cache_dir.join(&new_filename);
+        std::fs::write(&new_file_path, new_bytes)
+            .map_err(|e| format!("Failed to write new cache file {}: {}", new_filename, e))?;
+
+        Ok(())
     }
 
     /// 添加附件到指定日记
@@ -245,6 +267,8 @@ impl SecureDiaryStore {
         &self,
         encryption: &EncryptionManager,
         client: &OssClientManager,
+        app_state: &AppState,
+        app_handle: Option<&AppHandle>,
         id: String,
         attachment_bytes: Vec<u8>,
         mime_type: String,
@@ -264,7 +288,7 @@ impl SecureDiaryStore {
             nonce: nonce.clone(),
         };
 
-        let (mut manifest, _) = self
+        let (mut manifest, old_bytes) = self
             .get_diary_manifest(encryption, client, id.clone())
             .await?;
         manifest.attachments.push(attachment);
@@ -281,7 +305,7 @@ impl SecureDiaryStore {
         encrypted_manifest.extend_from_slice(&ciphertext);
         // 上传新的 manifest
         client
-            .upload_object(&manifest_key, encrypted_manifest)
+            .upload_object(&manifest_key, encrypted_manifest.clone())
             .await
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
@@ -291,6 +315,15 @@ impl SecureDiaryStore {
             .upload_object(&attachment_key, encrypted_bytes)
             .await
             .map_err(|e| format!("Failed to upload attachment: {}", e))?;
+
+        // 更新本地缓存
+        self.replace_local_cache_file(
+            app_state,
+            app_handle,
+            &id,
+            &old_bytes,
+            &encrypted_manifest,
+        ).expect("Failed to update local cache file");
 
         Ok(manifest)
     }
@@ -323,11 +356,13 @@ impl SecureDiaryStore {
         &self,
         encryption: &EncryptionManager,
         client: &OssClientManager,
+        app_state: &AppState,
+        app_handle: Option<&AppHandle>,
         id: String,
         file_name: String,
     ) -> Result<DiaryManifest, String> {
         // 更新 manifest，移除附件元数据
-        let (mut manifest, _) = self
+        let (mut manifest, old_bytes) = self
             .get_diary_manifest(encryption, client, id.clone())
             .await?;
         manifest.attachments.retain(|att| att.filename != file_name);
@@ -346,7 +381,7 @@ impl SecureDiaryStore {
         // 上传更新后的 manifest
         let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
         client
-            .upload_object(&manifest_key, encrypted_manifest)
+            .upload_object(&manifest_key, encrypted_manifest.clone())
             .await
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
@@ -356,6 +391,15 @@ impl SecureDiaryStore {
             .delete_object(&attachment_key)
             .await
             .map_err(|e| format!("Failed to delete attachment: {}", e))?;
+
+        // 更新本地缓存
+        self.replace_local_cache_file(
+            app_state,
+            app_handle,
+            &id,
+            &old_bytes,
+            &encrypted_manifest,
+        ).expect("Failed to update local cache file");
 
         Ok(manifest)
     }

@@ -243,6 +243,7 @@ async fn add_attachment(
     encryption: State<'_, EncryptionManager>,
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
+    app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
     filename: String,
@@ -261,7 +262,7 @@ async fn add_attachment(
     remove_file(temp_path).map_err(|e| format!("无法删除临时文件: {}", e))?;
 
     store
-        .add_attachment(encryption.deref(), client.deref(), uuid, bytes, minetype)
+        .add_attachment(encryption.deref(), client.deref(), app_state.deref(), Some(&app_handle), uuid, bytes, minetype)
         .await
 }
 
@@ -297,11 +298,13 @@ async fn delete_attachment(
     encryption: State<'_, EncryptionManager>,
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
+    app_state: State<'_, AppState>,
+    app_handle: AppHandle,
     uuid: String,
     filename: String,
 ) -> Result<DiaryManifest, String> {
     store
-        .delete_attachment(encryption.deref(), client.deref(), uuid, filename)
+        .delete_attachment(encryption.deref(), client.deref(), app_state.deref(), Some(&app_handle), uuid, filename)
         .await
 }
 

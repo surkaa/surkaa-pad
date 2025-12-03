@@ -200,6 +200,8 @@ mod secure_store {
             .add_attachment(
                 &e,
                 &c,
+                &app_state,
+                None,
                 new_diary.id.to_string(),
                 attachment_bytes.clone(),
                 "png".to_string(),
@@ -265,6 +267,8 @@ mod secure_store {
             .add_attachment(
                 &e,
                 &c,
+                &app_state,
+                None,
                 new_diary.id.to_string(),
                 attachment_bytes,
                 "txt".to_string(),
@@ -289,6 +293,8 @@ mod secure_store {
             .delete_attachment(
                 &e,
                 &c,
+                &app_state,
+                None,
                 new_diary.id.to_string(),
                 attachment.filename.clone(),
             )
