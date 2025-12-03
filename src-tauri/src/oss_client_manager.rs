@@ -1,7 +1,8 @@
 use aliyun_oss_client::types::ObjectQuery;
 use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Object, Secret};
 use chrono::{DateTime, Utc};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
+use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub struct ObjectInfo {
@@ -20,11 +21,11 @@ pub struct OssClientManager(pub Mutex<Option<Arc<Client>>>);
 #[allow(dead_code)]
 impl OssClientManager {
     /// 辅助方法：获取 Arc<Client> 的线程安全克隆
-    fn get_client(&self) -> Result<Arc<Client>, String> {
+    async fn get_client(&self) -> Result<Arc<Client>, String> {
         let guard = self
             .0
             .lock()
-            .map_err(|e| format!("Failed to lock OSS client: {}", e))?;
+            .await;
         guard
             .as_ref()
             .cloned()
@@ -62,7 +63,7 @@ impl OssClientManager {
         let mut client_guard = self
             .0
             .lock()
-            .map_err(|e| format!("Failed to lock OSS client: {}", e))?;
+            .await;
         *client_guard = Some(Arc::new(client));
 
         Ok(())
@@ -70,7 +71,7 @@ impl OssClientManager {
 
     /// 上传数据到 OSS
     pub async fn upload_object(&self, object_key: &str, data: Vec<u8>) -> Result<(), String> {
-        let client = self.get_client()?;
+        let client = self.get_client().await?;
 
         Object::new(object_key)
             .upload(data, &client)
@@ -82,7 +83,7 @@ impl OssClientManager {
 
     /// 从 OSS 下载数据
     pub async fn download_object(&self, object_key: &str) -> Result<Vec<u8>, String> {
-        let client = self.get_client()?;
+        let client = self.get_client().await?;
 
         let data = Object::new(object_key)
             .download(&client)
@@ -94,7 +95,7 @@ impl OssClientManager {
 
     /// 删除 OSS 对象
     pub async fn delete_object(&self, object_key: &str) -> Result<(), String> {
-        let client = self.get_client()?;
+        let client = self.get_client().await?;
 
         Object::new(object_key)
             .delete(&client)
@@ -106,7 +107,7 @@ impl OssClientManager {
 
     /// 列出指定前缀下的所有对象路径 自动去掉文件夹末尾的斜杠 https://help.aliyun.com/zh/oss/developer-reference/listobjectsv2
     pub async fn list_objects(&self, prefix: &str) -> Result<Vec<ObjectInfo>, String> {
-        let client = self.get_client()?;
+        let client = self.get_client().await?;
         let bucket = client
             .bucket()
             .ok_or_else(|| "Bucket is not set in OSS client".to_string())?;
