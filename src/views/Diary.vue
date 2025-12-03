@@ -5,6 +5,7 @@ import {invoke} from "@tauri-apps/api/core";
 import {useRouter} from "vue-router";
 import {formatTimestamp} from "../utils/time.ts";
 import {parseHtmlToText, parseTextToHtml} from "../utils/diaryParser.ts";
+import { writeFile, BaseDirectory } from '@tauri-apps/plugin-fs';
 
 const router = useRouter();
 
@@ -186,12 +187,22 @@ async function handleMediaSelect(event: Event) {
   try {
     // 读取文件字节
     const arrayBuffer = await file.arrayBuffer();
-    const bytes = Array.from(new Uint8Array(arrayBuffer));
+    const bytes = new Uint8Array(arrayBuffer);
 
-    // 调用后端上传 TODO 处理大文件 测试目前可上传的最大文件的大小 未来考虑使用u64来尝试 再不行就分片上传
+    // 构造临时文件名/路径
+    const tempFilename = `${diary.value.id}_${Date.now()}_${file.name}`;
+
+    console.log("准备上传文件到临时路径: ", tempFilename);
+
+    // 将文件写入应用数据目录或临时目录
+    await writeFile(tempFilename, bytes, {
+      baseDir: BaseDirectory.Temp
+    });
+
+    // 调用后端上传
     const updatedManifest = await invoke<DiaryManifest>("add_attachment", {
       uuid: diary.value.id,
-      bytes,
+      filename: tempFilename,
       minetype: file.type
     });
 

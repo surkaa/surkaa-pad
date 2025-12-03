@@ -3,12 +3,14 @@ pub mod oss_client_manager;
 pub mod secure_diary_store;
 pub mod surkaa_pad;
 
+use std::fs::{read, remove_file};
 use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use crate::surkaa_pad::{AppState, DiaryMemoryCache};
 use std::ops::Deref;
 use tauri::{AppHandle, Manager, State};
+use tauri::path::BaseDirectory;
 use tauri_plugin_store::Builder;
 
 //------------
@@ -217,7 +219,7 @@ async fn delete_diary(
 /// 添加附件
 /// # Arguments
 /// * `uuid` - 日记 UUID
-/// * `bytes` - 附件字节数据
+/// * `filename` - 临时附件文件名
 /// * `minetype` - 附件 MIME 类型
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
@@ -226,10 +228,24 @@ async fn add_attachment(
     encryption: State<'_, EncryptionManager>,
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
+    app_handle: AppHandle,
     uuid: String,
-    bytes: Vec<u8>,
+    filename: String,
     minetype: String,
 ) -> Result<DiaryManifest, String> {
+    // 获取临时文件的完整路径
+    let temp_path = app_handle.path()
+        .resolve(&filename, BaseDirectory::Temp)
+        .map_err(|e| format!("无法解析临时文件路径: {}", e))?;
+
+    // 在 Rust 中安全地读取大文件字节 (Vec<u8>)
+    let bytes: Vec<u8> = read(&temp_path)
+        .map_err(|e| format!("无法读取临时文件: {}", e))?;
+
+    // 删除缓存文件
+    remove_file(temp_path)
+        .map_err(|e| format!("无法删除临时文件: {}", e))?;
+
     store
         .add_attachment(
             encryption.deref(),
@@ -287,6 +303,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // 注册 Store 插件
         .plugin(Builder::default().build())
+        // 文件系统插件
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             app.manage(EncryptionManager::new());
             app.manage(OssClientManager::default());
