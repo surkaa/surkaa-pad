@@ -224,7 +224,9 @@ async fn delete_diary(
     app_handle: AppHandle,
     uuid: String,
 ) -> Result<(), String> {
-    store.delete_diary(client.deref(), app_state.deref(), Some(&app_handle), uuid).await
+    store
+        .delete_diary(client.deref(), app_state.deref(), Some(&app_handle), uuid)
+        .await
 }
 
 //------------
@@ -262,7 +264,15 @@ async fn add_attachment(
     remove_file(temp_path).map_err(|e| format!("无法删除临时文件: {}", e))?;
 
     store
-        .add_attachment(encryption.deref(), client.deref(), app_state.deref(), Some(&app_handle), uuid, bytes, minetype)
+        .add_attachment(
+            encryption.deref(),
+            client.deref(),
+            app_state.deref(),
+            Some(&app_handle),
+            uuid,
+            bytes,
+            minetype,
+        )
         .await
 }
 
@@ -304,7 +314,14 @@ async fn delete_attachment(
     filename: String,
 ) -> Result<DiaryManifest, String> {
     store
-        .delete_attachment(encryption.deref(), client.deref(), app_state.deref(), Some(&app_handle), uuid, filename)
+        .delete_attachment(
+            encryption.deref(),
+            client.deref(),
+            app_state.deref(),
+            Some(&app_handle),
+            uuid,
+            filename,
+        )
         .await
 }
 

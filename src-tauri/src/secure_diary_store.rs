@@ -219,12 +219,8 @@ impl SecureDiaryStore {
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
         // 更新本地缓存
-        self.replace_local_cache_file(
-            app_state,
-            app_handle,
-            &id,
-            &encrypted_manifest,
-        ).expect("Failed to update local cache file");
+        self.replace_local_cache_file(app_state, app_handle, &id, &encrypted_manifest)
+            .expect("Failed to update local cache file");
 
         Ok(manifest)
     }
@@ -246,15 +242,17 @@ impl SecureDiaryStore {
         let entries = std::fs::read_dir(&cache_dir)
             .map_err(|e| format!("Failed to read cache directory: {}", e))?;
         for entry in entries {
-            let entry = entry.map_err(|e| format!("Failed to read cache directory entry: {}", e))?;
+            let entry =
+                entry.map_err(|e| format!("Failed to read cache directory entry: {}", e))?;
             let file_name = entry.file_name();
             let file_name_str = file_name.to_string_lossy();
             // 检查文件名是否以 id 开头且以 ATTACHMENT_EXTENSION 结尾
             if file_name_str.starts_with(id) && file_name_str.ends_with(ATTACHMENT_EXTENSION) {
                 // 删除旧文件
                 let old_file_path = cache_dir.join(&file_name);
-                std::fs::remove_file(&old_file_path)
-                    .map_err(|e| format!("Failed to delete old cache file {}: {}", file_name_str, e))?;
+                std::fs::remove_file(&old_file_path).map_err(|e| {
+                    format!("Failed to delete old cache file {}: {}", file_name_str, e)
+                })?;
                 log::info!("Deleted old cache file {}", file_name_str);
             }
         }
@@ -322,12 +320,8 @@ impl SecureDiaryStore {
             .map_err(|e| format!("Failed to upload attachment: {}", e))?;
 
         // 更新本地缓存
-        self.replace_local_cache_file(
-            app_state,
-            app_handle,
-            &id,
-            &encrypted_manifest,
-        ).expect("Failed to update local cache file");
+        self.replace_local_cache_file(app_state, app_handle, &id, &encrypted_manifest)
+            .expect("Failed to update local cache file");
 
         Ok(manifest)
     }
@@ -397,12 +391,8 @@ impl SecureDiaryStore {
             .map_err(|e| format!("Failed to delete attachment: {}", e))?;
 
         // 更新本地缓存
-        self.replace_local_cache_file(
-            app_state,
-            app_handle,
-            &id,
-            &encrypted_manifest,
-        ).expect("Failed to update local cache file");
+        self.replace_local_cache_file(app_state, app_handle, &id, &encrypted_manifest)
+            .expect("Failed to update local cache file");
 
         Ok(manifest)
     }

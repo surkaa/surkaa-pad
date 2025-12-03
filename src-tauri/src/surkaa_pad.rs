@@ -151,6 +151,8 @@ impl AppState {
             map.insert(uuid.to_string(), manifest);
         }
 
+        // TODO 删除远程上没有的本地文件
+
         Ok(())
     }
 
