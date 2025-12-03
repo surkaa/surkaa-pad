@@ -4,7 +4,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
+use tauri::AppHandle;
 use uuid::Uuid;
+use crate::surkaa_pad::AppState;
 
 const MANIFEST_FILE_NAME: &str = "manifest.enc";
 const ATTACHMENT_EXTENSION: &str = ".enc";
@@ -61,6 +63,8 @@ impl SecureDiaryStore {
         &self,
         encryption: &EncryptionManager,
         client: &OssClientManager,
+        app_state: &AppState,
+        app_handle: Option<&AppHandle>,
         content: &str,
     ) -> Result<DiaryManifest, String> {
         let id = Uuid::new_v4().to_string();
@@ -91,9 +95,18 @@ impl SecureDiaryStore {
         // 上传到 OSS
         let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
         client
-            .upload_object(&object_key, encrypted_manifest)
+            .upload_object(&object_key, encrypted_manifest.clone())
             .await
             .map_err(|e| format!("Failed to upload manifest: {}", e))?;
+
+        // 保存到本地
+        let digest = md5::compute(&encrypted_manifest);
+        let etag = format!("{:x}", digest);
+        let filename = format!("{}_{}{}", id, etag, ATTACHMENT_EXTENSION);
+        let cache_dir = app_state.get_diary_cache_dir(app_handle);
+        let file_path = cache_dir.join(&filename);
+        std::fs::write(&file_path, &encrypted_manifest)
+            .map_err(|e| format!("Failed to write cache file {}: {}", filename, e))?;
 
         Ok(manifest)
     }

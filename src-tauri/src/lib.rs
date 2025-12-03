@@ -172,10 +172,12 @@ async fn save_diary(
     encryption: State<'_, EncryptionManager>,
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
+    app_state: State<'_, AppState>,
+    app_handle: AppHandle,
     content: &str,
 ) -> Result<DiaryManifest, String> {
     store
-        .create_diary(encryption.deref(), client.deref(), content)
+        .create_diary(encryption.deref(), client.deref(), app_state.deref(), Some(&app_handle), content)
         .await
 }
 
