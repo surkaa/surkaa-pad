@@ -11,6 +11,7 @@ use std::fs::{read, remove_file};
 use std::ops::Deref;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_store::Builder;
 
 //------------
@@ -313,8 +314,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // 注册 Store 插件
         .plugin(Builder::default().build())
-        // 文件系统插件
+        // 注册文件系统插件
         .plugin(tauri_plugin_fs::init())
+        // 注册日志插件
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir { file_name: None }),
+                    Target::new(TargetKind::Webview),
+                ])
+                .build(),
+        )
         .setup(|app| {
             app.manage(EncryptionManager::new());
             app.manage(OssClientManager::default());

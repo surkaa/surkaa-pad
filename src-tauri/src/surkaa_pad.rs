@@ -3,9 +3,10 @@ use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use std::collections::HashMap;
 use std::env::current_dir;
-use std::fs::{create_dir_all, read_dir, remove_dir_all, write};
+use std::fs::{create_dir_all, read_dir, write};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
+use tauri_plugin_log::log;
 use tokio::sync::Mutex;
 
 const CACHE_DIARY_DIR: &str = "diary_cache";
@@ -52,19 +53,6 @@ impl AppState {
             create_dir_all(&path).expect("Failed to create diary cache directory");
         }
         path
-    }
-
-    // 清空缓存目录内容
-    fn clear_cache_dir(&self, cache_dir: &PathBuf) -> Result<(), String> {
-        if cache_dir.exists() {
-            // 使用 remove_dir_all 删除目录及其内容，再重建
-            remove_dir_all(cache_dir)
-                .map_err(|e| format!("Failed to delete cache directory: {}", e))?;
-        }
-        // 重建目录
-        create_dir_all(cache_dir)
-            .map_err(|e| format!("Failed to create cache directory: {}", e))?;
-        Ok(())
     }
 
     /// 将本地文件加载到内存缓存中
@@ -134,9 +122,6 @@ impl AppState {
     ) -> Result<(), String> {
         let cache_dir = self.get_diary_cache_dir(app_handle);
 
-        // 清理本地缓存
-        self.clear_cache_dir(&cache_dir)?;
-
         // 获取远程列表并全部下载到硬盘
         let remote_diaries = store.list_diaries(client).await?;
 
@@ -145,6 +130,12 @@ impl AppState {
 
             let new_filename = format!("{}_{}{}", uuid, remote_etag, ATTACHMENT_EXTENSION);
             let new_file_path = cache_dir.join(&new_filename);
+
+            // 判断本地有没有这样的文件，有的话就跳过下载
+            if new_file_path.exists() {
+                log::info!("Cache hit for diary {}. Skipping download.", uuid);
+                continue;
+            }
 
             // 并且该方法内部包含了下载和解密逻辑
             let (manifest, manifest_bytes) = store
