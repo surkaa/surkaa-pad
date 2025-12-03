@@ -189,7 +189,7 @@ impl SecureDiaryStore {
         new_content: &str,
     ) -> Result<DiaryManifest, String> {
         // 先获取现有的 manifest
-        let (mut manifest, old_bytes) = self
+        let (mut manifest, _) = self
             .get_diary_manifest(encryption, client, id.clone())
             .await?;
 
@@ -223,7 +223,6 @@ impl SecureDiaryStore {
             app_state,
             app_handle,
             &id,
-            &old_bytes,
             &encrypted_manifest,
         ).expect("Failed to update local cache file");
 
@@ -235,23 +234,29 @@ impl SecureDiaryStore {
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
         id: &str,
-        old_bytes: &Vec<u8>,
         new_bytes: &Vec<u8>,
     ) -> Result<(), String> {
-        let old_digest = md5::compute(old_bytes);
-        let old_etag = format!("{:X}", old_digest);
-        let old_filename = format!("{}_{}{}", id, old_etag, ATTACHMENT_EXTENSION);
         let new_digest = md5::compute(new_bytes);
         let new_etag = format!("{:X}", new_digest);
         let new_filename = format!("{}_{}{}", id, new_etag, ATTACHMENT_EXTENSION);
 
         let cache_dir = app_state.get_diary_cache_dir(app_handle);
 
-        // 删除旧文件
-        let old_file_path = cache_dir.join(&old_filename);
-        if old_file_path.exists() {
-            std::fs::remove_file(&old_file_path)
-                .map_err(|e| format!("Failed to delete old cache file {}: {}", old_filename, e))?;
+        // 在未知ETag的情况下，删除旧文件，先列出目录中的所有文件
+        let entries = std::fs::read_dir(&cache_dir)
+            .map_err(|e| format!("Failed to read cache directory: {}", e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read cache directory entry: {}", e))?;
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+            // 检查文件名是否以 id 开头且以 ATTACHMENT_EXTENSION 结尾
+            if file_name_str.starts_with(id) && file_name_str.ends_with(ATTACHMENT_EXTENSION) {
+                // 删除旧文件
+                let old_file_path = cache_dir.join(&file_name);
+                std::fs::remove_file(&old_file_path)
+                    .map_err(|e| format!("Failed to delete old cache file {}: {}", file_name_str, e))?;
+                log::info!("Deleted old cache file {}", file_name_str);
+            }
         }
 
         // 写入新文件
@@ -288,7 +293,7 @@ impl SecureDiaryStore {
             nonce: nonce.clone(),
         };
 
-        let (mut manifest, old_bytes) = self
+        let (mut manifest, _) = self
             .get_diary_manifest(encryption, client, id.clone())
             .await?;
         manifest.attachments.push(attachment);
@@ -321,7 +326,6 @@ impl SecureDiaryStore {
             app_state,
             app_handle,
             &id,
-            &old_bytes,
             &encrypted_manifest,
         ).expect("Failed to update local cache file");
 
@@ -362,7 +366,7 @@ impl SecureDiaryStore {
         file_name: String,
     ) -> Result<DiaryManifest, String> {
         // 更新 manifest，移除附件元数据
-        let (mut manifest, old_bytes) = self
+        let (mut manifest, _) = self
             .get_diary_manifest(encryption, client, id.clone())
             .await?;
         manifest.attachments.retain(|att| att.filename != file_name);
@@ -397,7 +401,6 @@ impl SecureDiaryStore {
             app_state,
             app_handle,
             &id,
-            &old_bytes,
             &encrypted_manifest,
         ).expect("Failed to update local cache file");
 
