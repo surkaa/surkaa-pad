@@ -369,6 +369,8 @@ $diary-editor-padding: 10px;
       padding: 5px 10px;
       font-size: 14px;
       cursor: pointer;
+      border-radius: 4px;
+      border: 1px solid var(--pad-border-color-200);
     }
 
     // 第一个按钮靠左，其他靠右
@@ -378,7 +380,6 @@ $diary-editor-padding: 10px;
 
     // 删除按钮样式
     #diary-detail-header-delete-btn {
-      margin-left: 20px;
       background-color: var(--pad-danger-color);
       color: white;
     }
@@ -404,7 +405,7 @@ $diary-editor-padding: 10px;
 
       // 泛化媒体样式
       :deep(.diary-media) {
-        max-width: 100%;
+        width: 100%;
         margin: 10px 0;
         border-radius: 4px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
@@ -413,14 +414,15 @@ $diary-editor-padding: 10px;
 
       // 视频和音频的特殊样式
       :deep(video.diary-media) {
-        width: 100%;
         height: auto;
         background-color: black;
       }
 
       :deep(audio.diary-media) {
-        width: 100%;
         height: 50px; /* 通常音频文件较短 */
+        background-color: transparent;
+        box-shadow: unset;
+        border-radius: unset;
       }
     }
   }
