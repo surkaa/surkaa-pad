@@ -30,7 +30,7 @@ mod app_state_test {
             .await
             .expect("Failed to initialize encryption manager");
 
-        (encryption, oss, SecureDiaryStore {})
+        (encryption, oss, SecureDiaryStore::new())
     }
 
     #[test]

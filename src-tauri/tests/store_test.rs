@@ -33,7 +33,7 @@ mod secure_store {
             .await
             .expect("Failed to initialize encryption manager");
 
-        (encryption, oss, SecureDiaryStore {})
+        (encryption, oss, SecureDiaryStore::new())
     }
 
     #[tokio::test]
