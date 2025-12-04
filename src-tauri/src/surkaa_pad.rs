@@ -3,7 +3,6 @@ use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use std::collections::HashMap;
 use std::env::current_dir;
-use std::fmt::format;
 use std::fs::{create_dir_all, read_dir, write};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
