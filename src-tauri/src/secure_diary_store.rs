@@ -53,7 +53,7 @@ impl SecureDiaryStore {
         }
     }
 
-    /// 列出所有日记的主键（也就是创建时间戳）
+    /// 列出所有日记 UUID -> ObjectInfo 映射
     pub async fn list_diaries(
         &self,
         client: &OssClientManager,

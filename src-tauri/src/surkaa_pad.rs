@@ -3,6 +3,7 @@ use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use std::collections::HashMap;
 use std::env::current_dir;
+use std::fmt::format;
 use std::fs::{create_dir_all, read_dir, write};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
@@ -173,7 +174,33 @@ impl AppState {
             map.insert(uuid.to_string(), manifest);
         }
 
-        // TODO 删除远程上没有的本地文件
+        // 删除本地多余的（uuid一样，etag却不一样）
+        let remote_uuid_for_etag: HashMap<String, String> = remote_diaries
+            .iter()
+            .map(|(uuid, diary)| (uuid.clone(), diary.etag().to_string()))
+            .collect();
+        let entries =
+            read_dir(&cache_dir).map_err(|e| format!("读取缓存目录失败: {}", e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("读取目录项失败: {}", e))?;
+            let path = entry.path();
+
+            if path.extension().and_then(|s| s.to_str()) == Some("enc") {
+                let filename = path.file_stem().unwrap().to_str().unwrap();
+                let (uuid, etag) = filename
+                    .rsplit_once('_')
+                    .ok_or_else(|| format!("无效的缓存文件名格式: {}", filename))?;
+                if let Some(remote_etag) = remote_uuid_for_etag.get(uuid) {
+                    if remote_etag != etag {
+                        // 本地文件的 etag 已经过时，删除它
+                        tokio::fs::remove_file(&path)
+                            .await
+                            .map_err(|e| format!("删除过时缓存文件失败 {}: {}", path.display(), e))?;
+                        log::info!("已删除的过时缓存文件: {}", path.display());
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
