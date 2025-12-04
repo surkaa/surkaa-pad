@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from "vue";
+import {computed, onMounted, onUnmounted, ref} from "vue";
 import {DiaryManifest} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {useRouter} from "vue-router";
@@ -31,6 +31,7 @@ const editorRef = ref<HTMLElement | null>(null);
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const showMediaMenu = ref(false);
+const waitToUnlistedSet = new Set<(() => void) | null>();
 
 function toggleMediaMenu() {
   // 切换菜单显示状态
@@ -329,17 +330,30 @@ onMounted(async () => {
     if (editorRef.value) {
       try {
         renderLoading.value = true;
-        editorRef.value.innerHTML = await parseTextToHtml(
+        let content = diary.value.content;
+        const results = await parseTextToHtml(
             diary.value.content,
             diary.value.id,
             diary.value.attachments
         );
+        for (const res of results) {
+          content = content.replace(res.marker, res.html);
+          waitToUnlistedSet.add(res.unlistedFn);
+        }
+        editorRef.value.innerHTML = content;
       } finally {
         renderLoading.value = false;
       }
     }
   }
 });
+
+onUnmounted(() => {
+  // 卸载时调用所有等待的 unlisted 函数
+  waitToUnlistedSet.forEach(fn => {
+    if (fn) fn();
+  });
+})
 </script>
 
 <template>

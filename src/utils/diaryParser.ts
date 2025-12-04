@@ -21,15 +21,17 @@ export async function parseTextToHtml(
     content: string,
     diaryId: string,
     attachments: AttachmentMeta[]
-): Promise<string> {
-    if (!content) return "";
+): Promise<{
+    marker: string,
+    html: string,
+    unlistedFn: (() => void) | null
+}[]> {
+    if (!content) return [];
 
     const matches = [...content.matchAll(MEDIA_MARKER_REGEX)];
 
     // 没有标记，直接返回原文
-    if (matches.length === 0) return content;
-
-    let htmlContent = content;
+    if (matches.length === 0) return [];
 
     // 并行下载所有图片
     const tasks = matches.map(async (match) => {
@@ -42,7 +44,7 @@ export async function parseTextToHtml(
         // 找到对应的附件信息以获取 nonce 用于下载时解密
         const attachment = attachments.find(a => a.filename === filename);
         if (!attachment) {
-            return {marker: fullMarker, html: `<div class="media-error">[媒体文件丢失: ${filename}]</div>`};
+            return {marker: fullMarker, html: `<div class="media-error">[媒体文件丢失: ${filename}]</div>`, unlistedFn: null};
         }
 
         try {
@@ -101,24 +103,18 @@ export async function parseTextToHtml(
                 mediaHtml = `[未知媒体类型: ${filename}]`;
             }
 
-            return {marker: fullMarker, html: mediaHtml};
+            return {marker: fullMarker, html: mediaHtml, unlistedFn};
         } catch (e) {
             console.error(`加载媒体文件失败: ${filename}`, e);
             return {
                 marker: fullMarker,
-                html: `<div class="media-error" data-tag="${elementTag}" data-filename="${attachment.filename}">[加载失败: ${filename}]</div>`
+                html: `<div class="media-error" data-tag="${elementTag}" data-filename="${attachment.filename}">[加载失败: ${filename}]</div>`,
+                unlistedFn: null,
             };
         }
     });
 
-    const results = await Promise.all(tasks);
-
-    // 替换文本中的标记
-    results.forEach(item => {
-        htmlContent = htmlContent.replace(item.marker, item.html);
-    });
-
-    return htmlContent;
+    return await Promise.all(tasks);
 }
 
 /**
