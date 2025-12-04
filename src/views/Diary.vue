@@ -289,6 +289,7 @@ function insertImageToEditor(file: File, filename: string, tagPrefix: 'IMG' | 'V
     mediaElement = document.createElement('audio');
     mediaElement.setAttribute('controls', 'true');
   } else {
+    console.log("不支持的媒体类型: ", tagPrefix);
     return; // 不支持的类型
   }
 
@@ -384,7 +385,7 @@ onMounted(async () => {
           contenteditable="true"
           class="custom-editor"
           spellcheck="false"
-          :style="{ display: renderLoading ? 'none' : 'block' }"
+          :style="{ visibility: renderLoading ? 'hidden' : 'visible' }"
       ></div>
     </section>
     <section id="diary-detail-footer">

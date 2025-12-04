@@ -37,7 +37,7 @@ async function syncFromOss() {
     // 同步完成后重新加载列表
     loadLocalDiaries();
   } catch (e) {
-    console.error("Sync failed", e);
+    console.error("同步失败：", e);
     // 这里可以加一个全局提示，暂时略过
   } finally {
     isSyncing.value = false;

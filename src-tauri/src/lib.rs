@@ -288,12 +288,24 @@ async fn download_attachment(
     encryption: State<'_, EncryptionManager>,
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
+    app_state: State<'_, AppState>,
+    app_handle: AppHandle,
     uuid: String,
     filename: String,
     nonce: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+    eid: String,
+) -> Result<(), String> {
     store
-        .download_attachment(encryption.deref(), client.deref(), uuid, filename, nonce)
+        .download_attachment(
+            encryption.deref(),
+            client.deref(),
+            app_state.deref(),
+            app_handle,
+            uuid,
+            filename,
+            nonce,
+            eid,
+        )
         .await
 }
 

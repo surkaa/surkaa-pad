@@ -10,6 +10,7 @@ use tauri_plugin_log::log;
 use tokio::sync::Mutex;
 
 const CACHE_DIARY_DIR: &str = "diary_cache";
+const CACHE_ATTACHMENT_DIR: &str = "attachment_cache";
 const ATTACHMENT_EXTENSION: &str = ".enc";
 
 // 内存缓存：解密后的明文日记列表，用于搜索和展示
@@ -30,11 +31,11 @@ impl DiaryMemoryCache {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AppState {}
 
 impl AppState {
-    /// 获取应用的日记缓存目录
+    /// 获取应用的日记缓存目录 TODO 提取成新的函数 参数转成枚举
     pub fn get_diary_cache_dir(&self, app_handle: Option<&AppHandle>) -> PathBuf {
         let path = if let Some(app_handle) = app_handle {
             app_handle
@@ -51,6 +52,27 @@ impl AppState {
 
         if !path.exists() {
             create_dir_all(&path).expect("Failed to create diary cache directory");
+        }
+        path
+    }
+
+    /// 获取应用的附件缓存目录
+    pub fn get_attachment_cache_dir(&self, app_handle: Option<&AppHandle>) -> PathBuf {
+        let path = if let Some(app_handle) = app_handle {
+            app_handle
+                .path()
+                .app_data_dir()
+                .unwrap()
+                .join(CACHE_ATTACHMENT_DIR)
+        } else {
+            let mut path = current_dir().expect("Failed to get current directory");
+            path.push(CACHE_ATTACHMENT_DIR);
+
+            path
+        };
+
+        if !path.exists() {
+            create_dir_all(&path).expect("Failed to create attachment cache directory");
         }
         path
     }

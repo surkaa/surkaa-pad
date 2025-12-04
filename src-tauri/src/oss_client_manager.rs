@@ -97,7 +97,7 @@ impl OssClientManager {
     /// 从 OSS 下载数据
     pub async fn download_object(&self, object_key: &str) -> Result<Vec<u8>, String> {
         if !self.initialized.load(Ordering::SeqCst) {
-            return Err("OSS client is not initialized".to_string());
+            return Err("OSS 客户端未被初始化".to_string());
         }
 
         // 锁定 Mutex 获取客户端
@@ -105,12 +105,12 @@ impl OssClientManager {
         let client = inner_guard
             .client
             .as_ref()
-            .ok_or_else(|| "OSS client is not initialized".to_string())?;
+            .ok_or_else(|| "OSS 客户端未被初始化".to_string())?;
 
         let data = Object::new(object_key)
             .download(&client)
             .await
-            .map_err(|e| format!("Failed to download object: {}", e))?;
+            .map_err(|e| format!("未能下载对象: {}", e))?;
 
         Ok(data)
     }

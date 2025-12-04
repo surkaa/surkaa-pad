@@ -5,7 +5,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_log::log;
 use uuid::Uuid;
 
@@ -326,27 +326,57 @@ impl SecureDiaryStore {
         Ok(manifest)
     }
 
-    /// 下载指定日记的指定附件
+    /// 下载指定日记的指定附件 下载完成后emit attachment_downloaded返回eid
     pub async fn download_attachment(
         &self,
         encryption: &EncryptionManager,
         client: &OssClientManager,
+        app_state: &AppState,
+        app_handle: AppHandle,
         id: String,
         file_name: String,
         nonce: Vec<u8>,
-    ) -> Result<Vec<u8>, String> {
+        eid: String,
+    ) -> Result<(), String> {
+
+        // 启动异步下载任务
+        let em_clone = encryption.clone();
+        let client_clone = client.clone();
+        let state_clone = app_state.clone();
         let attachment_key = format!("{}/{}", id, file_name);
-        let encrypted_data = client
-            .download_object(&attachment_key)
-            .await
-            .map_err(|e| format!("Failed to download attachment: {}", e))?;
+        tauri::async_runtime::spawn(async move {
+            match client_clone.download_object(&attachment_key).await {
+                Ok(encrypted_data) => match em_clone.decrypt(&encrypted_data, &nonce).await {
+                    Ok(decrypted_data) => {
+                        // 保存到临时目录下，再返回给前端临时路径
+                        let temp_dir = state_clone.get_attachment_cache_dir(Some(&app_handle));
+                        let temp_path = temp_dir.join(format!("{}_{}", eid, file_name));
+                        tokio::fs::write(&temp_path, &decrypted_data).await
+                            .unwrap_or_else(|e| {
+                                log::error!("未能将附件写入临时文件 {}: {}", temp_path.display(), e);
+                            });
 
-        let decrypted_data = encryption
-            .decrypt(&encrypted_data, &nonce)
-            .await
-            .map_err(|e| format!("Failed to decrypt attachment: {}", e))?;
+                        app_handle.emit(
+                            "attachment_downloaded",
+                            serde_json::json!({
+                                "eid": eid,
+                                "tempPath": temp_path.to_string_lossy(),
+                            }),
+                        ).unwrap_or_else(|e| {
+                            log::error!("未能发出attachment_downloaded事件: {}", e);
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("附件解密失败 {}: {}", file_name, e);
+                    }
+                },
+                Err(e) => {
+                    log::error!("下载附件失败 {}: {}", file_name, e);
+                }
+            }
+        });
 
-        Ok(decrypted_data)
+        Ok(())
     }
 
     /// 删除指定日记的指定附件
