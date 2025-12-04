@@ -31,7 +31,7 @@ const editorRef = ref<HTMLElement | null>(null);
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const showMediaMenu = ref(false);
-const waitToUnlistedSet = new Set<(() => void) | null>();
+const waitToUnlistedSet = new Set<{ fn: (() => void) | null, eid: string | null }>();
 
 function toggleMediaMenu() {
   // 切换菜单显示状态
@@ -338,7 +338,10 @@ onMounted(async () => {
         );
         for (const res of results) {
           content = content.replace(res.marker, res.html);
-          waitToUnlistedSet.add(res.unlistedFn);
+          waitToUnlistedSet.add({
+            fn: res.unlistedFn,
+            eid: res.eid
+          });
         }
         editorRef.value.innerHTML = content;
       } finally {
@@ -350,8 +353,17 @@ onMounted(async () => {
 
 onUnmounted(() => {
   // 卸载时调用所有等待的 unlisted 函数
-  waitToUnlistedSet.forEach(fn => {
-    if (fn) fn();
+  waitToUnlistedSet.forEach(task => {
+    if (task.fn) {
+      // 取消监听
+      task.fn();
+      console.log("取消附件下载监听");
+    }
+    if (task.eid) {
+      // 取消后端下载任务
+      invoke("cancel_download_attachment", {eid: task.eid});
+      console.log("取消后端附件下载任务, EID=", task.eid);
+    }
   });
 })
 </script>

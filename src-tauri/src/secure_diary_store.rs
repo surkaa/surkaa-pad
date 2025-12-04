@@ -5,16 +5,22 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
-use tauri::{AppHandle, Emitter, Manager};
+use std::sync::Arc;
 use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Emitter, Manager};
+use tauri::async_runtime::{spawn, JoinHandle};
 use tauri_plugin_log::log;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 const MANIFEST_FILE_NAME: &str = "manifest.enc";
 const ATTACHMENT_EXTENSION: &str = ".enc";
 
 #[derive(Default)]
-pub struct SecureDiaryStore {}
+pub struct SecureDiaryStore {
+    // current_download_handle: Arc<Mutex<Option<HashMap<String, JoinHandle<()>>>>>,
+    download_handles: Arc<Mutex<HashMap<String, JoinHandle<()>>>>
+}
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -38,6 +44,15 @@ pub struct AttachmentMeta {
 
 /// 提供安全的日记存储功能 结合有日记存储方案的逻辑 只用于管理日记及其附件的增删改查
 impl SecureDiaryStore {
+    pub fn new() -> Self {
+        SecureDiaryStore {
+            // current_download_handle: Arc::new(Mutex::new(
+            //     HashMap::new(),
+            // )),
+            download_handles: Arc::new(Mutex::new(HashMap::new()))
+        }
+    }
+
     /// 列出所有日记的主键（也就是创建时间戳）
     pub async fn list_diaries(
         &self,
@@ -345,45 +360,98 @@ impl SecureDiaryStore {
         let client_clone = client.clone();
         let state_clone = app_state.clone();
         let attachment_key = format!("{}/{}", id, filename);
-        tauri::async_runtime::spawn(async move {
+
+        // 克隆用于在任务结束时移除句柄
+        let handle_map_clone = self.download_handles.clone();
+        let eid_clone = eid.clone();
+
+        let handle = spawn(async move {
             match client_clone.download_object(&attachment_key).await {
-                Ok(encrypted_data) => match em_clone.decrypt(&encrypted_data, &nonce).await {
-                    Ok(decrypted_data) => {
-                        // 保存到临时目录下，再返回给前端临时路径
-                        let temp_path = app_handle.path()
-                            .resolve(&filename, BaseDirectory::Temp)
-                            .unwrap_or_else(|e| {
-                                log::error!("无法解析临时目录路径，将使用软件下的attachment_cache目录: {}", e);
-                                state_clone.get_attachment_cache_dir(Some(&app_handle)).join(&filename)
-                            });
-                        tokio::fs::write(&temp_path, &decrypted_data).await
-                            .unwrap_or_else(|e| {
-                                log::error!("未能将附件写入临时文件 {}: {}", temp_path.display(), e);
-                            });
+                Ok(encrypted_data) => {
+                    match em_clone.decrypt(&encrypted_data, &nonce).await {
+                        Ok(decrypted_data) => {
+                            // 保存到临时目录下，再返回给前端临时路径
+                            let temp_path = app_handle
+                                .path()
+                                .resolve(&filename, BaseDirectory::Temp)
+                                .unwrap_or_else(|e| {
+                                    log::error!(
+                                    "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
+                                    e
+                                );
+                                    state_clone
+                                        .get_attachment_cache_dir(Some(&app_handle))
+                                        .join(&filename)
+                                });
 
-                        log::info!("附件已保存到临时路径: {}", temp_path.display());
+                            tokio::fs::write(&temp_path, &decrypted_data)
+                                .await
+                                .unwrap_or_else(|e| {
+                                    log::error!(
+                                        "未能将附件写入临时文件 {}: {}",
+                                        temp_path.display(),
+                                        e
+                                    );
+                                });
 
-                        app_handle.emit(
-                            format!("attachment_downloaded_{}", eid).as_str(),
-                            serde_json::json!({
-                                "eid": eid,
-                                "tempPath": temp_path.to_string_lossy(),
-                            }),
-                        ).unwrap_or_else(|e| {
-                            log::error!("未能发出attachment_downloaded事件: {}", e);
-                        });
+                            log::info!("附件已保存到临时路径: {}", temp_path.display());
+
+                            app_handle
+                                .emit(
+                                    format!("attachment_downloaded_{}", &eid).as_str(),
+                                    serde_json::json!({
+                                        "eid": eid,
+                                        "tempPath": temp_path.to_string_lossy(),
+                                    }),
+                                )
+                                .unwrap_or_else(|e| {
+                                    log::error!("未能发出attachment_downloaded事件: {}", e);
+                                });
+                        }
+                        Err(e) => {
+                            log::error!("附件解密失败 {}: {}", filename, e);
+                        }
                     }
-                    Err(e) => {
-                        log::error!("附件解密失败 {}: {}", filename, e);
-                    }
-                },
+                }
                 Err(e) => {
                     log::error!("下载附件失败 {}: {}", filename, e);
                 }
-            }
+            };
+
+            // 任务结束：无论是成功 (Ok) 还是错误 (Err)，都需要清除句柄
+            let mut handle_guard = handle_map_clone.lock().await;
+            handle_guard.remove(&eid);
         });
 
+        // 2. 将新的 JoinHandle 存储到 HashMap 中
+        let mut handle_guard = self.download_handles.lock().await;
+
+        // 如果该 eid 已存在，先取消旧任务 (防止重复下载冲突)
+        if let Some(old_handle) = handle_guard.remove(&eid_clone) {
+            old_handle.abort();
+            log::warn!("发现重复的附件下载任务 {}，已取消旧任务。", &eid_clone);
+        }
+
+        handle_guard.insert(eid_clone, handle);
+
         Ok(())
+    }
+
+    /// 根据 eid 取消对应的下载任务。
+    pub async fn cancel_download(&self, eid: &str) -> Result<bool, String> {
+        // 1. 获取 HashMap 的可变锁
+        let mut handle_guard = self.download_handles.lock().await;
+
+        // 2. 尝试从 HashMap 中取出并移除该 eid 对应的句柄
+        if let Some(handle) = handle_guard.remove(eid) {
+            // 3. 取消该任务
+            handle.abort();
+            log::info!("已取消附件下载任务 {}", eid);
+            Ok(true)
+        } else {
+            log::warn!("未找到附件下载任务 {}", eid);
+            Ok(false)
+        }
     }
 
     /// 删除指定日记的指定附件

@@ -24,7 +24,8 @@ export async function parseTextToHtml(
 ): Promise<{
     marker: string,
     html: string,
-    unlistedFn: (() => void) | null
+    unlistedFn: (() => void) | null,
+    eid: string | null
 }[]> {
     if (!content) return [];
 
@@ -43,24 +44,25 @@ export async function parseTextToHtml(
 
         // 找到对应的附件信息以获取 nonce 用于下载时解密
         const attachment = attachments.find(a => a.filename === filename);
+        const attachmentIndex = attachments.findIndex(a => a.filename === filename);
         if (!attachment) {
-            return {marker: fullMarker, html: `<div class="media-error">[媒体文件丢失: ${filename}]</div>`, unlistedFn: null};
+            return {marker: fullMarker, html: `<div class="media-error">[媒体文件丢失: ${filename}]</div>`, unlistedFn: null, eid: null};
         }
 
         try {
             // 后端download_attachment不返回任何东西，
             // 而是启动一个后台任务，下载完成后会emit前端
             // 所以这里直接用一个特定的URL格式，前端接收到下载完成的事件后替换
-            const randomId = Math.random().toString(36).substring(2, 10);
+            const eid = `${diaryId.replace('-', '')}_${attachmentIndex}`;
 
             await invoke("download_attachment", {
                 uuid: diaryId,
                 filename: filename,
                 nonce: attachment.nonce,
-                eid: randomId,
+                eid: eid,
             });
 
-            let unlistedFn = await listen(`attachment_downloaded_${randomId}`, async (event) => {
+            let unlistedFn = await listen(`attachment_downloaded_${eid}`, async (event) => {
                 const payload = event.payload as { eid: string, tempPath: string };
                 console.log("收到附件下载完成事件", payload.eid, payload.tempPath);
                 // 创建数据URL
@@ -73,8 +75,8 @@ export async function parseTextToHtml(
                 await fileHandle.close();
                 const blob = new Blob([buffer], {type: attachment.mimetype || 'application/octet-stream'});
                 const dataUrl = URL.createObjectURL(blob);
-                if (payload.eid === randomId) {
-                    const mediaElement = document.getElementById(randomId) as HTMLImageElement | HTMLVideoElement | HTMLAudioElement | null;
+                if (payload.eid === eid) {
+                    const mediaElement = document.getElementById(eid) as HTMLImageElement | HTMLVideoElement | HTMLAudioElement | null;
                     if (mediaElement) {
                         if (elementTag === 'img') {
                             (mediaElement as HTMLImageElement).src = dataUrl;
@@ -94,22 +96,23 @@ export async function parseTextToHtml(
             // 动态创建媒体元素
             let mediaHtml: string;
             if (elementTag === 'img') {
-                mediaHtml = `<img id="${randomId}" data-filename="${filename}" class="diary-media diary-img" alt="${attachment.filename}"/>`;
+                mediaHtml = `<img id="${eid}" data-filename="${filename}" class="diary-media diary-img" alt="${attachment.filename}"/>`;
             } else if (elementTag === 'video' || elementTag === 'audio') {
                 // 视频和音频需要 controls 属性来显示播放器控件
                 const additionalAttrs = elementTag === 'video' ? 'style="display:block; width:100%"' : '';
-                mediaHtml = `<${elementTag} controls id="${randomId}" data-filename="${filename}" class="diary-media ${elementTag}" ${additionalAttrs}></${elementTag}>`;
+                mediaHtml = `<${elementTag} controls id="${eid}" data-filename="${filename}" class="diary-media ${elementTag}" ${additionalAttrs}></${elementTag}>`;
             } else {
                 mediaHtml = `[未知媒体类型: ${filename}]`;
             }
 
-            return {marker: fullMarker, html: mediaHtml, unlistedFn};
+            return {marker: fullMarker, html: mediaHtml, unlistedFn, eid: eid};
         } catch (e) {
             console.error(`加载媒体文件失败: ${filename}`, e);
             return {
                 marker: fullMarker,
                 html: `<div class="media-error" data-tag="${elementTag}" data-filename="${attachment.filename}">[加载失败: ${filename}]</div>`,
                 unlistedFn: null,
+                eid: null,
             };
         }
     });

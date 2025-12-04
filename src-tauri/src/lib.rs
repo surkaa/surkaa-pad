@@ -309,6 +309,21 @@ async fn download_attachment(
         .await
 }
 
+/// 取消下载附件 用于附件太大还未下载完成时 页面就退出了
+/// # Arguments
+/// * `eid` - 附件下载任务 ID
+/// # Returns
+/// * `Result<bool, String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+async fn cancel_download_attachment(
+    store: State<'_, SecureDiaryStore>,
+    eid: &str,
+) -> Result<bool, String> {
+    store.cancel_download(eid).await
+}
+
+
+
 /// 删除附件
 /// # Arguments
 /// * `uuid` - 日记 UUID
@@ -381,6 +396,7 @@ pub fn run() {
             delete_diary,
             add_attachment,
             download_attachment,
+            cancel_download_attachment,
             delete_attachment
         ])
         .run(tauri::generate_context!())
