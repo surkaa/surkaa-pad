@@ -1,6 +1,6 @@
 import {invoke} from "@tauri-apps/api/core";
 import {AttachmentMeta} from "../types";
-import {listen, type UnlistenFn} from "@tauri-apps/api/event";
+import {listen} from "@tauri-apps/api/event";
 import {open, remove} from "@tauri-apps/plugin-fs";
 
 // 统一的媒体标记正则格式： <<TAG:文件名>>
@@ -45,7 +45,6 @@ export async function parseTextToHtml(
             return {marker: fullMarker, html: `<div class="media-error">[媒体文件丢失: ${filename}]</div>`};
         }
 
-        let unlistedFn: UnlistenFn | null = null;
         try {
             // 后端download_attachment不返回任何东西，
             // 而是启动一个后台任务，下载完成后会emit前端
@@ -59,7 +58,7 @@ export async function parseTextToHtml(
                 eid: randomId,
             });
 
-            unlistedFn = await listen("attachment_downloaded", async (event) => {
+            let unlistedFn = await listen(`attachment_downloaded_${randomId}`, async (event) => {
                 const payload = event.payload as { eid: string, tempPath: string };
                 console.log("收到附件下载完成事件", payload.eid, payload.tempPath);
                 // 创建数据URL
@@ -85,7 +84,6 @@ export async function parseTextToHtml(
                 // 取消监听
                 if (unlistedFn) {
                     unlistedFn();
-                    unlistedFn = null;
                 }
                 // 删除临时文件
                 await remove(payload.tempPath);

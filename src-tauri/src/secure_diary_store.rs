@@ -5,7 +5,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri::path::BaseDirectory;
 use tauri_plugin_log::log;
 use uuid::Uuid;
 
@@ -334,7 +335,7 @@ impl SecureDiaryStore {
         app_state: &AppState,
         app_handle: AppHandle,
         id: String,
-        file_name: String,
+        filename: String,
         nonce: Vec<u8>,
         eid: String,
     ) -> Result<(), String> {
@@ -343,21 +344,27 @@ impl SecureDiaryStore {
         let em_clone = encryption.clone();
         let client_clone = client.clone();
         let state_clone = app_state.clone();
-        let attachment_key = format!("{}/{}", id, file_name);
+        let attachment_key = format!("{}/{}", id, filename);
         tauri::async_runtime::spawn(async move {
             match client_clone.download_object(&attachment_key).await {
                 Ok(encrypted_data) => match em_clone.decrypt(&encrypted_data, &nonce).await {
                     Ok(decrypted_data) => {
                         // 保存到临时目录下，再返回给前端临时路径
-                        let temp_dir = state_clone.get_attachment_cache_dir(Some(&app_handle));
-                        let temp_path = temp_dir.join(format!("{}_{}", eid, file_name));
+                        let temp_path = app_handle.path()
+                            .resolve(&filename, BaseDirectory::Temp)
+                            .unwrap_or_else(|e| {
+                                log::error!("无法解析临时目录路径，将使用软件下的attachment_cache目录: {}", e);
+                                state_clone.get_attachment_cache_dir(Some(&app_handle)).join(&filename)
+                            });
                         tokio::fs::write(&temp_path, &decrypted_data).await
                             .unwrap_or_else(|e| {
                                 log::error!("未能将附件写入临时文件 {}: {}", temp_path.display(), e);
                             });
 
+                        log::info!("附件已保存到临时路径: {}", temp_path.display());
+
                         app_handle.emit(
-                            "attachment_downloaded",
+                            format!("attachment_downloaded_{}", eid).as_str(),
                             serde_json::json!({
                                 "eid": eid,
                                 "tempPath": temp_path.to_string_lossy(),
@@ -367,11 +374,11 @@ impl SecureDiaryStore {
                         });
                     }
                     Err(e) => {
-                        log::error!("附件解密失败 {}: {}", file_name, e);
+                        log::error!("附件解密失败 {}: {}", filename, e);
                     }
                 },
                 Err(e) => {
-                    log::error!("下载附件失败 {}: {}", file_name, e);
+                    log::error!("下载附件失败 {}: {}", filename, e);
                 }
             }
         });
