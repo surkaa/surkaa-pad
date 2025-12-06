@@ -1,7 +1,7 @@
 use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env::current_dir;
 use std::fs::{create_dir_all, read_dir, write};
 use std::path::PathBuf;
@@ -142,45 +142,14 @@ impl AppState {
         store: &SecureDiaryStore,
         app_handle: Option<&AppHandle>,
     ) -> Result<(), String> {
+
+        // 先加载内存的
         let cache_dir = self.get_diary_cache_dir(app_handle);
-
-        // 获取远程列表并全部下载到硬盘
-        let remote_diaries = store.list_diaries(client).await?;
-
-        for (uuid, diary) in remote_diaries.iter() {
-            let remote_etag = diary.etag();
-
-            let new_filename = format!("{}_{}{}", uuid, remote_etag, ATTACHMENT_EXTENSION);
-            let new_file_path = cache_dir.join(&new_filename);
-
-            // 判断本地有没有这样的文件，有的话就跳过下载
-            if new_file_path.exists() {
-                log::info!("Cache hit for diary {}. Skipping download.", uuid);
-                continue;
-            }
-
-            // 并且该方法内部包含了下载和解密逻辑
-            let (manifest, manifest_bytes) = store
-                .get_diary_manifest(&encryption, &client, uuid.to_string())
-                .await?;
-
-            // 写入本地文件系统
-            write(&new_file_path, &manifest_bytes)
-                .map_err(|e| format!("Failed to write cache file {}: {}", new_filename, e))?;
-
-            // 更新内存缓存
-            let mut map = cache.diaries.lock().await;
-            map.insert(uuid.to_string(), manifest);
-        }
-
-        // 删除本地多余的（uuid一样，etag却不一样）
-        let remote_uuid_for_etag: HashMap<String, String> = remote_diaries
-            .iter()
-            .map(|(uuid, diary)| (uuid.clone(), diary.etag().to_string()))
-            .collect();
-        let entries =
-            read_dir(&cache_dir).map_err(|e| format!("读取缓存目录失败: {}", e))?;
-        for entry in entries {
+        log::info!("加载日记缓存目录: {}", cache_dir.display());
+        let local_entries = read_dir(&cache_dir).map_err(|e| format!("读取缓存目录失败: {}", e))?;
+        // 把本地的缓存文件都读一遍，构建 local_uuid_for_etags
+        let mut local_uuid_for_etags: HashMap<String, HashSet<String>> = HashMap::new();
+        for entry in local_entries {
             let entry = entry.map_err(|e| format!("读取目录项失败: {}", e))?;
             let path = entry.path();
 
@@ -189,18 +158,97 @@ impl AppState {
                 let (uuid, etag) = filename
                     .rsplit_once('_')
                     .ok_or_else(|| format!("无效的缓存文件名格式: {}", filename))?;
-                if let Some(remote_etag) = remote_uuid_for_etag.get(uuid) {
-                    if remote_etag != etag {
-                        // 本地文件的 etag 已经过时，删除它
-                        tokio::fs::remove_file(&path)
-                            .await
-                            .map_err(|e| format!("删除过时缓存文件失败 {}: {}", path.display(), e))?;
-                        log::info!("已删除的过时缓存文件: {}", path.display());
-                    }
+
+                log::info!("发现本地缓存文件，UUID: {}, ETag: {}", uuid, etag);
+
+                local_uuid_for_etags
+                    .entry(uuid.to_string())
+                    .or_insert_with(HashSet::new)
+                    .insert(etag.to_string());
+            }
+        }
+        // 获取远程列表
+        let remote_diaries_map: HashMap<String, String> = store
+            .list_diaries(client)
+            .await?
+            .iter()
+            .map(|(uuid, diary)| (uuid.clone(), diary.etag().to_string()))
+            .collect();
+        log::info!(
+            "远程日记列表获取成功，共 {} 条日记",
+            remote_diaries_map.len()
+        );
+        // 对比本地和远程的 UUID 和 ETag
+        for (uuid, remote_etag) in remote_diaries_map.iter() {
+            // 如果本地有对应一样的ETag，就跳过下载
+            let local_etags = local_uuid_for_etags.get(uuid).cloned().unwrap_or_default();
+            if !local_etags.contains(remote_etag) {
+                log::info!("日记缓存未命中 {}. 准备下载.", uuid);
+
+                // 下载和解密日记Manifest
+                let (manifest, manifest_bytes) = store
+                    .get_diary_manifest(&encryption, &client, uuid.to_string())
+                    .await?;
+
+                let new_filename = format!("{}_{}{}", uuid, remote_etag, ATTACHMENT_EXTENSION);
+                let new_file_path = cache_dir.join(&new_filename);
+
+                log::info!("准备写入缓存文件: {}", new_file_path.display());
+
+                // 写入本地文件系统
+                write(&new_file_path, &manifest_bytes).map_err(|e| {
+                    format!(
+                        "未能写入缓存文件 new_filename: {}, Err: {}",
+                        new_filename, e
+                    )
+                })?;
+
+                log::info!(
+                    "日记 {} 下载并缓存成功，文件路径: {}",
+                    uuid,
+                    new_file_path.display()
+                );
+
+                // 更新内存缓存
+                let mut map = cache.diaries.lock().await;
+                map.insert(uuid.to_string(), manifest);
+            } else {
+                log::info!("日记缓存命中 {}. 跳过下载.", uuid);
+            }
+            // 删除本地多余的（uuid一样，etag却不一样）
+            for etag in local_etags {
+                if etag == *remote_etag {
+                    continue;
+                }
+                let obsolete_filename = format!("{}_{}{}", uuid, etag, ATTACHMENT_EXTENSION);
+                let obsolete_file_path = cache_dir.join(&obsolete_filename);
+                self.remove_file(&obsolete_file_path).await?;
+                log::info!("已删除的过时缓存文件: {}", obsolete_file_path.display());
+            }
+        }
+        // 再删除本地多余的UUID
+        let remote_uuids: HashSet<String> = remote_diaries_map.keys().cloned().collect();
+        for (uuid, etags) in local_uuid_for_etags {
+            if !remote_uuids.contains(&uuid) {
+                // 这个UUID已经不在远程了，删除所有相关文件
+                for etag in etags {
+                    let obsolete_filename = format!("{}_{}{}", uuid, etag, ATTACHMENT_EXTENSION);
+                    let obsolete_file_path = cache_dir.join(&obsolete_filename);
+                    self.remove_file(&obsolete_file_path).await?;
+                    log::info!("已删除的过时缓存文件: {}", obsolete_file_path.display());
                 }
             }
         }
 
+        Ok(())
+    }
+
+    async fn remove_file(&self, path: &PathBuf) -> Result<(), String> {
+        if path.exists() {
+            tokio::fs::remove_file(path)
+                .await
+                .map_err(|e| format!("文件删除失败 {}: {}", path.display(), e))?;
+        }
         Ok(())
     }
 
