@@ -34,6 +34,21 @@ const editorRef = ref<HTMLElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const showMediaMenu = ref(false);
 const waitToUnlistedSet = new Set<{ fn: (() => void) | null, eid: string | null }>();
+const statusMsg = computed(() => {
+  if (uploadLoading.value) {
+    return "上传附件中...";
+  }
+  if (saveLoading.value) {
+    return "保存日记中...";
+  }
+  if (renderLoading.value) {
+    return "加载日记中...";
+  }
+  if (delLoading.value) {
+    return "删除日记中...";
+  }
+  return "";
+});
 
 function toggleMediaMenu() {
   // 切换菜单显示状态
@@ -450,22 +465,23 @@ onUnmounted(() => {
       </button>
     </section>
     <section id="diary-detail-main">
-      <div v-if="renderLoading || uploadLoading" id="loading-overlay">
-        <p v-if="renderLoading">正在加载日记内容和附件...</p>
-        <p v-else-if="uploadLoading">正在上传媒体文件...</p>
+      <div v-if="renderLoading" id="loading-overlay">
+        <p>正在加载日记内容和附件...</p>
       </div>
       <div
           id="diary-editor"
           ref="editorRef"
-          contenteditable="true"
+          :contenteditable="false"
           class="custom-editor"
           spellcheck="false"
           :style="{ visibility: renderLoading ? 'hidden' : 'visible' }"
+          :class="{'cant-edit': true}"
       ></div>
     </section>
     <section id="diary-detail-footer">
       <section id="diary-detail-footer-left">
         <span>字数: {{ contentLen }}</span>
+        <span>{{ statusMsg }}</span>
       </section>
       <section id="diary-detail-footer-right">
         <span>最后更新: {{ formatTimestamp(diary.updated) }}</span>
@@ -627,6 +643,12 @@ $diary-editor-padding: 10px;
         background-color: yellow;
         color: black;
       }
+    }
+
+    .cant-edit {
+      pointer-events: none;
+      // 鼠标变成禁止符
+      cursor: not-allowed;
     }
   }
 
