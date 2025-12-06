@@ -122,3 +122,72 @@ hr {
     border-top: 1px solid var(--pad-border-color-200);
     margin: 1rem 0;
 }
+
+/* Toast */
+.toast-container {
+    position: fixed;
+    top: clamp(2rem, 6%, 5rem);
+    right: 50%;
+    transform: translateX(50%);
+    z-index: 9999;
+}
+
+.toast {
+    background: var(--pad-primary-color);
+    color: white;
+    padding: 16px 24px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 250px;
+    max-width: 350px;
+    animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s;
+}
+
+.toast.success {
+    background: var(--pad-success-color);
+}
+
+.toast.error {
+    background: var(--pad-danger-color);
+}
+
+.toast.warning {
+    background: var(--pad-warning-color);
+}
+
+.toast.info {
+    background: var(--pad-info-color);
+}
+
+.toast-close {
+    background: none;
+    border: none;
+    color: var(--pad-bg-color-100);
+    cursor: pointer;
+    margin-left: 15px;
+    font-size: 18px;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}

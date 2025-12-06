@@ -6,6 +6,7 @@ import {useRouter} from "vue-router";
 import {formatTimestamp} from "../utils/time.ts";
 import {parseHtmlToText, parseTextToHtml} from "../utils/diaryParser.ts";
 import {writeFile, BaseDirectory} from '@tauri-apps/plugin-fs';
+import {showToast} from "../utils/toast.ts";
 
 const router = useRouter();
 
@@ -145,7 +146,7 @@ async function saveDiary() {
   diary.value.content = parseHtmlToText(editorRef.value);
 
   if (!diary.value.content || diary.value.content.length === 0) {
-    alert("日记内容不能为空");
+    showToast("日记内容不能为空", 'warning');
     saveLoading.value = false;
     return;
   }
@@ -181,7 +182,7 @@ async function saveDiary() {
       });
       diary.value = d;
       console.log("日记保存成功, Diary: ", d);
-      alert("日记保存成功");
+      showToast("日记保存成功", 'success');
     } else {
       // 更新日记
       console.log("更新日记, Old Diary: ", diary.value);
@@ -191,11 +192,11 @@ async function saveDiary() {
       });
       diary.value = d;
       console.log("日记更新成功, Diary: ", d);
-      alert("日记更新成功");
+      showToast('日记更新成功');
     }
   } catch (e) {
     console.error("保存日记失败", e);
-    alert("保存日记失败: " + e);
+    showToast('保存日记失败: ' + e, 'error');
   } finally {
     saveLoading.value = false;
   }
@@ -217,9 +218,10 @@ async function deleteDiary() {
     await invoke("delete_diary", {uuid: diary.value.id});
     console.log("日记删除成功");
     back(true);
+    showToast('日记删除成功', 'success');
   } catch (e) {
     console.error("删除日记失败", e);
-    alert("删除日记失败: " + e);
+    showToast("删除日记失败: " + e, 'error');
   } finally {
     delLoading.value = false;
   }
@@ -239,7 +241,7 @@ async function handleMediaSelect(event: Event) {
   if (!input.files || input.files.length === 0) return;
 
   if (isNew.value) {
-    alert("请先保存一次日记再上传图片（需要生成日记ID）");
+    showToast("请先保存一次日记再上传图片（需要生成日记ID）", 'info');
     input.value = "";
     return;
   }
@@ -248,7 +250,7 @@ async function handleMediaSelect(event: Event) {
   const tagPrefix = getTagPrefix(file.type);
 
   if (!tagPrefix) {
-    alert("不支持的文件类型: " + file.type);
+    showToast("不支持的文件类型: " + file.type, 'error');
     input.value = "";
     return;
   }
@@ -285,7 +287,7 @@ async function handleMediaSelect(event: Event) {
 
     if (!newFile) {
       // throw new Error("无法获取新上传的文件名");
-      alert("上传成功，但无法获取新上传的文件名");
+      showToast("上传成功，但无法获取新上传的文件名", 'success');
       return;
     }
 
@@ -299,7 +301,7 @@ async function handleMediaSelect(event: Event) {
     await saveDiary();
   } catch (e) {
     console.error("上传图片失败", e);
-    alert("上传图片失败: " + e);
+    showToast("上传图片失败: " + e, 'error');
   } finally {
     input.value = "";
     uploadLoading.value = false;

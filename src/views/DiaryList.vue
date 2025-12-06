@@ -4,6 +4,7 @@ import {DiaryManifest} from "../types";
 import {useAppStore} from "../stores/app.ts";
 import {useRouter} from "vue-router";
 import {formatTimestamp} from "../utils/time.ts";
+import {showToast} from "../utils/toast.ts";
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -25,6 +26,7 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
 function loadLocalDiaries() {
   appStore.loadLocalDiaries().then((remoteDiaries) => {
     diaries.value = remoteDiaries;
+    showToast('加载完成，共 ' + remoteDiaries.length + ' 条日记');
   });
 }
 
@@ -82,6 +84,7 @@ onMounted(() => {
     }
     const matchIdArr = await appStore.searchWithKeyword(term);
     matchIds.value = new Set(matchIdArr);
+    showToast('找到 ' + matchIdArr.length + ' 条相关日记');
   }, {
     immediate: true
   });

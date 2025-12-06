@@ -48,6 +48,7 @@ import {onMounted, ref} from "vue";
 import {useAppStore} from "../stores/app.ts";
 import {OssConfigType} from "../types";
 import {useRouter} from "vue-router";
+import {showToast} from "../utils/toast.ts";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
@@ -75,7 +76,7 @@ function saveConfigAndLogin() {
       .then((ec) => {
         if (!ec) throw new Error('无法获取加密配置');
         encryptedConfig.value = ec;
-        alert("保存成功，请登录以验证主密码。");
+        showToast("保存成功，请登录以验证主密码。", 'success');
         masterPassword.value = '';
         ossConfig.value = {
           akid: '',
@@ -85,7 +86,7 @@ function saveConfigAndLogin() {
         };
         pipeline.value = 'login';
       })
-      .catch(err => alert(`保存配置失败：${err.message || err}`))
+      .catch(err => showToast(`保存配置失败：${err.message || err}`, 'error'))
       .finally(() => loading.value = false);
 }
 
@@ -95,7 +96,7 @@ function unlock() {
   appStore.unlock(masterPassword.value)
       .then(() => appStore.initOss(encryptedConfig.value))
       .then(() => router.replace({name: 'DiaryList'}))
-      .catch(err => alert(`解锁失败：${err.message || err}`))
+      .catch(err => showToast(`解锁失败：${err.message || err}`, 'error'))
       .finally(() => loading.value = false);
 }
 
@@ -107,7 +108,7 @@ function confirmReset() {
           pipeline.value = 'config';
           masterPassword.value = '';
         })
-        .catch(err => alert(`重置配置失败：${err.message || err}`));
+        .catch(err => showToast(`重置配置失败：${err.message || err}`, 'error'));
   }
 }
 
