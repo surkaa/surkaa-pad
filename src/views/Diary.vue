@@ -182,7 +182,6 @@ async function deleteDiary() {
   try {
     await invoke("delete_diary", {uuid: diary.value.id});
     console.log("日记删除成功");
-    alert("日记删除成功");
     back(true);
   } catch (e) {
     console.error("删除日记失败", e);
@@ -261,6 +260,9 @@ async function handleMediaSelect(event: Event) {
 
     // 在光标位置插入图片
     insertImageToEditor(file, newFile.filename, tagPrefix);
+
+    // 自动更新保存日记
+    await saveDiary();
   } catch (e) {
     console.error("上传图片失败", e);
     alert("上传图片失败: " + e);
