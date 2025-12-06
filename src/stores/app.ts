@@ -4,10 +4,16 @@ import {Store} from "@tauri-apps/plugin-store";
 import {DiaryManifest, OssConfigType} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {markRaw, ref} from "vue";
+import {window} from "@tauri-apps/api";
+import {showToast} from "../utils/toast.ts";
 
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
 const SALE = 'NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg';
+// 解锁后1小时自动关闭应用
+const AUTO_CLOSE_APP_TIMEOUT = 60 * 60 * 1000;
+// 时间到时剩余操作时间
+const AUTO_CLOSE_APP_WARNING_TIME = 60 * 1000;
 
 export const useAppStore = defineStore('app', () => {
     let store = ref<Store | null>(null);
@@ -71,6 +77,22 @@ export const useAppStore = defineStore('app', () => {
         await invoke('init_oss_client', {...ossConfig});
     }
 
+    function setTimeoutForCloseApp() {
+        console.log('设置自动关闭应用定时器');
+        setTimeout(() => {
+            console.log('即将自动关闭应用');
+            // 60s后退出
+            showToast('一分钟后将自动关闭应用以保护数据安全', 'warning', AUTO_CLOSE_APP_WARNING_TIME)
+            setTimeout(
+                async () => await window.getCurrentWindow().close(),
+                AUTO_CLOSE_APP_WARNING_TIME
+            );
+            setTimeout(() => {
+                showToast('即将关闭应用以保护数据安全', 'error', AUTO_CLOSE_APP_WARNING_TIME / 2);
+            }, AUTO_CLOSE_APP_WARNING_TIME / 2);
+        }, AUTO_CLOSE_APP_TIMEOUT);
+    }
+
     async function resetConfig() {
         if (!store.value) {
             throw new Error('Store 未初始化');
@@ -99,6 +121,7 @@ export const useAppStore = defineStore('app', () => {
         resetConfig,
         loadLocalDiaries,
         searchWithKeyword,
-        syncFromOss
+        syncFromOss,
+        setTimeoutForCloseApp
     }
 })

@@ -14,7 +14,7 @@ function getContainer() {
  * 显示Toast消息
  * @param message  消息内容
  * @param type     消息类型: 'info' | 'success' | 'error' | 'warning'
- * @param duration
+ * @param duration 显示时长，默认3000毫秒
  */
 export function showToast(message: string, type: ToastType = 'success', duration = 3000) {
     const container = getContainer();

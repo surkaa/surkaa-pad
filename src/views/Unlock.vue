@@ -95,7 +95,10 @@ function unlock() {
   loading.value = true;
   appStore.unlock(masterPassword.value)
       .then(() => appStore.initOss(encryptedConfig.value))
-      .then(() => router.replace({name: 'DiaryList'}))
+      .then(() => {
+        router.replace({name: 'DiaryList'});
+        appStore.setTimeoutForCloseApp();
+      })
       .catch(err => showToast(`解锁失败：${err.message || err}`, 'error'))
       .finally(() => loading.value = false);
 }
