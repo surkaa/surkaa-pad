@@ -156,12 +156,15 @@ export function parseHtmlToText(htmlElement: HTMLElement): string {
     });
 
     let htmlString = clone.innerHTML;
-    htmlString = htmlString.replace(/<br\s*\/?>/gi, '\n');
+    // 将 <div><br></div> 替换为单个换行符
+    htmlString = htmlString.replace(/<div><br\s*\/?><\/div>/gi, '\n');
+    // 将 <div> 替换为换行符
     htmlString = htmlString.replace(/<(?:p|div)\s*[^>]*>/gi, '\n');
-    htmlString = htmlString.replace(/<[^>]+>/g, '');
-    htmlString = htmlString.replace(/(\n\s*){3,}/g, '\n');
+    // 移出所有 </div>
+    htmlString = htmlString.replace(/<\/(?:p|div)>/gi, '');
     // 把`&lt;`和`&gt;`还原
     htmlString = htmlString.replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>');
-    return htmlString.trim();
+
+    return htmlString;
 }
