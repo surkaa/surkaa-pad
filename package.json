@@ -10,6 +10,7 @@
     "tauri": "tauri",
     "tauri::android::dev": "tauri android dev",
     "tauri::webview::dev": "tauri dev",
+    "tauri::msi::build": "tauri build",
     "tauri::android::build": "tauri android build"
   },
   "dependencies": {
