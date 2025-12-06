@@ -46,10 +46,12 @@ async function syncFromOss() {
 
 // 绑定到列表项点击
 function openDiary(diary: DiaryManifest) {
-  router.push({
+  router.replace({
     name: 'DiaryDetail',
-    // TODO 再传入搜索的内容，然后在详情页显示高亮，返回时再带回来添加到searchTerm中，其次避免返回时多次调用loadLocalDiaries（在没有搜索的情况下）
-    state: {diary: toRaw(diary)}
+    state: {
+      diary: toRaw(diary),
+      keyword: searchTerm.value
+    }
   });
 }
 
@@ -68,6 +70,9 @@ onMounted(() => {
   } else {
     loadLocalDiaries();
   }
+  if (history.state.keyword) {
+    searchTerm.value = history.state.keyword;
+  }
   watch(searchTerm, async (term) => {
     console.log(`Searching for term: ${term}`);
     // 如果搜索词为空，清空匹配集，显示所有
@@ -77,6 +82,8 @@ onMounted(() => {
     }
     const matchIdArr = await appStore.searchWithKeyword(term);
     matchIds.value = new Set(matchIdArr);
+  }, {
+    immediate: true
   });
 });
 </script>

@@ -163,6 +163,8 @@ export function parseHtmlToText(htmlElement: HTMLElement): string {
     htmlString = htmlString.replace(/<(?:p|div)\s*[^>]*>/gi, '\n');
     // 移出所有 </div>
     htmlString = htmlString.replace(/<\/(?:p|div)>/gi, '');
+    // 移出<span>和</span>
+    htmlString = htmlString.replace(/<\/?span[^>]*>/gi, '');
     // 把`&lt;`和`&gt;`还原
     htmlString = htmlString.replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>');

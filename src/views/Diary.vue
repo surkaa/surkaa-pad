@@ -25,6 +25,7 @@ const saveLoading = ref(false);
 const delLoading = ref(false);
 const uploadLoading = ref(false);
 const isNew = computed(() => !diary.value.id); // 判断是否为新建日记
+const keyword = ref('');
 
 // 编辑器 DOM 引用
 const editorRef = ref<HTMLElement | null>(null);
@@ -83,13 +84,13 @@ const contentLen = computed(() => {
   return diary.value.content ? diary.value.content.length : 0;
 });
 
-// 返回上一级页面
+// 返回上一级页面 之所以用replace是为了传递state而不是query参数
 function back(needRefresh = false) {
   // 如果需要强制刷新(通常是删除了日记)，直接返回，不需检查
   if (needRefresh) {
     router.replace({
       name: "DiaryList",
-      state: { refresh: true }
+      state: { refresh: true, keyword: keyword.value }
     });
     return;
   }
@@ -127,7 +128,7 @@ function back(needRefresh = false) {
   // 通过检查，执行路由跳转
   router.replace({
     name: "DiaryList",
-    state: { refresh: false }
+    state: { refresh: false, keyword: keyword.value }
   });
 }
 
@@ -358,6 +359,9 @@ function insertImageToEditor(file: File, filename: string, tagPrefix: 'IMG' | 'V
 }
 
 onMounted(async () => {
+  if (history.state.keyword) {
+    keyword.value = history.state.keyword;
+  }
   if (history.state.diary) {
     diary.value = history.state.diary;
 
@@ -376,6 +380,14 @@ onMounted(async () => {
           waitToUnlistedSet.add({
             fn: res.unlistedFn,
             eid: res.eid
+          });
+        }
+        // 高亮显示关键词
+        if (keyword.value && keyword.value.trim().length > 0) {
+          const kw = keyword.value.trim();
+          const kwRegex = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+          content = content.replace(kwRegex, (match) => {
+            return `<span class="keyword">${match}</span>`;
           });
         }
         editorRef.value.innerHTML = content;
@@ -400,7 +412,7 @@ onUnmounted(() => {
       console.log("取消后端附件下载任务, EID=", task.eid);
     }
   });
-})
+});
 </script>
 
 <template>
@@ -606,6 +618,12 @@ $diary-editor-padding: 10px;
         background-color: transparent;
         box-shadow: unset;
         border-radius: unset;
+      }
+
+      // 关键词高亮样式
+      :deep(.keyword) {
+        background-color: yellow;
+        color: black;
       }
     }
   }
