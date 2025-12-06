@@ -169,6 +169,7 @@
     "fs:read-dirs",
     "fs:read-files",
     "fs:read-meta",
-    "fs:allow-open"
+    "fs:allow-open",
+    "core:window:allow-close"
   ]
 }
