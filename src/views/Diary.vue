@@ -85,16 +85,49 @@ const contentLen = computed(() => {
 
 // 返回上一级页面
 function back(needRefresh = false) {
-  const content = editorRef.value?.innerHTML || "";
-  console.log("返回日记列表, needRefresh=", needRefresh, " isNew=", isNew.value, " content.length=", content?.length);
-  if (!needRefresh && isNew.value && content) {
-    // 提示保存未保存的更改
-    const confirmLeave = confirm("确认返回？未保存的更改将会丢失。");
+  // 如果需要强制刷新(通常是删除了日记)，直接返回，不需检查
+  if (needRefresh) {
+    router.replace({
+      name: "DiaryList",
+      state: { refresh: true }
+    });
+    return;
+  }
+
+  // 获取当前的逻辑内容（将 HTML 解析回存储格式）
+  let currentContent = "";
+  if (editorRef.value) {
+    currentContent = parseHtmlToText(editorRef.value);
+  }
+
+  console.log("返回检查:", {
+    isNew: isNew.value,
+    savedLen: diary.value.content?.length || 0,
+    currentLen: currentContent.length,
+    changed: currentContent !== diary.value.content
+  });
+
+  // 场景 1: 新建日记 (原有逻辑优化)
+  // 如果是新建且有内容，提示保存
+  if (isNew.value && currentContent.length > 0) {
+    const confirmLeave = confirm("新建日记尚未保存，确认返回？未保存的内容将会丢失。");
     if (!confirmLeave) return;
   }
+
+  // 场景 2: 已有日记 (新增功能)
+  // 如果是已有日记，对比当前解析后的内容与内存中(上次保存/加载)的内容
+  if (!isNew.value) {
+    // 注意：这里假设 diary.value.content 始终保持为最后一次 save 或 load 的状态
+    if (currentContent !== diary.value.content) {
+      const confirmLeave = confirm("当前日记有未保存的更改，确认直接返回吗？更改将不会被保存。");
+      if (!confirmLeave) return;
+    }
+  }
+
+  // 通过检查，执行路由跳转
   router.replace({
     name: "DiaryList",
-    state: {refresh: needRefresh}
+    state: { refresh: false }
   });
 }
 
