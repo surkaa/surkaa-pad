@@ -471,11 +471,11 @@ onUnmounted(() => {
       <div
           id="diary-editor"
           ref="editorRef"
-          :contenteditable="false"
+          :contenteditable="!statusMsg"
           class="custom-editor"
           spellcheck="false"
           :style="{ visibility: renderLoading ? 'hidden' : 'visible' }"
-          :class="{'cant-edit': true}"
+          :class="{'cant-edit': statusMsg}"
       ></div>
     </section>
     <section id="diary-detail-footer">
