@@ -48,6 +48,7 @@ async function syncFromOss() {
 function openDiary(diary: DiaryManifest) {
   router.push({
     name: 'DiaryDetail',
+    // TODO 再传入搜索的内容，然后在详情页显示高亮，返回时再带回来添加到searchTerm中，其次避免返回时多次调用loadLocalDiaries（在没有搜索的情况下）
     state: {diary: toRaw(diary)}
   });
 }
