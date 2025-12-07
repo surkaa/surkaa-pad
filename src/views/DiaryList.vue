@@ -239,6 +239,7 @@ onMounted(() => {
   .scroll-container {
     flex-grow: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding-top: 8px;
     padding-bottom: 80px; /* 为 FAB 留出空间 */
 
@@ -256,6 +257,8 @@ onMounted(() => {
       list-style: none;
       padding: 0;
       margin: 0;
+      position: relative;
+      width: 100%;
     }
   }
 
@@ -365,6 +368,9 @@ onMounted(() => {
     position: absolute;
     width: 100%; /* 确保离开时宽度不变，防止布局塌陷 */
     box-sizing: border-box; /* 包含 padding */
+    left: 0;
+    z-index: 0;
+    pointer-events: none;
   }
 }
 
