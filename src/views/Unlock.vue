@@ -12,7 +12,7 @@
 
       <!-- 表单 -->
       <form @submit.prevent="unlock">
-        <input id="master-password" type="password" required placeholder="输入输密码解锁" v-model="masterPassword">
+        <input autofocus id="master-password" type="password" required placeholder="输入输密码解锁" v-model="masterPassword">
         <button type="submit" :disabled="loading" :class="{'loading': loading}">
           {{ loading ? '正在验证...' : '解锁' }}
         </button>

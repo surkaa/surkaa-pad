@@ -26,7 +26,7 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
 function loadLocalDiaries() {
   appStore.loadLocalDiaries().then((remoteDiaries) => {
     diaries.value = remoteDiaries;
-    showToast('加载完成，共 ' + remoteDiaries.length + ' 条日记');
+    showToast('加载完成，共 ' + remoteDiaries.length + ' 条日记', 'success', 1000);
   });
 }
 
@@ -84,7 +84,7 @@ onMounted(() => {
     }
     const matchIdArr = await appStore.searchWithKeyword(term);
     matchIds.value = new Set(matchIdArr);
-    showToast('找到 ' + matchIdArr.length + ' 条相关日记');
+    showToast('找到 ' + matchIdArr.length + ' 条相关日记', 'success', 1000);
   }, {
     immediate: true
   });
