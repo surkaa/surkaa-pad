@@ -274,9 +274,8 @@ async function handleMediaSelect(event: Event) {
 
   try {
     uploadLoading.value = true;
-    // 读取文件字节
-    const arrayBuffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
+    // 获取文件字节流
+    const bytesStream = file.stream();
 
     // 构造临时文件名/路径
     const tempFilename = `${diary.value.id}_${Date.now()}_${file.name}`;
@@ -284,7 +283,7 @@ async function handleMediaSelect(event: Event) {
     console.log("准备上传文件到临时路径: ", tempFilename);
 
     // 将文件写入应用数据目录或临时目录
-    await writeFile(tempFilename, bytes, {
+    await writeFile(tempFilename, bytesStream, {
       baseDir: BaseDirectory.Temp
     });
 
