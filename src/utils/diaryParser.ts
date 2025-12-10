@@ -79,12 +79,14 @@ export async function parseTextToHtml(
                 if (payload.eid === eid) {
                     const mediaElement = document.getElementById(eid) as HTMLImageElement | HTMLVideoElement | HTMLAudioElement | null;
                     if (mediaElement) {
-                        if (elementTag === 'img') {
-                            (mediaElement as HTMLImageElement).src = dataUrl;
-                        } else if (elementTag === 'video' || elementTag === 'audio') {
-                            (mediaElement as HTMLVideoElement | HTMLAudioElement).src = dataUrl;
-                        }
+                        mediaElement.addEventListener('load', () => URL.revokeObjectURL(dataUrl));
+                        mediaElement.addEventListener('error', () => URL.revokeObjectURL(dataUrl));
+                        mediaElement.src = dataUrl;
+                    } else {
+                        URL.revokeObjectURL(dataUrl);
                     }
+                } else {
+                    URL.revokeObjectURL(dataUrl);
                 }
                 // 取消监听
                 if (unlistedFn) {
