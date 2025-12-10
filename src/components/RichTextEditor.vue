@@ -2,13 +2,15 @@
 // 要实现的功能：
 // 渲染内容文本（包括媒体文件）
 import {DiaryManifest} from "../types";
-import {computed, onMounted} from "vue";
+import {computed, onMounted, onUnmounted} from "vue";
+import {convertFilename2URL} from "../utils/convertFilename2URL.ts";
 
 const model = defineModel<string>({default: ''});
 const {diary} = defineProps<{ diary: DiaryManifest }>();
+const cancelFns: Array<() => void> = [];
 
 const innerHTML = computed(() => {
-  return model.value.replace(/<<(IMG|VID|AUD):(.+?)>>/g, (match, tag, filename) => {
+  return model.value.replace(/<<(IMG|VID|AUD):(.+?)>>/g, (match, tag, fn) => {
     let elementType;
     if (tag === 'IMG') {
       elementType = 'img';
@@ -20,27 +22,43 @@ const innerHTML = computed(() => {
       console.warn(`Unknown tag: ${tag}`);
       return match; // 未知标签，返回原始文本
     }
-    const attachment = diary.attachments.find(att => att.filename === filename);
-    const attachmentIndex = diary.attachments.findIndex(a => a.filename === filename);
-    if (!attachment) return match; // 如果找不到附件，返回原始文本
+    const a = diary.attachments.find(att => att.filename === fn);
+    const attachmentIndex = diary.attachments.findIndex(a => a.filename === fn);
+    if (!a) return match; // 如果找不到附件，返回原始文本
 
     // 生成eid
     const eid = `EID_${diary.id}_${attachmentIndex}`;
+    const urlCb = (url: string) => {
+      // 设置媒体元素的src属性
+      const element = document.getElementById(eid) as HTMLMediaElement;
+      if (element) {
+        element.onload = () => URL.revokeObjectURL(url);
+        element.onerror = () => URL.revokeObjectURL(url);
+        element.src = url;
+      }
+    };
+    const cFn = convertFilename2URL(diary.id, a.nonce, eid, a.mimetype, fn, urlCb);
+    cancelFns.push(cFn);
 
     if (elementType === 'img') {
-      return `<img class="meida-item" id="${eid}" alt="${filename}" />`;
+      return `<img class="media-item" id="${eid}" alt="${fn}" /><br>`;
     } else if (elementType === 'video') {
-      return `<video class="meida-item" id="${eid}" controls></video>`;
+      return `<video class="media-item" id="${eid}" controls></video><br>`;
     } else if (elementType === 'audio') {
-      return `<audio class="meida-item" id="${eid}" controls></audio>`;
+      return `<audio class="media-item" id="${eid}" controls></audio><br>`;
     }
     return match;
   });
 });
 
 onMounted(() => {
-  console.log(model.value);
+  console.log('RichTextEditor mounted');
 });
+
+onUnmounted(() => {
+  // 取消所有未完成的URL转换
+  cancelFns.forEach(fn => fn());
+})
 </script>
 
 <template>
@@ -56,5 +74,9 @@ onMounted(() => {
   // 支持换行
   white-space: pre-wrap;
   word-break: break-word;
+  
+  ::v-deep(.media-item) {
+    max-width: 100%;
+  }
 }
 </style>
