@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, ref} from "vue";
+import {computed, onMounted, ref} from "vue";
 import {DiaryManifest} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {useRouter} from "vue-router";
 import {formatTimestamp} from "../utils/time.ts";
-import {parseHtmlToText, parseTextToHtml} from "../utils/diaryParser.ts";
+// import {parseHtmlToText, parseTextToHtml} from "../utils/diaryParser.ts";
 import {writeFile, BaseDirectory} from '@tauri-apps/plugin-fs';
 import {showToast} from "../utils/toast.ts";
+import RichTextEditor from "../components/RichTextEditor.vue";
 
 const router = useRouter();
 
@@ -33,7 +34,7 @@ const editorRef = ref<HTMLElement | null>(null);
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const showMediaMenu = ref(false);
-const waitToUnlistedSet = new Set<{ fn: (() => void) | null, eid: string | null }>();
+// const waitToUnlistedSet = new Set<{ fn: (() => void) | null, eid: string | null }>();
 const statusMsg = computed(() => {
   if (uploadLoading.value) {
     return "上传附件中...";
@@ -111,35 +112,35 @@ function back(needRefresh = false) {
     return;
   }
 
-  // 获取当前的逻辑内容（将 HTML 解析回存储格式）
-  let currentContent = "";
-  if (editorRef.value) {
-    currentContent = parseHtmlToText(editorRef.value);
-  }
-
-  console.log("返回检查:", {
-    isNew: isNew.value,
-    savedLen: diary.value.content?.length || 0,
-    currentLen: currentContent.length,
-    changed: currentContent !== diary.value.content
-  });
-
-  // 场景 1: 新建日记 (原有逻辑优化)
-  // 如果是新建且有内容，提示保存
-  if (isNew.value && currentContent.length > 0) {
-    const confirmLeave = confirm("新建日记尚未保存，确认返回？未保存的内容将会丢失。");
-    if (!confirmLeave) return;
-  }
-
-  // 场景 2: 已有日记 (新增功能)
-  // 如果是已有日记，对比当前解析后的内容与内存中(上次保存/加载)的内容
-  if (!isNew.value) {
-    // 注意：这里假设 diary.value.content 始终保持为最后一次 save 或 load 的状态
-    if (currentContent !== diary.value.content) {
-      const confirmLeave = confirm("当前日记有未保存的更改，确认直接返回吗？更改将不会被保存。");
-      if (!confirmLeave) return;
-    }
-  }
+  // // 获取当前的逻辑内容（将 HTML 解析回存储格式）
+  // let currentContent = "";
+  // if (editorRef.value) {
+  //   currentContent = parseHtmlToText(editorRef.value);
+  // }
+  //
+  // console.log("返回检查:", {
+  //   isNew: isNew.value,
+  //   savedLen: diary.value.content?.length || 0,
+  //   currentLen: currentContent.length,
+  //   changed: currentContent !== diary.value.content
+  // });
+  //
+  // // 场景 1: 新建日记 (原有逻辑优化)
+  // // 如果是新建且有内容，提示保存
+  // if (isNew.value && currentContent.length > 0) {
+  //   const confirmLeave = confirm("新建日记尚未保存，确认返回？未保存的内容将会丢失。");
+  //   if (!confirmLeave) return;
+  // }
+  //
+  // // 场景 2: 已有日记 (新增功能)
+  // // 如果是已有日记，对比当前解析后的内容与内存中(上次保存/加载)的内容
+  // if (!isNew.value) {
+  //   // 注意：这里假设 diary.value.content 始终保持为最后一次 save 或 load 的状态
+  //   if (currentContent !== diary.value.content) {
+  //     const confirmLeave = confirm("当前日记有未保存的更改，确认直接返回吗？更改将不会被保存。");
+  //     if (!confirmLeave) return;
+  //   }
+  // }
 
   // 通过检查，执行路由跳转
   router.replace({
@@ -158,7 +159,7 @@ async function saveDiary() {
       .filter(fn => fn) as string[];
 
   // 从 DOM 解析回纯文本 + 标记
-  diary.value.content = parseHtmlToText(editorRef.value);
+  // diary.value.content = parseHtmlToText(editorRef.value);
 
   if (!diary.value.content || diary.value.content.length === 0) {
     showToast("日记内容不能为空", 'warning');
@@ -386,18 +387,18 @@ onMounted(async () => {
       try {
         renderLoading.value = true;
         let content = diary.value.content;
-        const results = await parseTextToHtml(
-            diary.value.content,
-            diary.value.id,
-            diary.value.attachments
-        );
-        for (const res of results) {
-          content = content.replace(res.marker, res.html);
-          waitToUnlistedSet.add({
-            fn: res.unlistedFn,
-            eid: res.eid
-          });
-        }
+        // const results = await parseTextToHtml(
+        //     diary.value.content,
+        //     diary.value.id,
+        //     diary.value.attachments
+        // );
+        // for (const res of results) {
+        //   content = content.replace(res.marker, res.html);
+        //   waitToUnlistedSet.add({
+        //     fn: res.unlistedFn,
+        //     eid: res.eid
+        //   });
+        // }
         // 高亮显示关键词
         if (keyword.value && keyword.value.trim().length > 0) {
           const kw = keyword.value.trim();
@@ -414,21 +415,21 @@ onMounted(async () => {
   }
 });
 
-onUnmounted(() => {
-  // 卸载时调用所有等待的 unlisted 函数
-  waitToUnlistedSet.forEach(task => {
-    if (task.fn) {
-      // 取消监听
-      task.fn();
-      console.log("取消附件下载监听");
-    }
-    if (task.eid) {
-      // 取消后端下载任务
-      invoke("cancel_download_attachment", {eid: task.eid});
-      console.log("取消后端附件下载任务, EID=", task.eid);
-    }
-  });
-});
+// onUnmounted(() => {
+//   // 卸载时调用所有等待的 unlisted 函数
+//   waitToUnlistedSet.forEach(task => {
+//     if (task.fn) {
+//       // 取消监听
+//       task.fn();
+//       console.log("取消附件下载监听");
+//     }
+//     if (task.eid) {
+//       // 取消后端下载任务
+//       invoke("cancel_download_attachment", {eid: task.eid});
+//       console.log("取消后端附件下载任务, EID=", task.eid);
+//     }
+//   });
+// });
 </script>
 
 <template>
@@ -467,7 +468,7 @@ onUnmounted(() => {
       <div v-if="renderLoading" id="loading-overlay">
         <p>正在加载日记内容和附件...</p>
       </div>
-      <div
+      <!--<div
           id="diary-editor"
           ref="editorRef"
           :contenteditable="!statusMsg"
@@ -475,7 +476,8 @@ onUnmounted(() => {
           spellcheck="false"
           :style="{ visibility: renderLoading ? 'hidden' : 'visible' }"
           :class="{'cant-edit': statusMsg}"
-      ></div>
+      ></div>-->
+      <rich-text-editor id="diary-editor" :diary="diary" v-model="diary.content"/>
     </section>
     <section id="diary-detail-footer">
       <section id="diary-detail-footer-left">
@@ -602,52 +604,9 @@ $diary-editor-padding: 10px;
       }
     }
 
-    .custom-editor {
-      width: calc(100% - 2 * $diary-editor-padding);
-      min-height: calc(100% - 2 * $diary-editor-padding);
-      outline: none;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      padding: $diary-editor-padding;
-      background-color: var(--pad-bg-color-100);
-      color: var(--pad-text-color-100);
-      font-family: inherit;
-      text-align: left;
-
-      // 泛化媒体样式
-      :deep(.diary-media) {
-        width: 100%;
-        margin: 10px 0;
-        border-radius: 4px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        cursor: default;
-      }
-
-      // 视频和音频的特殊样式
-      :deep(video.diary-media) {
-        height: auto;
-        background-color: black;
-      }
-
-      :deep(audio.diary-media) {
-        height: 50px; /* 通常音频文件较短 */
-        background-color: transparent;
-        box-shadow: unset;
-        border-radius: unset;
-      }
-
-      // 关键词高亮样式
-      :deep(.keyword) {
-        background-color: yellow;
-        color: black;
-      }
-    }
-
-    .cant-edit {
-      pointer-events: none;
-      // 鼠标变成禁止符
-      cursor: not-allowed;
+    #diary-editor {
+      width: 100%;
+      height: 100%;
     }
   }
 
