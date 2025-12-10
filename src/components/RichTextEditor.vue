@@ -4,7 +4,9 @@
 import {DiaryManifest} from "../types";
 import {computed, onMounted, onUnmounted} from "vue";
 import {convertFilename2URL} from "../utils/convertFilename2URL.ts";
+import {useAppStore} from "../stores/app.ts";
 
+const appStore = useAppStore();
 const model = defineModel<string>({default: ''});
 const {diary} = defineProps<{ diary: DiaryManifest }>();
 const cancelFns: Array<() => void> = [];
@@ -48,7 +50,7 @@ const innerHTML = computed(() => {
       return `<audio class="media-item" id="${eid}" controls></audio><br>`;
     }
     return match;
-  });
+  }).replace(new RegExp(`(${appStore.keyword})`, 'gi'), '<mark>$1</mark>');
 });
 
 onMounted(() => {
@@ -74,9 +76,13 @@ onUnmounted(() => {
   // 支持换行
   white-space: pre-wrap;
   word-break: break-word;
-  
+
   ::v-deep(.media-item) {
     max-width: 100%;
+  }
+
+  ::v-deep(mark) {
+    background-color: yellow;
   }
 }
 </style>

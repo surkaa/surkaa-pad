@@ -8,7 +8,6 @@ import {showToast} from "../utils/toast.ts";
 
 const router = useRouter();
 const appStore = useAppStore();
-const searchTerm = ref('');
 const diaries = ref<DiaryManifest[]>([]);
 const matchIds = ref<Set<string>>(new Set());
 const isSyncing = ref(false); // 新增同步状态Loading
@@ -52,7 +51,6 @@ function openDiary(diary: DiaryManifest) {
     name: 'DiaryDetail',
     state: {
       diary: toRaw(diary),
-      keyword: searchTerm.value
     }
   });
 }
@@ -72,10 +70,7 @@ onMounted(() => {
   } else {
     loadLocalDiaries();
   }
-  if (history.state.keyword) {
-    searchTerm.value = history.state.keyword;
-  }
-  watch(searchTerm, async (term) => {
+  watch(() => appStore.keyword, async (term) => {
     console.log(`Searching for term: ${term}`);
     // 如果搜索词为空，清空匹配集，显示所有
     if (!term.trim()) {
@@ -97,7 +92,7 @@ onMounted(() => {
       <div class="search-box">
         <input
             type="text"
-            v-model="searchTerm"
+            v-model="appStore.keyword"
             placeholder="搜索记忆..."
         />
         <i class="icon-search">🔍</i>

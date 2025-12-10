@@ -17,6 +17,7 @@ const AUTO_CLOSE_APP_WARNING_TIME = 60 * 1000;
 
 export const useAppStore = defineStore('app', () => {
     let store = ref<Store | null>(null);
+    const keyword = ref<string>('');
 
     async function getEncryptedConfig() {
         if (store.value) {
@@ -114,6 +115,9 @@ export const useAppStore = defineStore('app', () => {
     }
 
     return {
+        // 数据
+        keyword,
+        // 方法
         getEncryptedConfig,
         unlock,
         initOss,

@@ -27,14 +27,10 @@ const saveLoading = ref(false);
 const delLoading = ref(false);
 const uploadLoading = ref(false);
 const isNew = computed(() => !diary.value.id); // 判断是否为新建日记
-const keyword = ref('');
 
-// 编辑器 DOM 引用
-const editorRef = ref<HTMLElement | null>(null);
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const showMediaMenu = ref(false);
-// const waitToUnlistedSet = new Set<{ fn: (() => void) | null, eid: string | null }>();
 const statusMsg = computed(() => {
   if (uploadLoading.value) {
     return "上传附件中...";
@@ -107,7 +103,7 @@ function back(needRefresh = false) {
   if (needRefresh) {
     router.replace({
       name: "DiaryList",
-      state: { refresh: true, keyword: keyword.value }
+      state: { refresh: true }
     });
     return;
   }
@@ -145,18 +141,18 @@ function back(needRefresh = false) {
   // 通过检查，执行路由跳转
   router.replace({
     name: "DiaryList",
-    state: { refresh: false, keyword: keyword.value }
+    state: { refresh: false }
   });
 }
 
 // 保存或者更新日记
 async function saveDiary() {
   saveLoading.value = true;
-  if (!editorRef.value) return;
-
-  const currentMedias = Array.from(editorRef.value.querySelectorAll('.diary-media'))
-      .map(el => (el as HTMLElement).dataset.filename)
-      .filter(fn => fn) as string[];
+  // if (!editorRef.value) return;
+  //
+  // const currentMedias = Array.from(editorRef.value.querySelectorAll('.diary-media'))
+  //     .map(el => (el as HTMLElement).dataset.filename)
+  //     .filter(fn => fn) as string[];
 
   // 从 DOM 解析回纯文本 + 标记
   // diary.value.content = parseHtmlToText(editorRef.value);
@@ -169,26 +165,26 @@ async function saveDiary() {
 
   try {
 
-    // 找出原有附件列表中，现在已经不存在于编辑器里的文件
-    if (!isNew.value && diary.value.attachments) {
-      const filesToDelete = diary.value.attachments.filter(att => {
-        // 如果附件在当前编辑器里找不到，说明被删了
-        return !currentMedias.includes(att.filename);
-      });
-
-      if (filesToDelete.length > 0) {
-        console.log("检测到孤儿附件，准备清理:", filesToDelete);
-
-        // 并行调用删除接口 必须删完再保存 保持数据一致性
-
-        await Promise.all(filesToDelete.map(att =>
-            invoke("delete_attachment", {
-              uuid: diary.value.id,
-              filename: att.filename
-            })
-        ));
-      }
-    }
+    // // 找出原有附件列表中，现在已经不存在于编辑器里的文件
+    // if (!isNew.value && diary.value.attachments) {
+    //   const filesToDelete = diary.value.attachments.filter(att => {
+    //     // 如果附件在当前编辑器里找不到，说明被删了
+    //     return !currentMedias.includes(att.filename);
+    //   });
+    //
+    //   if (filesToDelete.length > 0) {
+    //     console.log("检测到孤儿附件，准备清理:", filesToDelete);
+    //
+    //     // 并行调用删除接口 必须删完再保存 保持数据一致性
+    //
+    //     await Promise.all(filesToDelete.map(att =>
+    //         invoke("delete_attachment", {
+    //           uuid: diary.value.id,
+    //           filename: att.filename
+    //         })
+    //     ));
+    //   }
+    // }
 
     if (isNew.value) {
       // 新建日记
@@ -309,8 +305,8 @@ async function handleMediaSelect(event: Event) {
     // 更新本地数据
     diary.value = updatedManifest;
 
-    // 在光标位置插入图片
-    insertImageToEditor(file, newFile.filename, tagPrefix);
+    // // 在光标位置插入图片
+    // insertImageToEditor(file, newFile.filename, tagPrefix);
 
     // 自动更新保存日记
     await saveDiary();
@@ -323,113 +319,63 @@ async function handleMediaSelect(event: Event) {
   }
 }
 
-// 将图片插入到编辑器光标处
-function insertImageToEditor(file: File, filename: string, tagPrefix: 'IMG' | 'VID' | 'AUD') {
-  if (!editorRef.value) return;
-
-  // 临时的 Blob URL 用于显示
-  const url = URL.createObjectURL(file);
-  let mediaElement: HTMLImageElement | HTMLVideoElement | HTMLAudioElement;
-
-  // 1. 创建元素
-  if (tagPrefix === 'IMG') {
-    mediaElement = document.createElement('img');
-  } else if (tagPrefix === 'VID') {
-    mediaElement = document.createElement('video');
-    mediaElement.setAttribute('controls', 'true');
-    mediaElement.style.display = 'block';
-    mediaElement.style.width = '100%';
-  } else if (tagPrefix === 'AUD') {
-    mediaElement = document.createElement('audio');
-    mediaElement.setAttribute('controls', 'true');
-  } else {
-    console.log("不支持的媒体类型: ", tagPrefix);
-    return; // 不支持的类型
-  }
-
-  // 2. 设置通用属性
-  mediaElement.src = url;
-  mediaElement.className = `diary-media ${tagPrefix.toLowerCase()}`;
-  mediaElement.dataset.filename = filename;
-  mediaElement.style.marginTop = '10px';
-  mediaElement.style.marginBottom = '10px';
-
-  editorRef.value.focus();
-
-  // 获取选区
-  const selection = window.getSelection();
-  if (selection && selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
-    range.deleteContents();
-    range.insertNode(mediaElement);
-    // 插入换行符并将光标移到其后
-    const br = document.createElement('br');
-    range.setStartAfter(mediaElement);
-    range.insertNode(br);
-    range.setStartAfter(br);
-    range.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  } else {
-    editorRef.value.appendChild(mediaElement);
-  }
-}
+// // 将图片插入到编辑器光标处
+// function insertImageToEditor(file: File, filename: string, tagPrefix: 'IMG' | 'VID' | 'AUD') {
+//   if (!editorRef.value) return;
+//
+//   // 临时的 Blob URL 用于显示
+//   const url = URL.createObjectURL(file);
+//   let mediaElement: HTMLImageElement | HTMLVideoElement | HTMLAudioElement;
+//
+//   // 1. 创建元素
+//   if (tagPrefix === 'IMG') {
+//     mediaElement = document.createElement('img');
+//   } else if (tagPrefix === 'VID') {
+//     mediaElement = document.createElement('video');
+//     mediaElement.setAttribute('controls', 'true');
+//     mediaElement.style.display = 'block';
+//     mediaElement.style.width = '100%';
+//   } else if (tagPrefix === 'AUD') {
+//     mediaElement = document.createElement('audio');
+//     mediaElement.setAttribute('controls', 'true');
+//   } else {
+//     console.log("不支持的媒体类型: ", tagPrefix);
+//     return; // 不支持的类型
+//   }
+//
+//   // 2. 设置通用属性
+//   mediaElement.src = url;
+//   mediaElement.className = `diary-media ${tagPrefix.toLowerCase()}`;
+//   mediaElement.dataset.filename = filename;
+//   mediaElement.style.marginTop = '10px';
+//   mediaElement.style.marginBottom = '10px';
+//
+//   editorRef.value.focus();
+//
+//   // 获取选区
+//   const selection = window.getSelection();
+//   if (selection && selection.rangeCount > 0) {
+//     const range = selection.getRangeAt(0);
+//     range.deleteContents();
+//     range.insertNode(mediaElement);
+//     // 插入换行符并将光标移到其后
+//     const br = document.createElement('br');
+//     range.setStartAfter(mediaElement);
+//     range.insertNode(br);
+//     range.setStartAfter(br);
+//     range.collapse(true);
+//     selection.removeAllRanges();
+//     selection.addRange(range);
+//   } else {
+//     editorRef.value.appendChild(mediaElement);
+//   }
+// }
 
 onMounted(async () => {
-  if (history.state.keyword) {
-    keyword.value = history.state.keyword;
-  }
   if (history.state.diary) {
     diary.value = history.state.diary;
-
-    // 将纯文本转为 HTML (带图片)
-    if (editorRef.value) {
-      try {
-        renderLoading.value = true;
-        let content = diary.value.content;
-        // const results = await parseTextToHtml(
-        //     diary.value.content,
-        //     diary.value.id,
-        //     diary.value.attachments
-        // );
-        // for (const res of results) {
-        //   content = content.replace(res.marker, res.html);
-        //   waitToUnlistedSet.add({
-        //     fn: res.unlistedFn,
-        //     eid: res.eid
-        //   });
-        // }
-        // 高亮显示关键词
-        if (keyword.value && keyword.value.trim().length > 0) {
-          const kw = keyword.value.trim();
-          const kwRegex = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-          content = content.replace(kwRegex, (match) => {
-            return `<span class="keyword">${match}</span>`;
-          });
-        }
-        editorRef.value.innerHTML = content;
-      } finally {
-        renderLoading.value = false;
-      }
-    }
   }
 });
-
-// onUnmounted(() => {
-//   // 卸载时调用所有等待的 unlisted 函数
-//   waitToUnlistedSet.forEach(task => {
-//     if (task.fn) {
-//       // 取消监听
-//       task.fn();
-//       console.log("取消附件下载监听");
-//     }
-//     if (task.eid) {
-//       // 取消后端下载任务
-//       invoke("cancel_download_attachment", {eid: task.eid});
-//       console.log("取消后端附件下载任务, EID=", task.eid);
-//     }
-//   });
-// });
 </script>
 
 <template>
@@ -468,15 +414,6 @@ onMounted(async () => {
       <div v-if="renderLoading" id="loading-overlay">
         <p>正在加载日记内容和附件...</p>
       </div>
-      <!--<div
-          id="diary-editor"
-          ref="editorRef"
-          :contenteditable="!statusMsg"
-          class="custom-editor"
-          spellcheck="false"
-          :style="{ visibility: renderLoading ? 'hidden' : 'visible' }"
-          :class="{'cant-edit': statusMsg}"
-      ></div>-->
       <rich-text-editor id="diary-editor" :diary="diary" v-model="diary.content"/>
     </section>
     <section id="diary-detail-footer">
