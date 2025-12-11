@@ -45,7 +45,7 @@ const statusMsg = computed(() => {
   if (delLoading.value) {
     return "删除日记中...";
   }
-  return "";
+  return mode.value === 'edit' ? '编辑模式' : '预览模式';
 });
 
 function toggleMediaMenu() {

@@ -48,11 +48,11 @@ const innerHTML = computed(() => {
     cancelFns.value.push(cFn);
 
     if (tag === 'IMG') {
-      return `<img class="media-item" id="${eid}" alt="${fn}" /><br>`;
+      return `<br><img class="media-item" id="${eid}" alt="${fn}" /><br>`;
     } else if (tag === 'VID') {
-      return `<video class="media-item" id="${eid}" controls></video><br>`;
+      return `<br><video class="media-item" id="${eid}" controls></video><br>`;
     } else if (tag === 'AUD') {
-      return `<audio class="media-item" id="${eid}" controls></audio><br>`;
+      return `<br><audio class="media-item" id="${eid}" controls></audio><br>`;
     }
     console.warn(`未知标签: ${tag}`);
     return match;
@@ -87,7 +87,7 @@ onUnmounted(() => {
 
 <template>
   <div class="rich-text-editor">
-    <textarea class="edit" v-show="isEditing" v-model="model"/>
+    <textarea id="rte-textarea" class="edit" v-show="isEditing" v-model="model"/>
     <div class="view" v-show="!isEditing" v-html="innerHTML"/>
   </div>
 </template>
@@ -99,15 +99,23 @@ onUnmounted(() => {
   text-align: left;
 
   .view {
+    width: 100%;
+    height: 100%;
     white-space: pre-wrap;
     word-break: break-word;
 
     ::v-deep(.media-item) {
-      max-width: 100%;
+      max-width: clamp(100px, 100%, 500px);
+      // 水平居中
+      display: block;
+      margin: 0 auto;
+      // 阴影
+      box-shadow: 0 2px 8px var(--pad-shadow-color-500);
+      border-radius: 6px;
     }
 
     ::v-deep(mark) {
-      background-color: yellow;
+      background-color: var(--pad-success-color);
     }
   }
 
@@ -119,6 +127,10 @@ onUnmounted(() => {
     font-size: inherit;
     line-height: inherit;
     resize: none;
+    border: none;
+    outline: none;
+    background-color: transparent;
+    padding: 0;
   }
 }
 </style>
