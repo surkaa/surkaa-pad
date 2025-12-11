@@ -28,6 +28,10 @@ const delLoading = ref(false);
 const uploadLoading = ref(false);
 const isNew = computed(() => !diary.value.id); // 判断是否为新建日记
 const mode = ref<'edit' | 'view'>('view');
+const maxUndoStackSize = 5;
+const undoStack = ref<string[]>([]);
+const redoStack = ref<string[]>([]);
+const undoOrRedoInProgress = ref(false);
 
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -345,12 +349,47 @@ function updateCursor(position: number) {
   console.log('当前光标位置：', position);
 }
 
+function undo() {
+  if (undoStack.value.length === 0) return;
+  const lastState = undoStack.value.pop()!;
+  // 推入重做栈
+  redoStack.value.push(diary.value.content || "");
+  undoOrRedoInProgress.value = true;
+  // 恢复内容
+  diary.value.content = lastState;
+}
+
+function redo() {
+  if (redoStack.value.length === 0) return;
+  const nextState = redoStack.value.pop()!;
+  // 推入撤销栈
+  undoStack.value.push(diary.value.content || "");
+  undoOrRedoInProgress.value = true;
+  // 恢复内容
+  diary.value.content = nextState;
+}
+
 onMounted(async () => {
   if (history.state.diary) {
     diary.value = history.state.diary;
   }
   watch(() => diary.value.content, (value, oldValue, _) => {
     console.log("日记内容变更检测: ", { oldLen: oldValue?.length || 0, newLen: value?.length || 0 });
+    if (undoOrRedoInProgress.value) {
+      // 如果是撤销或重做引起的变更，不记录历史
+      undoOrRedoInProgress.value = false;
+      return;
+    }
+    // 内容变更时，清空重做栈
+    redoStack.value = [];
+    // 推入撤销栈
+    if (oldValue !== undefined) {
+      if (undoStack.value.length >= maxUndoStackSize) {
+        // 超出最大容量，移除最早的记录
+        undoStack.value.shift();
+      }
+      undoStack.value.push(oldValue);
+    }
   });
 });
 </script>
@@ -358,16 +397,18 @@ onMounted(async () => {
 <template>
   <main id="diary-detail">
     <section id="diary-detail-header">
-      <button id="diary-detail-header-back-btn" @click="back()">返回</button>
+      <button id="diary-detail-header-back-btn" @click="back()">↩️</button>
       <button class="toggle-mode" @click="toggleMode">
-        {{ mode === 'edit' ? '预览' : '编辑' }}
+        {{ mode === 'edit' ? '👀' : '📝' }}
       </button>
+      <button class="undo-btn" @click="undo" :disabled="undoStack.length === 0">◀️</button>
+      <button class="redo-btn" @click="redo" :disabled="redoStack.length === 0">▶️</button>
       <div id="media-menu-container">
         <button
             @click="toggleMediaMenu"
             :disabled="saveLoading || isNew"
         >
-          添加 ▼
+          ➕
         </button>
 
         <div v-if="showMediaMenu" id="media-menu-dropdown">
@@ -384,10 +425,10 @@ onMounted(async () => {
           @change="handleMediaSelect"
       />
       <button id="diary-detail-header-save-btn" @click="saveDiary" :disabled="saveLoading">
-        {{ saveLoading ? "保存中..." : (isNew ? "保存" : "更新") }}
+        {{ saveLoading ? "⏳" : (isNew ? "✅" : "🔄") }}
       </button>
       <button id="diary-detail-header-delete-btn" @click="deleteDiary" :disabled="delLoading">
-        {{ delLoading ? "删除中..." : "删除" }}
+        {{ delLoading ? "⏳" : "🗑️" }}
       </button>
     </section>
     <section id="diary-detail-main">
@@ -404,7 +445,7 @@ onMounted(async () => {
     </section>
     <section id="diary-detail-footer">
       <section id="diary-detail-footer-left">
-        <span>📝{{ contentLen }}</span>
+        <span>{{ contentLen }}字</span>
         <span>🔰{{ statusMsg }}</span>
       </section>
       <section id="diary-detail-footer-right">
