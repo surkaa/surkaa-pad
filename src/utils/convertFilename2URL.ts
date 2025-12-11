@@ -48,7 +48,7 @@ export function convertFilename2URL(
 
     const cancelDownloadFn = () => {
         invoke("cancel_download_attachment", {eid}).then(bool => {
-            console.log(`取消下载任务 ${eid} ${bool ? '成功' : '失败'}`);
+            console.log(`取消下载任务 ${eid}: ${bool}`);
         });
     };
 
