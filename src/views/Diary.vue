@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from "vue";
+import {computed, onMounted, ref, watch} from "vue";
 import {DiaryManifest} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {useRouter} from "vue-router";
@@ -27,6 +27,7 @@ const saveLoading = ref(false);
 const delLoading = ref(false);
 const uploadLoading = ref(false);
 const isNew = computed(() => !diary.value.id); // 判断是否为新建日记
+const mode = ref<'edit' | 'view'>('view');
 
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -96,6 +97,10 @@ function triggerAddAudio() {
 const contentLen = computed(() => {
   return diary.value.content ? diary.value.content.length : 0;
 });
+
+function toggleMode() {
+  mode.value = (mode.value === 'edit' ? 'view' : 'edit');
+}
 
 // 返回上一级页面 之所以用replace是为了传递state而不是query参数
 function back(needRefresh = false) {
@@ -319,62 +324,13 @@ async function handleMediaSelect(event: Event) {
   }
 }
 
-// // 将图片插入到编辑器光标处
-// function insertImageToEditor(file: File, filename: string, tagPrefix: 'IMG' | 'VID' | 'AUD') {
-//   if (!editorRef.value) return;
-//
-//   // 临时的 Blob URL 用于显示
-//   const url = URL.createObjectURL(file);
-//   let mediaElement: HTMLImageElement | HTMLVideoElement | HTMLAudioElement;
-//
-//   // 1. 创建元素
-//   if (tagPrefix === 'IMG') {
-//     mediaElement = document.createElement('img');
-//   } else if (tagPrefix === 'VID') {
-//     mediaElement = document.createElement('video');
-//     mediaElement.setAttribute('controls', 'true');
-//     mediaElement.style.display = 'block';
-//     mediaElement.style.width = '100%';
-//   } else if (tagPrefix === 'AUD') {
-//     mediaElement = document.createElement('audio');
-//     mediaElement.setAttribute('controls', 'true');
-//   } else {
-//     console.log("不支持的媒体类型: ", tagPrefix);
-//     return; // 不支持的类型
-//   }
-//
-//   // 2. 设置通用属性
-//   mediaElement.src = url;
-//   mediaElement.className = `diary-media ${tagPrefix.toLowerCase()}`;
-//   mediaElement.dataset.filename = filename;
-//   mediaElement.style.marginTop = '10px';
-//   mediaElement.style.marginBottom = '10px';
-//
-//   editorRef.value.focus();
-//
-//   // 获取选区
-//   const selection = window.getSelection();
-//   if (selection && selection.rangeCount > 0) {
-//     const range = selection.getRangeAt(0);
-//     range.deleteContents();
-//     range.insertNode(mediaElement);
-//     // 插入换行符并将光标移到其后
-//     const br = document.createElement('br');
-//     range.setStartAfter(mediaElement);
-//     range.insertNode(br);
-//     range.setStartAfter(br);
-//     range.collapse(true);
-//     selection.removeAllRanges();
-//     selection.addRange(range);
-//   } else {
-//     editorRef.value.appendChild(mediaElement);
-//   }
-// }
-
 onMounted(async () => {
   if (history.state.diary) {
     diary.value = history.state.diary;
   }
+  watch(() => diary.value.content, (value, oldValue, _) => {
+    console.log("日记内容变更检测: ", { oldLen: oldValue?.length || 0, newLen: value?.length || 0 });
+  });
 });
 </script>
 
@@ -383,6 +339,9 @@ onMounted(async () => {
     <section id="diary-detail-header">
       <button id="diary-detail-header-back-btn" @click="back()">返回</button>
       <div id="media-menu-container">
+        <button class="toggle-mode" @click="toggleMode">
+          {{ mode === 'edit' ? '预览' : '编辑' }}
+        </button>
         <button
             @click="toggleMediaMenu"
             :disabled="saveLoading || isNew"
@@ -414,7 +373,7 @@ onMounted(async () => {
       <div v-if="renderLoading" id="loading-overlay">
         <p>正在加载日记内容和附件...</p>
       </div>
-      <rich-text-editor id="diary-editor" :diary="diary" v-model="diary.content"/>
+      <rich-text-editor id="diary-editor" :diary="diary" v-model="diary.content" :mode="mode"/>
     </section>
     <section id="diary-detail-footer">
       <section id="diary-detail-footer-left">
