@@ -172,4 +172,12 @@ onUnmounted(() => {
     padding: 0;
   }
 }
+
+/* 针对所有屏幕宽度小于 512px 的设备应用样式 兜底方案 其他方案（VirtualKeyboard、VisualViewport）都无法使用 */
+@media (max-width: 512px) {
+  .rich-text-editor .edit {
+    /* 在移动设备上默认添加底部边距 */
+    padding-bottom: 250px;
+  }
+}
 </style>
