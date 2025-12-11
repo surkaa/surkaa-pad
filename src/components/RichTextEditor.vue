@@ -53,11 +53,11 @@ const innerHTML = computed(() => {
     cancelFns.value.push(cFn);
 
     if (tag === 'IMG') {
-      return `<br><img class="media-item" id="${eid}" alt="${fn}" /><br>`;
+      return `<img class="media-item" id="${eid}" alt="${fn}" />`;
     } else if (tag === 'VID') {
-      return `<br><video class="media-item" id="${eid}" controls></video><br>`;
+      return `<video class="media-item" id="${eid}" controls></video>`;
     } else if (tag === 'AUD') {
-      return `<br><audio class="media-item" id="${eid}" controls></audio><br>`;
+      return `<audio class="media-item" id="${eid}" controls></audio>`;
     }
     console.warn(`未知标签: ${tag}`);
     return match;
@@ -128,6 +128,9 @@ onUnmounted(() => {
   .view {
     width: 100%;
     height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
 
@@ -149,6 +152,9 @@ onUnmounted(() => {
   .edit {
     width: 100%;
     height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    overflow-y: auto;
     box-sizing: border-box;
     font-family: inherit;
     font-size: inherit;
