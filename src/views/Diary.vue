@@ -48,6 +48,26 @@ const statusMsg = computed(() => {
   return mode.value === 'edit' ? '编辑模式' : '预览模式';
 });
 const cursorPosition = ref(0);
+const timeEmojiMap = [
+    '🕐',
+    '🕑',
+    '🕒',
+    '🕓',
+    '🕔',
+    '🕕',
+    '🕖',
+    '🕗',
+    '🕘',
+    '🕙',
+    '🕚',
+    '🕛'
+];
+
+function getCurEmoji() {
+  const date = new Date();
+  const hour = date.getHours() % 12;
+  return timeEmojiMap[hour];
+}
 
 function toggleMediaMenu() {
   // 切换菜单显示状态
@@ -384,12 +404,12 @@ onMounted(async () => {
     </section>
     <section id="diary-detail-footer">
       <section id="diary-detail-footer-left">
-        <span>字数: {{ contentLen }}</span>
-        <span>{{ statusMsg }}</span>
+        <span>📝{{ contentLen }}</span>
+        <span>🔰{{ statusMsg }}</span>
       </section>
       <section id="diary-detail-footer-right">
-        <span>最后更新: {{ formatTimestamp(diary.updated) }}</span>
-        <span>创建时间: {{ formatTimestamp(diary.created) }}</span>
+        <span>{{ getCurEmoji() }}{{ formatTimestamp(diary.updated) }}</span>
+        <span>🐣{{ formatTimestamp(diary.created) }}</span>
       </section>
     </section>
   </main>
@@ -525,9 +545,14 @@ $diary-editor-padding: 10px;
 
   #diary-detail-footer-left, #diary-detail-footer-right {
     display: flex;
-    gap: 2rem;
+    gap: 4px;
     font-size: 12px;
     color: var(--pad-text-color-300);
+
+    span {
+      display: inline-block;
+      margin-right: 8px;
+    }
   }
 }
 </style>

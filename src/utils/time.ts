@@ -25,12 +25,12 @@ export function formatTimestamp(timestamp?: number): string {
     // 2. 几分钟前 (1小时内)
     if (diff < hour) {
         const minutes = Math.floor(diff / minute);
-        return `${minutes} 分钟前`;
+        return `${minutes}分钟前`;
     }
     // 3. 几小时前 (24小时内)
     if (diff < day) {
         const hours = Math.floor(diff / hour);
-        return `${hours} 小时前`;
+        return `${hours}小时前`;
     }
 
     // --- 简化绝对时间格式 ---
@@ -40,7 +40,7 @@ export function formatTimestamp(timestamp?: number): string {
     // 4. 昨天
     const yesterday = new Date(now - day);
     if (date.getFullYear() === yesterday.getFullYear() && date.getMonth() === yesterday.getMonth() && date.getDate() === yesterday.getDate()) {
-        return '昨天 ' + date.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
+        return '昨天' + date.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
     }
 
     // 5. 今年内（显示 月/日 时:分）

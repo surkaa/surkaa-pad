@@ -135,7 +135,7 @@ onUnmounted(() => {
     word-break: break-word;
 
     ::v-deep(.media-item) {
-      max-width: clamp(100px, 100%, 500px);
+      max-width: clamp(100px, calc(100% - 10px), 500px);
       // 水平居中
       display: block;
       margin: 0 auto;
