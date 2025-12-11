@@ -173,9 +173,9 @@ async function saveDiary() {
   saveLoading.value = true;
   // if (!editorRef.value) return;
   //
-  // const currentMedias = Array.from(editorRef.value.querySelectorAll('.diary-media'))
-  //     .map(el => (el as HTMLElement).dataset.filename)
-  //     .filter(fn => fn) as string[];
+  const currentMedias = Array.from(document.querySelectorAll('.diary-media'))
+      .map(el => (el as HTMLElement).dataset.filename)
+      .filter(fn => fn) as string[];
 
   // 从 DOM 解析回纯文本 + 标记
   // diary.value.content = parseHtmlToText(editorRef.value);
@@ -188,26 +188,25 @@ async function saveDiary() {
 
   try {
 
-    // // 找出原有附件列表中，现在已经不存在于编辑器里的文件
-    // if (!isNew.value && diary.value.attachments) {
-    //   const filesToDelete = diary.value.attachments.filter(att => {
-    //     // 如果附件在当前编辑器里找不到，说明被删了
-    //     return !currentMedias.includes(att.filename);
-    //   });
-    //
-    //   if (filesToDelete.length > 0) {
-    //     console.log("检测到孤儿附件，准备清理:", filesToDelete);
-    //
-    //     // 并行调用删除接口 必须删完再保存 保持数据一致性
-    //
-    //     await Promise.all(filesToDelete.map(att =>
-    //         invoke("delete_attachment", {
-    //           uuid: diary.value.id,
-    //           filename: att.filename
-    //         })
-    //     ));
-    //   }
-    // }
+    // 找出原有附件列表中，现在已经不存在于编辑器里的文件
+    if (!isNew.value && diary.value.attachments) {
+      const filesToDelete = diary.value.attachments.filter(att => {
+        // 如果附件在当前编辑器里找不到，说明被删了
+        return !currentMedias.includes(att.filename);
+      });
+
+      if (filesToDelete.length > 0) {
+        console.log("检测到孤儿附件，准备清理:", filesToDelete);
+
+        // 并行调用删除接口 必须删完再保存 保持数据一致性
+        await Promise.all(filesToDelete.map(att =>
+            invoke("delete_attachment", {
+              uuid: diary.value.id,
+              filename: att.filename
+            })
+        ));
+      }
+    }
 
     if (isNew.value) {
       // 新建日记

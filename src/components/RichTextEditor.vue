@@ -59,11 +59,11 @@ const innerHTML = computed(() => {
     cancelFns.value.push(cFn);
 
     if (tag === 'IMG') {
-      return `<img class="media-item" id="${eid}" alt="${fn}" />`;
+      return `<img class="media-item" id="${eid}" data-filename="${fn}" alt="${fn}" />`;
     } else if (tag === 'VID') {
-      return `<video class="media-item" id="${eid}" controls></video>`;
+      return `<video class="media-item" id="${eid}" data-filename="${fn}" controls></video>`;
     } else if (tag === 'AUD') {
-      return `<audio class="media-item" id="${eid}" controls></audio>`;
+      return `<audio class="media-item" id="${eid}" data-filename="${fn}" controls></audio>`;
     }
     console.warn(`未知标签: ${tag}`);
     return match;
