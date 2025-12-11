@@ -169,11 +169,11 @@ function back(isDel=false) {
 }
 
 // 保存或者更新日记
-async function saveDiary() {
+async function saveDiary(afterAddAttachment=false) {
   saveLoading.value = true;
   // if (!editorRef.value) return;
   //
-  const currentMedias = Array.from(document.querySelectorAll('.diary-media'))
+  const currentMedias = Array.from(document.querySelectorAll('.media-item'))
       .map(el => (el as HTMLElement).dataset.filename)
       .filter(fn => fn) as string[];
 
@@ -188,8 +188,8 @@ async function saveDiary() {
 
   try {
 
-    // 找出原有附件列表中，现在已经不存在于编辑器里的文件
-    if (!isNew.value && diary.value.attachments) {
+    // 找出原有附件列表中，现在已经不存在于编辑器里的文件 如果是新增附件操作后保存，则跳过此步骤 要不然会误删刚上传的附件
+    if (!isNew.value && diary.value.attachments && !afterAddAttachment) {
       const filesToDelete = diary.value.attachments.filter(att => {
         // 如果附件在当前编辑器里找不到，说明被删了
         return !currentMedias.includes(att.filename);
@@ -334,7 +334,7 @@ async function handleMediaSelect(event: Event) {
     diary.value.content = before + marker + after;
 
     // 自动更新保存日记
-    await saveDiary();
+    await saveDiary(true);
   } catch (e) {
     console.error("上传图片失败", e);
     showToast("上传图片失败: " + e, 'error');
@@ -424,7 +424,7 @@ onMounted(async () => {
           accept="image/*"
           @change="handleMediaSelect"
       />
-      <button id="diary-detail-header-save-btn" @click="saveDiary" :disabled="saveLoading">
+      <button id="diary-detail-header-save-btn" @click="saveDiary()" :disabled="saveLoading">
         {{ saveLoading ? "⏳" : (isNew ? "✅" : "🔄") }}
       </button>
       <button id="diary-detail-header-delete-btn" @click="deleteDiary" :disabled="delLoading">
