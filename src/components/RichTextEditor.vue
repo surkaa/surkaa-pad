@@ -12,7 +12,7 @@ const {diary} = defineProps<{ diary: DiaryManifest }>();
 const cancelFns: Array<() => void> = [];
 
 const innerHTML = computed(() => {
-  return model.value.replace(/<<(IMG|VID|AUD):(.+?)>>/g, (match, tag, fn) => {
+  let res = model.value.replace(/<<(IMG|VID|AUD):(.+?)>>/g, (match, tag, fn) => {
     let elementType;
     if (tag === 'IMG') {
       elementType = 'img';
@@ -50,7 +50,12 @@ const innerHTML = computed(() => {
       return `<audio class="media-item" id="${eid}" controls></audio><br>`;
     }
     return match;
-  }).replace(new RegExp(`(${appStore.keyword})`, 'gi'), '<mark>$1</mark>');
+  });
+  // 只在有搜索关键词时才处理高亮
+  if (appStore.keyword) {
+    return res.replace(new RegExp(`(${appStore.keyword})`, 'gi'), '<mark>$1</mark>');
+  }
+  return res;
 });
 
 onMounted(() => {
