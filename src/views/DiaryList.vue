@@ -23,10 +23,7 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
 });
 
 function loadLocalDiaries() {
-  appStore.loadLocalDiaries().then((remoteDiaries) => {
-    diaries.value = remoteDiaries;
-    showToast('加载完成，共 ' + remoteDiaries.length + ' 条日记', 'success', 1000);
-  });
+  appStore.loadLocalDiaries().then(remoteDiaries => diaries.value = remoteDiaries);
 }
 
 // 绑定到同步按钮
