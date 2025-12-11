@@ -13,17 +13,6 @@ const cancelFns = ref<Function[]>([]);
 
 const innerHTML = computed(() => {
   let res = model.value.replace(/<<(IMG|VID|AUD):(.+?)>>/g, (match, tag, fn) => {
-    let elementType;
-    if (tag === 'IMG') {
-      elementType = 'img';
-    } else if (tag === 'VID') {
-      elementType = 'video';
-    } else if (tag === 'AUD') {
-      elementType = 'audio';
-    } else {
-      console.warn(`Unknown tag: ${tag}`);
-      return match; // 未知标签，返回原始文本
-    }
     const a = diary.attachments.find(att => att.filename === fn);
     const attachmentIndex = diary.attachments.findIndex(a => a.filename === fn);
     if (!a) return match; // 如果找不到附件，返回原始文本
@@ -54,14 +43,14 @@ const innerHTML = computed(() => {
     });
     cancelFns.value.push(cFn);
 
-    if (elementType === 'img') {
+    if (tag === 'IMG') {
       return `<img class="media-item" id="${eid}" alt="${fn}" /><br>`;
-    } else if (elementType === 'video') {
+    } else if (tag === 'VID') {
       return `<video class="media-item" id="${eid}" controls></video><br>`;
-    } else if (elementType === 'audio') {
+    } else if (tag === 'AUD') {
       return `<audio class="media-item" id="${eid}" controls></audio><br>`;
     }
-    console.warn(`Unknown tag: ${tag}`);
+    console.warn(`未知标签: ${tag}`);
     return match;
   });
   // 只在有搜索关键词时才处理高亮
