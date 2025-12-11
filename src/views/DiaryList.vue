@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import {computed, onMounted, ref, toRaw, watch} from "vue";
+import {computed, nextTick, onMounted, onUnmounted, ref, toRaw, watch, type WatchHandle} from "vue";
 import {DiaryManifest} from "../types";
 import {useAppStore} from "../stores/app.ts";
-import {useRouter} from "vue-router";
+import {onBeforeRouteLeave, useRouter} from "vue-router";
 import {formatTimestamp} from "../utils/time.ts";
 import {showToast} from "../utils/toast.ts";
 
@@ -11,6 +11,7 @@ const appStore = useAppStore();
 const diaries = ref<DiaryManifest[]>([]);
 const matchIds = ref<Set<string>>(new Set());
 const isSyncing = ref(false); // 新增同步状态Loading
+const watcher = ref<WatchHandle | null>(null);
 
 const MAX_DIARY_PREVIEW_LENGTH = 10;
 const filteredDiaries = computed<DiaryManifest[]>(() => {
@@ -21,9 +22,22 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
   // 默认按创建时间倒序排列 (最新的在上面)
   return result.slice().sort((a, b) => b.created - a.created);
 });
+const scrollContainer = ref<HTMLElement | null>(null);
 
 function loadLocalDiaries() {
-  appStore.loadLocalDiaries().then(remoteDiaries => diaries.value = remoteDiaries);
+  appStore.loadLocalDiaries().then(remoteDiaries => {
+    diaries.value = remoteDiaries;
+    // 恢复滚动位置
+    if (appStore.savedScrollPosition > 0 && scrollContainer.value) {
+      // 使用 nextTick 确保列表渲染完毕
+      nextTick(() => {
+        scrollContainer.value!.scrollTop = appStore.savedScrollPosition;
+        console.log('恢复列表滚动位置:', appStore.savedScrollPosition);
+        // 恢复后清零，防止在其他情况下（如手动刷新）错误地应用
+        appStore.savedScrollPosition = 0;
+      });
+    }
+  });
 }
 
 // 绑定到同步按钮
@@ -43,31 +57,36 @@ async function syncFromOss() {
 }
 
 // 绑定到列表项点击
-function openDiary(diary: DiaryManifest) {
-  router.replace({
+function openDiary(diary?: DiaryManifest) {
+  router.push({
     name: 'DiaryDetail',
     state: {
       diary: toRaw(diary),
     }
+  }).then(() => {
+    if (watcher.value) {
+      watcher.value.pause();
+    }
   });
 }
 
-// 绑定到悬浮按钮
-function newDiary() {
-  router.replace({
-    name: 'DiaryDetail',
-    state: {diary: undefined}
-  });
-}
+onBeforeRouteLeave((to, _from, next) => {
+  // 只有当目标路由是详情页时才保存（可选，但更精确）
+  if (scrollContainer.value && to.name === 'DiaryDetail') {
+    appStore.savedScrollPosition = scrollContainer.value.scrollTop;
+    console.log('保存列表滚动位置:', appStore.savedScrollPosition);
+  }
+  next();
+});
 
 onMounted(() => {
-  console.log("DiaryList mounted, loading local diaries");
-  if (history.state.refresh) {
-    syncFromOss();
-  } else {
-    loadLocalDiaries();
+  console.log("DiaryList mounted");
+  loadLocalDiaries();
+  if (watcher.value) {
+    watcher.value.resume();
+    return;
   }
-  watch(() => appStore.keyword, async (term) => {
+  watcher.value = watch(() => appStore.keyword, async (term) => {
     console.log(`Searching for term: ${term}`);
     // 如果搜索词为空，清空匹配集，显示所有
     if (!term.trim()) {
@@ -80,6 +99,13 @@ onMounted(() => {
   }, {
     immediate: true
   });
+});
+
+onUnmounted(() => {
+  console.log('DiaryList unmounted');
+  if (watcher.value) {
+    watcher.value.stop();
+  }
 });
 </script>
 
@@ -108,8 +134,8 @@ onMounted(() => {
 
     <hr/>
 
-    <section id="list" class="scroll-container">
-      <transition-group name="list" tag="ul">
+    <section id="list" class="scroll-container" ref="scrollContainer">
+      <transition-group name="list" tag="ul" id="diary-ul-list">
         <li
             v-for="diary in filteredDiaries"
             :key="diary.id"
@@ -121,7 +147,9 @@ onMounted(() => {
             <span v-if="diary.attachments?.length" class="attachment-icon">📎</span>
           </div>
           <p class="preview-content">
-            {{ diary.content.slice(0, MAX_DIARY_PREVIEW_LENGTH) }}{{ diary.content.length > MAX_DIARY_PREVIEW_LENGTH ? '...' : '' }}
+            {{
+              diary.content.slice(0, MAX_DIARY_PREVIEW_LENGTH)
+            }}{{ diary.content.length > MAX_DIARY_PREVIEW_LENGTH ? '...' : '' }}
           </p>
         </li>
       </transition-group>
@@ -134,7 +162,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <button class="fab" @click="newDiary" title="写日记">
+    <button class="fab" @click="openDiary(undefined)" title="写日记">
       +
     </button>
   </main>

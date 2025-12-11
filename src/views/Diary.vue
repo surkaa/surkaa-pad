@@ -104,16 +104,11 @@ function toggleMode() {
 }
 
 // 返回上一级页面 之所以用replace是为了传递state而不是query参数
-function back(needRefresh = false) {
-  // 如果需要强制刷新(通常是删除了日记)，直接返回，不需检查
-  if (needRefresh) {
-    router.replace({
-      name: "DiaryList",
-      state: { refresh: true }
-    });
+function back(isDel=false) {
+  if (isDel) {
+    router.back();
     return;
   }
-
   // // 获取当前的逻辑内容（将 HTML 解析回存储格式）
   // let currentContent = "";
   // if (editorRef.value) {
@@ -145,10 +140,7 @@ function back(needRefresh = false) {
   // }
 
   // 通过检查，执行路由跳转
-  router.replace({
-    name: "DiaryList",
-    state: { refresh: false }
-  });
+  router.back();
 }
 
 // 保存或者更新日记
