@@ -210,7 +210,6 @@ async function saveDiary() {
       });
       diary.value = d;
       console.log("日记更新成功, Diary: ", d);
-      showToast('日记更新成功');
     }
   } catch (e) {
     console.error("保存日记失败", e);
@@ -311,8 +310,12 @@ async function handleMediaSelect(event: Event) {
     // 更新本地数据
     diary.value = updatedManifest;
 
-    // // 在光标位置插入图片
-    // insertImageToEditor(file, newFile.filename, tagPrefix);
+    // 在光标位置插入图片
+    const marker = `\n<<${tagPrefix}:${newFile.filename}>>\n`;
+    const content = diary.value.content || "";
+    const before = content.slice(0, cursorPosition.value);
+    const after = content.slice(cursorPosition.value);
+    diary.value.content = before + marker + after;
 
     // 自动更新保存日记
     await saveDiary();
