@@ -67,6 +67,7 @@ const timeEmojiMap = [
     '🕚',
     '🕛'
 ];
+const lastSavedContent = ref("");
 
 function getCurEmoji() {
   const date = new Date();
@@ -134,38 +135,43 @@ function back(isDel=false) {
     router.back();
     return;
   }
-  // // 获取当前的逻辑内容（将 HTML 解析回存储格式）
-  // let currentContent = "";
-  // if (editorRef.value) {
-  //   currentContent = parseHtmlToText(editorRef.value);
-  // }
-  //
-  // console.log("返回检查:", {
-  //   isNew: isNew.value,
-  //   savedLen: diary.value.content?.length || 0,
-  //   currentLen: currentContent.length,
-  //   changed: currentContent !== diary.value.content
-  // });
-  //
-  // // 场景 1: 新建日记 (原有逻辑优化)
-  // // 如果是新建且有内容，提示保存
-  // if (isNew.value && currentContent.length > 0) {
-  //   const confirmLeave = confirm("新建日记尚未保存，确认返回？未保存的内容将会丢失。");
-  //   if (!confirmLeave) return;
-  // }
-  //
-  // // 场景 2: 已有日记 (新增功能)
-  // // 如果是已有日记，对比当前解析后的内容与内存中(上次保存/加载)的内容
-  // if (!isNew.value) {
-  //   // 注意：这里假设 diary.value.content 始终保持为最后一次 save 或 load 的状态
-  //   if (currentContent !== diary.value.content) {
-  //     const confirmLeave = confirm("当前日记有未保存的更改，确认直接返回吗？更改将不会被保存。");
-  //     if (!confirmLeave) return;
-  //   }
-  // }
 
-  // 通过检查，执行路由跳转
-  router.back();
+  // 如果是新建日记且内容为空，直接返回
+  if (isNew.value && (!diary.value.content || diary.value.content.length === 0)) {
+    router.back();
+    return;
+  }
+
+  // 如果是新建日记且内容不为空，提示保存
+  if (isNew.value && diary.value.content && diary.value.content.length > 0) {
+    const confirmSave = confirm("当前日记尚未保存，是否保存后再返回？");
+    if (confirmSave) {
+      saveDiary().then(() => {
+        router.back();
+      });
+      return;
+    } else {
+      // 放弃保存，直接返回
+      console.log("放弃保存日记，直接返回");
+      router.back();
+      return;
+    }
+  }
+
+  // 如果内容有变更，提示保存
+  if (diary.value.content !== lastSavedContent.value) {
+    const confirmSave = confirm("当前日记内容有变更，是否保存后再返回？");
+    if (confirmSave) {
+      saveDiary().then(() => {
+        router.back();
+      });
+      return;
+    } else {
+      // 放弃保存，直接返回
+      console.log("放弃保存日记，直接返回");
+      router.back();
+    }
+  }
 }
 
 // 保存或者更新日记
@@ -215,6 +221,7 @@ async function saveDiary(afterAddAttachment=false) {
         content: diary.value.content
       });
       diary.value = d;
+      lastSavedContent.value = d.content;
       console.log("日记保存成功, Diary: ", d);
       showToast("日记保存成功", 'success');
     } else {
@@ -225,6 +232,7 @@ async function saveDiary(afterAddAttachment=false) {
         newContent: diary.value.content
       });
       diary.value = d;
+      lastSavedContent.value = d.content;
       console.log("日记更新成功, Diary: ", d);
     }
   } catch (e) {
@@ -292,6 +300,9 @@ async function handleMediaSelect(event: Event) {
 
   try {
     uploadLoading.value = true;
+    // 插入前先保存当前日记内容，确保最新状态，避免删掉的东西又被加回去
+    await saveDiary();
+
     // 获取文件字节流
     const bytesStream = file.stream();
 
@@ -332,6 +343,7 @@ async function handleMediaSelect(event: Event) {
     const before = content.slice(0, cursorPosition.value);
     const after = content.slice(cursorPosition.value);
     diary.value.content = before + marker + after;
+    console.log('插入附件标记: ', marker);
 
     // 自动更新保存日记
     await saveDiary(true);
@@ -372,6 +384,7 @@ function redo() {
 onMounted(async () => {
   if (history.state.diary) {
     diary.value = history.state.diary;
+    lastSavedContent.value = diary.value.content;
   }
   watch(() => diary.value.content, (value, oldValue, _) => {
     console.log("日记内容变更检测: ", { oldLen: oldValue?.length || 0, newLen: value?.length || 0 });
