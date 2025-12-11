@@ -15,6 +15,11 @@ const {
   diary: DiaryManifest;
   mode: 'edit' | 'view'
 }>();
+const emit = defineEmits<{
+  (e: 'update:cursorPosition', position: number): void
+}>();
+
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const cancelFns = ref<Function[]>([]);
 
 const innerHTML = computed(() => {
@@ -65,6 +70,19 @@ const innerHTML = computed(() => {
 });
 const isEditing = computed(() => mode === 'edit');
 
+/**
+ * 获取光标位置并触发事件
+ */
+function handleCursorPositionChange() {
+  if (mode === 'edit' && textareaRef.value) {
+    // 获取光标位置 (selectionStart)
+    const position = textareaRef.value.selectionStart;
+
+    // 4. 通过 emit 传递给父组件
+    emit('update:cursorPosition', position);
+  }
+}
+
 onMounted(() => {
   console.log('RichTextEditor mounted', mode);
   watch(() => cancelFns.value.length, (newLength) => {
@@ -87,7 +105,16 @@ onUnmounted(() => {
 
 <template>
   <div class="rich-text-editor">
-    <textarea id="rte-textarea" class="edit" v-show="isEditing" v-model="model"/>
+    <textarea
+        id="rte-textarea"
+        ref="textareaRef"
+        class="edit"
+        v-show="isEditing"
+        v-model="model"
+        @input="handleCursorPositionChange"
+        @keyup="handleCursorPositionChange"
+        @mouseup="handleCursorPositionChange"
+    />
     <div class="view" v-show="!isEditing" v-html="innerHTML"/>
   </div>
 </template>

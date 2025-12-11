@@ -47,6 +47,7 @@ const statusMsg = computed(() => {
   }
   return mode.value === 'edit' ? '编辑模式' : '预览模式';
 });
+const cursorPosition = ref(0);
 
 function toggleMediaMenu() {
   // 切换菜单显示状态
@@ -324,6 +325,11 @@ async function handleMediaSelect(event: Event) {
   }
 }
 
+function updateCursor(position: number) {
+  cursorPosition.value = position;
+  console.log('当前光标位置：', position);
+}
+
 onMounted(async () => {
   if (history.state.diary) {
     diary.value = history.state.diary;
@@ -373,7 +379,13 @@ onMounted(async () => {
       <div v-if="renderLoading" id="loading-overlay">
         <p>正在加载日记内容和附件...</p>
       </div>
-      <rich-text-editor id="diary-editor" :diary="diary" v-model="diary.content" :mode="mode"/>
+      <rich-text-editor
+          id="diary-editor"
+          :diary="diary"
+          v-model="diary.content"
+          :mode="mode"
+          @update:cursor-position="updateCursor"
+      />
     </section>
     <section id="diary-detail-footer">
       <section id="diary-detail-footer-left">
