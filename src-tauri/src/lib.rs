@@ -5,18 +5,18 @@ pub mod surkaa_pad;
 
 use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::OssClientManager;
-use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
+use crate::secure_diary_store::{DiaryManifest, DownloadAttachmentEvent, SecureDiaryStore};
 use crate::surkaa_pad::{AppState, DiaryMemoryCache};
 use std::fs::{read, remove_file};
 use std::ops::Deref;
+use tauri::ipc::Channel;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_log::{Target, TargetKind};
+use tauri_plugin_log::{log, Target, TargetKind};
 use tauri_plugin_store::Builder;
 
 //------------
 // 解锁与加密解密 以及初始化云端存储客户端
-// TODO 未来是否可以直接在rust层操作配置文件？免去向前端直接提供加密与解密的命令
 //------------
 
 /// 解锁加密管理器
@@ -290,6 +290,7 @@ async fn download_attachment(
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
+    on_event: Channel<DownloadAttachmentEvent>,
     uuid: String,
     filename: String,
     nonce: Vec<u8>,
@@ -301,12 +302,12 @@ async fn download_attachment(
             client.deref(),
             app_state.deref(),
             app_handle,
+            on_event,
             uuid,
             filename,
             nonce,
             eid,
-        )
-        .await
+        ).await
 }
 
 /// 取消下载附件 用于附件太大还未下载完成时 页面就退出了
@@ -357,7 +358,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
-                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .level(log::LevelFilter::Info)
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())

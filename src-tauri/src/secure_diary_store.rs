@@ -2,24 +2,43 @@ use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::{ObjectInfo, OssClientManager};
 use crate::surkaa_pad::AppState;
 use chrono::Utc;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Emitter, Manager};
 use tauri::async_runtime::{spawn, JoinHandle};
+use tauri::ipc::Channel;
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_log::log;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 const MANIFEST_FILE_NAME: &str = "manifest.enc";
 const ATTACHMENT_EXTENSION: &str = ".enc";
 
+#[derive(Clone, Serialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "event",
+    content = "data"
+)]
+pub enum DownloadAttachmentEvent {
+    Started { total_size: u64 },
+    DownloadProgress { downloaded: u64 },
+    Decrypting,
+    Decrypted { decrypted_size: u64 },
+    Completed { file_path: String },
+    Error { message: String },
+}
+
 #[derive(Default)]
 pub struct SecureDiaryStore {
     // current_download_handle: Arc<Mutex<Option<HashMap<String, JoinHandle<()>>>>>,
-    download_handles: Arc<Mutex<HashMap<String, JoinHandle<()>>>>
+    download_handles: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
@@ -49,7 +68,7 @@ impl SecureDiaryStore {
             // current_download_handle: Arc::new(Mutex::new(
             //     HashMap::new(),
             // )),
-            download_handles: Arc::new(Mutex::new(HashMap::new()))
+            download_handles: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -349,12 +368,12 @@ impl SecureDiaryStore {
         client: &OssClientManager,
         app_state: &AppState,
         app_handle: AppHandle,
+        event: Channel<DownloadAttachmentEvent>,
         id: String,
         filename: String,
         nonce: Vec<u8>,
         eid: String,
     ) -> Result<(), String> {
-
         // 启动异步下载任务
         let em_clone = encryption.clone();
         let client_clone = client.clone();
@@ -366,57 +385,103 @@ impl SecureDiaryStore {
         let eid_clone = eid.clone();
 
         let handle = spawn(async move {
-            match client_clone.download_object(&attachment_key).await {
-                Ok(encrypted_data) => {
-                    match em_clone.decrypt(&encrypted_data, &nonce).await {
-                        Ok(decrypted_data) => {
-                            // 保存到临时目录下，再返回给前端临时路径
-                            let temp_path = app_handle
-                                .path()
-                                .resolve(&filename, BaseDirectory::Temp)
-                                .unwrap_or_else(|e| {
-                                    log::error!(
-                                    "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
-                                    e
-                                );
-                                    state_clone
-                                        .get_attachment_cache_dir(Some(&app_handle))
-                                        .join(&filename)
-                                });
+            let response = client_clone
+                .stream_download_object(&attachment_key)
+                .await
+                .map_err(|e| {
+                    let message = format!("Failed to start download: {}", e);
+                    log::error!("{}", message.clone());
+                    let _ = event.send(DownloadAttachmentEvent::Error { message });
+                })
+                .unwrap();
 
-                            tokio::fs::write(&temp_path, &decrypted_data)
-                                .await
-                                .unwrap_or_else(|e| {
-                                    log::error!(
-                                        "未能将附件写入临时文件 {}: {}",
-                                        temp_path.display(),
-                                        e
-                                    );
-                                });
+            if !response.status().is_success() {
+                let message = format!(
+                    "Failed to start download for attachment {}",
+                    &attachment_key
+                );
+                log::error!("{}", message.clone());
+                let _ = event.send(DownloadAttachmentEvent::Error { message });
+            }
 
-                            log::info!("附件已保存到临时路径: {}", temp_path.display());
+            let total_size = response.content_length().unwrap_or(0);
 
-                            app_handle
-                                .emit(
-                                    format!("attachment_downloaded_{}", &eid).as_str(),
-                                    serde_json::json!({
-                                        "eid": eid,
-                                        "tempPath": temp_path.to_string_lossy(),
-                                    }),
-                                )
-                                .unwrap_or_else(|e| {
-                                    log::error!("未能发出attachment_downloaded事件: {}", e);
-                                });
-                        }
-                        Err(e) => {
-                            log::error!("附件解密失败 {}: {}", filename, e);
-                        }
-                    }
-                }
+            let _ = event.send(DownloadAttachmentEvent::Started { total_size });
+
+            let mut downloaded: u64 = 0;
+            let mut stream = response.bytes_stream();
+            let mut allocated: Vec<u8> = Vec::with_capacity(total_size as usize);
+
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk
+                    .map_err(|e| {
+                        let message = format!("下载时出现错误: {}", e);
+                        log::error!("{}", message.clone());
+                        let _ = event.send(DownloadAttachmentEvent::Error { message });
+                    })
+                    .unwrap();
+                downloaded += chunk.len() as u64;
+                // 发送进度更新事件
+                let _ = event.send(DownloadAttachmentEvent::DownloadProgress { downloaded });
+
+                // 存储 chunk 到临时缓冲区
+                allocated.extend_from_slice(&chunk);
+            }
+
+            // 提示前端下载完成并开始解密
+            let _ = event.send(DownloadAttachmentEvent::Decrypting);
+
+            // 解密数据
+            let decrypted_data = match em_clone.decrypt(&allocated, &nonce).await {
+                Ok(data) => data,
                 Err(e) => {
-                    log::error!("下载附件失败 {}: {}", filename, e);
+                    let message = format!("解密附件时出现错误: {}", e);
+                    log::error!("{}", message.clone());
+                    let _ = event.send(DownloadAttachmentEvent::Error { message });
+
+                    // 任务结束：无论是成功 (Ok) 还是错误 (Err)，都需要清除句柄
+                    let mut handle_guard = handle_map_clone.lock().await;
+                    handle_guard.remove(&eid);
+                    return;
                 }
             };
+
+            // 发送解密完成事件
+            let decrypted_size = decrypted_data.len() as u64;
+            let _ = event.send(DownloadAttachmentEvent::Decrypted { decrypted_size });
+
+            // 保存到临时目录下，再返回给前端临时路径
+            let temp_path = app_handle
+                .path()
+                .resolve(&filename, BaseDirectory::Temp)
+                .unwrap_or_else(|e| {
+                    log::error!(
+                        "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
+                        e
+                    );
+                    state_clone
+                        .get_attachment_cache_dir(Some(&app_handle))
+                        .join(&filename)
+                });
+            let mut temp_file = tokio::fs::File::create(&temp_path)
+                .await
+                .map_err(|e| {
+                    let message = format!("无法创建临时文件 {}: {}", temp_path.display(), e);
+                    log::error!("{}", message.clone());
+                    let _ = event.send(DownloadAttachmentEvent::Error { message });
+                })
+                .unwrap();
+
+            if let Err(e) = temp_file.write_all(&decrypted_data).await {
+                let message = format!("无法写入临时文件 {}: {}", temp_path.display(), e);
+                log::error!("{}", message.clone());
+                let _ = event.send(DownloadAttachmentEvent::Error { message });
+            } else {
+                // 发送完成事件
+                let _ = event.send(DownloadAttachmentEvent::Completed {
+                    file_path: temp_path.to_string_lossy().to_string(),
+                });
+            }
 
             // 任务结束：无论是成功 (Ok) 还是错误 (Err)，都需要清除句柄
             let mut handle_guard = handle_map_clone.lock().await;

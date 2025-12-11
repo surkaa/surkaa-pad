@@ -25,3 +25,33 @@ export type OssConfigType = {
     bucket: string;
     endpoint: string;
 }
+
+export type DownloadAttachmentEvent = {
+    event: "started";
+    data: {
+        totalSize: number;
+    }
+} | {
+    event: "downloadProgress";
+    data: {
+        downloaded: number;
+    }
+} | {
+    event: "decrypting";
+    data: null;
+} | {
+    event: "decrypted";
+    data: {
+        decryptedSize: number;
+    }
+} | {
+    event: "completed";
+    data: {
+        filePath: string;
+    };
+} | {
+    event: "error";
+    data: {
+        message: string;
+    }
+}

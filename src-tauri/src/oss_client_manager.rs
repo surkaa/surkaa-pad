@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
+use reqwest::{Response};
 
 #[derive(Debug)]
 pub struct ObjectInfo {
@@ -113,6 +114,28 @@ impl OssClientManager {
             .map_err(|e| format!("未能下载对象: {}", e))?;
 
         Ok(data)
+    }
+
+    /// 新增：从 OSS 下载数据，返回 reqwest::Response 供流式读取
+    pub async fn stream_download_object(&self, object_key: &str) -> Result<Response, String> {
+        use std::sync::atomic::Ordering;
+
+        if !self.initialized.load(Ordering::SeqCst) {
+            return Err("OSS 客户端未被初始化".to_string());
+        }
+
+        let inner_guard = self.inner.lock().await;
+        let client = inner_guard
+            .client
+            .as_ref()
+            .ok_or_else(|| "OSS 客户端未被初始化".to_string())?;
+
+        let response = Object::new(object_key)
+            .stream_download(&client)
+            .await
+            .map_err(|e| format!("未能流式下载对象: {}", e))?;
+
+        Ok(response)
     }
 
     /// 删除 OSS 对象

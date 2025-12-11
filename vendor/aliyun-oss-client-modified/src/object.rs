@@ -1,10 +1,7 @@
 use std::ops::{Index, IndexMut};
 
 use chrono::{DateTime, Utc};
-use reqwest::{
-    header::{HeaderMap, CONTENT_LENGTH},
-    Method,
-};
+use reqwest::{header::{HeaderMap, CONTENT_LENGTH}, Method, Response};
 use url::Url;
 
 use crate::{
@@ -235,6 +232,23 @@ impl Object {
             .await?;
 
         Ok(response.into())
+    }
+
+    pub async fn stream_download(&self, client: &Client) -> Result<Response, OssError> {
+        let bucket = client.bucket().ok_or(OssError::NoFoundBucket)?;
+        let url = self.to_url(bucket);
+        let method = Method::GET;
+        let resource = CanonicalizedResource::new(format!("/{}/{}", bucket.as_str(), self.path));
+
+        let header_map = client.authorization(&method, resource)?;
+
+        let response = reqwest::Client::new()
+            .get(url)
+            .headers(header_map)
+            .send()
+            .await?;
+
+        Ok(response)
     }
 
     pub async fn copy_from(&self, client: &Client, source: String) -> Result<(), OssError> {

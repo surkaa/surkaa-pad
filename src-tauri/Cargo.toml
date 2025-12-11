@@ -39,6 +39,8 @@ dotenvy = "0.15.7"
 tauri-plugin-fs = "2.4.4"
 md5 = "0.8.0"
 tauri-plugin-log = "2"
+reqwest = {version ="^0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+futures = "0.3"
 
 [patch.crates-io]
 aliyun-oss-client = { path = "../vendor/aliyun-oss-client-modified" }
