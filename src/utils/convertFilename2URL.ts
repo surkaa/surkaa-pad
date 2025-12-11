@@ -13,6 +13,7 @@ const cancelMap: Map<string, NullableFn> = new Map();
  * @param eid           attachment media element id
  * @param mimetype      附件 mimetype
  * @param filename      附件文件名
+ * @param emit          更新状态的回调函数
  * @param urlCallback   转化成 URL 后的回调函数
  * @returns             取消下载和监听的函数
  */
@@ -22,6 +23,7 @@ export function convertFilename2URL(
     eid: string,
     mimetype: string,
     filename: string,
+    emit: (msg: string) => void,
     urlCallback: (url: string) => void
 ): () => void {
     const cancelFn = () => {
@@ -39,25 +41,34 @@ export function convertFilename2URL(
     };
 
     const onEvent = new Channel<DownloadAttachmentEvent>();
+    let totalMB = 0;
+    let decryptedMB = 0;
     onEvent.onmessage = async msg => {
         console.log('[ConvertFilename2URL] onmessage', msg);
         switch (msg.event) {
             case "started":
-                console.log(`[ConvertFilename2URL] 下载附件 ${eid} 开始，大小 ${msg.data.totalSize} 字节`);
+                totalMB = msg.data.totalSize >> 20;
+                console.log(`[ConvertFilename2URL] 下载附件 ${eid} 开始，大小 ${totalMB}MB`);
+                emit(`开始下载附件(${totalMB}MB)`);
                 // 添加取消下载函数到映射
                 cancelMap.set(eid, cancelDownloadFn);
                 break;
             case "downloadProgress":
-                console.log(`[ConvertFilename2URL] 下载附件 ${eid} 进度：${msg.data.downloaded} 字节`);
+                const downloadedMB = msg.data.downloaded >> 20;
+                emit(`⏳下载中...  ${downloadedMB}MB / ${totalMB}MB`);
                 break;
             case "decrypting":
                 console.log(`[ConvertFilename2URL] 附件 ${eid} 开始解密`);
+                emit(`🔐解密中...请稍等`);
                 break;
             case "decrypted":
-                console.log(`[ConvertFilename2URL] 附件 ${eid} 已解密，大小 ${msg.data.decryptedSize} 字节`);
+                decryptedMB = msg.data.decryptedSize >> 20;
+                console.log(`[ConvertFilename2URL] 附件 ${eid} 已解密，大小 ${decryptedMB}MB / ${totalMB}MB`);
+                emit(`已解密 ${decryptedMB}MB / ${totalMB}MB`);
                 break;
             case "completed":
                 console.log(`[ConvertFilename2URL] 附件 ${eid} 下载解密完成，文件路径 ${msg.data.filePath}`);
+                emit(`装载中... ${decryptedMB}MB / ${totalMB}MB...`);
                 // 创建数据URL
                 const fileHandle = await open(msg.data.filePath, {
                     read: true,

@@ -32,6 +32,7 @@ const maxUndoStackSize = 5;
 const undoStack = ref<string[]>([]);
 const redoStack = ref<string[]>([]);
 const undoOrRedoInProgress = ref(false);
+const renderMsg = ref('');
 
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -49,7 +50,7 @@ const statusMsg = computed(() => {
   if (delLoading.value) {
     return "删除日记中...";
   }
-  return mode.value === 'edit' ? '编辑模式' : '预览模式';
+  return mode.value === 'edit' ? '编辑模式' : renderMsg;
 });
 const cursorPosition = ref(0);
 const timeEmojiMap = [
@@ -441,12 +442,13 @@ onMounted(async () => {
           v-model="diary.content"
           :mode="mode"
           @update:cursor-position="updateCursor"
+          @process:download-attachment="msg => renderMsg = msg"
       />
     </section>
     <section id="diary-detail-footer">
       <section id="diary-detail-footer-left">
         <span>{{ contentLen }}字</span>
-        <span>🔰{{ statusMsg }}</span>
+        <span>{{ statusMsg }}</span>
       </section>
       <section id="diary-detail-footer-right">
         <span>{{ getCurEmoji() }}{{ formatTimestamp(diary.updated) }}</span>

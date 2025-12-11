@@ -16,8 +16,13 @@ const {
   mode: 'edit' | 'view'
 }>();
 const emit = defineEmits<{
-  (e: 'update:cursorPosition', position: number): void
+  (e: 'update:cursorPosition', position: number): void;
+  (e: 'process:downloadAttachment', statusMsg: string): void;
 }>();
+
+const processDownloadAttachment = (statusMsg: string) => {
+  emit('process:downloadAttachment', statusMsg);
+};
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const cancelFns = ref<Function[]>([]);
@@ -38,7 +43,7 @@ const innerHTML = computed(() => {
       return el.outerHTML;
     }
     // 请求将文件名转换为URL
-    const cFn = convertFilename2URL(diary.id, a.nonce, eid, a.mimetype, fn, (url: string) => {
+    const cFn = convertFilename2URL(diary.id, a.nonce, eid, a.mimetype, fn, processDownloadAttachment, (url: string) => {
       // 设置媒体元素的src属性
       const element = document.getElementById(eid) as HTMLMediaElement;
       if (element) {
@@ -48,6 +53,7 @@ const innerHTML = computed(() => {
           cancelFns.value.splice(index, 1);
         }
         element.src = url;
+        processDownloadAttachment('✅附件加载完成');
       }
     });
     cancelFns.value.push(cFn);
