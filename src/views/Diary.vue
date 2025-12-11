@@ -339,10 +339,10 @@ onMounted(async () => {
   <main id="diary-detail">
     <section id="diary-detail-header">
       <button id="diary-detail-header-back-btn" @click="back()">返回</button>
+      <button class="toggle-mode" @click="toggleMode">
+        {{ mode === 'edit' ? '预览' : '编辑' }}
+      </button>
       <div id="media-menu-container">
-        <button class="toggle-mode" @click="toggleMode">
-          {{ mode === 'edit' ? '预览' : '编辑' }}
-        </button>
         <button
             @click="toggleMediaMenu"
             :disabled="saveLoading || isNew"
