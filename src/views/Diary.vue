@@ -4,10 +4,9 @@ import {DiaryManifest} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
 import {formatTimestamp} from "../utils/time.ts";
-// import {parseHtmlToText, parseTextToHtml} from "../utils/diaryParser.ts";
-import {writeFile, BaseDirectory} from '@tauri-apps/plugin-fs';
 import {showToast} from "../utils/toast.ts";
 import RichTextEditor from "../components/RichTextEditor.vue";
+import {saveAttachment} from "../utils/saveAttachment.ts";
 
 const router = useRouter();
 
@@ -55,18 +54,18 @@ const statusMsg = computed(() => {
 });
 const cursorPosition = ref(0);
 const timeEmojiMap = [
-    '🕐',
-    '🕑',
-    '🕒',
-    '🕓',
-    '🕔',
-    '🕕',
-    '🕖',
-    '🕗',
-    '🕘',
-    '🕙',
-    '🕚',
-    '🕛'
+  '🕐',
+  '🕑',
+  '🕒',
+  '🕓',
+  '🕔',
+  '🕕',
+  '🕖',
+  '🕗',
+  '🕘',
+  '🕙',
+  '🕚',
+  '🕛'
 ];
 const lastSavedContent = ref("");
 
@@ -131,7 +130,7 @@ function toggleMode() {
 }
 
 onBeforeRouteLeave((to, from, next) => {
-  console.log('准备离开日记详情页', { to, from });
+  console.log('准备离开日记详情页', {to, from});
   if (isDelBack.value) {
     // 如果是删除后返回，直接放行
     next();
@@ -172,7 +171,7 @@ onBeforeRouteLeave((to, from, next) => {
 });
 
 // 保存或者更新日记
-async function saveDiary(afterAddAttachment=false) {
+async function saveDiary(afterAddAttachment = false) {
   saveLoading.value = true;
   // if (!editorRef.value) return;
   //
@@ -304,22 +303,8 @@ async function handleMediaSelect(event: Event) {
     // 获取文件字节流
     const bytesStream = file.stream();
 
-    // 构造临时文件名/路径
-    const tempFilename = `${diary.value.id}_${Date.now()}_${file.name}`;
-
-    console.log("准备上传文件到临时路径: ", tempFilename);
-
-    // 将文件写入应用数据目录或临时目录
-    await writeFile(tempFilename, bytesStream, {
-      baseDir: BaseDirectory.Temp
-    });
-
     // 调用后端上传
-    const updatedManifest = await invoke<DiaryManifest>("add_attachment", {
-      uuid: diary.value.id,
-      filename: tempFilename,
-      minetype: file.type
-    });
+    const updatedManifest = await saveAttachment(diary.value.id, file.type, bytesStream);
 
     // 找出新增加的文件名
     // 比较新旧 attachments 列表，找到多出来的那个
@@ -385,7 +370,7 @@ onMounted(async () => {
     lastSavedContent.value = diary.value.content;
   }
   watch(() => diary.value.content, (value, oldValue, _) => {
-    console.log("日记内容变更检测: ", { oldLen: oldValue?.length || 0, newLen: value?.length || 0 });
+    console.log("日记内容变更检测: ", {oldLen: oldValue?.length || 0, newLen: value?.length || 0});
     if (undoOrRedoInProgress.value) {
       // 如果是撤销或重做引起的变更，不记录历史
       undoOrRedoInProgress.value = false;
