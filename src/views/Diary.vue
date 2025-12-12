@@ -2,7 +2,7 @@
 import {computed, onMounted, ref, watch} from "vue";
 import {DiaryManifest} from "../types";
 import {invoke} from "@tauri-apps/api/core";
-import {useRouter} from "vue-router";
+import {onBeforeRouteLeave, useRouter} from "vue-router";
 import {formatTimestamp} from "../utils/time.ts";
 // import {parseHtmlToText, parseTextToHtml} from "../utils/diaryParser.ts";
 import {writeFile, BaseDirectory} from '@tauri-apps/plugin-fs';
@@ -33,6 +33,7 @@ const undoStack = ref<string[]>([]);
 const redoStack = ref<string[]>([]);
 const undoOrRedoInProgress = ref(false);
 const renderMsg = ref('');
+const isDelBack = ref(false);
 
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -129,50 +130,46 @@ function toggleMode() {
   mode.value = (mode.value === 'edit' ? 'view' : 'edit');
 }
 
-// 返回上一级页面 之所以用replace是为了传递state而不是query参数
-function back(isDel=false) {
-  if (isDel) {
-    router.back();
+onBeforeRouteLeave((to, from, next) => {
+  console.log('准备离开日记详情页', { to, from });
+  if (isDelBack.value) {
+    // 如果是删除后返回，直接放行
+    next();
     return;
   }
-
   // 如果是新建日记且内容为空，直接返回
   if (isNew.value && (!diary.value.content || diary.value.content.length === 0)) {
-    router.back();
+    next();
     return;
   }
-
   // 如果是新建日记且内容不为空，提示保存
   if (isNew.value && diary.value.content && diary.value.content.length > 0) {
-    const confirmSave = confirm("当前日记尚未保存，是否保存后再返回？");
+    const confirmSave = confirm("日记尚未保存，要不先保存再返回？");
     if (confirmSave) {
-      saveDiary().then(() => {
-        router.back();
-      });
+      saveDiary().then(next);
       return;
     } else {
       // 放弃保存，直接返回
       console.log("放弃保存日记，直接返回");
-      router.back();
+      next();
       return;
     }
   }
-
   // 如果内容有变更，提示保存
   if (diary.value.content !== lastSavedContent.value) {
-    const confirmSave = confirm("当前日记内容有变更，是否保存后再返回？");
+    const confirmSave = confirm("日记内容有变更，要不先保存再返回？");
     if (confirmSave) {
-      saveDiary().then(() => {
-        router.back();
-      });
+      saveDiary().then(next);
       return;
     } else {
       // 放弃保存，直接返回
       console.log("放弃保存日记，直接返回");
-      router.back();
+      next();
     }
   }
-}
+  // 否则直接放行
+  next();
+});
 
 // 保存或者更新日记
 async function saveDiary(afterAddAttachment=false) {
@@ -247,7 +244,7 @@ async function saveDiary(afterAddAttachment=false) {
 async function deleteDiary() {
   if (isNew.value) {
     const confirmAbandon = confirm("当前日记未保存, 确认放弃并返回吗?");
-    if (confirmAbandon) back();
+    if (confirmAbandon) router.back();
     return;
   }
 
@@ -258,7 +255,8 @@ async function deleteDiary() {
   try {
     await invoke("delete_diary", {uuid: diary.value.id});
     console.log("日记删除成功");
-    back(true);
+    isDelBack.value = true;
+    router.back();
     showToast('日记删除成功', 'success');
   } catch (e) {
     console.error("删除日记失败", e);
@@ -410,7 +408,7 @@ onMounted(async () => {
 <template>
   <main id="diary-detail">
     <section id="diary-detail-header">
-      <button id="diary-detail-header-back-btn" @click="back()">↩️</button>
+      <button id="diary-detail-header-back-btn" @click="router.back()">↩️</button>
       <button class="toggle-mode" @click="toggleMode">
         {{ mode === 'edit' ? '👀' : '📝' }}
       </button>
