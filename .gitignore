@@ -1,3 +1,5 @@
+tauri.conf.schema.json
+
 # Logs
 logs
 *.log
