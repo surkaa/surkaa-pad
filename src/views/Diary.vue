@@ -361,6 +361,7 @@ function redo() {
 }
 
 onMounted(async () => {
+  // TODO 打开前检查是不是云端最新的！
   if (history.state.diary) {
     diary.value = history.state.diary;
     lastSavedContent.value = diary.value.content;
