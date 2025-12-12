@@ -12,7 +12,8 @@
 
       <!-- 表单 -->
       <form @submit.prevent="unlock">
-        <input autofocus id="master-password" type="password" required placeholder="输入输密码解锁" v-model="masterPassword">
+        <input autofocus id="master-password" type="password" required placeholder="输入输密码解锁"
+               v-model="masterPassword">
         <button type="submit" :disabled="loading" :class="{'loading': loading}">
           {{ loading ? '正在验证...' : '解锁' }}
         </button>
@@ -26,14 +27,20 @@
       <!-- 表单 -->
       <form @submit.prevent="saveConfigAndLogin">
         <input id="master-password" type="password" required placeholder="Master Password" v-model="masterPassword">
-        <input id="access-key-id" type="text" required placeholder="AccessKey ID" v-model="ossConfig.akid">
-        <input id="access-key-secret" type="password" required placeholder="AccessKey Secret"
+        <input id="access-key-id" v-if="!showQuickInput" required type="text" placeholder="AccessKey ID" v-model="ossConfig.akid">
+        <input id="access-key-secret" v-if="!showQuickInput" required type="password" placeholder="AccessKey Secret"
                v-model="ossConfig.aks">
-        <input id="bucket-name" type="text" required placeholder="Bucket" v-model="ossConfig.bucket">
-        <input id="endpoint" type="text" required placeholder="Endpoint" v-model="ossConfig.endpoint">
-        <button type="submit" :disabled="loading" :class="{'loading': loading}">
-          {{ loading ? '正在验证并保存...' : '保存并登录' }}
-        </button>
+        <input id="bucket-name" v-if="!showQuickInput" required type="text" placeholder="Bucket" v-model="ossConfig.bucket">
+        <input id="endpoint" v-if="!showQuickInput" required type="text" placeholder="Endpoint" v-model="ossConfig.endpoint">
+        <input id="quickConfig" v-if="showQuickInput" required type="text" placeholder="快速配置" v-model="quickConfig">
+        <div class="buttons">
+          <button type="submit" :disabled="loading" :class="{'loading': loading}">
+            {{ loading ? '正在验证并保存...' : '保存并登录' }}
+          </button>
+          <p class="link-btn" v-if="!showQuickInput" @click="showQuickInput = !showQuickInput">
+            {{ showQuickInput ? '使用常规配置' : '使用快速配置' }}
+          </p>
+        </div>
       </form>
     </section>
 
@@ -58,6 +65,8 @@ const ossConfig = ref<OssConfigType>({
   bucket: '',
   endpoint: '',
 });
+const showQuickInput = ref<boolean>(false);
+const quickConfig = ref('');
 const masterPassword = ref<string>('');
 const loading = ref<boolean>(false);
 
@@ -67,6 +76,38 @@ const router = useRouter();
 function saveConfigAndLogin() {
   if (loading.value) return;
   loading.value = true;
+
+  // 如果快速配置不为空 则解析快速配置
+  if (quickConfig.value.trim() !== '') {
+    if (masterPassword.value.trim() == '') {
+      showToast("使用快速配置时，主密码不能为空。", 'error');
+      loading.value = false;
+      return;
+    }
+    console.log('使用快速配置：', quickConfig.value);
+    const lines = quickConfig.value.split(' ').filter(line => line.includes('='));
+    lines.forEach(line => {
+      const [key, value] = line.split('=').map(s => s.trim());
+      switch (key) {
+        case 'ALIYUN_KEY':
+          ossConfig.value.akid = value;
+          break;
+        case 'ALIYUN_SECRET':
+          ossConfig.value.aks = value;
+          break;
+        case 'ALIYUN_BUCKET_NAME':
+          ossConfig.value.bucket = value;
+          break;
+        case 'ALIYUN_ENDPOINT':
+          ossConfig.value.endpoint = value;
+          break;
+        default:
+          console.warn('未知的配置项：', key);
+          loading.value = false;
+          return;
+      }
+    });
+  }
 
   appStore.saveConfigAndLogin(
       masterPassword.value,
@@ -244,28 +285,42 @@ onMounted(async () => {
         color: var(--pad-text-color-100);
       }
 
-      button {
-        width: 100%;
-        padding: 10px 0;
-        font-size: 16px;
-        border: none;
-        border-radius: 4px;
-        background-color: var(--pad-bg-color-400);
-        color: var(--pad-text-color-100);
-        cursor: pointer;
+      .buttons {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        flex-direction: column;
 
-        &:hover {
-          background-color: var(--pad-bg-color-500);
-        }
-
-        // loading时hover无效
-        &.loading:hover {
+        button {
+          width: 100%;
+          padding: 10px 20px;
+          font-size: 16px;
+          border: none;
+          border-radius: 4px;
           background-color: var(--pad-bg-color-400);
-          cursor: not-allowed;
+          color: var(--pad-text-color-100);
+          cursor: pointer;
+
+          &:hover {
+            background-color: var(--pad-bg-color-500);
+          }
+
+          // loading时hover无效
+          &.loading:hover {
+            background-color: var(--pad-bg-color-400);
+            cursor: not-allowed;
+          }
+
+          &.loading {
+            opacity: 0.7;
+          }
         }
 
-        &.loading {
-          opacity: 0.7;
+        .link-btn {
+          color: var(--pad-text-color-500);
+          cursor: pointer;
+          font-size: 0.9rem;
+          text-decoration: underline;
         }
       }
     }
