@@ -91,6 +91,14 @@ function stopInterval() {
   }
 }
 
+function clickBtn() {
+  if (recording.value) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
 onUnmounted(() => {
   stopInterval();
 });
@@ -104,11 +112,7 @@ onUnmounted(() => {
 
     <transition name="drawer">
       <div v-if="visible" class="drawer">
-        <span>
-          {{ recording ? '正在录音...' : '未录音' }}
-        </span>
-        <button @click="startRecording">开始录音</button>
-        <button @click="stopRecording">停止录音</button>
+        <button class="btn" @click="clickBtn" :class="{'recording': recording}"/>
       </div>
     </transition>
   </div>
@@ -131,6 +135,7 @@ onUnmounted(() => {
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
   }
 
   .drawer-enter-active, .drawer-leave-active {
@@ -147,9 +152,155 @@ onUnmounted(() => {
     left: 0;
     width: 100%;
     height: 300px;
-    background: white;
-    padding: 20px;
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    padding: 40px 20px;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.15);
+    border-radius: 24px 24px 0 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    .btn {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ff4757 100%);
+      border: none;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow:
+          0 4px 20px rgba(255, 71, 87, 0.4),
+          inset 0 2px 4px rgba(255, 255, 255, 0.3),
+          inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+
+      &::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 32px;
+        height: 32px;
+        background-color: white;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+      }
+
+      &::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(1);
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      &:hover {
+        transform: scale(1.05);
+        box-shadow:
+            0 6px 25px rgba(255, 71, 87, 0.5),
+            inset 0 2px 4px rgba(255, 255, 255, 0.3),
+            inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      &:active {
+        transform: scale(0.98);
+        box-shadow:
+            0 2px 15px rgba(255, 71, 87, 0.3),
+            inset 0 2px 4px rgba(255, 255, 255, 0.2),
+            inset 0 -2px 4px rgba(0, 0, 0, 0.15);
+      }
+
+      &.recording {
+        background: linear-gradient(135deg, #ff4757 0%, #ff3838 100%);
+        animation: pulse 1.5s infinite;
+
+        &::before {
+          width: 20px;
+          height: 20px;
+          border-radius: 4px;
+          background-color: white;
+        }
+
+        &::after {
+          animation: ripple 1.5s infinite;
+        }
+      }
+    }
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      box-shadow:
+          0 4px 20px rgba(255, 71, 87, 0.4),
+          inset 0 2px 4px rgba(255, 255, 255, 0.3),
+          inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+    }
+    50% {
+      box-shadow:
+          0 4px 30px rgba(255, 71, 87, 0.6),
+          inset 0 2px 4px rgba(255, 255, 255, 0.3),
+          inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+    }
+  }
+
+  @keyframes ripple {
+    0% {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0.8;
+    }
+    100% {
+      transform: translate(-50%, -50%) scale(1.5);
+      opacity: 0;
+    }
+  }
+
+  // 添加说明文字
+  .drawer::before {
+    content: '点击开始录音，再次点击结束';
+    position: absolute;
+    top: 20px;
+    color: #666;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    width: 100%;
+    padding: 0 20px;
+  }
+
+  // 添加录音状态指示器
+  .drawer::after {
+    content: '';
+    position: absolute;
+    bottom: 120px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ddd;
+    transition: background-color 0.3s ease;
+  }
+
+  .btn.recording ~ .drawer::after {
+    background: #ff4757;
+    animation: blink 1s infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.5;
+      transform: scale(0.9);
+    }
   }
 }
 </style>
