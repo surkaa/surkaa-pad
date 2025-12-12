@@ -111,18 +111,6 @@ function triggerAddVideo() {
   mediaSelected(); // 关闭菜单
 }
 
-// 触发录音选择
-function triggerAddAudio() {
-  if (isNew.value) { /* 提醒逻辑 */
-    return;
-  }
-  if (fileInputRef.value) {
-    fileInputRef.value.accept = 'audio/*';
-    fileInputRef.value.click();
-  }
-  mediaSelected(); // 关闭菜单
-}
-
 const contentLen = computed(() => {
   return diary.value.content ? diary.value.content.length : 0;
 });
