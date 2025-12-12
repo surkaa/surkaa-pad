@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {showToast} from "../utils/toast.ts";
 import {onUnmounted, ref} from "vue";
-import {saveAttachment} from "../utils/saveAttachment.ts";
 
 let mediaRecorder: MediaRecorder | null = null;
 let stream: MediaStream | null = null;
@@ -11,8 +10,14 @@ const PERIODIC_FLUSH_MS = 100;
 const MINE_TYPE = 'audio/webm';
 const recording = ref(false);
 
-const props = defineProps<{
-  uuid: string;
+const {
+  visible
+} = defineProps<{
+  visible: boolean;
+}>();
+const emit = defineEmits<{
+  (e: 'close'): void;
+  (e: 'recorded', minetype: string, stream: ReadableStream<Uint8Array>): void;
 }>();
 
 async function startRecording() {
@@ -72,7 +77,9 @@ async function stopRecording() {
   mediaRecorder.stop();
   // 整合音频数据
   const audioBlob = new Blob(audioChunks, {type: MINE_TYPE});
-  await saveAttachment(props.uuid, MINE_TYPE, audioBlob.stream());
+  // TODO 记录录音时长
+  emit('close');
+  emit('recorded', MINE_TYPE, audioBlob.stream());
   console.log("录音停止...");
   stopInterval();
 }
@@ -90,19 +97,59 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="capture-audio">
-    <span>
-      {{ recording ? '正在录音...' : '未录音' }}
-    </span>
-    <button @click="startRecording">开始录音</button>
-    <button @click="stopRecording">停止录音</button>
+  <div class="capture-audio-drawer">
+    <transition name="overlay">
+      <div v-if="visible" class="overlay" @click="emit('close')"></div>
+    </transition>
+
+    <transition name="drawer">
+      <div v-if="visible" class="drawer">
+        <span>
+          {{ recording ? '正在录音...' : '未录音' }}
+        </span>
+        <button @click="startRecording">开始录音</button>
+        <button @click="stopRecording">停止录音</button>
+      </div>
+    </transition>
   </div>
 </template>
 
 <style scoped lang="scss">
-.capture-audio {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.capture-audio-drawer {
+  .overlay-enter-active, .overlay-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .overlay-enter-from, .overlay-leave-to {
+    opacity: 0;
+  }
+
+  .overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  .drawer-enter-active, .drawer-leave-active {
+    transition: transform 0.3s ease;
+  }
+
+  .drawer-enter-from, .drawer-leave-to {
+    transform: translateY(100%);
+  }
+
+  .drawer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 300px;
+    background: white;
+    padding: 20px;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  }
 }
 </style>

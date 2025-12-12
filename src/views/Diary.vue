@@ -7,6 +7,7 @@ import {formatTimestamp} from "../utils/time.ts";
 import {showToast} from "../utils/toast.ts";
 import RichTextEditor from "../components/RichTextEditor.vue";
 import {saveAttachment} from "../utils/saveAttachment.ts";
+import CaptureAudioDrawer from "../components/CaptureAudioDrawer.vue";
 
 const router = useRouter();
 
@@ -33,6 +34,7 @@ const redoStack = ref<string[]>([]);
 const undoOrRedoInProgress = ref(false);
 const renderMsg = ref('');
 const isDelBack = ref(false);
+const showAudioDrawer = ref(false);
 
 // 文件输入框引用
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -273,8 +275,7 @@ function getTagPrefix(mimeType: string): 'IMG' | 'VID' | 'AUD' | null {
   return null;
 }
 
-// 处理图片选择与上传
-async function handleMediaSelect(event: Event) {
+function handleMediaSelect(event: Event) {
   const input = event.target as HTMLInputElement;
   if (!input.files || input.files.length === 0) return;
 
@@ -295,16 +296,24 @@ async function handleMediaSelect(event: Event) {
 
   console.log("选择的图片文件: ", file);
 
+  uploadAttachment(tagPrefix, file.type, file.stream()).then(() => {
+    input.value = "";
+  });
+}
+
+function recordedAudio(minetype: string, stream: ReadableStream<Uint8Array>) {
+  uploadAttachment('AUD', minetype, stream);
+}
+
+// 处理图片选择与上传
+async function uploadAttachment(tagPrefix: string, minetype: string, stream: ReadableStream<Uint8Array>) {
   try {
     uploadLoading.value = true;
     // 插入前先保存当前日记内容，确保最新状态，避免删掉的东西又被加回去
     await saveDiary();
 
-    // 获取文件字节流
-    const bytesStream = file.stream();
-
     // 调用后端上传
-    const updatedManifest = await saveAttachment(diary.value.id, file.type, bytesStream);
+    const updatedManifest = await saveAttachment(diary.value.id, minetype, stream);
 
     // 找出新增加的文件名
     // 比较新旧 attachments 列表，找到多出来的那个
@@ -334,7 +343,6 @@ async function handleMediaSelect(event: Event) {
     console.error("上传图片失败", e);
     showToast("上传图片失败: " + e, 'error');
   } finally {
-    input.value = "";
     uploadLoading.value = false;
   }
 }
@@ -410,7 +418,7 @@ onMounted(async () => {
         <div v-if="showMediaMenu" id="media-menu-dropdown">
           <button @click="triggerAddImage">图片</button>
           <button @click="triggerAddVideo">视频</button>
-          <button @click="triggerAddAudio">录音</button>
+          <button @click="showAudioDrawer = true; showMediaMenu = false">录音</button>
         </div>
       </div>
       <input
@@ -450,6 +458,11 @@ onMounted(async () => {
         <span>🐣{{ formatTimestamp(diary.created) }}</span>
       </section>
     </section>
+    <capture-audio-drawer
+        :visible="showAudioDrawer"
+        @close="showAudioDrawer = false"
+        @recorded="recordedAudio"
+    />
   </main>
 </template>
 
