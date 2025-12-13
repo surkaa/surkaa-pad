@@ -2,81 +2,153 @@ html {
     width: 100%;
     height: 100%;
 
-    /* 状态颜色 */
-    --pad-primary-color: #C4A484; /* 核心木色/按钮主色 */
-    --pad-success-color: #A2C498; /* 柔和的成功/高亮绿 */
-    --pad-warning-color: #E6A23C; /* 保留经典的警告橙 */
-    --pad-danger-color: #D9534F; /* 柔和的危险/错误红 */
-    --pad-info-color: #ADB5BD; /* 辅助信息灰 */
+    /* ===== 主题颜色 ===== */
 
-    /* 背景色阶梯 (纸张和容器) */
-    --pad-bg-color-100: #FBF9F6; /* 最浅背景 (主背景/纸张色) */
-    --pad-bg-color-200: #F7F5F2; /* 次级背景 (侧边栏/输入框背景) */
-    --pad-bg-color-300: #EDEBE8; /* 容器背景 (浮动卡片/面板) */
-    --pad-bg-color-400: #E0E0E0; /* 强调背景 (柔和的分隔线/活动项背景) */
-    --pad-bg-color-500: #C0C0C0; /* 最深背景 (较深的容器/禁用区) */
+    /* 主色系 (木色调) */
+    --pad-primary-color: #C4A484;        /* 核心木色/按钮主色 */
+    --pad-primary-light: #E2D1BC;        /* 浅木色 */
+    --pad-primary-dark: #A48464;         /* 深木色 */
+    --pad-primary-gradient: linear-gradient(135deg, var(--pad-primary-color) 0%, var(--pad-primary-dark) 100%);
 
-    /* 文字色阶梯 (墨水和深棕) */
-    --pad-text-color-100: #333333; /* 强调文字 (墨色) */
-    --pad-text-color-200: #494949; /* 主要文字 */
-    --pad-text-color-300: #6C6C6C; /* 常规文字 */
-    --pad-text-color-400: #999999; /* 辅助文字 (浅灰) */
-    --pad-text-color-500: #C0C0C0; /* 禁用文字 */
+    /* 功能色系 */
+    --pad-success-color: #A2C498;        /* 柔和的成功/高亮绿 */
+    --pad-success-light: #C5E1B3;        /* 浅成功色 */
+    --pad-success-dark: #7FA974;         /* 深成功色 */
+    --pad-warning-color: #E6A23C;        /* 保留经典的警告橙 */
+    --pad-warning-light: #F0C475;        /* 浅警告色 */
+    --pad-warning-dark: #CF8B28;         /* 深警告色 */
+    --pad-danger-color: #D9534F;         /* 柔和的危险/错误红 */
+    --pad-danger-light: #E88A87;         /* 浅危险色 */
+    --pad-danger-dark: #B93C38;          /* 深危险色 */
+    --pad-info-color: #ADB5BD;           /* 辅助信息灰 */
+    --pad-info-light: #CED4DA;           /* 浅信息色 */
+    --pad-info-dark: #8A94A1;            /* 深信息色 */
 
-    /* 边框色阶梯 (细线和木纹) */
-    --pad-border-color-100: #EBEBEB; /* 最浅边框 (输入框/细分隔线) */
-    --pad-border-color-200: #D9D9D9; /* 次级边框 */
-    --pad-border-color-300: #C4A484; /* 主要边框 (木纹色/活动边框) */
-    --pad-border-color-400: #A48464; /* 强调边框 (深木纹) */
-    --pad-border-color-500: #495057; /* 最深边框 (极少使用) */
+    /* 录音组件专用色 */
+    --pad-record-primary: var(--pad-danger-color);      /* 录音按钮主色 */
+    --pad-record-active: var(--pad-danger-dark);        /* 录音按钮激活色 */
+    --pad-record-gradient: linear-gradient(135deg, var(--pad-record-primary) 0%, var(--pad-record-active) 100%);
+    --pad-record-pulse: rgba(217, 83, 79, 0.3);         /* 录音脉动效果色 */
 
-    /* 阴影色阶梯 (柔和、低透明度) */
+    /* ===== 背景色阶梯 (纸张和容器) ===== */
+    --pad-bg-color: #FBF9F6;              /* 主背景色 */
+    --pad-bg-color-100: var(--pad-bg-color); /* 最浅背景 (主背景/纸张色) */
+    --pad-bg-color-200: #F7F5F2;          /* 次级背景 (侧边栏/输入框背景) */
+    --pad-bg-color-300: #EDEBE8;          /* 容器背景 (浮动卡片/面板) */
+    --pad-bg-color-400: #E0E0E0;          /* 强调背景 (柔和的分隔线/活动项背景) */
+    --pad-bg-color-500: #C0C0C0;          /* 最深背景 (较深的容器/禁用区) */
+
+    /* ===== 文字色阶梯 (墨水和深棕) ===== */
+    --pad-text-color: #333333;            /* 主要文字颜色 */
+    --pad-text-color-100: var(--pad-text-color); /* 强调文字 (墨色) */
+    --pad-text-color-200: #494949;        /* 主要文字 */
+    --pad-text-color-300: #6C6C6C;        /* 常规文字 */
+    --pad-text-color-400: #999999;        /* 辅助文字 (浅灰) */
+    --pad-text-color-500: #C0C0C0;        /* 禁用文字 */
+    --pad-text-color-light: #FFFFFF;      /* 浅色背景上的文字 */
+
+    /* ===== 边框色阶梯 (细线和木纹) ===== */
+    --pad-border-color: #D9D9D9;          /* 默认边框色 */
+    --pad-border-color-100: #EBEBEB;      /* 最浅边框 (输入框/细分隔线) */
+    --pad-border-color-200: var(--pad-border-color); /* 次级边框 */
+    --pad-border-color-300: #C4A484;      /* 主要边框 (木纹色/活动边框) */
+    --pad-border-color-400: #A48464;      /* 强调边框 (深木纹) */
+    --pad-border-color-500: #495057;      /* 最深边框 (极少使用) */
+
+    /* ===== 阴影色阶梯 (柔和、低透明度) ===== */
+    --pad-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);    /* 小阴影 */
+    --pad-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);   /* 中阴影 */
+    --pad-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);   /* 大阴影 */
+    --pad-shadow-xl: 0 12px 36px rgba(0, 0, 0, 0.2);   /* 特大阴影 */
+
     --pad-shadow-color-100: rgba(0, 0, 0, 0.05); /* 最浅阴影 (卡片阴影) */
-    --pad-shadow-color-200: rgba(0, 0, 0, 0.1); /* 次级阴影 */
+    --pad-shadow-color-200: rgba(0, 0, 0, 0.1);  /* 次级阴影 */
     --pad-shadow-color-300: rgba(0, 0, 0, 0.15); /* 主要阴影 */
-    --pad-shadow-color-400: rgba(0, 0, 0, 0.2); /* 强调阴影 */
-    --pad-shadow-color-500: rgba(0, 0, 0, 0.3); /* 最深阴影 */
+    --pad-shadow-color-400: rgba(0, 0, 0, 0.2);  /* 强调阴影 */
+    --pad-shadow-color-500: rgba(0, 0, 0, 0.3);  /* 最深阴影 */
+
+    /* ===== 组件特定变量 ===== */
+    --pad-radius-sm: 4px;
+    --pad-radius-md: 8px;
+    --pad-radius-lg: 12px;
+    --pad-radius-xl: 16px;
+    --pad-radius-full: 9999px;
+
+    --pad-transition-fast: 150ms ease;
+    --pad-transition-base: 250ms ease;
+    --pad-transition-slow: 350ms ease;
+
+    --pad-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
 }
 
+/* ===== 深色模式 ===== */
 html.dark {
-    /* 状态颜色 (暗色模式下的亮色) */
-    --pad-primary-color: #E2C7A8; /* 亮木色/奶油色 */
-    --pad-success-color: #B5E0A6; /* 柔和的亮绿 */
-    --pad-warning-color: #F0C475;
-    --pad-danger-color: #FF8581;
-    --pad-info-color: #7B8D9C;
+    /* 主色系 (木色调) */
+    --pad-primary-color: #E2C7A8;        /* 亮木色/奶油色 */
+    --pad-primary-light: #F2E4D1;        /* 浅木色 - 更浅 */
+    --pad-primary-dark: #C9A886;         /* 深木色 */
+    --pad-primary-gradient: linear-gradient(135deg, var(--pad-primary-color) 0%, var(--pad-primary-dark) 100%);
+
+    /* 功能色系 */
+    --pad-success-color: #B5E0A6;        /* 柔和的亮绿 */
+    --pad-success-light: #D4F0C8;        /* 浅成功色 */
+    --pad-success-dark: #94C487;         /* 深成功色 */
+    --pad-warning-color: #F0C475;        /* 亮警告橙 */
+    --pad-warning-light: #F8DAA9;        /* 浅警告色 */
+    --pad-warning-dark: #E0AE58;         /* 深警告色 */
+    --pad-danger-color: #FF8581;         /* 亮危险红 */
+    --pad-danger-light: #FFB3B0;         /* 浅危险色 */
+    --pad-danger-dark: #E06D69;          /* 深危险色 */
+    --pad-info-color: #7B8D9C;           /* 辅助信息灰 */
+    --pad-info-light: #9CADBC;           /* 浅信息色 */
+    --pad-info-dark: #5A6B7A;            /* 深信息色 */
+
+    /* 录音组件专用色 */
+    --pad-record-primary: var(--pad-danger-color);
+    --pad-record-active: var(--pad-danger-dark);
+    --pad-record-gradient: linear-gradient(135deg, var(--pad-record-primary) 0%, var(--pad-record-active) 100%);
+    --pad-record-pulse: rgba(255, 133, 129, 0.3);
 
     /* 背景色阶梯 (静谧深蓝/木炭色) */
-    --pad-bg-color-100: #1B2129; /* 最深背景 (主背景/夜空色) */
-    --pad-bg-color-200: #262E38; /* 强调背景 (侧边栏/浮动卡片) */
-    --pad-bg-color-300: #35404D; /* 容器背景 */
-    --pad-bg-color-400: #445160; /* 次级背景 */
-    --pad-bg-color-500: #57697B; /* 最浅背景 */
+    --pad-bg-color: #1B2129;             /* 主背景色 */
+    --pad-bg-color-100: var(--pad-bg-color); /* 最深背景 (主背景/夜空色) */
+    --pad-bg-color-200: #262E38;         /* 强调背景 (侧边栏/浮动卡片) */
+    --pad-bg-color-300: #35404D;         /* 容器背景 */
+    --pad-bg-color-400: #445160;         /* 次级背景 */
+    --pad-bg-color-500: #57697B;         /* 最浅背景 */
 
     /* 文字色阶梯 (暖光和奶油色) */
-    --pad-text-color-100: #FDF5E6; /* 强调文字 (奶油白) */
-    --pad-text-color-200: #E6E0D6; /* 主要文字 */
-    --pad-text-color-300: #BFC8D3; /* 常规文字 */
-    --pad-text-color-400: #93A0AC; /* 辅助文字 */
-    --pad-text-color-500: #6B7B8C; /* 禁用文字 */
+    --pad-text-color: #FDF5E6;           /* 主要文字颜色 */
+    --pad-text-color-100: var(--pad-text-color); /* 强调文字 (奶油白) */
+    --pad-text-color-200: #E6E0D6;       /* 主要文字 */
+    --pad-text-color-300: #BFC8D3;       /* 常规文字 */
+    --pad-text-color-400: #93A0AC;       /* 辅助文字 */
+    --pad-text-color-500: #6B7B8C;       /* 禁用文字 */
+    --pad-text-color-light: #FFFFFF;     /* 浅色背景上的文字 */
 
     /* 边框色阶梯 */
-    --pad-border-color-100: #445160; /* 最深边框 */
-    --pad-border-color-200: #57697B;
-    --pad-border-color-300: #7B8D9C; /* 主要边框 (柔和蓝灰) */
-    --pad-border-color-400: #A0B2C3;
-    --pad-border-color-500: #E6E0D6; /* 最浅边框 */
+    --pad-border-color: #445160;         /* 默认边框色 */
+    --pad-border-color-100: var(--pad-border-color); /* 最深边框 */
+    --pad-border-color-200: #57697B;     /* 深边框 */
+    --pad-border-color-300: #7B8D9C;     /* 主要边框 (柔和蓝灰) */
+    --pad-border-color-400: #A0B2C3;     /* 浅边框 */
+    --pad-border-color-500: #E6E0D6;     /* 最浅边框 */
 
     /* 阴影色阶梯 (反向阴影，保持柔和) */
-    --pad-shadow-color-100: rgba(255, 255, 255, 0.05);
-    --pad-shadow-color-200: rgba(255, 255, 255, 0.1);
-    --pad-shadow-color-300: rgba(255, 255, 255, 0.15);
-    --pad-shadow-color-400: rgba(255, 255, 255, 0.2);
-    --pad-shadow-color-500: rgba(255, 255, 255, 0.3);
+    --pad-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+    --pad-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
+    --pad-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.3);
+    --pad-shadow-xl: 0 12px 36px rgba(0, 0, 0, 0.35);
+
+    --pad-shadow-color-100: rgba(0, 0, 0, 0.2);
+    --pad-shadow-color-200: rgba(0, 0, 0, 0.25);
+    --pad-shadow-color-300: rgba(0, 0, 0, 0.3);
+    --pad-shadow-color-400: rgba(0, 0, 0, 0.35);
+    --pad-shadow-color-500: rgba(0, 0, 0, 0.4);
 }
 
 body {
-    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+    font-family: var(--pad-font-family), serif;
     line-height: 1.5;
     font-weight: 400;
 
@@ -92,16 +164,36 @@ body {
     place-items: center;
     min-width: 320px;
 
-    background-color: var(--pad-bg-color-100);
-    color: var(--pad-text-color-100);
+    background-color: var(--pad-bg-color);
+    color: var(--pad-text-color);
 
-    transition: background-color 0.3s, color 0.3s;
+    transition: background-color var(--pad-transition-base), color var(--pad-transition-base);
 
     /* 解决移动设备的安全区域 */
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 
     /* 允许水平和垂直平移，但禁用任何浏览器默认的缩放或手势 */
     touch-action: pan-x pan-y;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--pad-bg-color-200);
+    border-radius: var(--pad-radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--pad-border-color-300);
+    border-radius: var(--pad-radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--pad-border-color-400);
 }
 
 #app {
@@ -190,4 +282,10 @@ hr {
     to {
         opacity: 0;
     }
+}
+
+/* 按钮有disable时加上鼠标禁用 */
+button:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.6;
 }

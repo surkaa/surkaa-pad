@@ -195,10 +195,10 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 .capture-audio-drawer {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-family: var(--pad-font-family), serif;
 
   .overlay-enter-active, .overlay-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity var(--pad-transition-base);
   }
 
   .overlay-enter-from, .overlay-leave-to {
@@ -211,13 +211,13 @@ onUnmounted(() => {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--pad-shadow-color-400);
     backdrop-filter: blur(2px);
     z-index: 999;
   }
 
   .drawer-enter-active, .drawer-leave-active {
-    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    transition: transform var(--pad-transition-base) cubic-bezier(0.25, 0.8, 0.25, 1);
   }
 
   .drawer-enter-from, .drawer-leave-to {
@@ -231,74 +231,91 @@ onUnmounted(() => {
     width: 100%;
     height: auto;
     max-height: 80vh;
-    background: #ffffff;
-    border-radius: 24px 24px 0 0;
+    background: var(--pad-bg-color-100);
+    border-radius: var(--pad-radius-xl) var(--pad-radius-xl) 0 0;
     padding: 0;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--pad-shadow-lg);
     z-index: 1000;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    border-top: 1px solid var(--pad-border-color-200);
 
     // 移动端适配
     @media (min-width: 768px) {
       left: 50%;
       bottom: 5%;
-      width: 400px;
+      width: min(90vw, 400px);
       transform: translateX(-50%);
-      border-radius: 20px;
-      max-height: 500px;
+      border-radius: var(--pad-radius-xl);
+      max-height: min(80vh, 500px);
+      border: 1px solid var(--pad-border-color-200);
     }
 
     .drawer-header {
       display: flex;
       align-items: center;
-      padding: 20px 24px 16px;
-      border-bottom: 1px solid #f0f0f0;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--pad-border-color-100);
+      background: var(--pad-bg-color-200);
 
       .close-btn {
-        background: none;
+        background: transparent;
         border: none;
         padding: 8px;
         cursor: pointer;
-        border-radius: 50%;
-        color: #666;
-        transition: all 0.2s;
+        border-radius: var(--pad-radius-full);
+        color: var(--pad-text-color-400);
+        transition: all var(--pad-transition-fast);
+        display: flex;
+        align-items: center;
+        justify-content: center;
 
-        &:hover, &:active {
-          background: #f5f5f5;
-          color: #333;
+        svg {
+          fill: currentColor;
+        }
+
+        &:hover {
+          background: var(--pad-bg-color-300);
+          color: var(--pad-text-color-200);
         }
 
         &:active {
           transform: scale(0.95);
         }
+
+        @media (max-width: 767px) {
+          &:active {
+            background: var(--pad-bg-color-300);
+          }
+        }
       }
 
       .drawer-title {
         margin: 0 auto;
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 600;
-        color: #333;
+        color: var(--pad-text-color-100);
         transform: translateX(-16px); // 平衡关闭按钮的位置
       }
     }
 
     .recording-container {
-      padding: 32px 24px 40px;
+      padding: 32px 20px 40px;
       display: flex;
       flex-direction: column;
       align-items: center;
       flex: 1;
+      background: var(--pad-bg-color-100);
 
       .duration-display {
         text-align: center;
-        margin-bottom: 48px;
-        transition: all 0.3s;
+        margin-bottom: 40px;
+        transition: all var(--pad-transition-base);
 
         &.recording {
           .duration-text {
-            color: #ff4757;
+            color: var(--pad-record-primary);
             transform: scale(1.05);
           }
         }
@@ -307,9 +324,10 @@ onUnmounted(() => {
           font-size: 48px;
           font-weight: 700;
           font-variant-numeric: tabular-nums;
-          color: #333;
+          color: var(--pad-text-color-100);
           margin-bottom: 8px;
-          transition: all 0.3s;
+          transition: all var(--pad-transition-base);
+          font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 
           @media (min-width: 768px) {
             font-size: 56px;
@@ -318,8 +336,9 @@ onUnmounted(() => {
 
         .duration-label {
           font-size: 14px;
-          color: #666;
+          color: var(--pad-text-color-300);
           font-weight: 500;
+          letter-spacing: 0.5px;
         }
       }
 
@@ -331,19 +350,20 @@ onUnmounted(() => {
           position: relative;
           width: 80px;
           height: 80px;
-          border-radius: 50%;
+          border-radius: var(--pad-radius-full);
           border: none;
-          background: linear-gradient(135deg, #4a6cf7 0%, #3a56d4 100%);
-          color: white;
+          background: var(--pad-primary-gradient);
+          color: var(--pad-text-color-light);
           cursor: pointer;
           padding: 0;
-          transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-          box-shadow: 0 6px 20px rgba(74, 108, 247, 0.3);
+          transition: all var(--pad-transition-base);
+          box-shadow: var(--pad-shadow-md);
 
           // 移动端触摸优化
           @media (max-width: 767px) {
             &:active {
               transform: scale(0.95);
+              box-shadow: var(--pad-shadow-sm);
             }
           }
 
@@ -353,22 +373,23 @@ onUnmounted(() => {
 
             &:hover {
               transform: scale(1.05);
-              box-shadow: 0 10px 30px rgba(74, 108, 247, 0.4);
+              box-shadow: var(--pad-shadow-lg);
             }
           }
 
           &.recording {
-            background: linear-gradient(135deg, #ff4757 0%, #ff3742 100%);
-            box-shadow: 0 6px 20px rgba(255, 71, 87, 0.3);
+            background: var(--pad-record-gradient);
+            box-shadow: 0 6px 20px var(--pad-shadow-color-300);
 
             @media (min-width: 768px) {
               &:hover {
-                box-shadow: 0 10px 30px rgba(255, 71, 87, 0.4);
+                box-shadow: 0 8px 24px var(--pad-shadow-color-400);
               }
             }
 
             .btn-text {
-              color: #ff4757;
+              color: var(--pad-record-primary);
+              font-weight: 600;
             }
           }
 
@@ -390,7 +411,8 @@ onUnmounted(() => {
               .mic-icon {
                 width: 32px;
                 height: 32px;
-                fill: white;
+                fill: currentColor;
+                filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
 
                 @media (min-width: 768px) {
                   width: 36px;
@@ -401,8 +423,9 @@ onUnmounted(() => {
               .stop-icon {
                 width: 24px;
                 height: 24px;
-                background: white;
-                border-radius: 4px;
+                background: currentColor;
+                border-radius: var(--pad-radius-sm);
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 
                 @media (min-width: 768px) {
                   width: 28px;
@@ -413,9 +436,10 @@ onUnmounted(() => {
 
             .btn-text {
               font-size: 12px;
-              font-weight: 600;
-              color: white;
-              transition: color 0.3s;
+              font-weight: 500;
+              color: var(--pad-text-color-light);
+              transition: color var(--pad-transition-fast);
+              letter-spacing: 0.3px;
 
               @media (min-width: 768px) {
                 font-size: 14px;
@@ -429,8 +453,8 @@ onUnmounted(() => {
             left: 0;
             width: 100%;
             height: 100%;
-            border-radius: 50%;
-            border: 2px solid rgba(255, 71, 87, 0.6);
+            border-radius: var(--pad-radius-full);
+            border: 2px solid var(--pad-record-pulse);
             animation: pulse 1.5s infinite;
             z-index: 1;
 
@@ -444,10 +468,14 @@ onUnmounted(() => {
       .hint-text {
         text-align: center;
         font-size: 14px;
-        color: #888;
+        color: var(--pad-text-color-400);
         line-height: 1.5;
         max-width: 280px;
         margin: 0 auto;
+        padding: 12px 16px;
+        background: var(--pad-bg-color-200);
+        border-radius: var(--pad-radius-lg);
+        border: 1px solid var(--pad-border-color-100);
 
         p {
           margin: 0;
@@ -460,7 +488,7 @@ onUnmounted(() => {
 @keyframes pulse {
   0% {
     transform: scale(1);
-    opacity: 1;
+    opacity: 0.8;
   }
   70% {
     transform: scale(1.3);
@@ -472,56 +500,23 @@ onUnmounted(() => {
   }
 }
 
-// 深色模式支持
+// 优化深色模式下的动画
 @media (prefers-color-scheme: dark) {
   .capture-audio-drawer {
-    .drawer {
-      background: #1e1e1e;
-      color: #fff;
-
-      .drawer-header {
-        border-bottom-color: #333;
-
-        .drawer-title {
-          color: #fff;
-        }
-
-        .close-btn {
-          color: #aaa;
-
-          &:hover, &:active {
-            background: #333;
-            color: #fff;
-          }
-        }
-      }
-
-      .recording-container {
-        .duration-display {
-          .duration-text {
-            color: #fff;
-          }
-
-          &.recording {
-            .duration-text {
-              color: #ff6b81;
-            }
-          }
-
-          .duration-label {
-            color: #aaa;
-          }
-        }
-
-        .hint-text {
-          color: #aaa;
-        }
-
-        .button-container .record-btn.recording .btn-text {
-          color: #ff6b81;
+    .record-btn {
+      &.recording {
+        .pulse-ring {
+          border-color: var(--pad-record-pulse);
         }
       }
     }
+  }
+}
+
+// 打印样式优化
+@media print {
+  .capture-audio-drawer {
+    display: none !important;
   }
 }
 </style>
