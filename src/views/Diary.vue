@@ -361,11 +361,12 @@ function redo() {
 }
 
 onMounted(async () => {
-  // TODO 打开前检查是不是云端最新的！
   if (history.state.diary) {
     diary.value = history.state.diary;
     lastSavedContent.value = diary.value.content;
   }
+  // 新增模式时默认为编辑模式
+  mode.value = isNew.value ? 'edit' : 'view';
   watch(() => diary.value.content, (value, oldValue, _) => {
     console.log("日记内容变更检测: ", {oldLen: oldValue?.length || 0, newLen: value?.length || 0});
     if (undoOrRedoInProgress.value) {
