@@ -35,7 +35,7 @@ impl DiaryMemoryCache {
 pub struct AppState {}
 
 impl AppState {
-    /// 获取应用的日记缓存目录 TODO 提取成新的函数 参数转成枚举
+    /// 获取应用的日记缓存目录
     pub fn get_diary_cache_dir(&self, app_handle: Option<&AppHandle>) -> PathBuf {
         let path = if let Some(app_handle) = app_handle {
             app_handle
