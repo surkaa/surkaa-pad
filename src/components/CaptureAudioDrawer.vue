@@ -73,6 +73,13 @@ async function startRecording() {
       if (err.name === 'NotFoundError') {
         showToast('未找到麦克风设备', 'error');
         return;
+      } else if (err.name === 'NotAllowedError') {
+        showToast(`请允许访问麦克风 ${err.message}`, 'error');
+        return;
+      } else {
+        showToast(`无法访问麦克风 ${err.name}`, 'error');
+        console.log('获取麦克风失败: ', err.name, err.stack);
+        return;
       }
     }
     showToast(`无法访问麦克风: ${err}`, 'error');
@@ -96,6 +103,7 @@ async function stopRecording() {
   // 重置音频数据
   audioChunks = [];
 
+  emit('close');
   emit('recorded', MINE_TYPE, audioBlob.stream());
   console.log("录音停止...");
   stopInterval();
@@ -152,7 +160,7 @@ onUnmounted(() => {
           </div>
 
           <div class="button-container">
-            <button
+            <div
                 class="record-btn"
                 @click="clickBtn"
                 :class="{ 'recording': recording }"
@@ -172,7 +180,7 @@ onUnmounted(() => {
               <!-- 录音时的脉动动画 -->
               <div v-if="recording" class="pulse-ring"></div>
               <div v-if="recording" class="pulse-ring delay-1"></div>
-            </button>
+            </div>
           </div>
 
           <div class="hint-text">
