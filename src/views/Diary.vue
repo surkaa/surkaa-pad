@@ -508,8 +508,8 @@ $diary-editor-padding: 10px;
 
       /* 菜单外观 */
       background-color: white;
-      border: 1px solid #ddd;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      border: 1px solid var(--pad-border-color);
+      box-shadow: 0 4px 12px var(--pad-shadow-color-300);
       min-width: 120px;
       border-radius: 4px;
       padding: 5px 0;
@@ -524,10 +524,10 @@ $diary-editor-padding: 10px;
         text-align: left;
         cursor: pointer;
         font-size: 14px;
-        color: #333;
+        color: var(--pad-text-color);
 
         &:hover {
-          background-color: #f0f0f0;
+          background-color: var(--pad-bg-color);
         }
       }
     }
@@ -559,11 +559,11 @@ $diary-editor-padding: 10px;
       align-items: center;
 
       p {
-        color: #333;
+        color: var(--pad-text-color);
         font-weight: bold;
         padding: 10px 20px;
         border-radius: 4px;
-        background-color: #f0f0f0; /* 让提示文字更醒目 */
+        background-color: var(--pad-bg-color);
       }
     }
 
