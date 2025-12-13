@@ -1,11 +1,11 @@
 // --- 常量 ---
 import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
-import {DiaryManifest, OssConfigType} from "../types";
+import {OssConfigType} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {markRaw, ref} from "vue";
 import {window} from "@tauri-apps/api";
-import {showToast} from "../utils/toast.ts";
+import {showToast} from "../utils";
 
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
@@ -103,16 +103,8 @@ export const useAppStore = defineStore('app', () => {
         await store.value.save();
     }
 
-    async function loadLocalDiaries(): Promise<DiaryManifest[]> {
-        return await invoke<DiaryManifest[]>('list_local_diaries');
-    }
-
     async function searchWithKeyword(keyword: string): Promise<string[]> {
         return await invoke<string[]>('search_diaries', {keyword});
-    }
-
-    async function syncFromOss() {
-        return await invoke<void>('sync_from_oss');
     }
 
     return {
@@ -124,9 +116,7 @@ export const useAppStore = defineStore('app', () => {
         initOss,
         saveConfigAndLogin,
         resetConfig,
-        loadLocalDiaries,
         searchWithKeyword,
-        syncFromOss,
         setTimeoutForCloseApp
     }
 })

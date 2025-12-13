@@ -5,6 +5,7 @@ import {useAppStore} from "../stores/app.ts";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
 import {formatTimestamp} from "../utils";
 import {showToast} from "../utils";
+import {invoke} from "@tauri-apps/api/core";
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -25,7 +26,7 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
 const scrollContainer = ref<HTMLElement | null>(null);
 
 function loadLocalDiaries() {
-  appStore.loadLocalDiaries().then(remoteDiaries => {
+  invoke<DiaryManifest[]>('list_local_diaries').then(remoteDiaries => {
     diaries.value = remoteDiaries;
     // 恢复滚动位置
     if (appStore.savedScrollPosition > 0 && scrollContainer.value) {
@@ -41,13 +42,13 @@ function loadLocalDiaries() {
 }
 
 // 绑定到同步按钮
-async function syncFromOss() {
+async function syncFromOss(needReload = true, uuid?: string) {
   if (isSyncing.value) return;
   isSyncing.value = true;
   try {
-    await appStore.syncFromOss();
+    await invoke<void>('sync_from_oss', {uuid});
     // 同步完成后重新加载列表
-    loadLocalDiaries();
+    if (needReload) loadLocalDiaries();
   } catch (e) {
     console.error("同步失败：", e);
     // 这里可以加一个全局提示，暂时略过
@@ -123,7 +124,7 @@ onUnmounted(() => {
 
       <button
           class="sync-btn"
-          @click="syncFromOss"
+          @click="syncFromOss()"
           :disabled="isSyncing"
           title="从云端同步"
       >
