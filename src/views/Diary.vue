@@ -3,10 +3,10 @@ import {computed, onMounted, ref, watch} from "vue";
 import {DiaryManifest} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
-import {formatTimestamp} from "../utils/time.ts";
-import {showToast} from "../utils/toast.ts";
+import {formatTimestamp} from "../utils";
+import {showToast} from "../utils";
 import RichTextEditor from "../components/RichTextEditor.vue";
-import {saveAttachment} from "../utils/saveAttachment.ts";
+import {saveAttachment} from "../utils";
 import CaptureAudioDrawer from "../components/CaptureAudioDrawer.vue";
 
 const router = useRouter();

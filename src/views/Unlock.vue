@@ -55,7 +55,7 @@ import {onMounted, ref} from "vue";
 import {useAppStore} from "../stores/app.ts";
 import {OssConfigType} from "../types";
 import {useRouter} from "vue-router";
-import {showToast} from "../utils/toast.ts";
+import {showToast} from "../utils";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);

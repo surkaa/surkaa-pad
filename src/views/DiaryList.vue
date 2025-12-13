@@ -3,8 +3,8 @@ import {computed, nextTick, onMounted, onUnmounted, ref, toRaw, watch, type Watc
 import {DiaryManifest} from "../types";
 import {useAppStore} from "../stores/app.ts";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
-import {formatTimestamp} from "../utils/time.ts";
-import {showToast} from "../utils/toast.ts";
+import {formatTimestamp} from "../utils";
+import {showToast} from "../utils";
 
 const router = useRouter();
 const appStore = useAppStore();
