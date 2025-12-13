@@ -977,7 +977,7 @@ onMounted(async () => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 24px;
+    padding: 0 8px;
     background-color: var(--pad-bg-color-200);
     border-top: 1px solid var(--pad-border-color-200);
     font-size: 13px;
@@ -1015,10 +1015,6 @@ onMounted(async () => {
 
       &:hover {
         color: var(--pad-text-color-200);
-
-        svg {
-          opacity: 0.9;
-        }
       }
     }
 
@@ -1056,7 +1052,6 @@ onMounted(async () => {
 @media (max-width: 768px) {
   #diary-detail {
     #diary-detail-header {
-      padding: 0 16px;
       height: 56px;
       gap: 12px;
 
@@ -1077,7 +1072,6 @@ onMounted(async () => {
     }
 
     #diary-detail-footer {
-      padding: 0 16px;
       height: 44px;
       font-size: 12px;
       gap: 12px;
@@ -1089,18 +1083,6 @@ onMounted(async () => {
 
       .footer-item {
         gap: 6px;
-
-        &:hover .footer-text {
-          display: block;
-          position: absolute;
-          bottom: 100%;
-          background: var(--pad-bg-color-300);
-          padding: 4px 8px;
-          border-radius: var(--pad-radius-md);
-          font-size: 11px;
-          white-space: nowrap;
-          margin-bottom: 4px;
-        }
       }
     }
   }
@@ -1130,8 +1112,6 @@ onMounted(async () => {
     }
 
     #diary-detail-footer {
-      justify-content: center;
-
       #diary-detail-footer-left,
       #diary-detail-footer-right {
         gap: 12px;

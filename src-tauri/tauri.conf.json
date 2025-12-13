@@ -13,8 +13,10 @@
     "windows": [
       {
         "title": "SurKaa Pad",
-        "width": 800,
-        "height": 600
+        "width": 348,
+        "height": 848,
+        "x": 0,
+        "y": 0
       }
     ],
     "security": {

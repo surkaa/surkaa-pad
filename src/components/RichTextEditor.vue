@@ -53,7 +53,7 @@ const innerHTML = computed(() => {
           cancelFns.value.splice(index, 1);
         }
         element.src = url;
-        processDownloadAttachment('✅附件加载完成');
+        processDownloadAttachment('附件加载完成');
       }
     });
     cancelFns.value.push(cFn);
@@ -164,7 +164,7 @@ onUnmounted(() => {
     overflow-x: hidden;
     white-space: pre-wrap;
     word-break: break-word;
-    padding: 8px;
+    padding: 12px;
     box-sizing: border-box;
     background-color: var(--pad-bg-color-100);
     border: 1px solid var(--pad-border-color-100);

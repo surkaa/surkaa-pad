@@ -55,11 +55,11 @@ export function convertFilename2URL(
                 break;
             case "downloadProgress":
                 const downloadedMB = msg.data.downloaded >> 20;
-                emit(`⏳下载中...  ${downloadedMB}MB / ${totalMB}MB`);
+                emit(`下载中...  ${downloadedMB}MB / ${totalMB}MB`);
                 break;
             case "decrypting":
                 console.log(`[ConvertFilename2URL] 附件 ${eid} 开始解密`);
-                emit(`🔐解密中...请稍等`);
+                emit(`解密中...请稍等`);
                 break;
             case "decrypted":
                 decryptedMB = msg.data.decryptedSize >> 20;
