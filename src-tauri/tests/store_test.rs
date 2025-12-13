@@ -2,8 +2,6 @@
 mod secure_store {
     use chrono::Utc;
     use std::env;
-    use std::ptr::null;
-    use tauri::AppHandle;
     use surkaa_pad_lib::encryption_manager::EncryptionManager;
     use surkaa_pad_lib::oss_client_manager::OssClientManager;
     use surkaa_pad_lib::secure_diary_store::SecureDiaryStore;
@@ -41,7 +39,7 @@ mod secure_store {
         let (_, client, store) = create_store().await;
 
         let diary_ids = store
-            .list_diaries(&client)
+            .list_diaries(&client, &None)
             .await
             .expect("Failed to list diaries");
 
@@ -64,7 +62,7 @@ mod secure_store {
 
         // 验证新创建的日记是否在列表中
         let diary_ids = store
-            .list_diaries(&c)
+            .list_diaries(&c, &None)
             .await
             .expect("Failed to list diaries")
             .into_iter()

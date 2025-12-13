@@ -42,33 +42,45 @@ function loadLocalDiaries() {
 }
 
 // 绑定到同步按钮
-async function syncFromOss(needReload = true, uuid?: string) {
-  if (isSyncing.value) return;
-  isSyncing.value = true;
-  try {
-    await invoke<void>('sync_from_oss', {uuid});
-    // 同步完成后重新加载列表
-    if (needReload) loadLocalDiaries();
-  } catch (e) {
-    console.error("同步失败：", e);
-    // 这里可以加一个全局提示，暂时略过
-  } finally {
-    isSyncing.value = false;
-  }
+async function syncFromOss(uuid?: string): Promise<DiaryManifest | null> {
+  return new Promise(resolve => {
+    if (isSyncing.value) return resolve(null); // 防止重复点击
+    isSyncing.value = true;
+    invoke<DiaryManifest | null>('sync_from_oss', {uuid}).then(diary => {
+      // 同步完成后重新加载列表
+      loadLocalDiaries();
+      resolve(diary);
+    }).catch(e => {
+      console.error("同步失败：", e);
+      resolve(null);
+    }).finally(() => {
+      isSyncing.value = false;
+    });
+  })
 }
 
 // 绑定到列表项点击
 function openDiary(diary?: DiaryManifest) {
-  router.push({
-    name: 'DiaryDetail',
-    state: {
-      diary: toRaw(diary),
+  if (!diary) {
+    // 新建日记
+    router.push({name: 'DiaryDetail'});
+    return;
+  }
+  // 先同步单个日记的最新内容
+  syncFromOss(diary.id).then(newDiary => {
+    if (!newDiary) {
+      // 这有bug
+      showToast('无法打开日记', 'error');
+      return;
     }
-  }).then(() => {
-    if (watcher.value) {
-      watcher.value.pause();
+    if (newDiary.updated != diary.updated) {
+      showToast('已同步改日记最新版', 'info', 1000);
     }
-  });
+    router.push({
+      name: 'DiaryDetail',
+      state: {diary: toRaw(newDiary)}
+    });
+  }).then(() => watcher.value && watcher.value.pause());
 }
 
 onBeforeRouteLeave((to, _from, next) => {

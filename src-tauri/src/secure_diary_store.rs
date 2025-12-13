@@ -76,14 +76,22 @@ impl SecureDiaryStore {
     pub async fn list_diaries(
         &self,
         client: &OssClientManager,
+        uuid: &Option<String>
     ) -> Result<HashMap<String, ObjectInfo>, String> {
         let objects = client
-            .list_objects("")
+            .list_objects(&match uuid {
+                Some(id) => format!("{}/{}", id, MANIFEST_FILE_NAME),
+                None => "".to_string(),
+            })
             .await
             .map_err(|e| format!("Failed to list diaries: {}", e))?;
         // 去掉末尾的斜杠和文件名，只保留日记 ID
         let mut unique_objets: HashMap<String, ObjectInfo> = HashMap::new();
         for object in objects {
+            // 去掉末尾不是以manifest.enc结尾的
+            if !object.filename().ends_with(MANIFEST_FILE_NAME) {
+                continue;
+            }
             if let Some(pos) = object.filename().find('/') {
                 // 提取日记 ID（使用切片）
                 let diary_id = &object.filename()[..pos];

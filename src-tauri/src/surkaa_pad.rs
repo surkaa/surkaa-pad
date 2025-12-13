@@ -141,7 +141,8 @@ impl AppState {
         client: &OssClientManager,
         store: &SecureDiaryStore,
         app_handle: Option<&AppHandle>,
-    ) -> Result<(), String> {
+        uuid: Option<String>,
+    ) -> Result<Option<DiaryManifest>, String> {
 
         // 先加载内存的
         let cache_dir = self.get_diary_cache_dir(app_handle);
@@ -152,6 +153,17 @@ impl AppState {
         for entry in local_entries {
             let entry = entry.map_err(|e| format!("读取目录项失败: {}", e))?;
             let path = entry.path();
+
+            // 如果uuid不为空，则跳过不匹配的文件
+            if let Some(ref filter_uuid) = uuid {
+                let filename = path.file_stem().unwrap().to_str().unwrap();
+                let (file_uuid, _) = filename
+                    .rsplit_once('_')
+                    .ok_or_else(|| format!("无效的缓存文件名格式: {}", filename))?;
+                if file_uuid != filter_uuid {
+                    continue;
+                }
+            }
 
             if path.extension().and_then(|s| s.to_str()) == Some("enc") {
                 let filename = path.file_stem().unwrap().to_str().unwrap();
@@ -169,7 +181,7 @@ impl AppState {
         }
         // 获取远程列表
         let remote_diaries_map: HashMap<String, String> = store
-            .list_diaries(client)
+            .list_diaries(client, &uuid)
             .await?
             .iter()
             .map(|(uuid, diary)| (uuid.clone(), diary.etag().to_string()))
@@ -180,6 +192,7 @@ impl AppState {
         );
         // 对比本地和远程的 UUID 和 ETag
         for (uuid, remote_etag) in remote_diaries_map.iter() {
+            log::info!("处理远程日记 UUID: {}, ETag: {}", uuid, remote_etag);
             // 如果本地有对应一样的ETag，就跳过下载
             let local_etags = local_uuid_for_etags.get(uuid).cloned().unwrap_or_default();
             if !local_etags.contains(remote_etag) {
@@ -240,7 +253,13 @@ impl AppState {
             }
         }
 
-        Ok(())
+        // 返回指定 UUID 的 Manifest（如果有的话）
+        if let Some(filter_uuid) = uuid {
+            let map = cache.diaries.lock().await;
+            Ok(map.get(&filter_uuid).cloned())
+        } else {
+            Ok(None)
+        }
     }
 
     async fn remove_file(&self, path: &PathBuf) -> Result<(), String> {

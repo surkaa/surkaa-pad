@@ -6,8 +6,7 @@ mod ali_oss_tests {
     use surkaa_pad_lib::oss_client_manager::OssClientManager;
     use tokio;
 
-    #[tokio::test]
-    async fn test_oss_manager_list_objects() {
+    async fn get_initialized_oss_manager() -> OssClientManager {
         let oss = OssClientManager::default();
         dotenvy::dotenv().ok();
         let key = env::var("ALIYUN_KEY").expect("ALIYUN_KEY 环境变量未设置");
@@ -19,11 +18,28 @@ mod ali_oss_tests {
         oss.initialize(&key, &secret, &endpoint, &bucket_name)
             .await
             .expect("Failed to initialize OSS client");
+        oss
+    }
+
+    #[tokio::test]
+    async fn test_oss_manager_list_objects() {
+        let oss = get_initialized_oss_manager().await;
+
         let objects = oss
             .list_objects("test")
             .await
             .expect("Failed to list objects");
         println!("Objects: {:?}", objects);
+    }
+
+    #[tokio::test]
+    async fn test_oss_manager_get_single() {
+        let oss = get_initialized_oss_manager().await;
+
+        let test_diary= oss.list_objects("cf4521cc-3d85-45b5-90f8-7716ad63e1e8/")
+            .await
+            .expect("Failed to list objects");
+        println!("Objects: {:?}", test_diary);
     }
 
     fn init_oss_client(ep: EndPoint) -> Result<Arc<Client>, String> {

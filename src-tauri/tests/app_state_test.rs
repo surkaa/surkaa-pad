@@ -57,7 +57,7 @@ mod app_state_test {
         assert!(cur_diaries.is_empty());
 
         state
-            .sync_from_oss(&cache, &encryption, &oss, &store, None)
+            .sync_from_oss(&cache, &encryption, &oss, &store, None, None)
             .await
             .expect("Failed to sync from OSS");
 
@@ -112,7 +112,7 @@ mod app_state_test {
         let app_state = AppState {};
         let cache = DiaryMemoryCache::new();
 
-        app_state.sync_from_oss(&cache, &e, &c, &store, None).await.expect("未能同步日记");
+        app_state.sync_from_oss(&cache, &e, &c, &store, None, None).await.expect("未能同步日记");
 
         let diaries = app_state
             .list_cached_diaries(&cache)

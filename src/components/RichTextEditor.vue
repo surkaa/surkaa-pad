@@ -3,7 +3,7 @@
 // 渲染内容文本（包括媒体文件）
 import {DiaryManifest} from "../types";
 import {computed, onMounted, onUnmounted, ref, watch} from "vue";
-import {convertFilename2URL} from "../utils/convertFilename2URL.ts";
+import {convertFilename2URL} from "../utils";
 import {useAppStore} from "../stores/app.ts";
 
 const appStore = useAppStore();

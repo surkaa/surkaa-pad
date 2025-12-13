@@ -112,9 +112,9 @@ async fn list_local_diaries(
 
 /// 从 OSS 同步日记到本地缓存
 /// # Arguments
-/// 无需手动传参数
+/// * `uuid` - 可选的日记 UUID，若提供则只同步该日记，否则同步所有日记
 /// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+/// * `Result<Option<DiaryManifest>, String>` - 如果传入了 UUID，成功时返回该日记的清单，否则返回 None；失败时返回错误信息
 #[tauri::command]
 async fn sync_from_oss(
     cache: State<'_, DiaryMemoryCache>,
@@ -123,7 +123,8 @@ async fn sync_from_oss(
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
-) -> Result<(), String> {
+    uuid: Option<String>,
+) -> Result<Option<DiaryManifest>, String> {
     app_state
         .sync_from_oss(
             cache.deref(),
@@ -131,6 +132,7 @@ async fn sync_from_oss(
             client.deref(),
             store.deref(),
             Some(&app_handle),
+            uuid,
         )
         .await
 }
