@@ -493,6 +493,7 @@ impl SecureDiaryStore {
                 })
                 .unwrap();
 
+            // TODO 存的是明文附件，可能有风险，但是目前这点就先不管了，如果存密文的话，打开反而更麻烦
             if let Err(e) = temp_file.write_all(&decrypted_data).await {
                 let message = format!("无法写入临时文件 {}: {}", temp_path_clone.display(), e);
                 log::error!("{}", message.clone());
