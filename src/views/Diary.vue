@@ -112,7 +112,10 @@ function triggerAddVideo() {
 }
 
 const contentLen = computed(() => {
-  return diary.value.content ? diary.value.content.length : 0;
+  // 去除掉<<tag:filename>>标记、换行、空格后的纯文本长度
+  if (!diary.value.content) return 0;
+  const textOnly = diary.value.content.replace(/<<[A-Z]{3}:[^>]+>>/g, '').replace(/\s+/g, '');
+  return textOnly.length;
 });
 
 function toggleMode() {
