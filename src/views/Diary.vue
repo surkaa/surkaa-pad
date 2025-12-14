@@ -622,7 +622,7 @@ onMounted(async () => {
     justify-content: space-between;
     align-items: center;
     padding: 0 20px;
-    background-color: var(--pad-bg-color-200);
+    background-color: var(--pad-bg-color-100);
     border-bottom: 1px solid var(--pad-border-color-200);
     gap: 16px;
     flex-shrink: 0;
