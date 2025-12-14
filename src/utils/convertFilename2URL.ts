@@ -1,10 +1,34 @@
 import {Channel, invoke} from "@tauri-apps/api/core";
-import {open, remove} from "@tauri-apps/plugin-fs";
+import {open} from "@tauri-apps/plugin-fs";
 import {DownloadAttachmentEvent} from "../types";
 
 type NullableFn = (() => void) | null;
 
 const cancelMap: Map<string, NullableFn> = new Map();
+const cacheFileMap: Map<string, string> = new Map();
+
+/**
+ * 通过 eid 读取缓存的文件并转成 URL
+ * @param eid      element id
+ * @param mimetype mimetype
+ * @returns         数据 URL
+ */
+export async function readCacheFile2UrlByEid(eid: string, mimetype: string) {
+    const filePath = cacheFileMap.get(eid);
+    if (!filePath) {
+        throw new Error(`[readCacheFile2URL] 未找到缓存的文件路径，eid: ${eid}`);
+    }
+    // 创建数据URL
+    const fileHandle = await open(filePath, {
+        read: true,
+    });
+    const stat = await fileHandle.stat();
+    const buffer = new ArrayBuffer(stat.size);
+    await fileHandle.read(new Uint8Array(buffer));
+    await fileHandle.close();
+    const blob = new Blob([buffer], {type: mimetype || 'application/octet-stream'});
+    return URL.createObjectURL(blob);
+}
 
 /**
  * 将日记中的附件文件名转成可用的 URL 地址
@@ -44,7 +68,7 @@ export function convertFilename2URL(
     let totalMB = 0;
     let decryptedMB = 0;
     onEvent.onmessage = async msg => {
-        console.log('[ConvertFilename2URL] onmessage', msg);
+        // console.log('[ConvertFilename2URL] onmessage', msg);
         switch (msg.event) {
             case "started":
                 totalMB = msg.data.totalSize >> 20;
@@ -55,7 +79,7 @@ export function convertFilename2URL(
                 break;
             case "downloadProgress":
                 const downloadedMB = msg.data.downloaded >> 20;
-                emit(`下载中...  ${downloadedMB}MB / ${totalMB}MB`);
+                emit(`⏳ ${downloadedMB}MB / ${totalMB}MB`);
                 break;
             case "decrypting":
                 console.log(`[ConvertFilename2URL] 附件 ${eid} 开始解密`);
@@ -69,19 +93,9 @@ export function convertFilename2URL(
             case "completed":
                 console.log(`[ConvertFilename2URL] 附件 ${eid} 下载解密完成，文件路径 ${msg.data.filePath}`);
                 emit(`装载中... ${decryptedMB}MB / ${totalMB}MB...`);
-                // 创建数据URL
-                const fileHandle = await open(msg.data.filePath, {
-                    read: true,
-                });
-                const stat = await fileHandle.stat();
-                const buffer = new ArrayBuffer(stat.size);
-                await fileHandle.read(new Uint8Array(buffer));
-                await fileHandle.close();
-                const blob = new Blob([buffer], {type: mimetype || 'application/octet-stream'});
-                const dataUrl = URL.createObjectURL(blob);
-                // 删除临时文件
-                await remove(msg.data.filePath);
-                urlCallback(dataUrl);
+                cacheFileMap.set(eid, msg.data.filePath);
+                const url = await readCacheFile2UrlByEid(eid, mimetype);
+                urlCallback(url);
                 break;
             case "error":
                 console.error(`[ConvertFilename2URL] 附件 ${eid} 下载并解密过程中出错：${msg.data.message}`);
