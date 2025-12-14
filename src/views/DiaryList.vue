@@ -16,12 +16,17 @@ const watcher = ref<WatchHandle | null>(null);
 
 const MAX_DIARY_PREVIEW_LENGTH = 10;
 const filteredDiaries = computed<DiaryManifest[]>(() => {
-  let result = diaries.value;
-  if (matchIds.value.size > 0) {
-    result = diaries.value.filter(diary => matchIds.value.has(diary.id));
+  if (matchIds.value.size === 0 && appStore.keyword.trim() !== '') {
+    // 有搜索词但无匹配，返回空列表
+    return [];
   }
-  // 默认按创建时间倒序排列 (最新的在上面)
-  return result.slice().sort((a, b) => b.created - a.created);
+  return diaries.value.filter(diary => {
+    // 如果有搜索词，则只显示匹配的日记
+    if (appStore.keyword.trim() !== '') {
+      return matchIds.value.has(diary.id);
+    }
+    return true; // 无搜索词，显示所有
+  }).sort((a, b) => b.created - a.created); // 按创建时间降序排列
 });
 const scrollContainer = ref<HTMLElement | null>(null);
 
