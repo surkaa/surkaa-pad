@@ -8,7 +8,7 @@ interface ToastOptions {
     icon?: boolean;
 }
 
-const DEFAULT_POSITION = 'bottom-center';
+const DEFAULT_POSITION = 'top-center';
 
 let activeToasts: Array<{toast: HTMLDivElement; timeoutId: number | null}> = [];
 
