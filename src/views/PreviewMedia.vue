@@ -398,7 +398,7 @@ onUnmounted(removeEventListeners);
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: var(--pad-shadow-color-500);
+    background: linear-gradient(135deg, var(--pad-border-color-500) 0%, var(--pad-border-color-300) 100%);
     backdrop-filter: blur(4px);
     opacity: 0.95;
     transition: opacity var(--pad-transition-base);
