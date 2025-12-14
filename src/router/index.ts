@@ -1,7 +1,7 @@
 import {createRouter, createWebHashHistory, type RouteRecordRaw} from "vue-router";
 import Unlock from "../views/unlock/Unlock.vue";
 import DiaryList from "../views/diary-list/DiaryList.vue";
-import Diary from "../views/Diary.vue";
+import Diary from "../views/diary/Diary.vue";
 import PreviewMedia from "../views/PreviewMedia.vue";
 
 const routes: RouteRecordRaw[] = [{
