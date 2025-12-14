@@ -1,5 +1,5 @@
 import {createRouter, createWebHashHistory, type RouteRecordRaw} from "vue-router";
-import Unlock from "../views/Unlock.vue";
+import Unlock from "../views/unlock/Unlock.vue";
 import DiaryList from "../views/DiaryList.vue";
 import Diary from "../views/Diary.vue";
 import PreviewMedia from "../views/PreviewMedia.vue";
