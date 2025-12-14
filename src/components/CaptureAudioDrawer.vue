@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { showToast } from "../utils/toast.ts";
+import {setWebmDuration, showToast} from "../utils";
 import { onUnmounted, ref, computed } from "vue";
 
 let mediaRecorder: MediaRecorder | null = null;
@@ -98,7 +98,10 @@ async function stopRecording() {
     return;
   }
   mediaRecorder.stop();
-  const audioBlob = new Blob(audioChunks, { type: MINE_TYPE });
+
+  let audioBlob = new Blob(audioChunks, { type: MINE_TYPE });
+  const newWebmBuffer = setWebmDuration(await audioBlob.arrayBuffer(), Date.now() - startTime);
+  audioBlob = new Blob([newWebmBuffer], { type: MINE_TYPE });
 
   // 重置音频数据
   audioChunks = [];
