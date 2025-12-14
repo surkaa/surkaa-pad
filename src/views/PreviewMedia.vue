@@ -5,7 +5,7 @@ import { useRouter } from "vue-router";
 
 const router = useRouter();
 const loading = ref(false);
-const url = ref('https://www.bing.com/th?id=OHR.TuftedTitmouse_ZH-CN4154825372_UHD.jpg');
+const url = ref('');
 const imageRef = ref<HTMLImageElement | null>(null);
 const containerRef = ref<HTMLElement | null>(null);
 
