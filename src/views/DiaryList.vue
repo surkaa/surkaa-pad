@@ -6,6 +6,7 @@ import {onBeforeRouteLeave, useRouter} from "vue-router";
 import {formatBytes, formatTimestamp, getCurEmoji} from "../utils";
 import {showToast} from "../utils";
 import {invoke} from "@tauri-apps/api/core";
+import {debounce} from "../utils";
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -13,7 +14,7 @@ const diaries = ref<DiaryManifest[]>([]);
 const matchIds = ref<Set<string>>(new Set());
 const isSyncing = ref(false); // 新增同步状态Loading
 const watcher = ref<WatchHandle | null>(null);
-
+const scrollContainer = ref<HTMLElement | null>(null);
 const filteredDiaries = computed<DiaryManifest[]>(() => {
   if (matchIds.value.size === 0 && appStore.keyword.trim() !== '') {
     // 有搜索词但无匹配，返回空列表
@@ -27,6 +28,10 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
     return true; // 无搜索词，显示所有
   }).sort((a, b) => b.created - a.created); // 按创建时间降序排列
 });
+// 防抖搜索函数
+const debouncedSearch = debounce((term: string) => {
+  performSearch(term);
+}, 300);
 
 // 日记统计信息
 const diaryStats = computed(() => {
@@ -48,7 +53,7 @@ const diaryStats = computed(() => {
 });
 
 // 格式化附件信息
-const getAttachmentInfo = (attachments: AttachmentMeta[]) => {
+function getAttachmentInfo(attachments: AttachmentMeta[]) {
   if (!attachments || attachments.length === 0) return null;
 
   const totalSize = attachments.reduce((sum, att) => sum + (att.size || 0), 0);
@@ -61,9 +66,15 @@ const getAttachmentInfo = (attachments: AttachmentMeta[]) => {
     imageCount,
     otherCount
   };
-};
+}
 
-const scrollContainer = ref<HTMLElement | null>(null);
+async function performSearch(term: string) {
+  const matchIdArr = await appStore.searchWithKeyword(term);
+  matchIds.value = new Set(matchIdArr);
+  showToast('找到 ' + matchIdArr.length + ' 条相关日记', 'success', 1000, {
+    position: 'top-center',
+  });
+}
 
 function loadLocalDiaries() {
   invoke<DiaryManifest[]>('list_local_diaries').then(remoteDiaries => {
@@ -140,15 +151,15 @@ onMounted(() => {
     return;
   }
   watcher.value = watch(() => appStore.keyword, async (term) => {
-    console.log(`Searching for term: ${term}`);
-    // 如果搜索词为空，清空匹配集，显示所有
+    // 立即清空搜索（不等待防抖）
     if (!term.trim()) {
       matchIds.value = new Set();
+      debouncedSearch.cancel(); // 取消待执行的搜索
       return;
     }
-    const matchIdArr = await appStore.searchWithKeyword(term);
-    matchIds.value = new Set(matchIdArr);
-    showToast('找到 ' + matchIdArr.length + ' 条相关日记', 'success', 1000);
+
+    // 使用防抖搜索
+    debouncedSearch(term);
   }, {
     immediate: true
   });
@@ -159,6 +170,7 @@ onUnmounted(() => {
   if (watcher.value) {
     watcher.value.stop();
   }
+  debouncedSearch.cancel();
 });
 </script>
 
