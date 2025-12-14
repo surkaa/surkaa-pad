@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::async_runtime::{spawn, JoinHandle};
 use tauri::ipc::Channel;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::log;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 const MANIFEST_FILE_NAME: &str = "manifest.enc";
@@ -370,7 +370,7 @@ impl SecureDiaryStore {
     }
 
     /// 下载指定日记的指定附件 下载完成后emit attachment_downloaded返回eid
-    pub async fn download_attachment(
+    pub fn download_attachment(
         &self,
         encryption: &EncryptionManager,
         client: &OssClientManager,
@@ -448,7 +448,9 @@ impl SecureDiaryStore {
                     let _ = event.send(DownloadAttachmentEvent::Error { message });
 
                     // 任务结束：无论是成功 (Ok) 还是错误 (Err)，都需要清除句柄
-                    let mut handle_guard = handle_map_clone.lock().await;
+                    let mut handle_guard = handle_map_clone.lock()
+                        .map_err(|_| "Failed to acquire lock (poisoned)")
+                        .unwrap();
                     handle_guard.remove(&eid);
                     return;
                 }
@@ -492,12 +494,15 @@ impl SecureDiaryStore {
             }
 
             // 任务结束：无论是成功 (Ok) 还是错误 (Err)，都需要清除句柄
-            let mut handle_guard = handle_map_clone.lock().await;
+            let mut handle_guard = handle_map_clone.lock()
+                .map_err(|_| "Failed to acquire lock (poisoned)")
+                .unwrap();
             handle_guard.remove(&eid);
         });
 
         // 2. 将新的 JoinHandle 存储到 HashMap 中
-        let mut handle_guard = self.download_handles.lock().await;
+        let mut handle_guard = self.download_handles.lock()
+            .map_err(|_| "Failed to acquire lock (poisoned)")?;
 
         // 如果该 eid 已存在，先取消旧任务 (防止重复下载冲突)
         if let Some(old_handle) = handle_guard.remove(&eid_clone) {
@@ -511,9 +516,10 @@ impl SecureDiaryStore {
     }
 
     /// 根据 eid 取消对应的下载任务。
-    pub async fn cancel_download(&self, eid: &str) -> Result<bool, String> {
+    pub fn cancel_download(&self, eid: &str) -> Result<bool, String> {
         // 1. 获取 HashMap 的可变锁
-        let mut handle_guard = self.download_handles.lock().await;
+        let mut handle_guard = self.download_handles.lock()
+            .map_err(|_| "Failed to acquire lock (poisoned)")?;
 
         // 2. 尝试从 HashMap 中取出并移除该 eid 对应的句柄
         if let Some(handle) = handle_guard.remove(eid) {

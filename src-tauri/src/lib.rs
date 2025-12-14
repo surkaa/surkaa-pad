@@ -286,7 +286,7 @@ async fn add_attachment(
 /// # Returns
 /// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
 #[tauri::command]
-async fn download_attachment(
+fn download_attachment(
     encryption: State<'_, EncryptionManager>,
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
@@ -309,7 +309,8 @@ async fn download_attachment(
             filename,
             nonce,
             eid,
-        ).await
+        )
+        .map_err(|e| format!("下载附件失败: {}", e))
 }
 
 /// 取消下载附件 用于附件太大还未下载完成时 页面就退出了
@@ -318,14 +319,12 @@ async fn download_attachment(
 /// # Returns
 /// * `Result<bool, String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
-async fn cancel_download_attachment(
+fn cancel_download_attachment(
     store: State<'_, SecureDiaryStore>,
     eid: &str,
 ) -> Result<bool, String> {
-    store.cancel_download(eid).await
+    store.cancel_download(eid)
 }
-
-
 
 /// 删除附件
 /// # Arguments
