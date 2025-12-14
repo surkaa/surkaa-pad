@@ -3,3 +3,4 @@ export * from "./saveAttachment.ts";
 export * from "./time.ts";
 export * from "./toast.ts";
 export * from "../directives/vClickOutside.ts";
+export * from "./timeEmoji.ts";

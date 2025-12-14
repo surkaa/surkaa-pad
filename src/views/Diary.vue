@@ -3,7 +3,7 @@ import {computed, onMounted, ref, watch} from "vue";
 import {DiaryManifest} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
-import {formatTimestamp} from "../utils";
+import {formatTimestamp, getCurEmoji} from "../utils";
 import {showToast} from "../utils";
 import RichTextEditor from "../components/RichTextEditor.vue";
 import {saveAttachment} from "../utils";
@@ -55,27 +55,7 @@ const statusMsg = computed(() => {
   return mode.value === 'edit' ? '编辑模式' : renderMsg.value;
 });
 const cursorPosition = ref(0);
-const timeEmojiMap = [
-  '🕐',
-  '🕑',
-  '🕒',
-  '🕓',
-  '🕔',
-  '🕕',
-  '🕖',
-  '🕗',
-  '🕘',
-  '🕙',
-  '🕚',
-  '🕛'
-];
 const lastSavedContent = ref("");
-
-function getCurEmoji() {
-  const date = new Date();
-  const hour = date.getHours() % 12;
-  return timeEmojiMap[hour];
-}
 
 function toggleMediaMenu() {
   // 切换菜单显示状态
