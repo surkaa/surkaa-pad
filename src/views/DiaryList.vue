@@ -296,20 +296,19 @@ onUnmounted(() => {
 
             <div class="card-footer">
               <div class="meta-info">
+                <span class="meta-item diary-id" :title="diary.id">
+                  <span class="meta-icon">🆔</span>
+                  <span class="meta-text">{{ diary.id.substring(0, 8) }}</span>
+                </span>
                 <span class="meta-item" v-if="getAttachmentInfo(diary.attachments)">
                   <span class="meta-icon">📦</span>
                   <span class="meta-text">
                     {{ getAttachmentInfo(diary.attachments)!.count }} 个附件
                     <span class="meta-detail">{{ formatBytes(getAttachmentInfo(diary.attachments)?.totalSize) }}</span>
                     <span class="meta-detail" v-if="getAttachmentInfo(diary.attachments)!.imageCount > 0">
-                      ({{ getAttachmentInfo(diary.attachments)!.imageCount }} 张图片)
+                      ( {{ getAttachmentInfo(diary.attachments)!.imageCount }} 张图片)
                     </span>
                   </span>
-                </span>
-
-                <span class="meta-item diary-id" :title="diary.id">
-                  <span class="meta-icon">🆔</span>
-                  <span class="meta-text">{{ diary.id.substring(0, 8) }}</span>
                 </span>
               </div>
 
