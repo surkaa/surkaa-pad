@@ -376,7 +376,6 @@ onUnmounted(() => {
 
   .app-header {
     background-color: var(--pad-bg-color-100);
-    border-bottom: 1px solid var(--pad-border-color-100);
     padding: 16px 24px 12px;
     flex-shrink: 0;
 
@@ -455,7 +454,7 @@ onUnmounted(() => {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    padding: 0 24px;
+    padding: 0;
   }
 
   .action-bar {
@@ -463,8 +462,9 @@ onUnmounted(() => {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 0;
+    padding: 4px 24px 8px 24px;
     flex-shrink: 0;
+    border-bottom: 1px solid var(--pad-border-color-300);
 
     .search-container {
       flex: 1;
@@ -544,7 +544,7 @@ onUnmounted(() => {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-bottom: 100px;
+    padding: 0 24px 100px 24px;
 
     // 滚动条样式
     &::-webkit-scrollbar {
@@ -611,7 +611,7 @@ onUnmounted(() => {
       padding: 20px;
       cursor: pointer;
       transition: all var(--pad-transition-base);
-      box-shadow: var(--pad-shadow-sm);
+      box-shadow: var(--pad-shadow-md);
 
       &:hover {
         transform: translateY(-2px);
@@ -909,10 +909,6 @@ onUnmounted(() => {
           }
         }
       }
-    }
-
-    .main-content {
-      padding: 0 16px;
     }
 
     .action-bar {
