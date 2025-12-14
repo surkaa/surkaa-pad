@@ -1,0 +1,214 @@
+.toast-container {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--toast-spacing);
+    max-width: min(90vw, 400px);
+}
+
+/* 位置调整 */
+.top-center-toast-container {
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    align-items: center;
+}
+
+.top-right-toast-container {
+    top: 24px;
+    right: 24px;
+    align-items: flex-end;
+}
+
+.top-left-toast-container {
+    top: 24px;
+    left: 24px;
+    align-items: flex-start;
+}
+
+.bottom-center-toast-container {
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    align-items: center;
+}
+
+.bottom-right-toast-container {
+    bottom: 24px;
+    right: 24px;
+    align-items: flex-end;
+}
+
+.bottom-left-toast-container {
+    bottom: 24px;
+    left: 24px;
+    align-items: flex-start;
+}
+
+/* Toast 项目 */
+.toast {
+    background: var(--toast-bg);
+    color: var(--toast-text);
+    padding: var(--toast-padding);
+    border-radius: var(--toast-radius);
+    box-shadow: var(--toast-shadow);
+    border-left: 4px solid var(--pad-border-color-300);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    min-width: 280px;
+    max-width: 100%;
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: all var(--toast-animation-duration) var(--pad-transition-base);
+    pointer-events: auto;
+    font-family: var(--pad-font-family);
+    font-size: 14px;
+    line-height: 1.5;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast.hide {
+    opacity: 0;
+    transform: translateY(-20px);
+}
+
+/* Toast 内容区域 */
+.toast-content {
+    display: flex;
+    align-items: flex-start;
+    flex: 1;
+    gap: 12px;
+    padding-right: 8px;
+}
+
+/* Toast 图标 */
+.toast-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.toast-icon.success {
+    color: var(--toast-success-icon);
+}
+
+.toast-icon.error {
+    color: var(--toast-error-icon);
+}
+
+.toast-icon.warning {
+    color: var(--toast-warning-icon);
+}
+
+.toast-icon.info {
+    color: var(--toast-info-icon);
+}
+
+/* Toast 消息 */
+.toast-message {
+    flex: 1;
+    word-break: break-word;
+    color: var(--toast-text);
+    font-weight: 500;
+}
+
+/* Toast 关闭按钮 */
+.toast-close {
+    background: transparent;
+    border: none;
+    color: var(--pad-text-color-400);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--pad-radius-sm);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--pad-transition-fast);
+    opacity: 0.7;
+}
+
+.toast-close:hover {
+    background: var(--pad-bg-color-300);
+    color: var(--pad-text-color-200);
+    opacity: 1;
+}
+
+.toast-close:active {
+    transform: scale(0.9);
+}
+
+/* Toast 类型样式 */
+.toast.success {
+    background: var(--toast-success-bg);
+    border-left-color: var(--toast-success-border);
+    border: 1px solid var(--pad-border-color-100);
+}
+
+.toast.success .toast-message {
+    color: var(--toast-success-text);
+}
+
+.toast.error {
+    background: var(--toast-error-bg);
+    border-left-color: var(--toast-error-border);
+    border: 1px solid var(--pad-border-color-100);
+}
+
+.toast.error .toast-message {
+    color: var(--toast-error-text);
+}
+
+.toast.warning {
+    background: var(--toast-warning-bg);
+    border-left-color: var(--toast-warning-border);
+    border: 1px solid var(--pad-border-color-100);
+}
+
+.toast.warning .toast-message {
+    color: var(--toast-warning-text);
+}
+
+.toast.info {
+    background: var(--toast-info-bg);
+    border-left-color: var(--toast-info-border);
+    border: 1px solid var(--pad-border-color-100);
+}
+
+.toast.info .toast-message {
+    color: var(--toast-info-text);
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+    .toast-container {
+        max-width: calc(100vw - 48px);
+    }
+
+    .toast {
+        min-width: unset;
+        width: 100%;
+    }
+
+    .top-right-toast-container,
+    .top-left-toast-container,
+    .bottom-right-toast-container,
+    .bottom-left-toast-container {
+        right: 16px;
+        left: 16px;
+        align-items: stretch;
+    }
+
+    .toast {
+        font-size: 13px;
+        padding: 14px 16px;
+    }
+}
