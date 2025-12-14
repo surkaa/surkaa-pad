@@ -41,6 +41,9 @@ const innerHTML = computed(() => {
     if (el) {
       console.log('元素已存在，直接复用，跳过URL转换');
       // 复制
+      if (tag === 'IMG') {
+        el.addEventListener('click', () => emit('request:previewMedia', eid, a.mimetype));
+      }
       return el.outerHTML;
     }
     // 请求将文件名转换为URL
@@ -110,6 +113,8 @@ onUnmounted(() => {
     if (el.src) {
       URL.revokeObjectURL(el.src);
     }
+    // 移除点击事件监听器
+    el.replaceWith(el.cloneNode(true));
   })
 });
 </script>
