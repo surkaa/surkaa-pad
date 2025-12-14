@@ -1,10 +1,28 @@
 <script setup lang="ts">
+import {useAppStore} from "../../stores/app.ts";
+
 defineProps<{
   keyword: string;
   isSyncing: boolean;
 }>();
 
 defineEmits(['update:keyword', 'sync']);
+
+const appStore = useAppStore();
+
+function toggleTheme() {
+  switch (appStore.theme) {
+    case "system":
+      appStore.setTheme("light");
+      break;
+    case "light":
+      appStore.setTheme("dark");
+      break;
+    case "dark":
+      appStore.setTheme("system");
+      break;
+  }
+}
 </script>
 
 <template>
@@ -31,6 +49,17 @@ defineEmits(['update:keyword', 'sync']);
         <span class="btn-icon" v-if="isSyncing">⏳</span>
         <span class="btn-icon" v-else>☁️</span>
         <span class="btn-text">同步</span>
+      </button>
+      <button
+          class="toggle-theme-btn"
+          @click="toggleTheme"
+      >
+        <span class="btn-icon">
+          <template v-if="appStore.theme === 'system'">🖥️</template>
+          <template v-else-if="appStore.theme === 'light'">🌞</template>
+          <template v-else>🌜</template>
+        </span>
+        <span class="btn-text">切换主题</span>
       </button>
     </div>
   </div>
@@ -79,8 +108,12 @@ defineEmits(['update:keyword', 'sync']);
   }
 
   .action-buttons {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+
     .sync-btn {
-      width: 100px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -111,6 +144,32 @@ defineEmits(['update:keyword', 'sync']);
 
       .btn-icon {
         font-size: 16px;
+      }
+
+      .btn-text {
+        font-weight: 500;
+      }
+    }
+
+    .toggle-theme-btn {
+      padding: 10px 16px;
+      background-color: var(--pad-bg-color-200);
+      border: 1px solid var(--pad-border-color-200);
+      border-radius: var(--pad-radius-lg);
+      color: var(--pad-text-color-200);
+      font-size: 14px;
+      cursor: pointer;
+      transition: all var(--pad-transition-fast);
+
+      &:hover {
+        background-color: var(--pad-bg-color-300);
+        color: var(--pad-text-color-100);
+        border-color: var(--pad-border-color-300);
+        transform: translateY(-1px);
+      }
+
+      &:active {
+        transform: translateY(0);
       }
 
       .btn-text {

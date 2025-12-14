@@ -1,7 +1,7 @@
 // --- 常量 ---
 import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
-import {OssConfigType} from "../types";
+import {OssConfigType, ThemeType} from "../types";
 import {invoke} from "@tauri-apps/api/core";
 import {markRaw, ref} from "vue";
 import {window} from "@tauri-apps/api";
@@ -10,6 +10,8 @@ import {showToast} from "../utils";
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
 const SALE = 'NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg';
+const THEME_KEY = 'app-theme';
+const DEFAULT_THEME: ThemeType = 'system';
 // 解锁后1小时自动关闭应用
 const AUTO_CLOSE_APP_TIMEOUT = 60 * 60 * 1000;
 // 时间到时剩余操作时间
@@ -19,15 +21,29 @@ export const useAppStore = defineStore('app', () => {
     let store = ref<Store | null>(null);
     const keyword = ref<string>('');
     const savedScrollPosition = ref(0);
+    const theme = ref<ThemeType>('system');
 
-    async function getEncryptedConfig() {
-        if (store.value) {
-            const val = await store.value.get<number[]>(CONFIG_KEY);
-            if (!val) return null;
-            return val;
-        }
+    function setTheme(t: ThemeType, save = true) {
+        theme.value = t;
+        save && saveNormalConfig(THEME_KEY, t).then();
+    }
+
+    async function initStore() {
+        if (store.value) return;
         const s = await Store.load(CONFIG_FILENAME);
         store.value = markRaw(s);
+        const theme = await getNormalConfig<ThemeType>(THEME_KEY);
+        if (theme) {
+            setTheme(theme, false);
+        } else {
+            setTheme(DEFAULT_THEME);
+        }
+    }
+
+    async function getEncryptedConfig() {
+        if (!store.value) {
+            throw new Error('Store 未初始化');
+        }
         const val = await store.value.get<number[]>(CONFIG_KEY);
         if (!val) return null;
         return val;
@@ -59,6 +75,24 @@ export const useAppStore = defineStore('app', () => {
         // 保存加密后的配置
         await store.value.set(CONFIG_KEY, encryptedConfig);
         await store.value.save();
+    }
+
+    async function saveNormalConfig(key: string, value: any) {
+        // 避免store为空
+        if (!store.value) {
+            throw new Error('Store 未初始化');
+        }
+        await store.value.set(key, value);
+        await store.value.save();
+    }
+
+    async function getNormalConfig<T>(key: string): Promise<T | null> {
+        if (!store.value) {
+            throw new Error('Store 未初始化');
+        }
+        const val = await store.value.get<T>(key);
+        if (!val) return null;
+        return val;
     }
 
     async function unlock(masterPassword: string) {
@@ -109,7 +143,7 @@ export const useAppStore = defineStore('app', () => {
 
     return {
         // 数据
-        keyword, savedScrollPosition,
+        keyword, savedScrollPosition, theme,
         // 方法
         getEncryptedConfig,
         unlock,
@@ -117,6 +151,8 @@ export const useAppStore = defineStore('app', () => {
         saveConfigAndLogin,
         resetConfig,
         searchWithKeyword,
-        setTimeoutForCloseApp
+        setTimeoutForCloseApp,
+        setTheme,
+        initStore,
     }
-})
+});

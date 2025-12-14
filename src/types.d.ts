@@ -55,3 +55,5 @@ export type DownloadAttachmentEvent = {
         message: string;
     }
 }
+
+export type ThemeType = 'light' | 'dark' | 'system';
