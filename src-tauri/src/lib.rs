@@ -1,8 +1,10 @@
+pub mod cache_file_manager;
 pub mod encryption_manager;
 pub mod oss_client_manager;
 pub mod secure_diary_store;
 pub mod surkaa_pad;
 
+use crate::cache_file_manager::CacheFileManager;
 use crate::encryption_manager::EncryptionManager;
 use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, DownloadAttachmentEvent, SecureDiaryStore};
@@ -11,10 +13,9 @@ use std::fs::{read, remove_file};
 use std::ops::Deref;
 use tauri::ipc::Channel;
 use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, WindowEvent};
 use tauri_plugin_log::{log, Target, TargetKind};
 use tauri_plugin_store::Builder;
-
 //------------
 // 解锁与加密解密 以及初始化云端存储客户端
 //------------
@@ -291,6 +292,7 @@ fn download_attachment(
     client: State<'_, OssClientManager>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
+    cfm: State<'_, CacheFileManager>,
     app_handle: AppHandle,
     on_event: Channel<DownloadAttachmentEvent>,
     uuid: String,
@@ -298,7 +300,7 @@ fn download_attachment(
     nonce: Vec<u8>,
     eid: String,
 ) -> Result<(), String> {
-    store
+    let attachment_cache = store
         .download_attachment(
             encryption.deref(),
             client.deref(),
@@ -310,7 +312,9 @@ fn download_attachment(
             nonce,
             eid,
         )
-        .map_err(|e| format!("下载附件失败: {}", e))
+        .map_err(|e| format!("下载附件失败: {}", e))?;
+
+    cfm.add_cache_file(attachment_cache)
 }
 
 /// 取消下载附件 用于附件太大还未下载完成时 页面就退出了
@@ -383,6 +387,44 @@ pub fn run() {
             app.manage(SecureDiaryStore::default());
             app.manage(DiaryMemoryCache::new());
             app.manage(AppState::default());
+            let cfm = CacheFileManager::new();
+            app.manage(cfm.clone());
+
+            let main_window = app.get_webview_window("main").unwrap();
+
+            // 监听窗口关闭事件
+            main_window.on_window_event(move |event| {
+                match event {
+                    WindowEvent::CloseRequested { .. } => {
+                        // 在异步运行时中执行清理操作
+                        let files = cfm.get_cache_files().unwrap_or_default();
+                        log::info!(
+                            "请求关闭窗口, 将开始清理缓存文件, 共计 {} 个文件",
+                            files.len()
+                        );
+                        for file_path in files {
+                            if !file_path.exists() {
+                                log::warn!("缓存文件不存在，跳过删除: {:?}", file_path);
+                                continue;
+                            }
+
+                            // 删除缓存文件
+                            match remove_file(&file_path) {
+                                Ok(_) => log::info!("已删除缓存文件: {:?}", file_path),
+                                Err(e) => {
+                                    log::error!("删除缓存文件时出错 {:?}: {}", file_path, e);
+                                }
+                            }
+                        }
+                    }
+                    WindowEvent::Destroyed => {
+                        // 窗口已销毁
+                        log::info!("Window destroyed");
+                    }
+                    _ => {}
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

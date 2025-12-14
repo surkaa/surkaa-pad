@@ -6,7 +6,7 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::async_runtime::{spawn, JoinHandle};
 use tauri::ipc::Channel;
@@ -381,11 +381,34 @@ impl SecureDiaryStore {
         filename: String,
         nonce: Vec<u8>,
         eid: String,
-    ) -> Result<(), String> {
+    ) -> Result<PathBuf, String> {
+        // 先检查有没有本地缓存，有的话直接返回缓存路径
+        let temp_path = app_handle
+            .path()
+            .resolve(&filename, BaseDirectory::Temp)
+            .unwrap_or_else(|e| {
+                log::error!(
+                        "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
+                        e
+                    );
+                app_state
+                    .get_attachment_cache_dir(Some(&app_handle))
+                    .join(&filename)
+            });
+
+        if temp_path.exists() {
+            // 直接返回缓存路径
+            log::info!("附件 {} 已存在于缓存，直接使用缓存文件。", filename);
+            let _ = event.send(DownloadAttachmentEvent::Completed {
+                file_path: temp_path.to_string_lossy().to_string(),
+            });
+            return Ok(temp_path);
+        }
+
         // 启动异步下载任务
         let em_clone = encryption.clone();
         let client_clone = client.clone();
-        let state_clone = app_state.clone();
+        let temp_path_clone = temp_path.clone();
         let attachment_key = format!("{}/{}", id, filename);
 
         // 克隆用于在任务结束时移除句柄
@@ -461,35 +484,23 @@ impl SecureDiaryStore {
             let _ = event.send(DownloadAttachmentEvent::Decrypted { decrypted_size });
 
             // 保存到临时目录下，再返回给前端临时路径
-            let temp_path = app_handle
-                .path()
-                .resolve(&filename, BaseDirectory::Temp)
-                .unwrap_or_else(|e| {
-                    log::error!(
-                        "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
-                        e
-                    );
-                    state_clone
-                        .get_attachment_cache_dir(Some(&app_handle))
-                        .join(&filename)
-                });
-            let mut temp_file = tokio::fs::File::create(&temp_path)
+            let mut temp_file = tokio::fs::File::create(&temp_path_clone)
                 .await
                 .map_err(|e| {
-                    let message = format!("无法创建临时文件 {}: {}", temp_path.display(), e);
+                    let message = format!("无法创建临时文件 {}: {}", temp_path_clone.display(), e);
                     log::error!("{}", message.clone());
                     let _ = event.send(DownloadAttachmentEvent::Error { message });
                 })
                 .unwrap();
 
             if let Err(e) = temp_file.write_all(&decrypted_data).await {
-                let message = format!("无法写入临时文件 {}: {}", temp_path.display(), e);
+                let message = format!("无法写入临时文件 {}: {}", temp_path_clone.display(), e);
                 log::error!("{}", message.clone());
                 let _ = event.send(DownloadAttachmentEvent::Error { message });
             } else {
                 // 发送完成事件
                 let _ = event.send(DownloadAttachmentEvent::Completed {
-                    file_path: temp_path.to_string_lossy().to_string(),
+                    file_path: temp_path_clone.to_string_lossy().to_string(),
                 });
             }
 
@@ -512,7 +523,7 @@ impl SecureDiaryStore {
 
         handle_guard.insert(eid_clone, handle);
 
-        Ok(())
+        Ok(temp_path)
     }
 
     /// 根据 eid 取消对应的下载任务。
