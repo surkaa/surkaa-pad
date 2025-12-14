@@ -175,10 +175,10 @@ onUnmounted(() => {
     white-space: pre-wrap;
     word-break: break-word;
     padding: 12px;
+    line-height: 1.6;
     box-sizing: border-box;
     background-color: var(--pad-bg-color-100);
     border: 1px solid var(--pad-border-color-100);
-    border-radius: var(--pad-radius-lg);
     transition: all var(--pad-transition-base);
 
     &:hover {
@@ -320,7 +320,7 @@ onUnmounted(() => {
     ::v-deep(.media-item) {
       max-width: clamp(120px, calc(100% - 20px), 600px);
       display: block;
-      margin: 1.5em auto;
+      margin: 0.5em auto;
       box-shadow: var(--pad-shadow-md);
       border-radius: var(--pad-radius-lg);
       border: 1px solid var(--pad-border-color-200);
@@ -408,13 +408,12 @@ onUnmounted(() => {
     box-sizing: border-box;
     font-family: inherit;
     font-size: inherit;
-    line-height: 1.7;
+    line-height: 1.6;
     resize: none;
     border: 1px solid var(--pad-border-color-200);
     outline: none;
     background-color: var(--pad-bg-color-100);
-    padding: 16px;
-    border-radius: var(--pad-radius-lg);
+    padding: 12px;
     color: var(--pad-text-color-100);
     transition: all var(--pad-transition-base);
 
@@ -442,8 +441,7 @@ onUnmounted(() => {
     font-size: 15px;
 
     .view {
-      padding: 12px;
-      border-radius: var(--pad-radius-md);
+      padding: 8px;
 
       &.has-media {
         padding: 16px;
@@ -469,8 +467,7 @@ onUnmounted(() => {
 
     .edit {
       /* 在移动设备上默认添加底部边距 避免软键盘弹起高度问题 */
-      padding: 12px 12px 250px;
-      border-radius: var(--pad-radius-md);
+      padding: 8px 8px 250px;
       font-size: 15px;
     }
   }
@@ -493,26 +490,6 @@ onUnmounted(() => {
 
     .edit {
       padding: 18px;
-    }
-  }
-}
-
-// 打印样式
-@media print {
-  .rich-text-editor {
-    .view {
-      border: none;
-      box-shadow: none;
-      padding: 0;
-
-      ::v-deep(.media-item) {
-        box-shadow: none;
-        border: 1px solid var(--pad-border-color-200);
-      }
-    }
-
-    .edit {
-      display: none;
     }
   }
 }
