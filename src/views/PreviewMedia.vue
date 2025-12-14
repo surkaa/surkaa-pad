@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, onUnmounted } from "vue";
+import { onMounted, ref, onUnmounted, watch } from "vue";
 import { readCacheFile2UrlByEid } from "../utils";
 import { useRouter } from "vue-router";
 
@@ -9,21 +9,49 @@ const url = ref('https://www.bing.com/th?id=OHR.TuftedTitmouse_ZH-CN4154825372_U
 const imageRef = ref<HTMLImageElement | null>(null);
 const containerRef = ref<HTMLElement | null>(null);
 
-// 缩放和拖拽状态
+// 缩放、旋转和拖拽状态
 const scale = ref(1);
+const rotation = ref(0); // 旋转角度，单位：度
 const position = ref({ x: 0, y: 0 });
 const isDragging = ref(false);
 const lastPosition = ref({ x: 0, y: 0 });
 const initialDistance = ref(0);
 const isPinching = ref(false);
-const maxScale = ref(5);
-const minScale = ref(0.5);
+const maxScale = ref(10);
+const minScale = ref(0.1);
 let animationFrameId: number | null = null;
+
+// 提示信息
+const showTip = ref(false);
+const tipMessage = ref('');
+let tipTimer: number | null = null;
+
+// 显示提示信息
+function showTipMessage(message: string, duration: number = 2000) {
+  tipMessage.value = message;
+  showTip.value = true;
+
+  if (tipTimer) {
+    clearTimeout(tipTimer);
+  }
+
+  tipTimer = window.setTimeout(() => {
+    showTip.value = false;
+  }, duration);
+}
+
+// 旋转图片（顺时针90度）
+function rotateImage() {
+  rotation.value = rotation.value + 90;
+  showTipMessage(`已旋转: ${rotation.value % 360}°`);
+}
 
 // 重置状态
 function resetTransform() {
   scale.value = 1;
+  rotation.value = 0;
   position.value = { x: 0, y: 0 };
+  showTipMessage('已重置');
 }
 
 // 检查是否在边界内
@@ -54,6 +82,7 @@ function handleWheel(event: WheelEvent) {
   }
 
   scale.value = newScale;
+  showTipMessage(`${Math.round(scale.value * 100)}%`);
 }
 
 function handleMouseDown(event: MouseEvent) {
@@ -146,7 +175,12 @@ function handleTouchMove(event: TouchEvent) {
 
     if (initialDistance.value > 0) {
       const delta = (currentDistance - initialDistance.value) * 0.01;
-      scale.value = clamp(scale.value + delta, minScale.value, maxScale.value);
+      const newScale = clamp(scale.value + delta, minScale.value, maxScale.value);
+
+      if (newScale !== scale.value) {
+        scale.value = newScale;
+        showTipMessage(`${Math.round(scale.value * 100)}%`);
+      }
 
       // 更新初始距离用于下一次计算
       initialDistance.value = currentDistance;
@@ -225,7 +259,19 @@ function removeEventListeners() {
   container.removeEventListener('touchmove', handleTouchMove);
   container.removeEventListener('touchend', handleTouchEnd);
   container.removeEventListener('touchcancel', handleTouchEnd);
+
+  // 清除定时器
+  if (tipTimer) {
+    clearTimeout(tipTimer);
+  }
 }
+
+// 监听缩放变化
+watch(scale, (newScale) => {
+  if (newScale !== 1) {
+    showTipMessage(`${Math.round(newScale * 100)}%`);
+  }
+});
 
 onMounted(() => {
   // 从state获取临时文件路径
@@ -265,7 +311,7 @@ onUnmounted(removeEventListeners);
       <button
           class="control-btn"
           @click="resetTransform"
-          :disabled="scale === 1 && position.x === 0 && position.y === 0"
+          :disabled="scale === 1 && position.x === 0 && position.y === 0 && rotation === 0"
           aria-label="重置缩放和位置"
       >
         <svg class="control-icon" viewBox="0 0 24 24">
@@ -276,30 +322,13 @@ onUnmounted(removeEventListeners);
 
       <button
           class="control-btn"
-          @click="scale = clamp(scale - 0.5, minScale, maxScale)"
-          :disabled="scale <= minScale"
-          aria-label="缩小"
+          @click="rotateImage"
+          aria-label="旋转图片"
       >
         <svg class="control-icon" viewBox="0 0 24 24">
-          <path d="M19 13H5v-2h14v2z"/>
+          <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
         </svg>
-        <span class="control-text">缩小</span>
-      </button>
-
-      <div class="scale-indicator">
-        <span class="scale-text">{{ Math.round(scale * 100) }}%</span>
-      </div>
-
-      <button
-          class="control-btn"
-          @click="scale = clamp(scale + 0.5, minScale, maxScale)"
-          :disabled="scale >= maxScale"
-          aria-label="放大"
-      >
-        <svg class="control-icon" viewBox="0 0 24 24">
-          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-        </svg>
-        <span class="control-text">放大</span>
+        <span class="control-text">旋转</span>
       </button>
 
       <button
@@ -330,12 +359,21 @@ onUnmounted(removeEventListeners);
           class="preview-image"
           :class="{ 'draggable': scale > 1 }"
           :style="{
-          transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-          cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
-        }"
+                    transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
+                    cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
+                  }"
           @load="addEventListeners"
       />
     </div>
+
+    <!-- 提示信息 -->
+    <transition name="tip-fade">
+      <div v-if="showTip" class="tip-overlay">
+        <div class="tip-content">
+          {{ tipMessage }}
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -346,7 +384,7 @@ onUnmounted(removeEventListeners);
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 3;
+  z-index: 10000;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -383,7 +421,7 @@ onUnmounted(removeEventListeners);
     border: 1px solid var(--pad-border-color-200);
     box-shadow: var(--pad-shadow-lg);
     backdrop-filter: blur(10px);
-    z-index: 2;
+    z-index: 10;
 
     @media (max-width: 768px) {
       top: calc(10px + env(safe-area-inset-top));
@@ -448,33 +486,6 @@ onUnmounted(removeEventListeners);
         }
       }
     }
-
-    .scale-indicator {
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      background-color: var(--pad-bg-color-200);
-      border: 1px solid var(--pad-border-color-100);
-      border-radius: var(--pad-radius-lg);
-      min-width: 80px;
-      justify-content: center;
-
-      .scale-text {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--pad-text-color-100);
-        font-variant-numeric: tabular-nums;
-      }
-
-      @media (max-width: 768px) {
-        min-width: 60px;
-        padding: 0 8px;
-
-        .scale-text {
-          font-size: 13px;
-        }
-      }
-    }
   }
 
   .image-container {
@@ -502,7 +513,7 @@ onUnmounted(removeEventListeners);
       flex-direction: column;
       align-items: center;
       gap: 16px;
-      z-index: 1;
+      z-index: 5;
 
       .loading-spinner {
         width: 50px;
@@ -532,11 +543,56 @@ onUnmounted(removeEventListeners);
       object-fit: contain;
       transition: transform 0.1s ease-out;
       will-change: transform;
+      transform-origin: center center; /* 确保旋转中心在图片中心 */
 
       &.draggable {
         cursor: grab;
       }
     }
+  }
+
+  /* 提示信息样式 */
+  .tip-overlay {
+    position: absolute;
+    bottom: 40px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 20;
+    pointer-events: none;
+
+    .tip-content {
+      background-color: var(--pad-bg-color-400);
+      color: var(--pad-text-color-100);
+      padding: 12px 24px;
+      border-radius: var(--pad-radius-lg);
+      font-size: 16px;
+      font-weight: 500;
+      box-shadow: var(--pad-shadow-lg);
+      border: 1px solid var(--pad-border-color-200);
+      backdrop-filter: blur(10px);
+      max-width: 80%;
+      text-align: center;
+
+      @media (max-width: 768px) {
+        font-size: 14px;
+        padding: 10px 20px;
+        bottom: 60px; /* 移动端离底部稍远一点，避免和手势冲突 */
+      }
+    }
+  }
+
+  /* 提示信息动画 */
+  .tip-fade-enter-active,
+  .tip-fade-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .tip-fade-enter-from,
+  .tip-fade-leave-to {
+    opacity: 0;
   }
 }
 </style>
