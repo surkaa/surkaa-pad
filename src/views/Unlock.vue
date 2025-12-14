@@ -4,7 +4,7 @@
       <!-- 应用标题区域 -->
       <div class="app-header">
         <h1 class="app-title">
-          <img alt="app-logo" class="app-logo" src="./../../public/app-icon.png"/>
+          <img alt="app-logo" class="app-logo" src="/app-icon.png"/>
           SurKaa Pad
         </h1>
       </div>
