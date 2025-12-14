@@ -432,7 +432,7 @@ onUnmounted(() => {
     font-size: 15px;
 
     .view {
-      padding: 6px;
+      padding: 12px;
       border-radius: var(--pad-radius-md);
 
       &.has-media {
