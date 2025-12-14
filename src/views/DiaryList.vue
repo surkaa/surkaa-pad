@@ -375,7 +375,7 @@ onUnmounted(() => {
   position: relative;
 
   .app-header {
-    background-color: var(--pad-bg-color-200);
+    background-color: var(--pad-bg-color-100);
     border-bottom: 1px solid var(--pad-border-color-100);
     padding: 16px 24px 12px;
     flex-shrink: 0;
@@ -384,7 +384,6 @@ onUnmounted(() => {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
 
       .logo-section {
         .app-title {
@@ -464,7 +463,7 @@ onUnmounted(() => {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
-    padding: 16px 0;
+    padding: 4px 0;
     flex-shrink: 0;
 
     .search-container {
@@ -871,7 +870,7 @@ onUnmounted(() => {
 @media (max-width: 512px) {
   #diary-list {
     .app-header {
-      padding: 12px 16px 8px;
+      padding: 4px 16px 8px;
 
       .header-content {
         height: 100%;

@@ -1051,12 +1051,6 @@ onMounted(async () => {
       height: 56px;
       gap: 12px;
 
-      .header-controls {
-        .history-controls {
-          display: none; // 在移动端隐藏历史控制
-        }
-      }
-
       .header-actions {
         gap: 8px;
 
