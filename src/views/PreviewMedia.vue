@@ -1,11 +1,220 @@
 <script setup lang="ts">
-import {onMounted, ref} from "vue";
-import {readCacheFile2UrlByEid, showToast} from "../utils";
-import {useRouter} from "vue-router";
+import { onMounted, ref, onUnmounted } from "vue";
+import { readCacheFile2UrlByEid } from "../utils";
+import { useRouter } from "vue-router";
 
 const router = useRouter();
 const loading = ref(false);
-const url = ref('');
+const url = ref('https://www.bing.com/th?id=OHR.TuftedTitmouse_ZH-CN4154825372_UHD.jpg');
+const imageRef = ref<HTMLImageElement | null>(null);
+const containerRef = ref<HTMLElement | null>(null);
+
+// 缩放和拖拽状态
+const scale = ref(1);
+const position = ref({ x: 0, y: 0 });
+const isDragging = ref(false);
+const lastPosition = ref({ x: 0, y: 0 });
+const initialDistance = ref(0);
+const isPinching = ref(false);
+const maxScale = ref(5);
+const minScale = ref(0.5);
+
+// 重置状态
+function resetTransform() {
+  scale.value = 1;
+  position.value = { x: 0, y: 0 };
+}
+
+// 检查是否在边界内
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+// 桌面端鼠标事件
+function handleWheel(event: WheelEvent) {
+  event.preventDefault();
+
+  const delta = event.deltaY > 0 ? -0.1 : 0.1;
+  const newScale = clamp(scale.value + delta, minScale.value, maxScale.value);
+
+  // 计算缩放中心点
+  const rect = imageRef.value?.getBoundingClientRect();
+  if (rect) {
+    const mouseX = event.clientX;
+    const mouseY = event.clientY;
+
+    // 计算相对于图片中心的偏移
+    const offsetX = (mouseX - rect.left - rect.width / 2) / scale.value;
+    const offsetY = (mouseY - rect.top - rect.height / 2) / scale.value;
+
+    // 调整位置以保持鼠标点不变
+    position.value.x += offsetX * (scale.value - newScale);
+    position.value.y += offsetY * (scale.value - newScale);
+  }
+
+  scale.value = newScale;
+}
+
+function handleMouseDown(event: MouseEvent) {
+  if (event.button !== 0) return; // 只处理左键
+
+  isDragging.value = true;
+  lastPosition.value = { x: event.clientX, y: event.clientY };
+
+  // 添加样式
+  if (imageRef.value) {
+    imageRef.value.style.cursor = 'grabbing';
+  }
+
+  event.preventDefault();
+}
+
+function handleMouseMove(event: MouseEvent) {
+  if (!isDragging.value) return;
+
+  const deltaX = event.clientX - lastPosition.value.x;
+  const deltaY = event.clientY - lastPosition.value.y;
+
+  position.value.x += deltaX;
+  position.value.y += deltaY;
+
+  lastPosition.value = { x: event.clientX, y: event.clientY };
+  event.preventDefault();
+}
+
+function handleMouseUp() {
+  isDragging.value = false;
+
+  if (imageRef.value) {
+    imageRef.value.style.cursor = scale.value > 1 ? 'grab' : 'default';
+  }
+}
+
+// 移动端触摸事件
+function handleTouchStart(event: TouchEvent) {
+  if (event.touches.length === 1) {
+    // 单指拖拽
+    isDragging.value = true;
+    lastPosition.value = {
+      x: event.touches[0].clientX,
+      y: event.touches[0].clientY
+    };
+
+    if (imageRef.value) {
+      imageRef.value.style.cursor = 'grabbing';
+    }
+  } else if (event.touches.length === 2) {
+    // 双指缩放
+    isPinching.value = true;
+    const touch1 = event.touches[0];
+    const touch2 = event.touches[1];
+
+    initialDistance.value = Math.sqrt(
+        Math.pow(touch2.clientX - touch1.clientX, 2) +
+        Math.pow(touch2.clientY - touch1.clientY, 2)
+    );
+  }
+
+  // 如果不是button则阻止默认行为
+  const target = event.target as HTMLElement;
+  if (!target.closest('.control-btn')) {
+    event.preventDefault();
+  }
+}
+
+function handleTouchMove(event: TouchEvent) {
+  if (isPinching.value && event.touches.length === 2) {
+    // 双指缩放
+    const touch1 = event.touches[0];
+    const touch2 = event.touches[1];
+
+    const currentDistance = Math.sqrt(
+        Math.pow(touch2.clientX - touch1.clientX, 2) +
+        Math.pow(touch2.clientY - touch1.clientY, 2)
+    );
+
+    if (initialDistance.value > 0) {
+      const delta = (currentDistance - initialDistance.value) * 0.01;
+      scale.value = clamp(scale.value + delta, minScale.value, maxScale.value);
+
+      // 更新初始距离用于下一次计算
+      initialDistance.value = currentDistance;
+    }
+  } else if (isDragging.value && event.touches.length === 1) {
+    // 单指拖拽
+    const deltaX = event.touches[0].clientX - lastPosition.value.x;
+    const deltaY = event.touches[0].clientY - lastPosition.value.y;
+
+    position.value.x += deltaX;
+    position.value.y += deltaY;
+
+    lastPosition.value = {
+      x: event.touches[0].clientX,
+      y: event.touches[0].clientY
+    };
+  }
+
+  event.preventDefault();
+}
+
+function handleTouchEnd(event: TouchEvent) {
+  if (event.touches.length === 0) {
+    isDragging.value = false;
+    isPinching.value = false;
+
+    if (imageRef.value) {
+      imageRef.value.style.cursor = scale.value > 1 ? 'grab' : 'default';
+    }
+  }
+
+  // 如果还剩一个手指，切换到拖拽模式
+  if (event.touches.length === 1) {
+    isPinching.value = false;
+    isDragging.value = true;
+    lastPosition.value = {
+      x: event.touches[0].clientX,
+      y: event.touches[0].clientY
+    };
+  }
+}
+
+// 添加事件监听
+function addEventListeners() {
+  if (!containerRef.value) return;
+
+  const container = containerRef.value;
+
+  // 桌面端事件
+  container.addEventListener('wheel', handleWheel, { passive: false });
+  container.addEventListener('mousedown', handleMouseDown);
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', handleMouseUp);
+
+  // 移动端事件
+  container.addEventListener('touchstart', handleTouchStart, { passive: false });
+  container.addEventListener('touchmove', handleTouchMove, { passive: false });
+  container.addEventListener('touchend', handleTouchEnd);
+  container.addEventListener('touchcancel', handleTouchEnd);
+}
+
+// 移除事件监听
+function removeEventListeners() {
+  if (!containerRef.value) return;
+
+  const container = containerRef.value;
+
+  // 桌面端事件
+  container.removeEventListener('wheel', handleWheel);
+  container.removeEventListener('mousedown', handleMouseDown);
+  document.removeEventListener('mousemove', handleMouseMove);
+  document.removeEventListener('mouseup', handleMouseUp);
+
+  // 移动端事件
+  container.removeEventListener('touchstart', handleTouchStart);
+  container.removeEventListener('touchmove', handleTouchMove);
+  container.removeEventListener('touchend', handleTouchEnd);
+  container.removeEventListener('touchcancel', handleTouchEnd);
+}
 
 onMounted(() => {
   // 从state获取临时文件路径
@@ -14,44 +223,309 @@ onMounted(() => {
   if (eid && minetype) {
     loading.value = true;
     readCacheFile2UrlByEid(eid, minetype)
-        .then(res => url.value = res)
-        .catch(err => {
-          console.error("Failed to load media:", err);
-          showToast("图片加载失败", 'error', 3000, {
-            position: "top-center"
-          });
-          router.back();
+        .then(res => {
+          url.value = res;
+          // 图片加载完成后添加事件监听
+          setTimeout(addEventListeners, 100);
         })
         .finally(() => loading.value = false);
   }
 });
+
+onUnmounted(removeEventListeners);
 </script>
 
 <template>
-  <div class="preview-media">
-    <img alt="Preview" :src="url" v-click-outside="router.back"/>
+  <div
+      ref="containerRef"
+      class="preview-media"
+      :style="{
+        '--scale': scale,
+        '--translate-x': `${position.x}px`,
+        '--translate-y': `${position.y}px`,
+        '--is-dragging': isDragging ? 1 : 0
+      }"
+  >
+    <!-- 背景遮罩 -->
+    <div class="preview-overlay" @click="router.back"></div>
+
+    <!-- 控制栏 -->
+    <div class="preview-controls">
+      <button
+          class="control-btn"
+          @click="resetTransform"
+          :disabled="scale === 1 && position.x === 0 && position.y === 0"
+          aria-label="重置缩放和位置"
+      >
+        <svg class="control-icon" viewBox="0 0 24 24">
+          <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+        </svg>
+        <span class="control-text">重置</span>
+      </button>
+
+      <button
+          class="control-btn"
+          @click="scale = clamp(scale - 0.5, minScale, maxScale)"
+          :disabled="scale <= minScale"
+          aria-label="缩小"
+      >
+        <svg class="control-icon" viewBox="0 0 24 24">
+          <path d="M19 13H5v-2h14v2z"/>
+        </svg>
+        <span class="control-text">缩小</span>
+      </button>
+
+      <div class="scale-indicator">
+        <span class="scale-text">{{ Math.round(scale * 100) }}%</span>
+      </div>
+
+      <button
+          class="control-btn"
+          @click="scale = clamp(scale + 0.5, minScale, maxScale)"
+          :disabled="scale >= maxScale"
+          aria-label="放大"
+      >
+        <svg class="control-icon" viewBox="0 0 24 24">
+          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+        </svg>
+        <span class="control-text">放大</span>
+      </button>
+
+      <button
+          class="control-btn close-btn"
+          @click="router.back"
+          aria-label="关闭预览"
+      >
+        <svg class="control-icon" viewBox="0 0 24 24">
+          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+        </svg>
+        <span class="control-text">关闭</span>
+      </button>
+    </div>
+
+    <!-- 图片容器 -->
+    <div class="image-container">
+      <!-- 加载状态 -->
+      <div v-if="loading" class="loading-state">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">加载中...</div>
+      </div>
+
+      <!-- 图片 -->
+      <img
+          ref="imageRef"
+          alt="Preview"
+          :src="url"
+          class="preview-image"
+          :class="{ 'draggable': scale > 1 }"
+          :style="{
+          transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+          cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
+        }"
+          @load="addEventListeners"
+      />
+    </div>
   </div>
 </template>
 
 <style scoped lang="scss">
 .preview-media {
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 80vw;
-  height: 80vh;
-
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
   display: flex;
   justify-content: center;
   align-items: center;
-  flex-direction: column;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
 
-  img,
-  video {
-    max-width: 100%;
-    max-height: 100%;
-    display: block;
+  .preview-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--pad-shadow-color-500);
+    backdrop-filter: blur(4px);
+    opacity: 0.95;
+    transition: opacity var(--pad-transition-base);
+
+    &:hover {
+      opacity: 0.98;
+    }
+  }
+
+  .preview-controls {
+    position: absolute;
+    top: calc(20px + env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    padding: 12px 20px;
+    background-color: var(--pad-bg-color-300);
+    border-radius: var(--pad-radius-xl);
+    border: 1px solid var(--pad-border-color-200);
+    box-shadow: var(--pad-shadow-lg);
+    backdrop-filter: blur(10px);
+    z-index: 2;
+
+    @media (max-width: 768px) {
+      top: calc(10px + env(safe-area-inset-top));
+      padding: 10px 16px;
+      gap: 6px;
+    }
+
+    .control-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      background-color: var(--pad-bg-color-200);
+      border: 1px solid var(--pad-border-color-100);
+      border-radius: var(--pad-radius-lg);
+      color: var(--pad-text-color-200);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--pad-transition-fast);
+
+      &:hover:not(:disabled) {
+        background-color: var(--pad-bg-color-300);
+        border-color: var(--pad-border-color-300);
+        color: var(--pad-text-color-100);
+        transform: translateY(-1px);
+        box-shadow: var(--pad-shadow-sm);
+      }
+
+      &:active:not(:disabled) {
+        transform: translateY(0);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      @media (max-width: 768px) {
+        padding: 6px 12px;
+        font-size: 13px;
+
+        .control-text {
+          display: none;
+        }
+      }
+
+      .control-icon {
+        width: 18px;
+        height: 18px;
+        fill: currentColor;
+      }
+
+      &.close-btn {
+        background-color: var(--pad-danger-color);
+        border-color: var(--pad-danger-dark);
+        color: var(--pad-text-color-light);
+
+        &:hover:not(:disabled) {
+          background-color: var(--pad-danger-dark);
+          transform: translateY(-1px);
+        }
+      }
+    }
+
+    .scale-indicator {
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      background-color: var(--pad-bg-color-200);
+      border: 1px solid var(--pad-border-color-100);
+      border-radius: var(--pad-radius-lg);
+      min-width: 80px;
+      justify-content: center;
+
+      .scale-text {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--pad-text-color-100);
+        font-variant-numeric: tabular-nums;
+      }
+
+      @media (max-width: 768px) {
+        min-width: 60px;
+        padding: 0 8px;
+
+        .scale-text {
+          font-size: 13px;
+        }
+      }
+    }
+  }
+
+  .image-container {
+    position: relative;
+    width: 90%;
+    height: 90%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    border-radius: var(--pad-radius-lg);
+
+    @media (max-width: 768px) {
+      width: 100%;
+      height: 100%;
+      border-radius: 0;
+    }
+
+    .loading-state {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      z-index: 1;
+
+      .loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid var(--pad-border-color-200);
+        border-top: 4px solid var(--pad-primary-color);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      .loading-text {
+        font-size: 16px;
+        color: var(--pad-text-color-200);
+        font-weight: 500;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    }
+
+    .preview-image {
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+      object-fit: contain;
+      transition: transform 0.1s ease-out;
+      will-change: transform;
+
+      &.draggable {
+        cursor: grab;
+      }
+    }
   }
 }
 </style>
