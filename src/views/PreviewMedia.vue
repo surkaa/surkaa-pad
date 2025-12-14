@@ -18,6 +18,7 @@ const initialDistance = ref(0);
 const isPinching = ref(false);
 const maxScale = ref(5);
 const minScale = ref(0.5);
+let animationFrameId: number | null = null;
 
 // 重置状态
 function resetTransform() {
@@ -72,13 +73,23 @@ function handleMouseDown(event: MouseEvent) {
 function handleMouseMove(event: MouseEvent) {
   if (!isDragging.value) return;
 
-  const deltaX = event.clientX - lastPosition.value.x;
-  const deltaY = event.clientY - lastPosition.value.y;
+  // 取消之前的动画帧
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+  }
 
-  position.value.x += deltaX;
-  position.value.y += deltaY;
+  // 使用 requestAnimationFrame 进行平滑更新
+  animationFrameId = requestAnimationFrame(() => {
+    const deltaX = event.clientX - lastPosition.value.x;
+    const deltaY = event.clientY - lastPosition.value.y;
 
-  lastPosition.value = { x: event.clientX, y: event.clientY };
+    position.value.x += deltaX;
+    position.value.y += deltaY;
+
+    lastPosition.value = { x: event.clientX, y: event.clientY };
+    animationFrameId = null;
+  });
+
   event.preventDefault();
 }
 
