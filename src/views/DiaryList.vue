@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import {computed, nextTick, onMounted, onUnmounted, ref, toRaw, watch, type WatchHandle} from "vue";
-import {DiaryManifest} from "../types";
+import {AttachmentMeta, DiaryManifest} from "../types";
 import {useAppStore} from "../stores/app.ts";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
-import {formatTimestamp} from "../utils";
+import {formatTimestamp, getCurEmoji} from "../utils";
 import {showToast} from "../utils";
 import {invoke} from "@tauri-apps/api/core";
 
@@ -14,7 +14,6 @@ const matchIds = ref<Set<string>>(new Set());
 const isSyncing = ref(false); // 新增同步状态Loading
 const watcher = ref<WatchHandle | null>(null);
 
-const MAX_DIARY_PREVIEW_LENGTH = 10;
 const filteredDiaries = computed<DiaryManifest[]>(() => {
   if (matchIds.value.size === 0 && appStore.keyword.trim() !== '') {
     // 有搜索词但无匹配，返回空列表
@@ -28,6 +27,42 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
     return true; // 无搜索词，显示所有
   }).sort((a, b) => b.created - a.created); // 按创建时间降序排列
 });
+
+// 日记统计信息
+const diaryStats = computed(() => {
+  const total = diaries.value.length;
+  const filtered = filteredDiaries.value.length;
+  const withAttachments = diaries.value.filter(d => d.attachments?.length > 0).length;
+  const lastUpdated = diaries.value.length > 0
+      ? Math.max(...diaries.value.map(d => d.updated))
+      : 0;
+
+  return {
+    total,
+    filtered,
+    withAttachments,
+    lastUpdated,
+    hasSearch: appStore.keyword.trim() !== '',
+    searchCount: matchIds.value.size
+  };
+});
+
+// 格式化附件信息
+const getAttachmentInfo = (attachments: AttachmentMeta[]) => {
+  if (!attachments || attachments.length === 0) return null;
+
+  const totalSize = attachments.reduce((sum, att) => sum + (att.size || 0), 0);
+  const imageCount = attachments.filter(att => att.mimetype.includes('image')).length;
+  const otherCount = attachments.length - imageCount;
+
+  return {
+    count: attachments.length,
+    totalSize,
+    imageCount,
+    otherCount
+  };
+};
+
 const scrollContainer = ref<HTMLElement | null>(null);
 
 function loadLocalDiaries() {
@@ -129,295 +164,799 @@ onUnmounted(() => {
 
 <template>
   <main id="diary-list">
-    <header class="top-bar">
-      <div class="search-box">
-        <input
-            type="text"
-            v-model="appStore.keyword"
-            placeholder="搜索记忆..."
-        />
-        <i class="icon-search">🔍</i>
-      </div>
+    <!-- 顶部栏 -->
+    <header class="app-header">
+      <div class="header-content">
+        <div class="logo-section">
+          <h1 class="app-title">
+            <img alt="app-logo" class="app-logo" src="../../public/app-icon.png"/>
+            SurKaa Pad
+          </h1>
+        </div>
 
-      <button
-          class="sync-btn"
-          @click="syncFromOss()"
-          :disabled="isSyncing"
-          title="从云端同步"
-      >
-        <span v-if="isSyncing" class="spinning">⟳</span>
-        <span v-else>☁️</span>
-      </button>
+        <div class="stats-section" v-if="!diaryStats.hasSearch">
+          <div class="stat-item">
+            <span class="stat-icon">📚</span>
+            <span class="stat-value">{{ diaryStats.total }}</span>
+            <span class="stat-label">篇日记</span>
+          </div>
+          <div class="stat-item" v-if="diaryStats.withAttachments > 0">
+            <span class="stat-icon">📎</span>
+            <span class="stat-value">{{ diaryStats.withAttachments }}</span>
+            <span class="stat-label">含附件</span>
+          </div>
+        </div>
+        <div class="stats-section" v-else>
+          <div class="stat-item search-stat">
+            <span class="stat-icon">🔍</span>
+            <span class="stat-value">{{ diaryStats.searchCount }}</span>
+            <span class="stat-label">条结果</span>
+          </div>
+        </div>
+      </div>
     </header>
 
-    <hr/>
-
-    <section id="list" class="scroll-container" ref="scrollContainer">
-      <transition-group name="list" tag="ul" id="diary-ul-list">
-        <li
-            v-for="diary in filteredDiaries"
-            :key="diary.id"
-            class="diary-card"
-            @click="openDiary(diary)"
-        >
-          <div class="card-header">
-            <span class="date">{{ formatTimestamp(diary.created) }}</span>
-            <span v-if="diary.attachments?.length" class="attachment-icon">📎</span>
+    <!-- 主内容区域 -->
+    <div class="main-content">
+      <!-- 搜索和操作栏 -->
+      <div class="action-bar">
+        <div class="search-container">
+          <div class="search-box">
+            <input
+                id="search-input"
+                type="text"
+                v-model="appStore.keyword"
+                placeholder="搜索日记内容..."
+            />
           </div>
-          <p class="preview-content">
-            {{
-              diary.content.slice(0, MAX_DIARY_PREVIEW_LENGTH)
-            }}{{ diary.content.length > MAX_DIARY_PREVIEW_LENGTH ? '...' : '' }}
-          </p>
-        </li>
-      </transition-group>
+        </div>
 
-      <div v-if="filteredDiaries.length === 0 && !isSyncing" class="empty-state">
-        <p>这里空空如也 🍂</p>
+        <div class="action-buttons">
+          <button
+              class="sync-btn"
+              @click="syncFromOss()"
+              :disabled="isSyncing"
+              :title="isSyncing ? '正在同步...' : '从云端同步'"
+          >
+            <span class="btn-icon" v-if="isSyncing">⏳</span>
+            <span class="btn-icon" v-else>☁️</span>
+            <span class="btn-text">同步</span>
+          </button>
+        </div>
       </div>
-      <div v-else-if="filteredDiaries.length === 0" class="empty-state">
-        <p>正在同步中，请稍候... ⏳</p>
-      </div>
-    </section>
 
-    <button class="fab" @click="openDiary(undefined)" title="写日记">
-      +
+      <!-- 日记列表 -->
+      <section id="list" class="scroll-container" ref="scrollContainer">
+        <!-- 列表信息栏 -->
+        <div class="list-header" v-if="filteredDiaries.length > 0">
+          <div class="list-info">
+            <span class="info-text">
+              {{ diaryStats.hasSearch ? '搜索到' : '共' }} {{ filteredDiaries.length }} 篇日记
+            </span>
+            <span class="sort-indicator">按时间排序</span>
+          </div>
+        </div>
+
+        <!-- 日记卡片列表 -->
+        <transition-group name="list" tag="ul" class="diary-list">
+          <li
+              v-for="diary in filteredDiaries"
+              :key="diary.id"
+              class="diary-card"
+              @click="openDiary(diary)"
+          >
+            <div class="card-header">
+              <div class="date-group">
+                <span class="date-primary">
+                  <svg viewBox="0 0 24 24" width="14" height="14">
+                    <path
+                        d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z"/>
+                  </svg>
+                  {{ formatTimestamp(diary.created) }}
+                </span>
+                <span
+                    class="date-updated"
+                    v-if="diary.updated > diary.created"
+                    title="最后更新"
+                >
+                  <span class="update-icon">{{ getCurEmoji(diary.updated) }}</span>
+                  {{ formatTimestamp(diary.updated) }}
+                </span>
+              </div>
+
+              <div class="card-actions">
+                <span
+                    class="attachment-badge"
+                    v-if="diary.attachments?.length"
+                    :title="`${diary.attachments.length} 个附件`"
+                >
+                  <span class="badge-icon">📎</span>
+                  <span class="badge-count">{{ diary.attachments.length }}</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="card-content">
+              <p class="preview-content">
+                {{ diary.content.replace(/<<[A-Z]{3}:[^>]+>>/g, '').trim() || '无内容' }}
+              </p>
+            </div>
+
+            <div class="card-footer">
+              <div class="meta-info">
+                <span class="meta-item" v-if="getAttachmentInfo(diary.attachments)">
+                  <span class="meta-icon">📦</span>
+                  <span class="meta-text">
+                    {{ getAttachmentInfo(diary.attachments)!.count }} 个附件
+                    <span class="meta-detail" v-if="getAttachmentInfo(diary.attachments)!.imageCount > 0">
+                      ({{ getAttachmentInfo(diary.attachments)!.imageCount }} 张图片)
+                    </span>
+                  </span>
+                </span>
+
+                <span class="meta-item diary-id" :title="diary.id">
+                  <span class="meta-icon">🆔</span>
+                  <span class="meta-text">{{ diary.id.substring(0, 8) }}</span>
+                </span>
+              </div>
+
+              <span class="open-indicator">
+                <svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16">
+                  <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+                </svg>
+              </span>
+            </div>
+          </li>
+        </transition-group>
+
+        <!-- 空状态 -->
+        <div v-if="filteredDiaries.length === 0" class="empty-state">
+          <div class="empty-content">
+            <div class="empty-icon">
+              <span v-if="isSyncing">⏳</span>
+              <span v-else-if="diaryStats.hasSearch">🔍</span>
+              <span v-else>📝</span>
+            </div>
+            <h3 class="empty-title">
+              <span v-if="isSyncing">正在同步中...</span>
+              <span v-else-if="diaryStats.hasSearch">未找到相关日记</span>
+              <span v-else>还没有日记</span>
+            </h3>
+            <p class="empty-message">
+              <span v-if="isSyncing">请稍候，正在从云端同步您的日记...</span>
+              <span v-else-if="diaryStats.hasSearch">尝试使用其他关键词搜索</span>
+              <span v-else>点击右下角按钮开始写第一篇日记</span>
+            </p>
+            <button
+                v-if="!isSyncing && !diaryStats.hasSearch"
+                class="empty-action"
+                @click="openDiary(undefined)"
+            >
+              开始写作
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 悬浮新增按钮 -->
+    <button
+        class="fab"
+        @click="openDiary(undefined)"
+        :title="diaryStats.hasSearch ? '新建日记' : '写新日记'"
+    >
+      <span class="fab-icon">+</span>
+      <span class="fab-text">新建</span>
     </button>
   </main>
 </template>
 
 <style scoped lang="scss">
 #diary-list {
-  position: relative;
   width: 100%;
   height: 100%;
-  max-width: 800px; /* 限制最大宽度，提升大屏阅读体验 */
   display: flex;
   flex-direction: column;
-  padding: 0 1rem;
-  box-sizing: border-box;
+  background-color: var(--pad-bg-color-100);
+  font-family: var(--pad-font-family), serif;
+  position: relative;
 
-  /* 顶部栏布局 */
-  .top-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 0 0.5rem 0;
-    gap: 10px;
+  .app-header {
+    background-color: var(--pad-bg-color-200);
+    border-bottom: 1px solid var(--pad-border-color-100);
+    padding: 16px 24px 12px;
+    flex-shrink: 0;
 
-    .search-box {
-      position: relative;
-      flex-grow: 1;
-
-      input {
-        width: 100%;
-        padding: 10px 15px 10px 35px; /* 左侧留出图标位置 */
-        box-sizing: border-box;
-        border: 1px solid var(--pad-border-color-200);
-        background-color: var(--pad-bg-color-200);
-        color: var(--pad-text-color-200);
-        border-radius: 8px;
-        outline: none;
-        transition: all 0.3s;
-
-        &::placeholder {
-          color: var(--pad-text-color-400);
-        }
-
-        &:focus {
-          border-color: var(--pad-border-color-300);
-          background-color: var(--pad-bg-color-100);
-          box-shadow: 0 0 0 2px var(--pad-shadow-color-100);
-        }
-      }
-
-      .icon-search {
-        position: absolute;
-        left: 10px;
-        top: 50%;
-        transform: translateY(-50%);
-        font-style: normal;
-        font-size: 0.9rem;
-        opacity: 0.6;
-      }
-    }
-
-    .sync-btn {
-      border: 1px solid var(--pad-border-color-200);
-      border-radius: 8px;
-      width: 42px;
-      height: 42px;
-      cursor: pointer;
+    .header-content {
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      justify-content: center;
-      color: var(--pad-text-color-300);
-      background: var(--pad-bg-color-200) none;
-      transition: all 0.2s;
+      margin-bottom: 12px;
 
-      &:hover:not(:disabled) {
-        border-color: var(--pad-primary-color);
-        color: var(--pad-primary-color);
-        background-color: var(--pad-bg-color-100);
+      .logo-section {
+        .app-title {
+          font-size: 20px;
+          font-weight: 700;
+          color: var(--pad-text-color-100);
+          margin: 0 0 4px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+
+          .app-logo {
+            width: 32px;
+            height: 32px;
+            font-size: 24px;
+          }
+        }
       }
 
-      &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
+      .stats-section {
+        display: flex;
+        gap: 16px;
 
-      .spinning {
-        display: inline-block;
-        animation: spin 1s linear infinite;
+        .stat-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          min-width: 60px;
+
+          &.search-stat {
+            .stat-icon {
+              background-color: var(--pad-success-color);
+            }
+          }
+
+          .stat-icon {
+            font-size: 20px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--pad-primary-color-light);
+            border-radius: var(--pad-radius-full);
+            margin-bottom: 4px;
+            color: var(--pad-text-color-light);
+          }
+
+          .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--pad-text-color-100);
+            line-height: 1;
+          }
+
+          .stat-label {
+            font-size: 11px;
+            color: var(--pad-text-color-400);
+            margin-top: 2px;
+            letter-spacing: 0.3px;
+          }
+        }
       }
     }
   }
 
-  /* 列表容器 */
+  .main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0 24px;
+  }
+
+  .action-bar {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 0;
+    flex-shrink: 0;
+
+    .search-container {
+      flex: 1;
+      margin-right: 16px;
+
+      .search-box {
+        width: 100%;
+
+        #search-input {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 12px 20px;
+          font-size: 15px;
+          background-color: var(--pad-bg-color-200);
+          border: 1px solid var(--pad-border-color-200);
+          border-radius: var(--pad-radius-lg);
+          color: var(--pad-text-color-100);
+          transition: all var(--pad-transition-fast);
+
+          &:focus {
+            outline: none;
+            border-color: var(--pad-primary-color);
+            box-shadow: 0 0 0 3px var(--pad-primary-color-light);
+            background-color: var(--pad-bg-color-100);
+          }
+
+          &::placeholder {
+            color: var(--pad-text-color-400);
+          }
+        }
+      }
+    }
+
+    .action-buttons {
+      .sync-btn {
+        width: 100px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        background-color: var(--pad-bg-color-200);
+        border: 1px solid var(--pad-border-color-200);
+        border-radius: var(--pad-radius-lg);
+        color: var(--pad-text-color-200);
+        font-size: 14px;
+        cursor: pointer;
+        transition: all var(--pad-transition-fast);
+
+        &:hover:not(:disabled) {
+          background-color: var(--pad-bg-color-300);
+          color: var(--pad-text-color-100);
+          border-color: var(--pad-border-color-300);
+          transform: translateY(-1px);
+        }
+
+        &:active:not(:disabled) {
+          transform: translateY(0);
+        }
+
+        &:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .btn-icon {
+          font-size: 16px;
+        }
+
+        .btn-text {
+          font-weight: 500;
+        }
+      }
+    }
+  }
+
   .scroll-container {
-    flex-grow: 1;
+    flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-top: 8px;
-    padding-bottom: 80px; /* 为 FAB 留出空间 */
+    padding-bottom: 100px;
 
-    /* 隐藏滚动条但保留功能 */
+    // 滚动条样式
     &::-webkit-scrollbar {
-      width: 4px;
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: var(--pad-bg-color-200);
+      border-radius: var(--pad-radius-full);
     }
 
     &::-webkit-scrollbar-thumb {
-      background-color: var(--pad-border-color-200);
-      border-radius: 4px;
+      background: var(--pad-border-color-300);
+      border-radius: var(--pad-radius-full);
+
+      &:hover {
+        background: var(--pad-border-color-400);
+      }
     }
 
-    ul {
+    .list-header {
+      margin-bottom: 16px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--pad-border-color-100);
+
+      .list-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+
+        .info-text {
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--pad-text-color-200);
+        }
+
+        .sort-indicator {
+          font-size: 12px;
+          color: var(--pad-text-color-400);
+          display: flex;
+          align-items: center;
+          gap: 4px;
+
+          &::before {
+            content: '↓';
+            font-size: 10px;
+          }
+        }
+      }
+    }
+
+    .diary-list {
       list-style: none;
       padding: 0;
       margin: 0;
       position: relative;
-      width: 100%;
-    }
-  }
-
-  /* 日记卡片样式 */
-  .diary-card {
-    background-color: var(--pad-bg-color-200);
-    border: 1px solid var(--pad-border-color-100);
-    border-radius: 8px;
-    margin-bottom: 12px;
-    padding: 16px;
-    cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-
-    /* 纸张质感阴影 */
-    box-shadow: 0 2px 4px var(--pad-shadow-color-100);
-
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px var(--pad-shadow-color-200);
-      border-color: var(--pad-border-color-300);
     }
 
-    .card-header {
+    .diary-card {
+      background-color: var(--pad-bg-color-200);
+      border: 1px solid var(--pad-border-color-100);
+      border-radius: var(--pad-radius-lg);
+      margin-bottom: 16px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all var(--pad-transition-base);
+      box-shadow: var(--pad-shadow-sm);
+
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--pad-shadow-md);
+        border-color: var(--pad-border-color-300);
+        background-color: var(--pad-bg-color-100);
+      }
+
+      &:active {
+        transform: translateY(0);
+      }
+
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 16px;
+
+        .date-group {
+          .date-primary {
+            display: block;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--pad-text-color-100);
+            margin-bottom: 4px;
+          }
+
+          .date-updated {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--pad-text-color-400);
+
+            .update-icon {
+              font-size: 10px;
+            }
+          }
+        }
+
+        .card-actions {
+          .attachment-badge {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            background-color: var(--pad-bg-color-300);
+            border-radius: var(--pad-radius-full);
+            font-size: 12px;
+            color: var(--pad-text-color-300);
+            transition: all var(--pad-transition-fast);
+
+            &:hover {
+              background-color: var(--pad-primary-light);
+              color: var(--pad-text-color-light);
+            }
+
+            .badge-icon {
+              font-size: 12px;
+            }
+
+            .badge-count {
+              font-weight: 600;
+            }
+          }
+        }
+      }
+
+      .card-content {
+        margin-bottom: 16px;
+
+        .preview-content {
+          font-size: 15px;
+          line-height: 1.6;
+          color: var(--pad-text-color-200);
+          margin: 0;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-height: 1.6rem;
+          white-space: pre-wrap;
+        }
+      }
+
+      .card-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 12px;
+        border-top: 1px solid var(--pad-border-color-100);
+
+        .meta-info {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+
+          .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--pad-text-color-400);
+
+            &.diary-id {
+              cursor: help;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .meta-icon {
+              font-size: 12px;
+              opacity: 0.7;
+            }
+
+            .meta-text {
+              line-height: 1.3;
+            }
+
+            .meta-detail {
+              font-size: 11px;
+              opacity: 0.8;
+            }
+          }
+        }
+
+        .open-indicator {
+          .arrow-icon {
+            fill: var(--pad-text-color-400);
+            transition: transform var(--pad-transition-fast);
+          }
+        }
+      }
+
+      &:hover .arrow-icon {
+        transform: translateX(2px);
+      }
+    }
+
+    .empty-state {
       display: flex;
-      justify-content: space-between;
-      margin-bottom: 8px;
+      align-items: center;
+      justify-content: center;
+      min-height: 300px;
+      text-align: center;
+      padding: 40px 20px;
 
-      .date {
-        font-size: 0.85rem;
-        color: var(--pad-text-color-400);
-        font-weight: 500;
+      .empty-content {
+        max-width: 280px;
+
+        .empty-icon {
+          font-size: 48px;
+          margin-bottom: 20px;
+          opacity: 0.7;
+        }
+
+        .empty-title {
+          font-size: 18px;
+          font-weight: 600;
+          color: var(--pad-text-color-100);
+          margin: 0 0 12px;
+        }
+
+        .empty-message {
+          font-size: 14px;
+          color: var(--pad-text-color-300);
+          margin: 0 0 24px;
+          line-height: 1.5;
+        }
+
+        .empty-action {
+          padding: 10px 24px;
+          background-color: var(--pad-primary-color);
+          color: var(--pad-text-color-light);
+          border: none;
+          border-radius: var(--pad-radius-lg);
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all var(--pad-transition-fast);
+
+          &:hover {
+            background-color: var(--pad-primary-dark);
+            transform: translateY(-1px);
+          }
+        }
       }
-
-      .attachment-icon {
-        font-size: 0.85rem;
-      }
-    }
-
-    .preview-content {
-      margin: 0;
-      font-size: 1rem;
-      color: var(--pad-text-color-200);
-      line-height: 1.5;
-
-      /* 多行文本截断 */
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
   }
 
-  /* 空状态 */
-  .empty-state {
-    padding: 40px;
-    text-align: center;
-    color: var(--pad-text-color-400);
-    font-size: 0.9rem;
-  }
-
-  /* 悬浮新增按钮 (FAB) */
   .fab {
-    position: absolute;
-    bottom: 30px;
-    right: 20px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background-color: var(--pad-primary-color);
-    color: #fff; /* 这里的文字颜色固定为白，或者使用 light mode 下的背景色如果 primary 很浅 */
-    /* 考虑到 primary 是 C4A484 (木色)，白色文字对比度尚可，但在深色模式下 primary 变浅，可能需要深色字 */
-    /* 优化：使用 CSS 变量反转色，或者简单的阴影 */
-    border: none;
-    font-size: 2rem;
-    line-height: 1;
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 10px var(--pad-shadow-color-400);
+    gap: 8px;
+    padding: 16px 20px;
+    background: var(--pad-primary-gradient);
+    color: var(--pad-text-color-light);
+    border: none;
+    border-radius: var(--pad-radius-xl);
+    font-size: 15px;
+    font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-    z-index: 10;
+    box-shadow: var(--pad-shadow-lg);
+    transition: all var(--pad-transition-base);
+    z-index: 100;
+    min-width: 100px;
 
     &:hover {
-      transform: scale(1.05);
-      box-shadow: 0 6px 15px var(--pad-shadow-color-500);
+      transform: translateY(-3px);
+      box-shadow: var(--pad-shadow-xl);
     }
 
     &:active {
-      transform: scale(0.95);
+      transform: translateY(-1px);
     }
-  }
 
-  /* 列表过渡动画 */
-  .list-enter-active,
-  .list-leave-active {
-    transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
-  }
+    .fab-icon {
+      font-size: 20px;
+      font-weight: 400;
+    }
 
-  .list-enter-from,
-  .list-leave-to {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  .list-leave-active {
-    position: absolute;
-    width: 100%; /* 确保离开时宽度不变，防止布局塌陷 */
-    box-sizing: border-box; /* 包含 padding */
-    left: 0;
-    z-index: 0;
-    pointer-events: none;
+    .fab-text {
+      letter-spacing: 0.5px;
+    }
   }
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
+// 列表过渡动画
+.list-enter-active,
+.list-leave-active {
+  transition: all var(--pad-transition-base) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(20px) scale(0.95);
+}
+
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(-20px) scale(0.95);
+}
+
+.list-leave-active {
+  position: absolute;
+  width: 100%;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+// 响应式设计
+@media (max-width: 512px) {
+  #diary-list {
+    .app-header {
+      padding: 12px 16px 8px;
+
+      .header-content {
+        height: 100%;
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 16px;
+
+        .logo-section {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          justify-content: start;
+          align-items: center;
+
+          .app-title {
+            font-size: 18px;
+          }
+        }
+
+        .stats-section {
+          justify-content: space-between;
+          gap: 8px;
+
+          .stat-item {
+            min-width: 50px;
+
+            .stat-icon {
+              width: 36px;
+              height: 36px;
+              font-size: 18px;
+            }
+
+            .stat-value {
+              font-size: 16px;
+            }
+          }
+        }
+      }
+    }
+
+    .main-content {
+      padding: 0 16px;
+    }
+
+    .action-bar {
+      flex-direction: row;
+      align-items: stretch;
+      gap: 12px;
+
+      .search-container {
+        margin-right: 0;
+      }
+
+      .action-buttons {
+        align-self: flex-end;
+      }
+    }
+
+    .diary-card {
+      padding: 16px;
+
+      .card-footer {
+        .meta-info {
+          gap: 8px;
+
+          .meta-item {
+            .meta-text {
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+          }
+        }
+      }
+    }
+
+    .fab {
+      bottom: 16px;
+      right: 16px;
+      padding: 12px 16px;
+      min-width: auto;
+
+      .fab-text {
+        display: none;
+      }
+    }
   }
-  to {
-    transform: rotate(360deg);
+}
+
+@media (min-width: 513px) and (max-width: 768px) {
+  #diary-list {
+    .main-content {
+      padding: 0 20px;
+    }
+
+    .app-header {
+      padding: 16px 20px 12px;
+    }
   }
 }
 </style>
