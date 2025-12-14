@@ -360,6 +360,16 @@ function redo() {
   diary.value.content = nextState;
 }
 
+function openPreviewMedia(eid: string, minetype: string) {
+  console.log('打开媒体预览: ', eid, minetype);
+  router.push({
+    name: 'PreviewMedia',
+    state: {
+      eid, minetype
+    }
+  });
+}
+
 onMounted(async () => {
   if (history.state.diary) {
     diary.value = history.state.diary;
@@ -516,6 +526,7 @@ onMounted(async () => {
         </button>
 
         <button
+            v-if="!isNew"
             id="diary-detail-header-delete-btn"
             @click="deleteDiary"
             :disabled="delLoading"
@@ -547,6 +558,7 @@ onMounted(async () => {
             :mode="mode"
             @update:cursor-position="updateCursor"
             @process:download-attachment="msg => renderMsg = msg"
+            @request:preview-media="openPreviewMedia"
         />
       </div>
     </section>
@@ -561,7 +573,7 @@ onMounted(async () => {
           <span class="footer-text">{{ contentLen }}字</span>
         </div>
         <div class="footer-item" v-if="statusMsg" :title="statusMsg">
-          <svg viewBox="0 0 24 24" width="14" height="14">
+          <svg viewBox="0 0 24 24" width="14" height="14" v-if="!statusMsg.includes('⏳')">
             <path
                 d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
           </svg>
@@ -1083,7 +1095,7 @@ onMounted(async () => {
       }
 
       .footer-item {
-        gap: 6px;
+        gap: 3px;
       }
     }
   }
@@ -1103,7 +1115,7 @@ onMounted(async () => {
       }
 
       .header-actions {
-        gap: 6px;
+        gap: 3px;
 
         button {
           padding: 6px 12px;

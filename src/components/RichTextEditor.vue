@@ -18,6 +18,7 @@ const {
 const emit = defineEmits<{
   (e: 'update:cursorPosition', position: number): void;
   (e: 'process:downloadAttachment', statusMsg: string): void;
+  (e: 'request:previewMedia', eid: string, minetype: string): void;
 }>();
 
 const processDownloadAttachment = (statusMsg: string) => {
@@ -53,6 +54,10 @@ const innerHTML = computed(() => {
           cancelFns.value.splice(index, 1);
         }
         element.src = url;
+        // 添加点击事件
+        if (tag === 'IMG') {
+          element.addEventListener('click', () => emit('request:previewMedia', eid, a.mimetype));
+        }
         processDownloadAttachment('附件加载完成');
       }
     });

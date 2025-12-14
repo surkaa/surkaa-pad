@@ -2,6 +2,7 @@ import {createRouter, createWebHashHistory, type RouteRecordRaw} from "vue-route
 import Unlock from "../views/Unlock.vue";
 import DiaryList from "../views/DiaryList.vue";
 import Diary from "../views/Diary.vue";
+import PreviewMedia from "../views/PreviewMedia.vue";
 
 const routes: RouteRecordRaw[] = [{
     name: 'Unlock',
@@ -23,6 +24,13 @@ const routes: RouteRecordRaw[] = [{
     component: Diary,
     meta: {
         title: '日志详情'
+    }
+}, {
+    name: 'PreviewMedia',
+    path: '/preview-media',
+    component: PreviewMedia,
+    meta: {
+        title: '媒体预览'
     }
 }];
 
