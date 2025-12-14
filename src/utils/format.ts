@@ -56,3 +56,21 @@ export function formatTimestamp(timestamp?: number): string {
     // 6. 超过一年（显示 年/月/日）
     return date.toLocaleString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '-');
 }
+
+/**
+ * 格式化比特大小，返回带单位的字符串表示。
+ * @param bytes - 要格式化的字节数。
+ * @returns 格式化后的字符串，或 'N/A'。
+ */
+export function formatBytes(bytes?: number): string {
+    if (bytes === undefined || bytes === null) return 'N/A';
+
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    let index = 0;
+    let size = bytes;
+    while (size >= 1024 && index < units.length - 1) {
+        size /= 1024;
+        index++;
+    }
+    return `${size.toFixed(0)} ${units[index]}`;
+}

@@ -3,7 +3,7 @@ import {computed, nextTick, onMounted, onUnmounted, ref, toRaw, watch, type Watc
 import {AttachmentMeta, DiaryManifest} from "../types";
 import {useAppStore} from "../stores/app.ts";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
-import {formatTimestamp, getCurEmoji} from "../utils";
+import {formatBytes, formatTimestamp, getCurEmoji} from "../utils";
 import {showToast} from "../utils";
 import {invoke} from "@tauri-apps/api/core";
 
@@ -288,6 +288,7 @@ onUnmounted(() => {
                   <span class="meta-icon">📦</span>
                   <span class="meta-text">
                     {{ getAttachmentInfo(diary.attachments)!.count }} 个附件
+                    <span class="meta-detail">{{ formatBytes(getAttachmentInfo(diary.attachments)?.totalSize) }}</span>
                     <span class="meta-detail" v-if="getAttachmentInfo(diary.attachments)!.imageCount > 0">
                       ({{ getAttachmentInfo(diary.attachments)!.imageCount }} 张图片)
                     </span>
