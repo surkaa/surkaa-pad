@@ -499,6 +499,7 @@ impl SecureDiaryStore {
                 log::error!("{}", message.clone());
                 let _ = event.send(DownloadAttachmentEvent::Error { message });
             } else {
+                log::info!("附件已保存到临时文件 {}", temp_path_clone.display());
                 // 发送完成事件
                 let _ = event.send(DownloadAttachmentEvent::Completed {
                     file_path: temp_path_clone.to_string_lossy().to_string(),
