@@ -46,9 +46,8 @@ function toggleTheme() {
           :disabled="isSyncing"
           :title="isSyncing ? '正在同步...' : '从云端同步'"
       >
-        <span class="btn-icon" v-if="isSyncing">⏳</span>
+        <span class="btn-icon rotating" v-if="isSyncing">⏳</span>
         <span class="btn-icon" v-else>☁️</span>
-        <span class="btn-text">同步</span>
       </button>
       <button
           class="toggle-theme-btn"
@@ -59,7 +58,6 @@ function toggleTheme() {
           <template v-else-if="appStore.theme === 'light'">🌞</template>
           <template v-else>🌜</template>
         </span>
-        <span class="btn-text">切换主题</span>
       </button>
     </div>
   </div>
@@ -71,7 +69,7 @@ function toggleTheme() {
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 24px 8px 24px;
+  padding: 4px 18px 8px 18px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--pad-border-color-300);
 

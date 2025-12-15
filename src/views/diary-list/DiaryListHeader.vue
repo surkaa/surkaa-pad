@@ -67,20 +67,26 @@ onUnmounted(() => {
       <div class="stats-section" v-if="!stats.hasSearch">
         <div class="stat-item">
           <span class="stat-icon">📚</span>
-          <span class="stat-value">{{ stats.total }}</span>
-          <span class="stat-label">篇日记</span>
+          <div class="stat-values">
+            <span class="stat-value">{{ stats.total }}</span>
+            <span class="stat-label">篇日记</span>
+          </div>
         </div>
         <div class="stat-item" v-if="stats.withAttachments > 0">
           <span class="stat-icon">📎</span>
-          <span class="stat-value">{{ stats.withAttachments }}</span>
-          <span class="stat-label">含附件</span>
+          <div class="stat-values">
+            <span class="stat-value">{{ stats.withAttachments }}</span>
+            <span class="stat-label">含附件</span>
+          </div>
         </div>
       </div>
       <div class="stats-section" v-else>
         <div class="stat-item search-stat">
           <span class="stat-icon">🔍</span>
-          <span class="stat-value">{{ stats.searchCount }}</span>
-          <span class="stat-label">条结果</span>
+          <div class="stat-values">
+            <span class="stat-value">{{ stats.searchCount }}</span>
+            <span class="stat-label">条结果</span>
+          </div>
         </div>
       </div>
     </div>
@@ -144,28 +150,32 @@ onUnmounted(() => {
         .stat-icon {
           font-size: 20px;
           width: 40px;
-          height: 40px;
+          height: 30px;
           display: flex;
           align-items: center;
           justify-content: center;
           background-color: var(--pad-primary-color-light);
           border-radius: var(--pad-radius-full);
-          margin-bottom: 4px;
           color: var(--pad-text-color-light);
         }
 
-        .stat-value {
-          font-size: 18px;
-          font-weight: 700;
-          color: var(--pad-text-color-100);
-          line-height: 1;
-        }
+        .stat-values {
+          display: flex;
+          flex-direction: row;
+          align-items: end;
+          justify-content: center;
+          gap: 2px;
 
-        .stat-label {
-          font-size: 11px;
-          color: var(--pad-text-color-400);
-          margin-top: 2px;
-          letter-spacing: 0.3px;
+          .stat-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--pad-text-color-200);
+          }
+
+          .stat-label {
+            font-size: 10px;
+            color: var(--pad-text-color-400);
+          }
         }
       }
     }
@@ -199,16 +209,19 @@ onUnmounted(() => {
         gap: 8px;
 
         .stat-item {
-          min-width: 50px;
+          .stat-values {
+            flex-direction: row;
+            gap: 2px;
 
-          .stat-icon {
-            width: 36px;
-            height: 36px;
-            font-size: 18px;
-          }
+            .stat-icon {
+              width: 36px;
+              height: 36px;
+              font-size: 18px;
+            }
 
-          .stat-value {
-            font-size: 16px;
+            .stat-value {
+              font-size: 16px;
+            }
           }
         }
       }

@@ -11,7 +11,7 @@ defineEmits(['create']);
   <div class="empty-state">
     <div class="empty-content">
       <div class="empty-icon">
-        <span v-if="isSyncing">⏳</span>
+        <span class="rotating" v-if="isSyncing">⏳</span>
         <span v-else-if="hasSearch">🔍</span>
         <span v-else>📝</span>
       </div>
