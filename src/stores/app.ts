@@ -22,6 +22,7 @@ export const useAppStore = defineStore('app', () => {
     const keyword = ref<string>('');
     const savedScrollPosition = ref(0);
     const theme = ref<ThemeType>('system');
+    let startTime: number = Date.now();
 
     function setTheme(t: ThemeType, save = true) {
         theme.value = t;
@@ -127,6 +128,11 @@ export const useAppStore = defineStore('app', () => {
                 showToast('即将关闭应用以保护数据安全', 'error', AUTO_CLOSE_APP_WARNING_TIME / 2);
             }, AUTO_CLOSE_APP_WARNING_TIME / 2);
         }, AUTO_CLOSE_APP_TIMEOUT);
+        startTime = Date.now();
+    }
+
+    function getEndTime() {
+        return startTime + AUTO_CLOSE_APP_TIMEOUT;
     }
 
     async function resetConfig() {
@@ -154,5 +160,6 @@ export const useAppStore = defineStore('app', () => {
         setTimeoutForCloseApp,
         setTheme,
         initStore,
+        getEndTime
     }
 });

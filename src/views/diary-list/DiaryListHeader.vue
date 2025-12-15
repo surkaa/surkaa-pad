@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import {useAppStore} from "../../stores/app.ts";
+import {computed, onMounted, onUnmounted, ref} from "vue";
+
 defineProps<{
   stats: {
     total: number;
@@ -9,6 +12,40 @@ defineProps<{
     searchCount: number;
   }
 }>();
+
+const appStore = useAppStore();
+const futureTimestamp = ref(Date.now());
+let timer: number | null = null;
+
+// 剩余时间（秒）
+const remainingSeconds = ref(0)
+
+// 计算分秒
+const minutes = computed(() =>
+    Math.floor((remainingSeconds.value % 3600) / 60).toString().padStart(2, '0')
+)
+const seconds = computed(() =>
+    Math.floor(remainingSeconds.value % 60).toString().padStart(2, '0')
+)
+
+// 更新剩余时间
+const updateCountdown = () => {
+  const now = Math.floor(Date.now() / 1000); // 当前时间戳（秒）
+  const future = Math.floor(futureTimestamp.value / 1000); // 未来时间戳（秒）
+  remainingSeconds.value = Math.max(0, future - now);
+}
+
+onMounted(() => {
+  futureTimestamp.value = appStore.getEndTime();
+  console.log('截止时间:', futureTimestamp.value);
+  updateCountdown();
+  timer && clearInterval(timer);
+  timer = setInterval(updateCountdown, 1000);
+});
+
+onUnmounted(() => {
+  timer && clearInterval(timer);
+});
 </script>
 
 <template>
@@ -19,6 +56,12 @@ defineProps<{
           <img alt="app-logo" class="app-logo" src="/app-icon.png"/>
           SurKaa Pad
         </h1>
+        <!--倒计时-->
+        <div class="countdown-timer">
+          <small class="countdown-time" :style="{ color: remainingSeconds <= 300 ? 'var(--pad-danger-color)' : 'var(--pad-text-color-400)' }">
+            {{ minutes }}:{{ seconds }}
+          </small>
+        </div>
       </div>
 
       <div class="stats-section" v-if="!stats.hasSearch">
@@ -69,6 +112,15 @@ defineProps<{
           width: 32px;
           height: 32px;
           font-size: 24px;
+        }
+      }
+
+      .countdown-timer {
+        display: flex;
+        padding-left: 4px;
+
+        .countdown-time {
+          font-size: 12px;
         }
       }
     }
