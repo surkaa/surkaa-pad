@@ -11,6 +11,8 @@ import DiaryListActionBar from "./DiaryListActionBar.vue";
 import DiaryCard from "./DiaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 
+type OrderBy = 'created' | 'updated';
+
 const router = useRouter();
 const appStore = useAppStore();
 const diaries = ref<DiaryManifest[]>([]);
@@ -29,8 +31,15 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
       return matchIds.value.has(diary.id);
     }
     return true; // 无搜索词，显示所有
-  }).sort((a, b) => b.created - a.created); // 按创建时间降序排列
+  }).sort((a, b) => {
+    if (orderBy.value === 'created') {
+      return b.created - a.created;
+    } else {
+      return b.updated - a.updated;
+    }
+  });
 });
+const orderBy = ref<OrderBy>('created');
 // 防抖搜索函数
 const debouncedSearch = debounce((term: string) => {
   performSearch(term);
@@ -163,7 +172,7 @@ onUnmounted(() => {
 
 <template>
   <main id="diary-list">
-    <DiaryListHeader :stats="diaryStats" />
+    <DiaryListHeader :stats="diaryStats"/>
 
     <div class="main-content">
       <DiaryListActionBar
@@ -178,7 +187,14 @@ onUnmounted(() => {
             <span class="info-text">
               {{ diaryStats.hasSearch ? '搜索到' : '共' }} {{ filteredDiaries.length }} 篇日记
             </span>
-            <span class="sort-indicator">按时间排序</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" class="sort-icon" v-if="orderBy === 'created'">
+              <path
+                  d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z"/>
+            </svg>
+            <span class="sort-icon" v-else>🕚</span>
+            <span class="sort-indicator" @click="orderBy = (orderBy === 'created' ? 'updated' : 'created')">
+              按{{ orderBy === 'created' ? '创建' : '更新' }}时间倒排
+            </span>
           </div>
         </div>
 
@@ -271,17 +287,22 @@ onUnmounted(() => {
           color: var(--pad-text-color-200);
         }
 
+        .sort-icon {
+          margin-left: auto;
+          margin-right: 4px;
+          display: inline-block;
+          vertical-align: middle;
+          font-size: 10px;
+        }
+
         .sort-indicator {
           font-size: 12px;
           color: var(--pad-text-color-400);
           display: flex;
           align-items: center;
           gap: 4px;
-
-          &::before {
-            content: '↓';
-            font-size: 10px;
-          }
+          cursor: pointer;
+          text-decoration: underline;
         }
       }
     }

@@ -34,7 +34,7 @@ function toggleTheme() {
             type="text"
             :value="keyword"
             @input="$emit('update:keyword', ($event.target as HTMLInputElement).value)"
-            placeholder="搜索日记内容..."
+            placeholder="搜索日记"
         />
       </div>
     </div>
@@ -85,7 +85,7 @@ function toggleTheme() {
       #search-input {
         width: 100%;
         box-sizing: border-box;
-        padding: 12px 20px;
+        padding: 12px 16px;
         font-size: 15px;
         background-color: var(--pad-bg-color-200);
         border: 1px solid var(--pad-border-color-200);

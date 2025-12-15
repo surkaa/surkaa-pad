@@ -238,7 +238,7 @@ async function uploadAttachment(tagPrefix: string, minetype: string, stream: Rea
     // 更新本地数据
     diary.value = updatedManifest;
 
-    // 在光标位置插入图片
+    // 在光标位置插入图片 TODO 在预览模式默认插入到文末
     const marker = `\n<<${tagPrefix}:${newFile.filename}>>\n`;
     const content = diary.value.content || "";
     const before = content.slice(0, cursorPosition.value);
