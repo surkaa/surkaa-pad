@@ -43,9 +43,9 @@ export const useAppStore = defineStore('app', () => {
 
     async function getEncryptedConfig() {
         if (!store.value) {
-            throw new Error('Store 未初始化');
+            await initStore();
         }
-        const val = await store.value.get<number[]>(CONFIG_KEY);
+        const val = await store.value!.get<number[]>(CONFIG_KEY);
         if (!val) return null;
         return val;
     }
@@ -81,17 +81,17 @@ export const useAppStore = defineStore('app', () => {
     async function saveNormalConfig(key: string, value: any) {
         // 避免store为空
         if (!store.value) {
-            throw new Error('Store 未初始化');
+            await initStore();
         }
-        await store.value.set(key, value);
-        await store.value.save();
+        await store.value!.set(key, value);
+        await store.value!.save();
     }
 
     async function getNormalConfig<T>(key: string): Promise<T | null> {
         if (!store.value) {
-            throw new Error('Store 未初始化');
+            await initStore();
         }
-        const val = await store.value.get<T>(key);
+        const val = await store.value!.get<T>(key);
         if (!val) return null;
         return val;
     }
