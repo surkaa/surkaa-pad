@@ -19,7 +19,7 @@
 | `ALIYUN_KEY` | 阿里云 AccessKey ID，用于身份验证 | 阿里云控制台 → 访问控制 → AccessKey 管理 |
 | `ALIYUN_SECRET` | 阿里云 AccessKey Secret，用于签名验证 | 阿里云控制台 → 访问控制 → AccessKey 管理 |
 | `ALIYUN_BUCKET_NAME` | OSS 存储桶名称，用于存储加密的日记数据 | 阿里云 OSS 控制台 → 存储桶列表 → 创建的存储桶名称 |
-| `ALIYUN_ENDPOINT` | OSS 访问域名，格式如：`oss-cn-hangzhou.aliyuncs.com` | 阿里云 OSS 控制台 → 存储桶概览 → 访问域名 |
+| `ALIYUN_ENDPOINT` | OSS 访问域名，格式如：`cn-hangzhou` | 阿里云 OSS 控制台 → 存储桶概览 → 访问域名 |
 
 ## 获取步骤
 
@@ -39,7 +39,7 @@
 - 其他设置可使用默认值
 - 创建成功后记录下：
   - **存储桶名称** → `ALIYUN_BUCKET_NAME`
-  - **Endpoint** → `ALIYUN_ENDPOINT`（格式如：`oss-cn-hangzhou.aliyuncs.com`）
+  - **Endpoint** → `ALIYUN_ENDPOINT`（格式如：`cn-hangzhou`）
 
 ### 4. 创建访问密钥
 - 在控制台右上角悬停头像，进入"AccessKey 管理"
