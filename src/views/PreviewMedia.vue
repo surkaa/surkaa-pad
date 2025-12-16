@@ -2,12 +2,13 @@
 import { onMounted, ref, onUnmounted, watch } from "vue";
 import { readCacheFile2UrlByEid } from "../utils";
 import { useRouter } from "vue-router";
+import {useEventListener} from "../utils/useEventListener.ts";
 
 const router = useRouter();
 const loading = ref(false);
 const url = ref('');
-const imageRef = ref<HTMLImageElement | null>(null);
-const containerRef = ref<HTMLElement | null>(null);
+const imageRef = ref<HTMLImageElement>();
+const containerRef = ref<HTMLElement>();
 
 // 缩放、旋转和拖拽状态
 const scale = ref(1);
@@ -225,45 +226,22 @@ function handleTouchEnd(event: TouchEvent) {
 
 // 添加事件监听
 function addEventListeners() {
-  if (!containerRef.value) return;
-
-  const container = containerRef.value;
-
-  // 桌面端事件
-  container.addEventListener('wheel', handleWheel, { passive: false });
-  container.addEventListener('mousedown', handleMouseDown);
-  document.addEventListener('mousemove', handleMouseMove);
-  document.addEventListener('mouseup', handleMouseUp);
-
-  // 移动端事件
-  container.addEventListener('touchstart', handleTouchStart, { passive: false });
-  container.addEventListener('touchmove', handleTouchMove, { passive: false });
-  container.addEventListener('touchend', handleTouchEnd);
-  container.addEventListener('touchcancel', handleTouchEnd);
-}
-
-// 移除事件监听
-function removeEventListeners() {
-  if (!containerRef.value) return;
-
-  const container = containerRef.value;
-
-  // 桌面端事件
-  container.removeEventListener('wheel', handleWheel);
-  container.removeEventListener('mousedown', handleMouseDown);
-  document.removeEventListener('mousemove', handleMouseMove);
-  document.removeEventListener('mouseup', handleMouseUp);
-
-  // 移动端事件
-  container.removeEventListener('touchstart', handleTouchStart);
-  container.removeEventListener('touchmove', handleTouchMove);
-  container.removeEventListener('touchend', handleTouchEnd);
-  container.removeEventListener('touchcancel', handleTouchEnd);
-
-  // 清除定时器
-  if (tipTimer) {
-    clearTimeout(tipTimer);
+  if (!containerRef.value) {
+    console.warn('Container ref is not defined.');
+    return;
   }
+
+  // 桌面端事件
+  useEventListener(containerRef, 'wheel', handleWheel, { passive: false });
+  useEventListener(containerRef, 'mousedown', handleMouseDown);
+  useEventListener('mousemove', handleMouseMove);
+  useEventListener('mouseup', handleMouseUp);
+
+  // 移动端事件
+  useEventListener(containerRef, 'touchstart', handleTouchStart, { passive: false });
+  useEventListener(containerRef, 'touchmove', handleTouchMove, { passive: false });
+  useEventListener(containerRef, 'touchend', handleTouchEnd);
+  useEventListener(containerRef, 'touchcancel', handleTouchEnd);
 }
 
 // 监听缩放变化
@@ -289,7 +267,9 @@ onMounted(() => {
   }
 });
 
-onUnmounted(removeEventListeners);
+onUnmounted(() => {
+  tipTimer && clearTimeout(tipTimer);
+});
 </script>
 
 <template>

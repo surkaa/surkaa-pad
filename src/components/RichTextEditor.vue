@@ -5,6 +5,7 @@ import {DiaryManifest, DownloadAttachmentEvent} from "../types";
 import {computed, onMounted, onUnmounted, ref, watch} from "vue";
 import {convertFilename2URL} from "../utils";
 import {useAppStore} from "../stores/app.ts";
+import {useEventListener} from "../utils/useEventListener.ts";
 
 const appStore = useAppStore();
 const model = defineModel<string>({default: ''});
@@ -42,7 +43,7 @@ const innerHTML = computed(() => {
       console.log('元素已存在，直接复用，跳过URL转换');
       // 复制
       if (tag === 'IMG') {
-        el.addEventListener('click', () => emit('request:previewMedia', eid, a.mimetype));
+        useEventListener(el, 'click', () => emit('request:previewMedia', eid, a.mimetype));
       }
       return el.outerHTML;
     }
@@ -59,7 +60,7 @@ const innerHTML = computed(() => {
         element.src = url;
         // 添加点击事件
         if (tag === 'IMG') {
-          element.addEventListener('click', () => emit('request:previewMedia', eid, a.mimetype));
+          useEventListener(element, 'click', () => emit('request:previewMedia', eid, a.mimetype));
         }
         processDownloadAttachment("completed", '附件加载完成');
       }

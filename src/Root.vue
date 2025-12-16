@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {onMounted, onUnmounted, ref, watch, type WatchHandle} from "vue";
 import {useAppStore} from "./stores/app.ts";
+import {useEventListener} from "./utils/useEventListener.ts";
 
 const appStore = useAppStore();
 const watcher = ref<WatchHandle>();
@@ -28,10 +29,10 @@ function contextmenu(event: MouseEvent) {
 }
 
 function disableRefresh() {
-  document.addEventListener('keydown', keydown);
+  useEventListener('keydown', keydown);
 
   // 阻止右键菜单中的刷新选项
-  window.addEventListener('contextmenu', contextmenu);
+  useEventListener('contextmenu', contextmenu);
 }
 
 function syncThemeWithSystem() {
@@ -70,9 +71,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   watcher.value && watcher.value.stop();
-  document.removeEventListener('keydown', keydown);
-  window.removeEventListener('contextmenu', contextmenu);
-})
+});
 </script>
 
 <template>
