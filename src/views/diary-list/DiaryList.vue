@@ -252,25 +252,6 @@ onUnmounted(() => {
     overflow-x: hidden;
     padding: 0 24px 100px 24px;
 
-    // 滚动条样式
-    &::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    &::-webkit-scrollbar-track {
-      background: var(--pad-bg-color-200);
-      border-radius: var(--pad-radius-full);
-    }
-
-    &::-webkit-scrollbar-thumb {
-      background: var(--pad-border-color-300);
-      border-radius: var(--pad-radius-full);
-
-      &:hover {
-        background: var(--pad-border-color-400);
-      }
-    }
-
     .list-header {
       margin-bottom: 16px;
       padding: 8px 0;

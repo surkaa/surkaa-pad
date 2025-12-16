@@ -145,26 +145,6 @@ onUnmounted(() => {
   line-height: 1.6;
   color: var(--pad-text-color-100);
 
-  // 共享的滚动条样式
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: var(--pad-bg-color-200);
-    border-radius: var(--pad-radius-full);
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: var(--pad-border-color-300);
-    border-radius: var(--pad-radius-full);
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--pad-border-color-400);
-  }
-
   .view {
     width: 100%;
     height: 100%;
