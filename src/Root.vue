@@ -2,6 +2,7 @@
 import {onMounted, onUnmounted, ref, watch, type WatchHandle} from "vue";
 import {useAppStore} from "./stores/app.ts";
 import {useEventListener} from "./utils/useEventListener.ts";
+import {type Platform, platform} from "@tauri-apps/plugin-os";
 
 const appStore = useAppStore();
 const watcher = ref<WatchHandle>();
@@ -28,11 +29,13 @@ function contextmenu(event: MouseEvent) {
   return false;
 }
 
-function disableRefresh() {
-  useEventListener('keydown', keydown);
+function disableRefresh(p: Platform) {
+  if (p != 'android' && p != 'ios') {
+    useEventListener('keydown', keydown);
 
-  // 阻止右键菜单中的刷新选项
-  useEventListener('contextmenu', contextmenu);
+    // 阻止右键菜单中的刷新选项
+    useEventListener('contextmenu', contextmenu);
+  }
 }
 
 function syncThemeWithSystem() {
@@ -64,8 +67,9 @@ function syncThemeWithSystem() {
 }
 
 onMounted(async () => {
+  const p = platform();
   await appStore.initStore();
-  disableRefresh();
+  disableRefresh(p);
   syncThemeWithSystem();
 });
 

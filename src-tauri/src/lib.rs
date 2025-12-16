@@ -381,6 +381,8 @@ pub fn run() {
                 ])
                 .build(),
         )
+        // 注册 os 插件
+        .plugin(tauri_plugin_os::init())
         .setup(|app| {
             app.manage(EncryptionManager::new());
             app.manage(OssClientManager::default());
