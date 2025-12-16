@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 要实现的功能：
 // 渲染内容文本（包括媒体文件）
-import {DiaryManifest} from "../types";
+import {DiaryManifest, DownloadAttachmentEvent} from "../types";
 import {computed, onMounted, onUnmounted, ref, watch} from "vue";
 import {convertFilename2URL} from "../utils";
 import {useAppStore} from "../stores/app.ts";
@@ -17,12 +17,12 @@ const {
 }>();
 const emit = defineEmits<{
   (e: 'update:cursorPosition', position: number): void;
-  (e: 'process:downloadAttachment', statusMsg: string): void;
+  (e: 'process:downloadAttachment', type: DownloadAttachmentEvent['event'], statusMsg: string): void;
   (e: 'request:previewMedia', eid: string, minetype: string): void;
 }>();
 
-const processDownloadAttachment = (statusMsg: string) => {
-  emit('process:downloadAttachment', statusMsg);
+const processDownloadAttachment = (type: DownloadAttachmentEvent['event'], statusMsg: string) => {
+  emit('process:downloadAttachment', type, statusMsg);
 };
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -61,7 +61,7 @@ const innerHTML = computed(() => {
         if (tag === 'IMG') {
           element.addEventListener('click', () => emit('request:previewMedia', eid, a.mimetype));
         }
-        processDownloadAttachment('附件加载完成');
+        processDownloadAttachment("completed", '附件加载完成');
       }
     });
     cancelFns.value.push(cFn);
