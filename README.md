@@ -24,10 +24,10 @@
 ## 获取步骤
 
 ### 1. 注册阿里云账号
-- 访问 [阿里云官网](<https://www.aliyun.com/minisite/goods?userCode=1pxgzrjg>)
+- 访问 [阿里云官网](https://aliyun.com/minisite/goods?userCode=1pxgzrjg)
 - 点击注册并完成账号认证
 
-### 2. 开通 OSS 服务
+### 2. 开通 OSS 包年服务（按量收费则不需求此步骤）
 - 登录阿里云控制台(或直接访问[阿里云对象存储](https://www.aliyun.com/product/oss))
 - 搜索并进入"对象存储 OSS"服务
 - 首次使用需开通服务（通常有免费额度）
