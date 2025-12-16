@@ -1,8 +1,19 @@
+<script lang="ts" setup>
+const {
+  version,
+  appName
+} = defineProps<{
+  version: string;
+  appName: string;
+}>();
+</script>
+
 <template>
   <div class="app-header">
     <h1 class="app-title">
       <img alt="app-logo" class="app-logo" src="/app-icon.png"/>
-      SurKaa Pad
+      <span class="app-name" v-text="appName"/>
+      <span class="version" v-text="version"/>
     </h1>
   </div>
 </template>
@@ -30,14 +41,28 @@
       font-size: 36px;
       filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
     }
+
+    .app-name {
+      font-size: 28px;
+      font-weight: 600;
+    }
+
+    .version {
+      font-size: 16px;
+      font-weight: 400;
+      margin-left: 12px;
+      color: var(--pad-text-color-light);
+    }
   }
 }
 
 @media (max-width: 512px) {
   .app-header {
     padding: 24px 20px 20px;
+
     .app-title {
       font-size: 28px;
+
       .app-logo {
         font-size: 32px;
       }

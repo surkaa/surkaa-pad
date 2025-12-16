@@ -1,7 +1,7 @@
 <template>
   <main id="unlock">
     <div class="unlock-container">
-      <UnlockHeader />
+      <UnlockHeader :version :appName/>
 
       <div class="divider"></div>
 
@@ -43,6 +43,7 @@ import LoadingState from "./LoadingState.vue";
 import LoginSection from "./LoginSection.vue";
 import ConfigSection from "./ConfigSection.vue";
 import ErrorState from "./ErrorState.vue";
+import {getName, getVersion} from "@tauri-apps/api/app";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
@@ -56,6 +57,8 @@ const showQuickInput = ref<boolean>(false);
 const quickConfig = ref('');
 const masterPassword = ref<string>('');
 const loading = ref<boolean>(false);
+const version = ref('0.0.0');
+const appName = ref('App Name');
 
 const appStore = useAppStore();
 const router = useRouter();
@@ -144,6 +147,8 @@ function confirmReset() {
 }
 
 onMounted(async () => {
+  version.value = await getVersion();
+  appName.value = await getName();
   const ec = await appStore.getEncryptedConfig();
   if (ec) {
     pipeline.value = 'login';

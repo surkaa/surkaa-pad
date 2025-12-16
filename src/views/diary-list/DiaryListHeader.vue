@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {useAppStore} from "../../stores/app.ts";
 import {computed, onMounted, onUnmounted, ref} from "vue";
+import {getName} from "@tauri-apps/api/app";
 
 defineProps<{
   stats: {
@@ -15,6 +16,7 @@ defineProps<{
 
 const appStore = useAppStore();
 const futureTimestamp = ref(Date.now());
+const appName = ref('App Name');
 let timer: number | null = null;
 
 // 剩余时间（秒）
@@ -35,7 +37,8 @@ const updateCountdown = () => {
   remainingSeconds.value = Math.max(0, future - now);
 }
 
-onMounted(() => {
+onMounted(async () => {
+  appName.value = await getName();
   futureTimestamp.value = appStore.getEndTime();
   console.log('截止时间:', futureTimestamp.value);
   updateCountdown();
@@ -54,7 +57,7 @@ onUnmounted(() => {
       <div class="logo-section">
         <h1 class="app-title">
           <img alt="app-logo" class="app-logo" src="/app-icon.png"/>
-          SurKaa Pad
+          {{ appName }}
         </h1>
         <!--倒计时-->
         <div class="countdown-timer">

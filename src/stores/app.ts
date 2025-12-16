@@ -132,6 +132,7 @@ export const useAppStore = defineStore('app', () => {
     }
 
     function getEndTime() {
+        // TODO 返回这个StartTime可能不是最新的
         return startTime + AUTO_CLOSE_APP_TIMEOUT;
     }
 
