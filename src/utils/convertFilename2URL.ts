@@ -47,7 +47,7 @@ export function convertFilename2URL(
     eid: string,
     mimetype: string,
     filename: string,
-    emit: (msg: string) => void,
+    emit: (type: DownloadAttachmentEvent['event'], msg: string) => void,
     urlCallback: (url: string) => void
 ): () => void {
     const cancelFn = () => {
@@ -73,26 +73,23 @@ export function convertFilename2URL(
             case "started":
                 totalMB = msg.data.totalSize >> 20;
                 console.log(`[ConvertFilename2URL] 下载附件 ${eid} 开始，大小 ${totalMB}MB`);
-                emit(`开始下载附件(${totalMB}MB)`);
                 // 添加取消下载函数到映射
                 cancelMap.set(eid, cancelDownloadFn);
                 break;
             case "downloadProgress":
                 const downloadedMB = msg.data.downloaded >> 20;
-                emit(`⏳ ${downloadedMB}MB / ${totalMB}MB`);
+                emit("downloadProgress", `${downloadedMB}MB / ${totalMB}MB`);
                 break;
             case "decrypting":
                 console.log(`[ConvertFilename2URL] 附件 ${eid} 开始解密`);
-                emit(`解密中...请稍等`);
+                emit("decrypting", `解密中...请稍等`);
                 break;
             case "decrypted":
                 decryptedMB = msg.data.decryptedSize >> 20;
                 console.log(`[ConvertFilename2URL] 附件 ${eid} 已解密，大小 ${decryptedMB}MB / ${totalMB}MB`);
-                emit(`已解密 ${decryptedMB}MB / ${totalMB}MB`);
                 break;
             case "completed":
                 console.log(`[ConvertFilename2URL] 附件 ${eid} 下载解密完成，文件路径 ${msg.data.filePath}`);
-                emit(`装载中... ${decryptedMB}MB / ${totalMB}MB...`);
                 cacheFileMap.set(eid, msg.data.filePath);
                 const url = await readCacheFile2UrlByEid(eid, mimetype);
                 urlCallback(url);

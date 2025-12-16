@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {computed, onMounted, ref, watch} from "vue";
-import {DiaryManifest} from "../../types";
+import {DiaryManifest, DownloadAttachmentEvent} from "../../types";
 import {invoke} from "@tauri-apps/api/core";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
 import {showToast} from "../../utils";
@@ -33,6 +33,7 @@ const maxUndoStackSize = 5;
 const undoStack = ref<string[]>([]);
 const redoStack = ref<string[]>([]);
 const undoOrRedoInProgress = ref(false);
+const downType = ref<DownloadAttachmentEvent['event'] | null>(null);
 const renderMsg = ref('');
 const isDelBack = ref(false);
 const showAudioDrawer = ref(false);
@@ -64,6 +65,15 @@ const contentLen = computed(() => {
 
 function toggleMode() {
   mode.value = (mode.value === 'edit' ? 'view' : 'edit');
+}
+
+function updateDownMsg(type: DownloadAttachmentEvent['event'], msg: string) {
+  renderMsg.value = msg;
+  if (type =='completed') {
+    downType.value = null;
+    return;
+  }
+  downType.value = type;
 }
 
 onBeforeRouteLeave((to, from, next) => {
@@ -355,7 +365,7 @@ onMounted(async () => {
             v-model="diary.content"
             :mode="mode"
             @update:cursor-position="updateCursor"
-            @process:download-attachment="msg => renderMsg = msg"
+            @process:download-attachment="updateDownMsg"
             @request:preview-media="openPreviewMedia"
         />
       </div>
@@ -363,6 +373,7 @@ onMounted(async () => {
 
     <DiaryFooter
         :content-len="contentLen"
+        :down-type="downType"
         :status-msg="statusMsg"
         :updated="diary.updated"
         :created="diary.created"

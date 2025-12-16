@@ -490,8 +490,8 @@ onUnmounted(removeEventListeners);
 
   .image-container {
     position: relative;
-    width: 90%;
-    height: 90%;
+    width: 100%;
+    height: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -499,8 +499,6 @@ onUnmounted(removeEventListeners);
     border-radius: var(--pad-radius-lg);
 
     @media (max-width: 768px) {
-      width: 100%;
-      height: 100%;
       border-radius: 0;
     }
 

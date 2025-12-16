@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { formatTimestamp, getCurEmoji } from "../../utils";
+import {DownloadAttachmentEvent} from "../../types";
 
 defineProps<{
   contentLen: number;
   statusMsg: string;
   updated: number;
   created: number;
+  downType: DownloadAttachmentEvent['event'] | null;
 }>();
 </script>
 
@@ -19,9 +21,12 @@ defineProps<{
         <span class="footer-text">{{ contentLen }}字</span>
       </div>
       <div class="footer-item" v-if="statusMsg" :title="statusMsg">
-        <svg viewBox="0 0 24 24" width="14" height="14" v-if="!statusMsg.includes('⏳')">
+        <svg viewBox="0 0 24 24" width="14" height="14" v-if="downType == null">
           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
         </svg>
+        <div class="rotating" v-if="downType == 'downloadProgress' || downType == 'decrypting'">
+          ⏳
+        </div>
         <span class="footer-text">{{ statusMsg }}</span>
       </div>
     </section>
