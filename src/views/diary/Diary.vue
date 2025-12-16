@@ -53,7 +53,7 @@ const statusMsg = computed(() => {
   }
   return mode.value === 'edit' ? '编辑模式' : renderMsg.value;
 });
-const cursorPosition = ref(0);
+const cursorPosition = ref<number>();
 const lastSavedContent = ref("");
 
 const contentLen = computed(() => {
@@ -248,12 +248,15 @@ async function uploadAttachment(tagPrefix: string, minetype: string, stream: Rea
     // 更新本地数据
     diary.value = updatedManifest;
 
-    // 在光标位置插入图片 TODO 在预览模式默认插入到文末
-    const marker = `\n<<${tagPrefix}:${newFile.filename}>>\n`;
+    // 在光标位置插入图片
+    const marker = `<<${tagPrefix}:${newFile.filename}>>`;
     const content = diary.value.content || "";
-    const before = content.slice(0, cursorPosition.value);
-    const after = content.slice(cursorPosition.value);
-    diary.value.content = before + marker + after;
+    const p = cursorPosition.value ? cursorPosition.value : content.length;
+    const before = content.slice(0, p);
+    const after = content.slice(p);
+    const prefix = before.length === 0 || before.endsWith('\n') ? '' : '\n';
+    const suffix = after.length === 0 || after.startsWith('\n') ? '' : '\n';
+    diary.value.content = before + prefix + marker + suffix + after;
     console.log('插入附件标记: ', marker);
 
     // 自动更新保存日记

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { showToast } from "../../utils"; // 假设utils路径一致，实际使用请根据目录调整
+import { showToast } from "../../utils";
 
 const props = defineProps<{
   mode: 'edit' | 'view';
