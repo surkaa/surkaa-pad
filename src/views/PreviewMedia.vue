@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref, onUnmounted, watch } from "vue";
-import { readCacheFile2UrlByEid } from "../utils";
-import { useRouter } from "vue-router";
+import {onMounted, onUnmounted, ref, watch} from "vue";
+import {readCacheFile2UrlByEid} from "../utils";
+import {useRouter} from "vue-router";
 import {useEventListener} from "../utils/useEventListener.ts";
+import {showToast} from "../utils";
 
 const router = useRouter();
-const loading = ref(false);
 const url = ref('');
 const imageRef = ref<HTMLImageElement>();
 const containerRef = ref<HTMLElement>();
@@ -13,9 +13,9 @@ const containerRef = ref<HTMLElement>();
 // 缩放、旋转和拖拽状态
 const scale = ref(1);
 const rotation = ref(0); // 旋转角度，单位：度
-const position = ref({ x: 0, y: 0 });
+const position = ref({x: 0, y: 0});
 const isDragging = ref(false);
-const lastPosition = ref({ x: 0, y: 0 });
+const lastPosition = ref({x: 0, y: 0});
 const initialDistance = ref(0);
 const isPinching = ref(false);
 const maxScale = ref(10);
@@ -51,7 +51,7 @@ function rotateImage() {
 function resetTransform() {
   scale.value = 1;
   rotation.value = 0;
-  position.value = { x: 0, y: 0 };
+  position.value = {x: 0, y: 0};
   showTipMessage('已重置');
 }
 
@@ -90,7 +90,7 @@ function handleMouseDown(event: MouseEvent) {
   if (event.button !== 0) return; // 只处理左键
 
   isDragging.value = true;
-  lastPosition.value = { x: event.clientX, y: event.clientY };
+  lastPosition.value = {x: event.clientX, y: event.clientY};
 
   // 添加样式
   if (imageRef.value) {
@@ -116,7 +116,7 @@ function handleMouseMove(event: MouseEvent) {
     position.value.x += deltaX;
     position.value.y += deltaY;
 
-    lastPosition.value = { x: event.clientX, y: event.clientY };
+    lastPosition.value = {x: event.clientX, y: event.clientY};
     animationFrameId = null;
   });
 
@@ -232,14 +232,14 @@ function addEventListeners() {
   }
 
   // 桌面端事件
-  useEventListener(containerRef, 'wheel', handleWheel, { passive: false });
+  useEventListener(containerRef, 'wheel', handleWheel, {passive: false});
   useEventListener(containerRef, 'mousedown', handleMouseDown);
   useEventListener('mousemove', handleMouseMove);
   useEventListener('mouseup', handleMouseUp);
 
   // 移动端事件
-  useEventListener(containerRef, 'touchstart', handleTouchStart, { passive: false });
-  useEventListener(containerRef, 'touchmove', handleTouchMove, { passive: false });
+  useEventListener(containerRef, 'touchstart', handleTouchStart, {passive: false});
+  useEventListener(containerRef, 'touchmove', handleTouchMove, {passive: false});
   useEventListener(containerRef, 'touchend', handleTouchEnd);
   useEventListener(containerRef, 'touchcancel', handleTouchEnd);
 }
@@ -254,16 +254,12 @@ watch(scale, (newScale) => {
 onMounted(() => {
   // 从state获取临时文件路径
   const eid = history.state.eid;
-  const minetype = history.state.minetype;
-  if (eid && minetype) {
-    loading.value = true;
-    readCacheFile2UrlByEid(eid, minetype)
-        .then(res => {
-          url.value = res;
-          // 图片加载完成后添加事件监听
-          setTimeout(addEventListeners, 100);
-        })
-        .finally(() => loading.value = false);
+  if (eid) {
+    url.value = readCacheFile2UrlByEid(eid);
+    addEventListeners();
+  } else {
+    showToast('无法预览该媒体文件', 'error');
+    router.back();
   }
 });
 
@@ -295,7 +291,8 @@ onUnmounted(() => {
           aria-label="重置缩放和位置"
       >
         <svg class="control-icon" viewBox="0 0 24 24">
-          <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+          <path
+              d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
         </svg>
         <span class="control-text">重置</span>
       </button>
@@ -306,7 +303,8 @@ onUnmounted(() => {
           aria-label="旋转图片"
       >
         <svg class="control-icon" viewBox="0 0 24 24">
-          <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
+          <path
+              d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
         </svg>
         <span class="control-text">旋转</span>
       </button>
@@ -317,7 +315,8 @@ onUnmounted(() => {
           aria-label="关闭预览"
       >
         <svg class="control-icon" viewBox="0 0 24 24">
-          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+          <path
+              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
         </svg>
         <span class="control-text">关闭</span>
       </button>
@@ -325,12 +324,6 @@ onUnmounted(() => {
 
     <!-- 图片容器 -->
     <div class="image-container">
-      <!-- 加载状态 -->
-      <div v-if="loading" class="loading-state">
-        <div class="loading-spinner"></div>
-        <div class="loading-text">加载中...</div>
-      </div>
-
       <!-- 图片 -->
       <img
           ref="imageRef"
@@ -480,38 +473,6 @@ onUnmounted(() => {
 
     @media (max-width: 768px) {
       border-radius: 0;
-    }
-
-    .loading-state {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-      z-index: 5;
-
-      .loading-spinner {
-        width: 50px;
-        height: 50px;
-        border: 4px solid var(--pad-border-color-200);
-        border-top: 4px solid var(--pad-primary-color);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-      }
-
-      .loading-text {
-        font-size: 16px;
-        color: var(--pad-text-color-200);
-        font-weight: 500;
-      }
-
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
     }
 
     .preview-image {

@@ -294,12 +294,12 @@ function redo() {
   diary.value.content = nextState;
 }
 
-function openPreviewMedia(eid: string, minetype: string) {
-  console.log('打开媒体预览: ', eid, minetype);
+function openPreviewMedia(eid: string) {
+  console.log('打开媒体预览: ', eid);
   router.push({
     name: 'PreviewMedia',
     state: {
-      eid, minetype
+      eid
     }
   });
 }

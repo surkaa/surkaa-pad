@@ -1,5 +1,4 @@
-import {Channel, invoke} from "@tauri-apps/api/core";
-import {open} from "@tauri-apps/plugin-fs";
+import {Channel, convertFileSrc, invoke} from "@tauri-apps/api/core";
 import {DownloadAttachmentEvent} from "../types";
 
 type NullableFn = (() => void) | null;
@@ -7,27 +6,18 @@ type NullableFn = (() => void) | null;
 const cancelMap: Map<string, NullableFn> = new Map();
 const cacheFileMap: Map<string, string> = new Map();
 
+
 /**
  * 通过 eid 读取缓存的文件并转成 URL
  * @param eid      element id
- * @param mimetype mimetype
  * @returns         数据 URL
  */
-export async function readCacheFile2UrlByEid(eid: string, mimetype: string) {
+export function readCacheFile2UrlByEid(eid: string) {
     const filePath = cacheFileMap.get(eid);
     if (!filePath) {
         throw new Error(`[readCacheFile2URL] 未找到缓存的文件路径，eid: ${eid}`);
     }
-    // 创建数据URL
-    const fileHandle = await open(filePath, {
-        read: true,
-    });
-    const stat = await fileHandle.stat();
-    const buffer = new ArrayBuffer(stat.size);
-    await fileHandle.read(new Uint8Array(buffer));
-    await fileHandle.close();
-    const blob = new Blob([buffer], {type: mimetype || 'application/octet-stream'});
-    return URL.createObjectURL(blob);
+    return convertFileSrc(filePath);
 }
 
 /**
@@ -35,7 +25,6 @@ export async function readCacheFile2UrlByEid(eid: string, mimetype: string) {
  * @param uuid          日记 UUID
  * @param nonce         附件解密用的 nonce
  * @param eid           attachment media element id
- * @param mimetype      附件 mimetype
  * @param filename      附件文件名
  * @param emit          更新状态的回调函数
  * @param urlCallback   转化成 URL 后的回调函数
@@ -45,7 +34,6 @@ export function convertFilename2URL(
     uuid: string,
     nonce: number[],
     eid: string,
-    mimetype: string,
     filename: string,
     emit: (type: DownloadAttachmentEvent['event'], msg: string) => void,
     urlCallback: (url: string) => void
@@ -91,8 +79,7 @@ export function convertFilename2URL(
             case "completed":
                 console.log(`[ConvertFilename2URL] 附件 ${eid} 下载解密完成，文件路径 ${msg.data.filePath}`);
                 cacheFileMap.set(eid, msg.data.filePath);
-                const url = await readCacheFile2UrlByEid(eid, mimetype);
-                urlCallback(url);
+                urlCallback(readCacheFile2UrlByEid(eid));
                 break;
             case "error":
                 console.error(`[ConvertFilename2URL] 附件 ${eid} 下载并解密过程中出错：${msg.data.message}`);

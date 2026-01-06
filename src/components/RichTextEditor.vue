@@ -19,7 +19,7 @@ const {
 const emit = defineEmits<{
   (e: 'update:cursorPosition', position: number): void;
   (e: 'process:downloadAttachment', type: DownloadAttachmentEvent['event'], statusMsg: string): void;
-  (e: 'request:previewMedia', eid: string, minetype: string): void;
+  (e: 'request:previewMedia', eid: string): void;
 }>();
 
 const processDownloadAttachment = (type: DownloadAttachmentEvent['event'], statusMsg: string) => {
@@ -43,12 +43,12 @@ const innerHTML = computed(() => {
       console.log('元素已存在，直接复用，跳过URL转换');
       // 复制
       if (tag === 'IMG') {
-        useEventListener(el, 'click', () => emit('request:previewMedia', eid, a.mimetype));
+        useEventListener(el, 'click', () => emit('request:previewMedia', eid));
       }
       return el.outerHTML;
     }
     // 请求将文件名转换为URL
-    const cFn = convertFilename2URL(diary.id, a.nonce, eid, a.mimetype, fn, processDownloadAttachment, (url: string) => {
+    const cFn = convertFilename2URL(diary.id, a.nonce, eid, fn, processDownloadAttachment, (url: string) => {
       // 设置媒体元素的src属性
       const element = document.getElementById(eid) as HTMLMediaElement;
       if (element) {
@@ -60,7 +60,7 @@ const innerHTML = computed(() => {
         element.src = url;
         // 添加点击事件
         if (tag === 'IMG') {
-          useEventListener(element, 'click', () => emit('request:previewMedia', eid, a.mimetype));
+          useEventListener(element, 'click', () => emit('request:previewMedia', eid));
         }
         processDownloadAttachment("completed", '附件加载完成');
       }
