@@ -58,7 +58,7 @@ function getAttachmentInfo(attachments: AttachmentMeta[]) {
 
     <div class="card-content">
       <p class="preview-content">
-        {{ diary.content.replace(/<<[A-Z]{3}:[^>]+>>/g, '').trim() || '无内容' }}
+        {{ diary.content.replace(/<<[A-Z]{3}:[^>]+>>/g, '').trim().slice(0, 20) || '（无内容预览）' }}
       </p>
     </div>
 
