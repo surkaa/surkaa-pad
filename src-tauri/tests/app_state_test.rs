@@ -112,11 +112,12 @@ mod app_state_test {
         let app_state = AppState {};
         let cache = DiaryMemoryCache::new();
 
-        app_state.sync_from_oss(&cache, &e, &c, &store, None, None).await.expect("未能同步日记");
+        app_state
+            .sync_from_oss(&cache, &e, &c, &store, None, None)
+            .await
+            .expect("未能同步日记");
 
-        let diaries = app_state
-            .list_cached_diaries(&cache)
-            .await;
+        let diaries = app_state.list_cached_diaries(&cache).await;
 
         println!("diaries: {:?}", diaries);
 
@@ -124,12 +125,21 @@ mod app_state_test {
             let content = diary.content;
             let updated_content = content.replace("<br>", "\n");
             if updated_content != content {
-                println!("更新日记 ID为: {}, old: {}, new: {}", diary.id, content, updated_content);
-                store.update_diary_content_only(
-                    &e, &c, &app_state, None,
-                    diary.id,
-                    &updated_content.as_str(),
-                ).await.expect("未能更新日记内容");
+                println!(
+                    "更新日记 ID为: {}, old: {}, new: {}",
+                    diary.id, content, updated_content
+                );
+                store
+                    .update_diary_content_only(
+                        &e,
+                        &c,
+                        &app_state,
+                        None,
+                        diary.id,
+                        &updated_content.as_str(),
+                    )
+                    .await
+                    .expect("未能更新日记内容");
             }
         }
     }

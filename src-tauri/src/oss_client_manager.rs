@@ -1,10 +1,10 @@
 use aliyun_oss_client::types::ObjectQuery;
 use aliyun_oss_client::{Bucket, Client, EndPoint, Key, Object, Secret};
 use chrono::{DateTime, Utc};
-use std::sync::{Arc};
+use reqwest::Response;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
-use reqwest::{Response};
 
 #[derive(Debug)]
 pub struct ObjectInfo {
@@ -32,9 +32,7 @@ pub struct OssClientManager {
 impl OssClientManager {
     pub fn new() -> Self {
         OssClientManager {
-            inner: Arc::new(Mutex::new(ClientInner {
-                client: None,
-            })),
+            inner: Arc::new(Mutex::new(ClientInner { client: None })),
             initialized: Arc::new(AtomicBool::new(false)),
         }
     }

@@ -36,7 +36,8 @@ mod ali_oss_tests {
     async fn test_oss_manager_get_single() {
         let oss = get_initialized_oss_manager().await;
 
-        let test_diary= oss.list_objects("cf4521cc-3d85-45b5-90f8-7716ad63e1e8/")
+        let test_diary = oss
+            .list_objects("cf4521cc-3d85-45b5-90f8-7716ad63e1e8/")
             .await
             .expect("Failed to list objects");
         println!("Objects: {:?}", test_diary);

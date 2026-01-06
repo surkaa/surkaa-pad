@@ -76,7 +76,7 @@ impl SecureDiaryStore {
     pub async fn list_diaries(
         &self,
         client: &OssClientManager,
-        uuid: &Option<String>
+        uuid: &Option<String>,
     ) -> Result<HashMap<String, ObjectInfo>, String> {
         let objects = client
             .list_objects(&match uuid {
@@ -388,9 +388,9 @@ impl SecureDiaryStore {
             .resolve(&filename, BaseDirectory::Temp)
             .unwrap_or_else(|e| {
                 log::error!(
-                        "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
-                        e
-                    );
+                    "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
+                    e
+                );
                 app_state
                     .get_attachment_cache_dir(Some(&app_handle))
                     .join(&filename)
@@ -471,7 +471,8 @@ impl SecureDiaryStore {
                     let _ = event.send(DownloadAttachmentEvent::Error { message });
 
                     // 任务结束：无论是成功 (Ok) 还是错误 (Err)，都需要清除句柄
-                    let mut handle_guard = handle_map_clone.lock()
+                    let mut handle_guard = handle_map_clone
+                        .lock()
                         .map_err(|_| "Failed to acquire lock (poisoned)")
                         .unwrap();
                     handle_guard.remove(&eid);
@@ -507,14 +508,17 @@ impl SecureDiaryStore {
             }
 
             // 任务结束：无论是成功 (Ok) 还是错误 (Err)，都需要清除句柄
-            let mut handle_guard = handle_map_clone.lock()
+            let mut handle_guard = handle_map_clone
+                .lock()
                 .map_err(|_| "Failed to acquire lock (poisoned)")
                 .unwrap();
             handle_guard.remove(&eid);
         });
 
         // 2. 将新的 JoinHandle 存储到 HashMap 中
-        let mut handle_guard = self.download_handles.lock()
+        let mut handle_guard = self
+            .download_handles
+            .lock()
             .map_err(|_| "Failed to acquire lock (poisoned)")?;
 
         // 如果该 eid 已存在，先取消旧任务 (防止重复下载冲突)
@@ -531,7 +535,9 @@ impl SecureDiaryStore {
     /// 根据 eid 取消对应的下载任务。
     pub fn cancel_download(&self, eid: &str) -> Result<bool, String> {
         // 1. 获取 HashMap 的可变锁
-        let mut handle_guard = self.download_handles.lock()
+        let mut handle_guard = self
+            .download_handles
+            .lock()
             .map_err(|_| "Failed to acquire lock (poisoned)")?;
 
         // 2. 尝试从 HashMap 中取出并移除该 eid 对应的句柄

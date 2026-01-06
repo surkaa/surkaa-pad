@@ -16,7 +16,9 @@ impl CacheFileManager {
 
     // 添加缓存文件
     pub fn add_cache_file(&self, path: PathBuf) -> Result<(), String> {
-        let mut cache_files = self.cache_files.lock()
+        let mut cache_files = self
+            .cache_files
+            .lock()
             .map_err(|_| "Failed to acquire lock (poisoned)")?;
         cache_files.push(path);
         Ok(())
@@ -24,7 +26,9 @@ impl CacheFileManager {
 
     // 获取所有缓存文件
     pub fn get_cache_files(&self) -> Result<Vec<PathBuf>, String> {
-        let cache_files = self.cache_files.lock()
+        let cache_files = self
+            .cache_files
+            .lock()
             .map_err(|_| "Failed to acquire lock (poisoned)")?;
         Ok(cache_files.clone())
     }

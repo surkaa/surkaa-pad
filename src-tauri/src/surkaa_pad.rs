@@ -143,7 +143,6 @@ impl AppState {
         app_handle: Option<&AppHandle>,
         uuid: Option<String>,
     ) -> Result<Option<DiaryManifest>, String> {
-
         // 先加载内存的
         let cache_dir = self.get_diary_cache_dir(app_handle);
         log::info!("加载日记缓存目录: {}", cache_dir.display());
