@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 # Tauri Store 插件 (用于持久化存储)
 tauri-plugin-store = "2"
@@ -42,6 +42,10 @@ tauri-plugin-log = "2"
 reqwest = {version ="^0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 futures = "0.3"
 tauri-plugin-os = "2.3.2"
+hex = "0.4"
 
 [patch.crates-io]
 aliyun-oss-client = { path = "../vendor/aliyun-oss-client-modified" }
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-biometric = { path = "../../../../Fork/tauri-plugins-workspace/plugins/biometric" }

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-biometric": "file:../../../Fork/tauri-plugins-workspace/plugins/biometric",
     "@tauri-apps/plugin-fs": "^2.4.4",
     "@tauri-apps/plugin-log": "~2.7.1",
     "@tauri-apps/plugin-opener": "^2",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@types/node": "^25.0.3",
     "@vitejs/plugin-vue": "^5.2.1",
     "sass-embedded": "^1.93.3",
     "typescript": "~5.6.2",
