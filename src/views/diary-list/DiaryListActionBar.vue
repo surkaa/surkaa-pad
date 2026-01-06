@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {useAppStore} from "../../stores/app.ts";
+import {useRouter} from "vue-router";
 
 defineProps<{
   keyword: string;
@@ -8,20 +8,10 @@ defineProps<{
 
 defineEmits(['update:keyword', 'sync']);
 
-const appStore = useAppStore();
+const router = useRouter();
 
-function toggleTheme() {
-  switch (appStore.theme) {
-    case "system":
-      appStore.setTheme("light");
-      break;
-    case "light":
-      appStore.setTheme("dark");
-      break;
-    case "dark":
-      appStore.setTheme("system");
-      break;
-  }
+function gotoSettings() {
+  router.push({name: 'Settings'});
 }
 </script>
 
@@ -41,7 +31,7 @@ function toggleTheme() {
 
     <div class="action-buttons">
       <button
-          class="sync-btn"
+          class="btn"
           @click="$emit('sync')"
           :disabled="isSyncing"
           :title="isSyncing ? '正在同步...' : '从云端同步'"
@@ -50,13 +40,11 @@ function toggleTheme() {
         <span class="btn-icon" v-else>☁️</span>
       </button>
       <button
-          class="toggle-theme-btn"
-          @click="toggleTheme"
+          class="btn"
+          @click="gotoSettings"
       >
         <span class="btn-icon">
-          <template v-if="appStore.theme === 'system'">🖥️</template>
-          <template v-else-if="appStore.theme === 'light'">🌞</template>
-          <template v-else>🌜</template>
+          ⚙️
         </span>
       </button>
     </div>
@@ -111,7 +99,7 @@ function toggleTheme() {
     align-items: center;
     gap: 12px;
 
-    .sync-btn {
+    .btn {
       display: flex;
       align-items: center;
       gap: 8px;
@@ -142,32 +130,6 @@ function toggleTheme() {
 
       .btn-icon {
         font-size: 16px;
-      }
-
-      .btn-text {
-        font-weight: 500;
-      }
-    }
-
-    .toggle-theme-btn {
-      padding: 10px 16px;
-      background-color: var(--pad-bg-color-200);
-      border: 1px solid var(--pad-border-color-200);
-      border-radius: var(--pad-radius-lg);
-      color: var(--pad-text-color-200);
-      font-size: 14px;
-      cursor: pointer;
-      transition: all var(--pad-transition-fast);
-
-      &:hover {
-        background-color: var(--pad-bg-color-300);
-        color: var(--pad-text-color-100);
-        border-color: var(--pad-border-color-300);
-        transform: translateY(-1px);
-      }
-
-      &:active {
-        transform: translateY(0);
       }
 
       .btn-text {

@@ -6,7 +6,7 @@
       <div class="divider"></div>
 
       <div class="content-area">
-        <LoadingState v-if="pipeline === 'wait-load-config'" />
+        <LoadingState v-if="pipeline === 'wait-load-config'"/>
 
         <LoginSection
             v-else-if="pipeline === 'login'"
@@ -26,7 +26,7 @@
             @save="saveConfigAndLogin"
         />
 
-        <ErrorState v-else />
+        <ErrorState v-else/>
       </div>
     </div>
   </main>
@@ -130,7 +130,10 @@ function unlock() {
         router.replace({name: 'DiaryList'});
         appStore.setTimeoutForCloseApp();
       })
-      .catch(err => showToast(`解锁失败：${err.message || err}`, 'error'))
+      .catch(err => {
+        console.log("解锁失败：", err.message);
+        showToast(`解锁失败：${err.message || err}`, 'error');
+      })
       .finally(() => loading.value = false);
 }
 
@@ -146,6 +149,23 @@ function confirmReset() {
   }
 }
 
+async function tryBiometricUnlock() {
+  loading.value = true;
+  try {
+    await appStore.unlockWithBiometric();
+    await appStore.initOss(encryptedConfig.value);
+
+    showToast("生物识别解锁成功", "success");
+    appStore.setTimeoutForCloseApp();
+    await router.replace({name: 'DiaryList'});
+  } catch (e: any) {
+    // 用户取消或失败，不做处理，留在登录界面让用户输密码
+    console.log("生物识别未通过:", e);
+  } finally {
+    loading.value = false;
+  }
+}
+
 onMounted(async () => {
   version.value = await getVersion();
   appName.value = await getName();
@@ -153,6 +173,9 @@ onMounted(async () => {
   if (ec) {
     pipeline.value = 'login';
     encryptedConfig.value = ec;
+    if (appStore.isBiometricEnabled) {
+      tryBiometricUnlock();
+    }
   } else {
     pipeline.value = 'config';
   }
@@ -225,6 +248,7 @@ onMounted(async () => {
 @media (min-width: 513px) and (max-width: 768px) {
   #unlock {
     padding: 8%;
+
     .unlock-container {
       max-width: 420px;
     }

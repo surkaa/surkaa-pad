@@ -7,34 +7,34 @@ import {type Platform, platform} from "@tauri-apps/plugin-os";
 const appStore = useAppStore();
 const watcher = ref<WatchHandle>();
 
-function keydown(event: KeyboardEvent) {
-  // 阻止 F5 键
-  if (event.key === 'F5') {
-    console.log('刷新已被禁用');
-    event.preventDefault();
-    return;
-  }
-
-  // 阻止 Ctrl+R (Windows/Linux) 或 Command+R (Mac)
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r') {
-    console.log('刷新已被禁用');
-    event.preventDefault();
-    return;
-  }
-}
-
-function contextmenu(event: MouseEvent) {
-  console.log('右键菜单刷新已被禁用');
-  event.preventDefault();
-  return false;
+function isNotMobilePlatform(p: Platform): boolean {
+  return p !== 'android' && p !== 'ios';
 }
 
 function disableRefresh(p: Platform) {
-  if (p != 'android' && p != 'ios') {
-    useEventListener('keydown', keydown);
+  if (isNotMobilePlatform(p)) {
+    useEventListener('keydown', (event: KeyboardEvent) => {
+      // 阻止 F5 键
+      if (event.key === 'F5') {
+        console.log('刷新已被禁用');
+        event.preventDefault();
+        return;
+      }
+
+      // 阻止 Ctrl+R (Windows/Linux) 或 Command+R (Mac)
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r') {
+        console.log('刷新已被禁用');
+        event.preventDefault();
+        return;
+      }
+    });
 
     // 阻止右键菜单中的刷新选项
-    useEventListener('contextmenu', contextmenu);
+    useEventListener('contextmenu', (event: MouseEvent) => {
+      console.log('右键菜单刷新已被禁用');
+      event.preventDefault();
+      return false;
+    });
   }
 }
 

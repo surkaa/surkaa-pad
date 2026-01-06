@@ -3,6 +3,7 @@ import Unlock from "../views/unlock/Unlock.vue";
 import DiaryList from "../views/diary-list/DiaryList.vue";
 import Diary from "../views/diary/Diary.vue";
 import PreviewMedia from "../views/PreviewMedia.vue";
+import Settings from "../views/settings/Settings.vue";
 
 const routes: RouteRecordRaw[] = [{
     name: 'Unlock',
@@ -31,6 +32,13 @@ const routes: RouteRecordRaw[] = [{
     component: PreviewMedia,
     meta: {
         title: '媒体预览'
+    }
+}, {
+    name: 'Settings',
+    path: '/settings',
+    component: Settings,
+    meta: {
+        title: '设置'
     }
 }];
 

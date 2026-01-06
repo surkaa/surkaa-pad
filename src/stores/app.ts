@@ -6,12 +6,15 @@ import {invoke} from "@tauri-apps/api/core";
 import {markRaw, ref} from "vue";
 import {window} from "@tauri-apps/api";
 import {showToast} from "../utils";
+import {biometricCipher} from "@tauri-apps/plugin-biometric";
 
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
 const SALE = 'NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg';
 const THEME_KEY = 'app-theme';
 const DEFAULT_THEME: ThemeType = 'system';
+const BIOMETRIC_ENABLED_KEY = "biometric_enabled";
+const BIOMETRIC_ENCRYPTED_DEK = "biometric_dek";
 // 解锁后1小时自动关闭应用
 const AUTO_CLOSE_APP_TIMEOUT = 60 * 60 * 1000;
 // 时间到时剩余操作时间
@@ -22,6 +25,7 @@ export const useAppStore = defineStore('app', () => {
     const keyword = ref<string>('');
     const savedScrollPosition = ref(0);
     const theme = ref<ThemeType>('system');
+    const isBiometricEnabled = ref(false);
     let startTime: number = Date.now();
 
     function setTheme(t: ThemeType, save = true) {
@@ -39,6 +43,9 @@ export const useAppStore = defineStore('app', () => {
         } else {
             setTheme(DEFAULT_THEME);
         }
+        // 加载生物识别开关状态
+        const enabled = await getNormalConfig<boolean>(BIOMETRIC_ENABLED_KEY);
+        isBiometricEnabled.value = !!enabled;
     }
 
     async function getEncryptedConfig() {
@@ -148,6 +155,46 @@ export const useAppStore = defineStore('app', () => {
         return await invoke<string[]>('search_diaries', {keyword});
     }
 
+    async function enableBiometric(masterPassword: string) {
+        const dek = await invoke<string>('unlock', {
+            masterPassword,
+            salt: SALE
+        });
+
+        console.log('启用生物识别，获取到DEK：', dek);
+
+        const response = await biometricCipher('请验证生物识别以启用快速解锁', {
+            dataToEncrypt: dek
+        });
+
+        await saveNormalConfig(BIOMETRIC_ENCRYPTED_DEK, response.data);
+        await saveNormalConfig(BIOMETRIC_ENABLED_KEY, true);
+        isBiometricEnabled.value = true;
+    }
+
+    async function unlockWithBiometric() {
+        const encryptedDek = await getNormalConfig<string>(BIOMETRIC_ENCRYPTED_DEK);
+        if (!encryptedDek) throw new Error("未找到生物识别凭据");
+
+        const {data} = await biometricCipher('请验证身份以解锁日记', {
+            dataToDecrypt: encryptedDek
+        });
+
+        await invoke<number[]>('biometric_unlock', {
+            dek: data
+        });
+    }
+
+    async function disableBiometric() {
+        if (!store.value) {
+            await initStore();
+        }
+        await store.value!.delete(BIOMETRIC_ENCRYPTED_DEK);
+        await store.value!.delete(BIOMETRIC_ENABLED_KEY);
+        await store.value!.save();
+        isBiometricEnabled.value = false;
+    }
+
     return {
         // 数据
         keyword, savedScrollPosition, theme,
@@ -161,6 +208,10 @@ export const useAppStore = defineStore('app', () => {
         setTimeoutForCloseApp,
         setTheme,
         initStore,
-        getEndTime
+        getEndTime,
+        isBiometricEnabled,
+        enableBiometric,
+        unlockWithBiometric,
+        disableBiometric
     }
 });
