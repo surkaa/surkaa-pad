@@ -31,8 +31,23 @@ async fn unlock(
     em_state: State<'_, EncryptionManager>,
     master_password: &str,
     salt: &str,
-) -> Result<(), String> {
-    em_state.initial(master_password, salt).await
+) -> Result<String, String> {
+    let dek: Vec<u8> = em_state.initial(master_password, salt).await?;
+    let dek_string = hex::encode(dek);
+
+    Ok(dek_string)
+}
+
+/// 生物解锁，传入dek解锁
+/// # Arguments
+/// * `dek` - 数据加密密钥
+/// # Returns
+/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+async fn biometric_unlock(em_state: State<'_, EncryptionManager>, dek: String) -> Result<(), String> {
+    let dek_bytes: Vec<u8> = hex::decode(&dek)
+        .map_err(|e| format!("Failed to decode DEK: {}", e))?;
+    em_state.initial_with_dek(&dek_bytes).await
 }
 
 /// 加密数据
@@ -392,6 +407,9 @@ pub fn run() {
             let cfm = CacheFileManager::new();
             app.manage(cfm.clone());
 
+            #[cfg(mobile)]
+            let _ = app.handle().plugin(tauri_plugin_biometric::init());
+
             let main_window = app.get_webview_window("main").unwrap();
 
             // 监听窗口关闭事件
@@ -443,7 +461,8 @@ pub fn run() {
             add_attachment,
             download_attachment,
             cancel_download_attachment,
-            delete_attachment
+            delete_attachment,
+            biometric_unlock
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

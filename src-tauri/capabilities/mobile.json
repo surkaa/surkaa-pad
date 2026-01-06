@@ -1,0 +1,15 @@
+{
+  "identifier": "mobile-capability",
+  "platforms": [
+    "android",
+    "iOS"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "biometric:allow-biometric-cipher",
+    "biometric:allow-authenticate",
+    "biometric:allow-status"
+  ]
+}

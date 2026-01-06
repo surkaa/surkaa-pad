@@ -36,7 +36,7 @@ impl EncryptionManager {
         }
     }
 
-    pub async fn initial(&self, master_password: &str, salt: &str) -> Result<(), String> {
+    pub async fn initial(&self, master_password: &str, salt: &str) -> Result<Vec<u8>, String> {
         let memory_cost_kib = 1024 * 256;
 
         let params = ParamsBuilder::new()
@@ -66,11 +66,26 @@ impl EncryptionManager {
         let mut inner_guard = self.inner.lock().await;
 
         // 存储 DEK
-        inner_guard.dek = dek.as_bytes().to_vec();
+        let dek = dek.as_bytes().to_vec();
+        inner_guard.dek = dek.clone();
 
         // 标记为已初始化
         self.initialized.store(true, Ordering::SeqCst);
 
+        Ok(dek.clone())
+    }
+    
+    /// 无需派生直接根据dek初始化
+    pub async fn initial_with_dek(&self, dek: &[u8]) -> Result<(), String> {
+        if dek.len() != KEY_LEN {
+            return Err("DEK 长度不正确".to_string());
+        }
+        // 锁定 Mutex 来修改内部状态
+        let mut inner_guard = self.inner.lock().await;
+        // 存储 DEK
+        inner_guard.dek = dek.to_vec();
+        // 标记为已初始化
+        self.initialized.store(true, Ordering::SeqCst);
         Ok(())
     }
 
