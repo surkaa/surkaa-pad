@@ -1,13 +1,14 @@
 use crate::encryption_manager::EncryptionManager;
-use crate::oss_client_manager::OssClientManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use std::collections::{HashMap, HashSet};
 use std::env::current_dir;
 use std::fs::{create_dir_all, read_dir, write};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::log;
 use tokio::sync::Mutex;
+use crate::object::OssClient;
 
 const CACHE_DIARY_DIR: &str = "diary_cache";
 const CACHE_ATTACHMENT_DIR: &str = "attachment_cache";
@@ -138,7 +139,7 @@ impl AppState {
         &self,
         cache: &DiaryMemoryCache,
         encryption: &EncryptionManager,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         store: &SecureDiaryStore,
         app_handle: Option<&AppHandle>,
         uuid: Option<String>,
@@ -180,7 +181,7 @@ impl AppState {
         }
         // 获取远程列表
         let remote_diaries_map: HashMap<String, String> = store
-            .list_diaries(client, &uuid)
+            .list_diaries(client.clone(), &uuid)
             .await?
             .iter()
             .map(|(uuid, diary)| (uuid.clone(), diary.etag().to_string()))
@@ -199,7 +200,7 @@ impl AppState {
 
                 // 下载和解密日记Manifest
                 let (manifest, manifest_bytes) = store
-                    .get_diary_manifest(&encryption, &client, uuid.to_string())
+                    .get_diary_manifest(&encryption, client.clone(), uuid.to_string())
                     .await?;
 
                 let new_filename = format!("{}_{}{}", uuid, remote_etag, ATTACHMENT_EXTENSION);

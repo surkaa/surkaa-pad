@@ -1,5 +1,5 @@
 use crate::encryption_manager::EncryptionManager;
-use crate::oss_client_manager::{ObjectInfo, OssClientManager};
+use crate::object::{ObjectMetadata, OssClient};
 use crate::surkaa_pad::AppState;
 use chrono::Utc;
 use futures::StreamExt;
@@ -75,26 +75,29 @@ impl SecureDiaryStore {
     /// 列出所有日记 UUID -> ObjectInfo 映射
     pub async fn list_diaries(
         &self,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         uuid: &Option<String>,
-    ) -> Result<HashMap<String, ObjectInfo>, String> {
-        let objects = client
-            .list_objects(&match uuid {
-                Some(id) => format!("{}/{}", id, MANIFEST_FILE_NAME),
-                None => "".to_string(),
-            })
+    ) -> Result<HashMap<String, ObjectMetadata>, String> {
+        let (objects, _) = client
+            .list(
+                &match uuid {
+                    Some(id) => format!("{}/{}", id, MANIFEST_FILE_NAME),
+                    None => "".to_string(),
+                },
+                None,
+            )
             .await
             .map_err(|e| format!("Failed to list diaries: {}", e))?;
         // 去掉末尾的斜杠和文件名，只保留日记 ID
-        let mut unique_objets: HashMap<String, ObjectInfo> = HashMap::new();
+        let mut unique_objets: HashMap<String, ObjectMetadata> = HashMap::new();
         for object in objects {
             // 去掉末尾不是以manifest.enc结尾的
-            if !object.filename().ends_with(MANIFEST_FILE_NAME) {
+            if !object.key().ends_with(MANIFEST_FILE_NAME) {
                 continue;
             }
-            if let Some(pos) = object.filename().find('/') {
+            if let Some(pos) = object.key().find('/') {
                 // 提取日记 ID（使用切片）
-                let diary_id = &object.filename()[..pos];
+                let diary_id = &object.key()[..pos];
                 // 插入到 HashMap，确保唯一性
                 unique_objets.entry(diary_id.to_string()).or_insert(object);
             }
@@ -106,7 +109,7 @@ impl SecureDiaryStore {
     pub async fn create_diary(
         &self,
         encryption: &EncryptionManager,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
         content: &str,
@@ -139,7 +142,7 @@ impl SecureDiaryStore {
         // 上传到 OSS
         let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
         client
-            .upload_object(&object_key, encrypted_manifest.clone())
+            .upload_bytes(&object_key, &encrypted_manifest)
             .await
             .map_err(|e| format!("Failed to upload manifest: {}", e))?;
 
@@ -158,13 +161,13 @@ impl SecureDiaryStore {
     /// 直接下载指定 ID 的加密 manifest 字节流用于缓存
     pub async fn download_encrypted_manifest(
         &self,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         id: &str,
     ) -> Result<Vec<u8>, String> {
         let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
 
         client
-            .download_object(&object_key)
+            .download_bytes(&object_key)
             .await
             .map_err(|e| format!("Failed to download encrypted manifest for caching: {}", e))
     }
@@ -173,7 +176,7 @@ impl SecureDiaryStore {
     pub async fn get_diary_manifest(
         &self,
         encryption: &EncryptionManager,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         id: String,
     ) -> Result<(DiaryManifest, Vec<u8>), String> {
         let encrypted_data = self.download_encrypted_manifest(client, &id).await?;
@@ -188,24 +191,24 @@ impl SecureDiaryStore {
     /// 删除指定 ID 的日记及其所有附件
     pub async fn delete_diary(
         &self,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
         id: String,
     ) -> Result<(), String> {
-        let objects = client
-            .list_objects(&format!("{}/", id))
+        let (objects, _) = client
+            .list(&format!("{}/", id), None)
             .await
             .map_err(|e| format!("Failed to list diary objects: {}", e))?;
 
         for object in objects {
             client
-                .delete_object(&object.filename())
+                .delete(&object.key())
                 .await
-                .map_err(|e| format!("Failed to delete object {}: {}", object.filename(), e))?;
+                .map_err(|e| format!("Failed to delete object {}: {}", object.key(), e))?;
 
             // 如果以 MANIFEST_FILE_NAME 结尾，说明是 manifest 文件
-            if object.filename().ends_with(MANIFEST_FILE_NAME) {
+            if object.key().ends_with(MANIFEST_FILE_NAME) {
                 let filename = format!("{}_{}{}", id, object.etag(), ATTACHMENT_EXTENSION);
                 log::info!("Also deleting cached file {}", filename);
                 let cache_dir = app_state.get_diary_cache_dir(app_handle);
@@ -225,7 +228,7 @@ impl SecureDiaryStore {
     pub async fn update_diary_content_only(
         &self,
         encryption: &EncryptionManager,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
         id: String,
@@ -233,7 +236,7 @@ impl SecureDiaryStore {
     ) -> Result<DiaryManifest, String> {
         // 先获取现有的 manifest
         let (mut manifest, _) = self
-            .get_diary_manifest(encryption, client, id.clone())
+            .get_diary_manifest(encryption, client.clone(), id.clone())
             .await?;
 
         // 更新内容和更新时间
@@ -257,7 +260,7 @@ impl SecureDiaryStore {
         // 上传到 OSS，覆盖原有的 manifest
         let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
         client
-            .upload_object(&object_key, encrypted_manifest.clone())
+            .upload_bytes(&object_key, &encrypted_manifest)
             .await
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
@@ -312,7 +315,7 @@ impl SecureDiaryStore {
     pub async fn add_attachment(
         &self,
         encryption: &EncryptionManager,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
         id: String,
@@ -335,7 +338,7 @@ impl SecureDiaryStore {
         };
 
         let (mut manifest, _) = self
-            .get_diary_manifest(encryption, client, id.clone())
+            .get_diary_manifest(encryption, client.clone(), id.clone())
             .await?;
         manifest.attachments.push(attachment);
         manifest.updated = Utc::now().timestamp_millis();
@@ -351,14 +354,14 @@ impl SecureDiaryStore {
         encrypted_manifest.extend_from_slice(&ciphertext);
         // 上传新的 manifest
         client
-            .upload_object(&manifest_key, encrypted_manifest.clone())
+            .upload_bytes(&manifest_key, &encrypted_manifest)
             .await
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
         // 上传附件
         let attachment_key = format!("{}/{}", id, file_name);
         client
-            .upload_object(&attachment_key, encrypted_bytes)
+            .upload_bytes(&attachment_key, &encrypted_bytes)
             .await
             .map_err(|e| format!("Failed to upload attachment: {}", e))?;
 
@@ -373,7 +376,7 @@ impl SecureDiaryStore {
     pub fn download_attachment(
         &self,
         encryption: &EncryptionManager,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: AppHandle,
         event: Channel<DownloadAttachmentEvent>,
@@ -416,8 +419,8 @@ impl SecureDiaryStore {
         let eid_clone = eid.clone();
 
         let handle = spawn(async move {
-            let response = client_clone
-                .stream_download_object(&attachment_key)
+            let (mut stream, len) = client_clone
+                .download(&attachment_key)
                 .await
                 .map_err(|e| {
                     let message = format!("Failed to start download: {}", e);
@@ -426,22 +429,10 @@ impl SecureDiaryStore {
                 })
                 .unwrap();
 
-            if !response.status().is_success() {
-                let message = format!(
-                    "Failed to start download for attachment {}",
-                    &attachment_key
-                );
-                log::error!("{}", message.clone());
-                let _ = event.send(DownloadAttachmentEvent::Error { message });
-            }
-
-            let total_size = response.content_length().unwrap_or(0);
-
-            let _ = event.send(DownloadAttachmentEvent::Started { total_size });
+            let _ = event.send(DownloadAttachmentEvent::Started { total_size: len });
 
             let mut downloaded: u64 = 0;
-            let mut stream = response.bytes_stream();
-            let mut allocated: Vec<u8> = Vec::with_capacity(total_size as usize);
+            let mut allocated: Vec<u8> = Vec::with_capacity(len as usize);
 
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk
@@ -556,7 +547,7 @@ impl SecureDiaryStore {
     pub async fn delete_attachment(
         &self,
         encryption: &EncryptionManager,
-        client: &OssClientManager,
+        client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
         id: String,
@@ -564,7 +555,7 @@ impl SecureDiaryStore {
     ) -> Result<DiaryManifest, String> {
         // 更新 manifest，移除附件元数据
         let (mut manifest, _) = self
-            .get_diary_manifest(encryption, client, id.clone())
+            .get_diary_manifest(encryption, client.clone(), id.clone())
             .await?;
         manifest.attachments.retain(|att| att.filename != file_name);
         manifest.updated = Utc::now().timestamp_millis();
@@ -582,14 +573,14 @@ impl SecureDiaryStore {
         // 上传更新后的 manifest
         let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
         client
-            .upload_object(&manifest_key, encrypted_manifest.clone())
+            .upload_bytes(&manifest_key, &encrypted_manifest)
             .await
             .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
         // 删除附件对象
         let attachment_key = format!("{}/{}", id, file_name);
         client
-            .delete_object(&attachment_key)
+            .delete(&attachment_key)
             .await
             .map_err(|e| format!("Failed to delete attachment: {}", e))?;
 

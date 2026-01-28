@@ -1,12 +1,12 @@
 pub mod cache_file_manager;
 pub mod encryption_manager;
-pub mod oss_client_manager;
+mod object;
 pub mod secure_diary_store;
 pub mod surkaa_pad;
 
 use crate::cache_file_manager::CacheFileManager;
 use crate::encryption_manager::EncryptionManager;
-use crate::oss_client_manager::OssClientManager;
+use crate::object::OssState;
 use crate::secure_diary_store::{DiaryManifest, DownloadAttachmentEvent, SecureDiaryStore};
 use crate::surkaa_pad::{AppState, DiaryMemoryCache};
 use std::fs::{read, remove_file};
@@ -44,9 +44,12 @@ async fn unlock(
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
-async fn biometric_unlock(em_state: State<'_, EncryptionManager>, dek: String) -> Result<(), String> {
-    let dek_bytes: Vec<u8> = hex::decode(&dek)
-        .map_err(|e| format!("Failed to decode DEK: {}", e))?;
+async fn biometric_unlock(
+    em_state: State<'_, EncryptionManager>,
+    dek: String,
+) -> Result<(), String> {
+    let dek_bytes: Vec<u8> =
+        hex::decode(&dek).map_err(|e| format!("Failed to decode DEK: {}", e))?;
     em_state.initial_with_dek(&dek_bytes).await
 }
 
@@ -90,11 +93,11 @@ async fn decrypt_data(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn init_oss_client(
-    client_state: State<'_, OssClientManager>,
-    akid: &str,
-    aks: &str,
-    bucket: &str,
-    endpoint: &str,
+    client_state: State<'_, OssState>,
+    akid: String,
+    aks: String,
+    bucket: String,
+    endpoint: String,
 ) -> Result<(), String> {
     client_state
         .initialize(akid, aks, endpoint, bucket)
@@ -135,7 +138,7 @@ async fn list_local_diaries(
 async fn sync_from_oss(
     cache: State<'_, DiaryMemoryCache>,
     em: State<'_, EncryptionManager>,
-    client: State<'_, OssClientManager>,
+    client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
@@ -145,7 +148,7 @@ async fn sync_from_oss(
         .sync_from_oss(
             cache.deref(),
             em.deref(),
-            client.deref(),
+            client.get_client()?,
             store.deref(),
             Some(&app_handle),
             uuid,
@@ -184,7 +187,7 @@ async fn search_diaries(
 #[tauri::command]
 async fn save_diary(
     encryption: State<'_, EncryptionManager>,
-    client: State<'_, OssClientManager>,
+    client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
@@ -193,7 +196,7 @@ async fn save_diary(
     store
         .create_diary(
             encryption.deref(),
-            client.deref(),
+            client.get_client()?,
             app_state.deref(),
             Some(&app_handle),
             content,
@@ -210,7 +213,7 @@ async fn save_diary(
 #[tauri::command]
 async fn update_diary_content_only(
     encryption: State<'_, EncryptionManager>,
-    client: State<'_, OssClientManager>,
+    client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
@@ -220,7 +223,7 @@ async fn update_diary_content_only(
     store
         .update_diary_content_only(
             encryption.deref(),
-            client.deref(),
+            client.get_client()?,
             app_state.deref(),
             Some(&app_handle),
             uuid,
@@ -236,14 +239,19 @@ async fn update_diary_content_only(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn delete_diary(
-    client: State<'_, OssClientManager>,
+    client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
 ) -> Result<(), String> {
     store
-        .delete_diary(client.deref(), app_state.deref(), Some(&app_handle), uuid)
+        .delete_diary(
+            client.get_client()?,
+            app_state.deref(),
+            Some(&app_handle),
+            uuid,
+        )
         .await
 }
 
@@ -261,7 +269,7 @@ async fn delete_diary(
 #[tauri::command]
 async fn add_attachment(
     encryption: State<'_, EncryptionManager>,
-    client: State<'_, OssClientManager>,
+    client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
@@ -284,7 +292,7 @@ async fn add_attachment(
     store
         .add_attachment(
             encryption.deref(),
-            client.deref(),
+            client.get_client()?,
             app_state.deref(),
             Some(&app_handle),
             uuid,
@@ -304,7 +312,7 @@ async fn add_attachment(
 #[tauri::command]
 fn download_attachment(
     encryption: State<'_, EncryptionManager>,
-    client: State<'_, OssClientManager>,
+    client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     cfm: State<'_, CacheFileManager>,
@@ -318,7 +326,7 @@ fn download_attachment(
     let attachment_cache = store
         .download_attachment(
             encryption.deref(),
-            client.deref(),
+            client.get_client()?,
             app_state.deref(),
             app_handle,
             on_event,
@@ -354,7 +362,7 @@ fn cancel_download_attachment(
 #[tauri::command]
 async fn delete_attachment(
     encryption: State<'_, EncryptionManager>,
-    client: State<'_, OssClientManager>,
+    client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
@@ -364,7 +372,7 @@ async fn delete_attachment(
     store
         .delete_attachment(
             encryption.deref(),
-            client.deref(),
+            client.get_client()?,
             app_state.deref(),
             Some(&app_handle),
             uuid,
@@ -400,7 +408,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .setup(|app| {
             app.manage(EncryptionManager::new());
-            app.manage(OssClientManager::default());
+            app.manage(OssState::new());
             app.manage(SecureDiaryStore::default());
             app.manage(DiaryMemoryCache::new());
             app.manage(AppState::default());
