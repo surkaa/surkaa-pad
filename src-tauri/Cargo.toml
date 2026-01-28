@@ -48,4 +48,4 @@ hex = "0.4"
 aliyun-oss-client = { path = "../vendor/aliyun-oss-client-modified" }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri-plugin-biometric = { path = "../../../../Fork/tauri-plugins-workspace/plugins/biometric" }
+tauri-plugin-biometric = { path = "../../Forks/tauri-plugins-workspace/plugins/biometric" }

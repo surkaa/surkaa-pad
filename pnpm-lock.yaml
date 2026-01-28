@@ -12,8 +12,8 @@ importers:
         specifier: ^2
         version: 2.9.0
       '@tauri-apps/plugin-biometric':
-        specifier: file:../../../Fork/tauri-plugins-workspace/plugins/biometric
-        version: file:../../../Fork/tauri-plugins-workspace/plugins/biometric
+        specifier: file:../Forks/tauri-plugins-workspace/plugins/biometric
+        version: file:../Forks/tauri-plugins-workspace/plugins/biometric
       '@tauri-apps/plugin-fs':
         specifier: ^2.4.4
         version: 2.4.4
@@ -508,8 +508,8 @@ packages:
     engines: {node: '>= 10'}
     hasBin: true
 
-  '@tauri-apps/plugin-biometric@file:../../../Fork/tauri-plugins-workspace/plugins/biometric':
-    resolution: {directory: ../../../Fork/tauri-plugins-workspace/plugins/biometric, type: directory}
+  '@tauri-apps/plugin-biometric@file:../Forks/tauri-plugins-workspace/plugins/biometric':
+    resolution: {directory: ../Forks/tauri-plugins-workspace/plugins/biometric, type: directory}
 
   '@tauri-apps/plugin-fs@2.4.4':
     resolution: {integrity: sha512-MTorXxIRmOnOPT1jZ3w96vjSuScER38ryXY88vl5F0uiKdnvTKKTtaEjTEo8uPbl4e3gnUtfsDVwC7h77GQLvQ==}
@@ -1266,7 +1266,7 @@ snapshots:
       '@tauri-apps/cli-win32-ia32-msvc': 2.9.4
       '@tauri-apps/cli-win32-x64-msvc': 2.9.4
 
-  '@tauri-apps/plugin-biometric@file:../../../Fork/tauri-plugins-workspace/plugins/biometric':
+  '@tauri-apps/plugin-biometric@file:../Forks/tauri-plugins-workspace/plugins/biometric':
     dependencies:
       '@tauri-apps/api': 2.9.0
 
