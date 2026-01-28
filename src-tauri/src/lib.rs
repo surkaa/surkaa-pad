@@ -178,7 +178,7 @@ async fn search_diaries(
 /// * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
 #[tauri::command]
 async fn save_diary(
-    encryption: State<'_, Crypto>,
+    crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -187,7 +187,7 @@ async fn save_diary(
 ) -> Result<DiaryManifest, String> {
     store
         .create_diary(
-            encryption.deref(),
+            crypto.deref(),
             client.get_client()?,
             app_state.deref(),
             Some(&app_handle),
@@ -204,7 +204,7 @@ async fn save_diary(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn update_diary_content_only(
-    encryption: State<'_, Crypto>,
+    crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -214,7 +214,7 @@ async fn update_diary_content_only(
 ) -> Result<DiaryManifest, String> {
     store
         .update_diary_content_only(
-            encryption.deref(),
+            crypto.deref(),
             client.get_client()?,
             app_state.deref(),
             Some(&app_handle),
@@ -260,7 +260,7 @@ async fn delete_diary(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn add_attachment(
-    encryption: State<'_, Crypto>,
+    crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -283,7 +283,7 @@ async fn add_attachment(
 
     store
         .add_attachment(
-            encryption.deref(),
+            crypto.deref(),
             client.get_client()?,
             app_state.deref(),
             Some(&app_handle),
@@ -303,7 +303,7 @@ async fn add_attachment(
 /// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
 #[tauri::command]
 fn download_attachment(
-    encryption: State<'_, Crypto>,
+    crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -317,8 +317,8 @@ fn download_attachment(
 ) -> Result<(), String> {
     let attachment_cache = store
         .download_attachment(
-            encryption.deref(),
             client.get_client()?,
+            crypto.deref(),
             app_state.deref(),
             app_handle,
             on_event,
@@ -353,7 +353,7 @@ fn cancel_download_attachment(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn delete_attachment(
-    encryption: State<'_, Crypto>,
+    crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -363,7 +363,7 @@ async fn delete_attachment(
 ) -> Result<DiaryManifest, String> {
     store
         .delete_attachment(
-            encryption.deref(),
+            crypto.deref(),
             client.get_client()?,
             app_state.deref(),
             Some(&app_handle),
