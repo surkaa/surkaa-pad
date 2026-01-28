@@ -23,9 +23,6 @@ tauri-plugin-opener = "2"
 # Tauri Store 插件 (用于持久化存储)
 tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
-argon2 = "0.5"
-# AES-GCM 加密库
-aes-gcm = "0.10"
 # 一个通用的 AEAD 接口
 aead = "0.5"
 serde_json = "1.0.145" # 用于 JSON 处理
@@ -51,6 +48,11 @@ bytes = "1.11"
 
 tauri-plugin-os = "2.3.2"
 hex = "0.4"
+
+# 加密
+argon2 = "0.5"
+aes-gcm = "0.10"
+zeroize = { version = "1.8", features = ["derive"] }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-biometric = { path = "../../Forks/tauri-plugins-workspace/plugins/biometric" }

@@ -1,4 +1,3 @@
-use crate::encryption_manager::EncryptionManager;
 use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
 use std::collections::{HashMap, HashSet};
 use std::env::current_dir;
@@ -8,6 +7,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::log;
 use tokio::sync::Mutex;
+use crate::crypto::Crypto;
 use crate::object::OssClient;
 
 const CACHE_DIARY_DIR: &str = "diary_cache";
@@ -82,7 +82,7 @@ impl AppState {
     pub async fn load_cache_to_memory(
         &self,
         cache: &DiaryMemoryCache,
-        encryption: &EncryptionManager,
+        crypto: &Crypto,
         store: &SecureDiaryStore,
         app_handle: Option<&AppHandle>,
     ) -> Result<(), String> {
@@ -118,7 +118,7 @@ impl AppState {
 
                 // 3. 解密和反序列化
                 if let Ok(manifest) = store
-                    .decrypt_bytes_to_manifest(&encryption, &encrypted_data)
+                    .decrypt_bytes_to_manifest(&crypto, &encrypted_data)
                     .await
                 {
                     // 4. 存入内存
@@ -138,7 +138,7 @@ impl AppState {
     pub async fn sync_from_oss(
         &self,
         cache: &DiaryMemoryCache,
-        encryption: &EncryptionManager,
+        crypto: &Crypto,
         client: Arc<OssClient>,
         store: &SecureDiaryStore,
         app_handle: Option<&AppHandle>,
@@ -200,7 +200,7 @@ impl AppState {
 
                 // 下载和解密日记Manifest
                 let (manifest, manifest_bytes) = store
-                    .get_diary_manifest(&encryption, client.clone(), uuid.to_string())
+                    .get_diary_manifest(&crypto, client.clone(), uuid.to_string())
                     .await?;
 
                 let new_filename = format!("{}_{}{}", uuid, remote_etag, ATTACHMENT_EXTENSION);

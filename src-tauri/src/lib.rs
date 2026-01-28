@@ -1,14 +1,14 @@
 pub mod cache_file_manager;
-pub mod encryption_manager;
+mod crypto;
 mod object;
 pub mod secure_diary_store;
 pub mod surkaa_pad;
 
 use crate::cache_file_manager::CacheFileManager;
-use crate::encryption_manager::EncryptionManager;
 use crate::object::OssState;
 use crate::secure_diary_store::{DiaryManifest, DownloadAttachmentEvent, SecureDiaryStore};
 use crate::surkaa_pad::{AppState, DiaryMemoryCache};
+use crypto::Crypto;
 use std::fs::{read, remove_file};
 use std::ops::Deref;
 use tauri::ipc::Channel;
@@ -28,14 +28,11 @@ use tauri_plugin_store::Builder;
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn unlock(
-    em_state: State<'_, EncryptionManager>,
-    master_password: &str,
-    salt: &str,
+    crypto: State<'_, Crypto>,
+    master_password: String,
+    salt: String,
 ) -> Result<String, String> {
-    let dek: Vec<u8> = em_state.initial(master_password, salt).await?;
-    let dek_string = hex::encode(dek);
-
-    Ok(dek_string)
+    crypto.derive_dek(master_password, salt)
 }
 
 /// 生物解锁，传入dek解锁
@@ -44,13 +41,8 @@ async fn unlock(
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
-async fn biometric_unlock(
-    em_state: State<'_, EncryptionManager>,
-    dek: String,
-) -> Result<(), String> {
-    let dek_bytes: Vec<u8> =
-        hex::decode(&dek).map_err(|e| format!("Failed to decode DEK: {}", e))?;
-    em_state.initial_with_dek(&dek_bytes).await
+async fn biometric_unlock(crypto: State<'_, Crypto>, dek: String) -> Result<(), String> {
+    crypto.init_by_dek_string(dek)
 }
 
 /// 加密数据
@@ -60,10 +52,10 @@ async fn biometric_unlock(
 /// * `Result<(Vec<u8>, Vec<u8>), String>` - 成功时返回 (密文, nonce)，失败时返回错误信息
 #[tauri::command]
 async fn encrypt_data(
-    em_state: State<'_, EncryptionManager>,
+    crypto: State<'_, Crypto>,
     data: String,
 ) -> Result<(Vec<u8>, Vec<u8>), String> {
-    em_state.encrypt(&data.as_bytes()).await
+    crypto.encrypt(&data.as_bytes())
 }
 
 /// 解密数据
@@ -74,11 +66,11 @@ async fn encrypt_data(
 /// * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
 #[tauri::command]
 async fn decrypt_data(
-    em_state: State<'_, EncryptionManager>,
+    crypto: State<'_, Crypto>,
     ciphertext: Vec<u8>,
     nonce: Vec<u8>,
 ) -> Result<String, String> {
-    let decrypted_bytes = em_state.decrypt(&ciphertext, &nonce).await?;
+    let decrypted_bytes = crypto.decrypt(&ciphertext, &nonce)?;
     let decrypted_string = String::from_utf8(decrypted_bytes).map_err(|e| e.to_string())?;
     Ok(decrypted_string)
 }
@@ -117,7 +109,7 @@ async fn init_oss_client(
 #[tauri::command]
 async fn list_local_diaries(
     cache: State<'_, DiaryMemoryCache>,
-    em: State<'_, EncryptionManager>,
+    em: State<'_, Crypto>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
@@ -137,7 +129,7 @@ async fn list_local_diaries(
 #[tauri::command]
 async fn sync_from_oss(
     cache: State<'_, DiaryMemoryCache>,
-    em: State<'_, EncryptionManager>,
+    em: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -186,7 +178,7 @@ async fn search_diaries(
 /// * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
 #[tauri::command]
 async fn save_diary(
-    encryption: State<'_, EncryptionManager>,
+    encryption: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -212,7 +204,7 @@ async fn save_diary(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn update_diary_content_only(
-    encryption: State<'_, EncryptionManager>,
+    encryption: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -268,7 +260,7 @@ async fn delete_diary(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn add_attachment(
-    encryption: State<'_, EncryptionManager>,
+    encryption: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -311,7 +303,7 @@ async fn add_attachment(
 /// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
 #[tauri::command]
 fn download_attachment(
-    encryption: State<'_, EncryptionManager>,
+    encryption: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -361,7 +353,7 @@ fn cancel_download_attachment(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn delete_attachment(
-    encryption: State<'_, EncryptionManager>,
+    encryption: State<'_, Crypto>,
     client: State<'_, OssState>,
     store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
@@ -407,7 +399,7 @@ pub fn run() {
         // 注册 os 插件
         .plugin(tauri_plugin_os::init())
         .setup(|app| {
-            app.manage(EncryptionManager::new());
+            app.manage(Crypto::new());
             app.manage(OssState::new());
             app.manage(SecureDiaryStore::default());
             app.manage(DiaryMemoryCache::new());

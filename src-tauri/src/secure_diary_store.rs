@@ -1,4 +1,4 @@
-use crate::encryption_manager::EncryptionManager;
+use crate::crypto::Crypto;
 use crate::object::{ObjectMetadata, OssClient};
 use crate::surkaa_pad::AppState;
 use chrono::Utc;
@@ -108,7 +108,7 @@ impl SecureDiaryStore {
     /// 根据内容创建新的日记并存储到云端
     pub async fn create_diary(
         &self,
-        encryption: &EncryptionManager,
+        crypto: &Crypto,
         client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
@@ -118,7 +118,7 @@ impl SecureDiaryStore {
         // 创建一个简单的 manifest
         let manifest = DiaryManifest {
             id: id.clone(),
-            algorithm: encryption.algorithm().await,
+            algorithm: crypto.algorithm().to_string(),
             content: content.to_string(),
             created: Utc::now().timestamp_millis(),
             updated: Utc::now().timestamp_millis(),
@@ -130,10 +130,7 @@ impl SecureDiaryStore {
             .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
 
         // 加密 manifest
-        let (ciphertext, nonce) = encryption
-            .encrypt(&manifest_json)
-            .await
-            .map_err(|e| format!("Failed to encrypt manifest: {}", e))?;
+        let (ciphertext, nonce) = crypto.encrypt(&manifest_json)?;
 
         // 组合 nonce 和 ciphertext，前面放 nonce
         let mut encrypted_manifest = nonce;
@@ -175,14 +172,14 @@ impl SecureDiaryStore {
     /// 获取并解密指定 ID 的日记 manifest
     pub async fn get_diary_manifest(
         &self,
-        encryption: &EncryptionManager,
+        crypto: &Crypto,
         client: Arc<OssClient>,
         id: String,
     ) -> Result<(DiaryManifest, Vec<u8>), String> {
         let encrypted_data = self.download_encrypted_manifest(client, &id).await?;
 
         let manifest = self
-            .decrypt_bytes_to_manifest(encryption, &encrypted_data)
+            .decrypt_bytes_to_manifest(crypto, &encrypted_data)
             .await?;
 
         Ok((manifest, encrypted_data))
@@ -227,7 +224,7 @@ impl SecureDiaryStore {
     /// 仅更新日记的文本和元数据，不涉及附件
     pub async fn update_diary_content_only(
         &self,
-        encryption: &EncryptionManager,
+        crypto: &Crypto,
         client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
@@ -236,7 +233,7 @@ impl SecureDiaryStore {
     ) -> Result<DiaryManifest, String> {
         // 先获取现有的 manifest
         let (mut manifest, _) = self
-            .get_diary_manifest(encryption, client.clone(), id.clone())
+            .get_diary_manifest(crypto, client.clone(), id.clone())
             .await?;
 
         // 更新内容和更新时间
@@ -248,10 +245,7 @@ impl SecureDiaryStore {
             .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
 
         // 加密 manifest
-        let (ciphertext, nonce) = encryption
-            .encrypt(&manifest_json)
-            .await
-            .map_err(|e| format!("Failed to encrypt manifest: {}", e))?;
+        let (ciphertext, nonce) = crypto.encrypt(&manifest_json)?;
 
         // 组合 nonce 和 ciphertext，前面放 nonce
         let mut encrypted_manifest = nonce;
@@ -314,7 +308,7 @@ impl SecureDiaryStore {
     /// 添加附件到指定日记
     pub async fn add_attachment(
         &self,
-        encryption: &EncryptionManager,
+        crypto: &Crypto,
         client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
@@ -322,10 +316,7 @@ impl SecureDiaryStore {
         attachment_bytes: Vec<u8>,
         mime_type: String,
     ) -> Result<DiaryManifest, String> {
-        let (encrypted_bytes, nonce) = encryption
-            .encrypt(&attachment_bytes)
-            .await
-            .map_err(|e| format!("Failed to encrypt file key: {}", e))?;
+        let (encrypted_bytes, nonce) = crypto.encrypt(&attachment_bytes)?;
 
         let file_name = Uuid::new_v4().to_string() + ATTACHMENT_EXTENSION;
 
@@ -338,7 +329,7 @@ impl SecureDiaryStore {
         };
 
         let (mut manifest, _) = self
-            .get_diary_manifest(encryption, client.clone(), id.clone())
+            .get_diary_manifest(crypto, client.clone(), id.clone())
             .await?;
         manifest.attachments.push(attachment);
         manifest.updated = Utc::now().timestamp_millis();
@@ -346,10 +337,7 @@ impl SecureDiaryStore {
         let manifest_json = serde_json::to_vec(&manifest)
             .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
         // 加密
-        let (ciphertext, manifest_nonce) = encryption
-            .encrypt(&manifest_json)
-            .await
-            .map_err(|e| format!("Failed to encrypt manifest: {}", e))?;
+        let (ciphertext, manifest_nonce) = crypto.encrypt(&manifest_json)?;
         let mut encrypted_manifest = manifest_nonce;
         encrypted_manifest.extend_from_slice(&ciphertext);
         // 上传新的 manifest
@@ -375,7 +363,7 @@ impl SecureDiaryStore {
     /// 下载指定日记的指定附件 下载完成后emit attachment_downloaded返回eid
     pub fn download_attachment(
         &self,
-        encryption: &EncryptionManager,
+        crypto: &Crypto,
         client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: AppHandle,
@@ -409,7 +397,7 @@ impl SecureDiaryStore {
         }
 
         // 启动异步下载任务
-        let em_clone = encryption.clone();
+        let em_clone = crypto.clone();
         let client_clone = client.clone();
         let temp_path_clone = temp_path.clone();
         let attachment_key = format!("{}/{}", id, filename);
@@ -454,7 +442,7 @@ impl SecureDiaryStore {
             let _ = event.send(DownloadAttachmentEvent::Decrypting);
 
             // 解密数据
-            let decrypted_data = match em_clone.decrypt(&allocated, &nonce).await {
+            let decrypted_data = match em_clone.decrypt(&allocated, &nonce) {
                 Ok(data) => data,
                 Err(e) => {
                     let message = format!("解密附件时出现错误: {}", e);
@@ -546,7 +534,7 @@ impl SecureDiaryStore {
     /// 删除指定日记的指定附件
     pub async fn delete_attachment(
         &self,
-        encryption: &EncryptionManager,
+        crypto: &Crypto,
         client: Arc<OssClient>,
         app_state: &AppState,
         app_handle: Option<&AppHandle>,
@@ -555,7 +543,7 @@ impl SecureDiaryStore {
     ) -> Result<DiaryManifest, String> {
         // 更新 manifest，移除附件元数据
         let (mut manifest, _) = self
-            .get_diary_manifest(encryption, client.clone(), id.clone())
+            .get_diary_manifest(crypto, client.clone(), id.clone())
             .await?;
         manifest.attachments.retain(|att| att.filename != file_name);
         manifest.updated = Utc::now().timestamp_millis();
@@ -564,10 +552,7 @@ impl SecureDiaryStore {
         let manifest_json = serde_json::to_vec(&manifest)
             .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
         // 加密
-        let (ciphertext, manifest_nonce) = encryption
-            .encrypt(&manifest_json)
-            .await
-            .map_err(|e| format!("Failed to encrypt manifest: {}", e))?;
+        let (ciphertext, manifest_nonce) = crypto.encrypt(&manifest_json)?;
         let mut encrypted_manifest = manifest_nonce;
         encrypted_manifest.extend_from_slice(&ciphertext);
         // 上传更新后的 manifest
@@ -594,13 +579,10 @@ impl SecureDiaryStore {
     /// 将加密的字节流解密为 DiaryManifest 结构体 本应为私有方法 但为了缓存加载需要公开
     pub async fn decrypt_bytes_to_manifest(
         &self,
-        encryption: &EncryptionManager,
+        crypto: &Crypto,
         encrypted_data: &Vec<u8>,
     ) -> Result<DiaryManifest, String> {
-        let manifest_bytes = encryption
-            .decrypt_from_full_ciphertext(encrypted_data)
-            .await
-            .map_err(|e| format!("Failed to decrypt manifest: {}", e))?;
+        let manifest_bytes = crypto.decrypt_from_full_ciphertext(encrypted_data)?;
 
         // 反序列化 JSON
         let manifest = from_slice(&manifest_bytes)
