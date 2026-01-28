@@ -184,4 +184,90 @@ mod tests {
         let duration = start_time.elapsed();
         println!("解密用时: {:?}", duration);
     }
+
+    #[test]
+    fn convert_enc2normal() {
+        use crate::secure_diary_store::{DiaryManifest};
+        dotenvy::dotenv().ok();
+        let password = std::env::var("TEST_PASSWORD").expect("TEST_PASSWORD 未设置");
+        let salt = std::env::var("TEST_SALT").expect("TEST_PASSWORD 未设置");
+        let enc_dir = std::env::var("TEST_ENC_DIR").expect("TEST_ENC_DIR 未设置");
+        let output_dir = std::env::var("TEST_OUTPUT_DIR").expect("TEST_OUTPUT_DIR 未设置");
+        let crypto = Crypto::new();
+        let _ = crypto.derive_dek(password, salt).expect("派生密钥失败");
+        let diary_filename = "manifest.enc";
+
+        let enc_path = std::path::Path::new(&enc_dir);
+
+        for diary_dir in std::fs::read_dir(enc_path).expect("无法读取目录") {
+            let diary_dir = diary_dir.expect("无法读取条目");
+            let diary_dir_path = diary_dir.path();
+            if diary_dir_path.is_file() {
+                continue;
+            }
+            let output_path = std::path::Path::new(&output_dir).join(diary_dir.file_name());
+            std::fs::create_dir_all(&output_path).expect("无法创建输出目录");
+
+            let manifest_path = diary_dir_path.join(diary_filename);
+            let encrypted_manifest = std::fs::read(&manifest_path).expect("无法读取manifest.enc文件");
+            let decrypted_manifest = crypto
+                .decrypt_from_full_ciphertext(&encrypted_manifest)
+                .expect("无法解密manifest文件");
+            let manifest: DiaryManifest = serde_json::from_slice(&decrypted_manifest)
+                .expect("无法解析DiaryManifest JSON");
+
+            let mut content = manifest.content.clone();
+            let mut filename_mapping = std::collections::HashMap::new();
+
+            for attachment in &manifest.attachments {
+                let encrypted_attachment_path = diary_dir_path.join(&attachment.filename);
+                let encrypted_data = std::fs::read(&encrypted_attachment_path)
+                    .expect(&format!("无法读取附件文件: {}", attachment.filename));
+
+                let decrypted_data = crypto
+                    .decrypt(&encrypted_data, &attachment.nonce)
+                    .expect(&format!("无法解密附件: {}", attachment.filename));
+
+                let new_extension = if content.contains(&format!("<IMG:{}>", attachment.filename)) {
+                    "jpg"
+                } else if content.contains(&format!("<AUD:{}>", attachment.filename)) {
+                    "mp3"
+                } else if content.contains(&format!("<VID:{}>", attachment.filename)) {
+                    "mp4"
+                } else {
+                    continue;
+                };
+
+                let stem = std::path::Path::new(&attachment.filename)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&attachment.filename);
+                let new_filename = format!("{}.{}", stem, new_extension);
+                filename_mapping.insert(attachment.filename.clone(), new_filename.clone());
+
+                let output_attachment_path = output_path.join(new_filename);
+                std::fs::write(&output_attachment_path, decrypted_data)
+                    .expect(&format!("无法写入附件文件: {}", attachment.filename));
+            }
+
+            for (old_filename, new_filename) in filename_mapping {
+                let tag_pattern = format!("<{}:{}>",
+                                          if new_filename.ends_with(".jpg") { "IMG" }
+                                          else if new_filename.ends_with(".mp3") { "AUD" }
+                                          else { "VID" },
+                                          old_filename
+                );
+                content = content.replace(&tag_pattern, &new_filename);
+            }
+
+            let diary_content_path = output_path.join("diary.txt");
+            std::fs::write(&diary_content_path, content).expect("无法写入日记内容");
+
+            let manifest_json_path = output_path.join("manifest.json");
+            let manifest_json = serde_json::to_string_pretty(&manifest).expect("无法序列化manifest");
+            std::fs::write(&manifest_json_path, manifest_json).expect("无法写入manifest.json");
+
+            println!("解析完成: {}", output_path.display());
+        }
+    }
 }
