@@ -14,6 +14,7 @@ export function readCacheFile2UrlByEid(eid: string) {
     if (!filePath) {
         throw new Error(`[readCacheFile2URL] 未找到缓存的文件路径，eid: ${eid}`);
     }
+    console.log('readCacheFile2URL', eid, filePath);
     return convertFileSrc(filePath);
 }
 

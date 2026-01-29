@@ -303,7 +303,7 @@ function openPreviewMedia(eid: string) {
     }
   });
 }
-
+// TODO 不用先输入点东西才能保存，因为我可能希望直接能够打开保存然后上传附件
 onMounted(async () => {
   if (history.state.diary) {
     diary.value = history.state.diary;
