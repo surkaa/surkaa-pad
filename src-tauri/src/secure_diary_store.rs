@@ -121,15 +121,6 @@ pub async fn diary_create_diary(
         .await
         .map_err(|e| format!("Failed to upload manifest: {}", e))?;
 
-    // 保存到本地
-    // let digest = md5::compute(&encrypted_manifest);
-    // let etag = format!("{:X}", digest);
-    // let filename = format!("{}_{}{}", id, etag, ATTACHMENT_EXTENSION);
-    // let cache_dir = pad_get_diary_cache_dir(app_handle);
-    // let file_path = cache_dir.join(&filename);
-    // std::fs::write(&file_path, &encrypted_manifest)
-    //     .map_err(|e| format!("Failed to write cache file {}: {}", filename, e))?;
-
     Ok(manifest)
 }
 
@@ -174,19 +165,6 @@ pub async fn diary_delete_diary(
             .delete(&object.key())
             .await
             .map_err(|e| format!("Failed to delete object {}: {}", object.key(), e))?;
-
-        // // 如果以 MANIFEST_FILE_NAME 结尾，说明是 manifest 文件
-        // if object.key().ends_with(MANIFEST_FILE_NAME) {
-        //     let filename = format!("{}_{}{}", id, object.etag(), ATTACHMENT_EXTENSION);
-        //     log::info!("Also deleting cached file {}", filename);
-        //     let cache_dir = pad_get_diary_cache_dir(app_handle);
-        //     let file_path = cache_dir.join(&filename);
-        //     if file_path.exists() {
-        //         std::fs::remove_file(&file_path)
-        //             .map_err(|e| format!("Failed to delete cached file {}: {}", filename, e))?;
-        //         log::info!("Deleted cached file {}", filename);
-        //     }
-        // }
     }
 
     Ok(())
@@ -223,10 +201,6 @@ pub async fn diary_update_diary_content_only(
         .upload_bytes(&object_key, &encrypted_manifest)
         .await
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
-
-    // // 更新本地缓存
-    // replace_local_cache_file(app_handle, &id, &encrypted_manifest)
-    //     .expect("Failed to update local cache file");
 
     Ok(manifest)
 }
@@ -273,10 +247,6 @@ pub async fn diary_add_attachment(
         .upload_bytes(&attachment_key, &encrypted_bytes)
         .await
         .map_err(|e| format!("Failed to upload attachment: {}", e))?;
-
-    // // 更新本地缓存
-    // replace_local_cache_file(app_handle, &id, &encrypted_manifest)
-    //     .expect("Failed to update local cache file");
 
     Ok(manifest)
 }
@@ -424,10 +394,6 @@ pub async fn diary_delete_attachment(
         .delete(&attachment_key)
         .await
         .map_err(|e| format!("Failed to delete attachment: {}", e))?;
-
-    // // 更新本地缓存
-    // replace_local_cache_file(app_handle, &id, &encrypted_manifest)
-    //     .expect("Failed to update local cache file");
 
     Ok(manifest)
 }
