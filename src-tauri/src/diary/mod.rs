@@ -1,7 +1,7 @@
 pub mod cache;
 
 use crate::crypto::Crypto;
-use crate::diary::cache::DiaryCache;
+use crate::diary::cache::MemoryDiaryCache;
 use crate::object::OssClient;
 use crate::secure_diary_store::{
     diary_decrypt_bytes_to_manifest, diary_get_diary_manifest, diary_list_diaries, DiaryManifest,
@@ -62,7 +62,7 @@ pub fn pad_get_attachment_cache_dir(app_handle: Option<&AppHandle>) -> PathBuf {
 
 /// 将本地文件加载到内存缓存中
 pub async fn pad_load_cache_to_memory(
-    dc: &DiaryCache,
+    dc: &MemoryDiaryCache,
     crypto: &Crypto,
     app_handle: Option<&AppHandle>,
 ) -> Result<(), String> {
@@ -110,7 +110,7 @@ pub async fn pad_load_cache_to_memory(
 
 /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
 pub async fn pad_sync_from_oss(
-    dc: &DiaryCache,
+    dc: &MemoryDiaryCache,
     crypto: &Crypto,
     client: Arc<OssClient>,
     app_handle: Option<&AppHandle>,

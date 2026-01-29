@@ -6,7 +6,7 @@ pub mod secure_diary_store;
 mod task;
 
 use crate::cache_file_manager::CacheFileManager;
-use crate::diary::cache::DiaryCache;
+use crate::diary::cache::MemoryDiaryCache;
 use crate::diary::{pad_load_cache_to_memory, pad_sync_from_oss};
 use crate::object::OssState;
 use crate::secure_diary_store::{
@@ -116,7 +116,7 @@ async fn init_oss_client(
 /// * `Result<Vec<DiaryManifest>, String>` - 成功时返回日记列表，失败时返回错误信息
 #[tauri::command]
 async fn list_local_diaries(
-    cache: State<'_, DiaryCache>,
+    cache: State<'_, MemoryDiaryCache>,
     em: State<'_, Crypto>,
     app_handle: AppHandle,
 ) -> Result<Vec<DiaryManifest>, String> {
@@ -131,7 +131,7 @@ async fn list_local_diaries(
 /// * `Result<Option<DiaryManifest>, String>` - 如果传入了 UUID，成功时返回该日记的清单，否则返回 None；失败时返回错误信息
 #[tauri::command]
 async fn sync_from_oss(
-    cache: State<'_, DiaryCache>,
+    cache: State<'_, MemoryDiaryCache>,
     em: State<'_, Crypto>,
     client: State<'_, OssState>,
     app_handle: AppHandle,
@@ -154,7 +154,7 @@ async fn sync_from_oss(
 /// * `Result<Vec<DiaryManifest>, String>` - 成功时返回匹配的日记列表，失败时返回错误信息
 #[tauri::command]
 async fn search_diaries(
-    cache: State<'_, DiaryCache>,
+    cache: State<'_, MemoryDiaryCache>,
     keyword: &str,
 ) -> Result<Vec<String>, String> {
     let diaries = cache.list();
@@ -373,7 +373,7 @@ pub fn run() {
             app.manage(Crypto::new());
             app.manage(OssState::new());
             app.manage(TaskPool::new());
-            app.manage(DiaryCache::new());
+            app.manage(MemoryDiaryCache::new());
             let cfm = CacheFileManager::new();
             app.manage(cfm.clone());
 
