@@ -40,3 +40,12 @@ pub fn local_attachment_path(
         .join("pad")
         .join(format!("{}_{}.raw", diary_id, attachment_filename))
 }
+
+/// 日记附件在本地临时目录的文件夹路径
+pub fn local_attachment_dir(
+    path_getter: &impl PathGetter,
+) -> PathBuf {
+    path_getter
+        .get_temp_path()
+        .join("pad")
+}

@@ -11,6 +11,7 @@ use crate::diary::DiaryManifest;
 use crate::diary::MemoryDiaryCache;
 use crate::diary::{diary_create, diary_delete, diary_sync, diary_update_diary_content_only};
 use crate::object::OssState;
+use crate::storage::local_attachment_dir;
 use crate::task::TaskPool;
 use crypto::Crypto;
 use std::fs::{read, remove_file};
@@ -321,8 +322,23 @@ pub fn run() {
             app.manage(TaskPool::new());
             app.manage(MemoryDiaryCache::new());
 
+            let app_handle = app.handle();
+
             #[cfg(mobile)]
-            let _ = app.handle().plugin(tauri_plugin_biometric::init());
+            let _ = app_handle.plugin(tauri_plugin_biometric::init());
+
+            let main_window = app.get_webview_window("main").expect("无法获取主窗口");
+
+            let app_handle = app_handle.clone();
+            main_window.on_window_event(move |event| match event {
+                tauri::WindowEvent::CloseRequested { .. } => {
+                    let attachment_dir = local_attachment_dir(&app_handle);
+                    if attachment_dir.exists() {
+                        let _ = std::fs::remove_dir_all(&attachment_dir);
+                    }
+                }
+                _ => {}
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
