@@ -8,7 +8,7 @@ import RichTextEditor from "../../components/RichTextEditor.vue";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import DiaryHeader from "./DiaryHeader.vue";
 import DiaryFooter from "./DiaryFooter.vue";
-import {BaseDirectory, writeFile} from "@tauri-apps/plugin-fs";
+import {BaseDirectory, create, writeFile} from "@tauri-apps/plugin-fs";
 import {appDataDir, join} from "@tauri-apps/api/path";
 
 const router = useRouter();
@@ -223,11 +223,21 @@ function handleFileUpload(tagPrefix: 'IMG' | 'VID', accessStr: string) {
 function recordedAudio(minetype: string, stream: ReadableStream<Uint8Array>) {
   // 将录音写入应用数据目录或临时目录
   const filename = `audio_cache/${diary.value.id}_${new Date().getTime()}.tmp`;
-  writeFile(filename, stream, {
-    baseDir: BaseDirectory.AppData
-  }).then(appDataDir)
+  // 先确保audio_cache目录存在
+  create("audio_cache", {baseDir: BaseDirectory.AppData})
+      .then(() => writeFile(filename, stream, {
+        baseDir: BaseDirectory.AppData
+      }))
+      .then(appDataDir)
       .then((appDataDir) => join(appDataDir, filename))
-      .then(accessStr => uploadAttachment('AUD', minetype, accessStr));
+      .then(accessStr => {
+        console.log('录音文件已保存至: ', accessStr);
+        uploadAttachment('AUD', minetype, accessStr);
+      })
+      .catch(err => {
+        console.error('保存录音文件失败: ', err);
+        showToast('保存录音文件失败: ' + err, 'error');
+      });
 }
 
 // 处理图片选择与上传
