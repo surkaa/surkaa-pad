@@ -1,6 +1,6 @@
 use crate::cache_file_manager::CacheFileManager;
 use crate::crypto::Crypto;
-use crate::diary::{pad_get_attachment_cache_dir, pad_get_diary_cache_dir};
+use crate::diary::{pad_get_attachment_cache_dir};
 use crate::object::{ObjectMetadata, OssClient};
 use chrono::Utc;
 use futures::StreamExt;
@@ -68,8 +68,7 @@ pub async fn diary_list_diaries(
             },
             None,
         )
-        .await
-        .map_err(|e| format!("Failed to list diaries: {}", e))?;
+        .await?;
     // 去掉末尾的斜杠和文件名，只保留日记 ID
     let mut unique_objets: HashMap<String, ObjectMetadata> = HashMap::new();
     for object in objects {
@@ -91,7 +90,6 @@ pub async fn diary_list_diaries(
 pub async fn diary_create_diary(
     crypto: &Crypto,
     client: Arc<OssClient>,
-    app_handle: Option<&AppHandle>,
     content: &str,
 ) -> Result<DiaryManifest, String> {
     let id = Uuid::new_v4().to_string();
@@ -124,13 +122,13 @@ pub async fn diary_create_diary(
         .map_err(|e| format!("Failed to upload manifest: {}", e))?;
 
     // 保存到本地
-    let digest = md5::compute(&encrypted_manifest);
-    let etag = format!("{:X}", digest);
-    let filename = format!("{}_{}{}", id, etag, ATTACHMENT_EXTENSION);
-    let cache_dir = pad_get_diary_cache_dir(app_handle);
-    let file_path = cache_dir.join(&filename);
-    std::fs::write(&file_path, &encrypted_manifest)
-        .map_err(|e| format!("Failed to write cache file {}: {}", filename, e))?;
+    // let digest = md5::compute(&encrypted_manifest);
+    // let etag = format!("{:X}", digest);
+    // let filename = format!("{}_{}{}", id, etag, ATTACHMENT_EXTENSION);
+    // let cache_dir = pad_get_diary_cache_dir(app_handle);
+    // let file_path = cache_dir.join(&filename);
+    // std::fs::write(&file_path, &encrypted_manifest)
+    //     .map_err(|e| format!("Failed to write cache file {}: {}", filename, e))?;
 
     Ok(manifest)
 }
@@ -164,7 +162,6 @@ pub async fn diary_get_diary_manifest(
 /// 删除指定 ID 的日记及其所有附件
 pub async fn diary_delete_diary(
     client: Arc<OssClient>,
-    app_handle: Option<&AppHandle>,
     id: String,
 ) -> Result<(), String> {
     let (objects, _) = client
@@ -178,18 +175,18 @@ pub async fn diary_delete_diary(
             .await
             .map_err(|e| format!("Failed to delete object {}: {}", object.key(), e))?;
 
-        // 如果以 MANIFEST_FILE_NAME 结尾，说明是 manifest 文件
-        if object.key().ends_with(MANIFEST_FILE_NAME) {
-            let filename = format!("{}_{}{}", id, object.etag(), ATTACHMENT_EXTENSION);
-            log::info!("Also deleting cached file {}", filename);
-            let cache_dir = pad_get_diary_cache_dir(app_handle);
-            let file_path = cache_dir.join(&filename);
-            if file_path.exists() {
-                std::fs::remove_file(&file_path)
-                    .map_err(|e| format!("Failed to delete cached file {}: {}", filename, e))?;
-                log::info!("Deleted cached file {}", filename);
-            }
-        }
+        // // 如果以 MANIFEST_FILE_NAME 结尾，说明是 manifest 文件
+        // if object.key().ends_with(MANIFEST_FILE_NAME) {
+        //     let filename = format!("{}_{}{}", id, object.etag(), ATTACHMENT_EXTENSION);
+        //     log::info!("Also deleting cached file {}", filename);
+        //     let cache_dir = pad_get_diary_cache_dir(app_handle);
+        //     let file_path = cache_dir.join(&filename);
+        //     if file_path.exists() {
+        //         std::fs::remove_file(&file_path)
+        //             .map_err(|e| format!("Failed to delete cached file {}: {}", filename, e))?;
+        //         log::info!("Deleted cached file {}", filename);
+        //     }
+        // }
     }
 
     Ok(())
@@ -199,7 +196,6 @@ pub async fn diary_delete_diary(
 pub async fn diary_update_diary_content_only(
     crypto: &Crypto,
     client: Arc<OssClient>,
-    app_handle: Option<&AppHandle>,
     id: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
@@ -228,54 +224,17 @@ pub async fn diary_update_diary_content_only(
         .await
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
-    // 更新本地缓存
-    replace_local_cache_file(app_handle, &id, &encrypted_manifest)
-        .expect("Failed to update local cache file");
+    // // 更新本地缓存
+    // replace_local_cache_file(app_handle, &id, &encrypted_manifest)
+    //     .expect("Failed to update local cache file");
 
     Ok(manifest)
-}
-
-fn replace_local_cache_file(
-    app_handle: Option<&AppHandle>,
-    id: &str,
-    new_bytes: &Vec<u8>,
-) -> Result<(), String> {
-    let new_digest = md5::compute(new_bytes);
-    let new_etag = format!("{:X}", new_digest);
-    let new_filename = format!("{}_{}{}", id, new_etag, ATTACHMENT_EXTENSION);
-
-    let cache_dir = pad_get_diary_cache_dir(app_handle);
-
-    // 在未知ETag的情况下，删除旧文件，先列出目录中的所有文件
-    let entries = std::fs::read_dir(&cache_dir)
-        .map_err(|e| format!("Failed to read cache directory: {}", e))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read cache directory entry: {}", e))?;
-        let file_name = entry.file_name();
-        let file_name_str = file_name.to_string_lossy();
-        // 检查文件名是否以 id 开头且以 ATTACHMENT_EXTENSION 结尾
-        if file_name_str.starts_with(id) && file_name_str.ends_with(ATTACHMENT_EXTENSION) {
-            // 删除旧文件
-            let old_file_path = cache_dir.join(&file_name);
-            std::fs::remove_file(&old_file_path)
-                .map_err(|e| format!("Failed to delete old cache file {}: {}", file_name_str, e))?;
-            log::info!("Deleted old cache file {}", file_name_str);
-        }
-    }
-
-    // 写入新文件
-    let new_file_path = cache_dir.join(&new_filename);
-    std::fs::write(&new_file_path, new_bytes)
-        .map_err(|e| format!("Failed to write new cache file {}: {}", new_filename, e))?;
-
-    Ok(())
 }
 
 /// 添加附件到指定日记
 pub async fn diary_add_attachment(
     crypto: &Crypto,
     client: Arc<OssClient>,
-    app_handle: Option<&AppHandle>,
     id: String,
     attachment_bytes: Vec<u8>,
     mime_type: String,
@@ -315,9 +274,9 @@ pub async fn diary_add_attachment(
         .await
         .map_err(|e| format!("Failed to upload attachment: {}", e))?;
 
-    // 更新本地缓存
-    replace_local_cache_file(app_handle, &id, &encrypted_manifest)
-        .expect("Failed to update local cache file");
+    // // 更新本地缓存
+    // replace_local_cache_file(app_handle, &id, &encrypted_manifest)
+    //     .expect("Failed to update local cache file");
 
     Ok(manifest)
 }
@@ -437,7 +396,6 @@ pub async fn diary_download_attachment(
 pub async fn diary_delete_attachment(
     crypto: &Crypto,
     client: Arc<OssClient>,
-    app_handle: Option<&AppHandle>,
     id: String,
     file_name: String,
 ) -> Result<DiaryManifest, String> {
@@ -467,9 +425,9 @@ pub async fn diary_delete_attachment(
         .await
         .map_err(|e| format!("Failed to delete attachment: {}", e))?;
 
-    // 更新本地缓存
-    replace_local_cache_file(app_handle, &id, &encrypted_manifest)
-        .expect("Failed to update local cache file");
+    // // 更新本地缓存
+    // replace_local_cache_file(app_handle, &id, &encrypted_manifest)
+    //     .expect("Failed to update local cache file");
 
     Ok(manifest)
 }

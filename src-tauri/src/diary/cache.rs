@@ -24,11 +24,6 @@ impl MemoryDiaryCache {
         diaries.insert(id.to_string(), Arc::new(pad));
     }
 
-    pub fn clean(&self) {
-        let diaries = self.diaries.lock().unwrap();
-        diaries.clear();
-    }
-
     pub fn list(&self) -> Vec<DiaryManifest> {
         let diaries = self.diaries.lock().unwrap();
         diaries.iter().map(|entry| entry.as_ref().clone()).collect()

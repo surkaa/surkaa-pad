@@ -7,7 +7,7 @@ mod task;
 
 use crate::cache_file_manager::CacheFileManager;
 use crate::diary::cache::MemoryDiaryCache;
-use crate::diary::{pad_load_cache_to_memory, pad_sync_from_oss};
+use crate::diary::pad_sync_from_oss;
 use crate::object::OssState;
 use crate::secure_diary_store::{
     diary_add_attachment, diary_create_diary, diary_delete_attachment, diary_delete_diary,
@@ -117,10 +117,7 @@ async fn init_oss_client(
 #[tauri::command]
 async fn list_local_diaries(
     cache: State<'_, MemoryDiaryCache>,
-    em: State<'_, Crypto>,
-    app_handle: AppHandle,
 ) -> Result<Vec<DiaryManifest>, String> {
-    pad_load_cache_to_memory(cache.deref(), em.deref(), Some(&app_handle)).await?;
     Ok(cache.list())
 }
 
@@ -134,17 +131,9 @@ async fn sync_from_oss(
     cache: State<'_, MemoryDiaryCache>,
     em: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_handle: AppHandle,
     uuid: Option<String>,
 ) -> Result<Option<DiaryManifest>, String> {
-    pad_sync_from_oss(
-        cache.deref(),
-        em.deref(),
-        client.get_client()?,
-        Some(&app_handle),
-        uuid,
-    )
-    .await
+    pad_sync_from_oss(cache.deref(), em.deref(), client.get_client()?, uuid).await
 }
 
 /// 根据日记内容搜索日记
@@ -178,16 +167,9 @@ async fn search_diaries(
 async fn save_diary(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_handle: AppHandle,
     content: &str,
 ) -> Result<DiaryManifest, String> {
-    diary_create_diary(
-        crypto.deref(),
-        client.get_client()?,
-        Some(&app_handle),
-        content,
-    )
-    .await
+    diary_create_diary(crypto.deref(), client.get_client()?, content).await
 }
 
 /// 更新日记的内容
@@ -200,18 +182,10 @@ async fn save_diary(
 async fn update_diary_content_only(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_handle: AppHandle,
     uuid: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
-    diary_update_diary_content_only(
-        crypto.deref(),
-        client.get_client()?,
-        Some(&app_handle),
-        uuid,
-        new_content,
-    )
-    .await
+    diary_update_diary_content_only(crypto.deref(), client.get_client()?, uuid, new_content).await
 }
 
 /// 删除日记
@@ -220,12 +194,8 @@ async fn update_diary_content_only(
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
-async fn delete_diary(
-    client: State<'_, OssState>,
-    app_handle: AppHandle,
-    uuid: String,
-) -> Result<(), String> {
-    diary_delete_diary(client.get_client()?, Some(&app_handle), uuid).await
+async fn delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), String> {
+    diary_delete_diary(client.get_client()?, uuid).await
 }
 
 //------------
@@ -260,15 +230,7 @@ async fn add_attachment(
     // 删除缓存文件
     remove_file(temp_path).map_err(|e| format!("无法删除临时文件: {}", e))?;
 
-    diary_add_attachment(
-        crypto.deref(),
-        client.get_client()?,
-        Some(&app_handle),
-        uuid,
-        bytes,
-        minetype,
-    )
-    .await
+    diary_add_attachment(crypto.deref(), client.get_client()?, uuid, bytes, minetype).await
 }
 
 /// 下载附件
@@ -330,18 +292,10 @@ fn cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, Stri
 async fn delete_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_handle: AppHandle,
     uuid: String,
     filename: String,
 ) -> Result<DiaryManifest, String> {
-    diary_delete_attachment(
-        crypto.deref(),
-        client.get_client()?,
-        Some(&app_handle),
-        uuid,
-        filename,
-    )
-    .await
+    diary_delete_attachment(crypto.deref(), client.get_client()?, uuid, filename).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

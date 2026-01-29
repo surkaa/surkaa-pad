@@ -141,7 +141,7 @@ onBeforeRouteLeave((to, _from, next) => {
 
 onMounted(() => {
   console.log("DiaryList mounted");
-  loadLocalDiaries();
+  syncFromOss(); // 现在每次都会同步日记，下载量比较大，可能确实需要增加一个缓存，但是需要封装好
   if (watcher.value) {
     watcher.value.resume();
     return;
