@@ -199,13 +199,7 @@ impl OssClient {
         Ok(headers)
     }
 
-    pub async fn upload(
-        &self,
-        key: &str,
-        len: u64,
-        stream: ByteStream,
-    ) -> Result<(), String>
-    {
+    pub async fn upload(&self, key: &str, len: u64, stream: ByteStream) -> Result<(), String> {
         let url = self.get_url(key, "");
         let mut headers = self.build_headers(&Method::PUT, key, STREAM_MINE_TYPE)?;
         // 显式设置 Content-Length
@@ -229,11 +223,7 @@ impl OssClient {
         }
     }
 
-    pub async fn upload_bytes(
-        &self,
-        key: &str,
-        data: &Vec<u8>,
-    ) -> Result<(), String> {
+    pub async fn upload_bytes(&self, key: &str, data: &Vec<u8>) -> Result<(), String> {
         let url = self.get_url(key, "");
         let mut headers = self.build_headers(&Method::PUT, key, STREAM_MINE_TYPE)?;
         // 显式设置 Content-Length
@@ -466,6 +456,13 @@ mod tests {
         }
     }
 
+    async fn add_object(client: &OssClient, key: &str, content: &'static str) {
+        let len = content.len() as u64;
+        let bytes = Bytes::from_static(content.as_bytes());
+        let stream: ByteStream = Box::pin(iter(once(Ok::<_, Error>(bytes))));
+        client.upload(key, len, stream).await.expect("上传失败");
+    }
+
     #[tokio::test]
     async fn test_oss() {
         let _guard = SEQUENTIAL_LOCK.lock().unwrap();
@@ -561,10 +558,7 @@ mod tests {
             let len = content.len() as u64;
             let bytes = Bytes::from_static(content.as_bytes());
             let stream: ByteStream = Box::pin(iter(once(Ok::<_, Error>(bytes))));
-            client
-                .upload(key, len, stream)
-                .await
-                .expect("上传失败");
+            client.upload(key, len, stream).await.expect("上传失败");
         }
 
         // 确认上传
@@ -587,6 +581,32 @@ mod tests {
             .expect("前缀删除失败");
         assert_eq!(delete_count, keys.len() as u32, "应删除所有上传的对象");
         // 确认删除
+        assert_empty(&client, "测试结束后对象存储应为空").await;
+    }
+
+    #[tokio::test]
+    async fn test_list() {
+        let _guard = SEQUENTIAL_LOCK.lock().unwrap();
+        let client = OssClient::from_env();
+        assert_empty(&client, "测试开始前对象存储应为空").await;
+        add_object(&client, "folder/test1.txt", "Test file 1").await;
+        add_object(&client, "folder/test2.txt", "Test file 2").await;
+        add_object(&client, "folder/subfolder/test3.txt", "Test file 3").await;
+
+        // 列出对象
+        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
+        assert!(next_token.is_none(), "不应有续页");
+        assert_eq!(objects.len(), 3, "应列出三个对象");
+        let keys: Vec<String> = objects.iter().map(|obj| obj.key().to_string()).collect();
+        assert!(keys.contains(&"folder/test1.txt".to_string()));
+        assert!(keys.contains(&"folder/test2.txt".to_string()));
+        assert!(keys.contains(&"folder/subfolder/test3.txt".to_string()));
+
+        // 清理
+        client
+            .delete_with_prefix("folder/")
+            .await
+            .expect("删除失败");
         assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 }
