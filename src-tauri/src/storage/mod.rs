@@ -24,7 +24,7 @@ pub fn local_manifest_path(
     hash_or_etag: &str,
 ) -> PathBuf {
     path_getter
-        .get_cache_path()
+        .get_data_path()
         .join("diaries")
         .join(format!("{}_{}.enc", diary_id, hash_or_etag))
 }
@@ -36,7 +36,7 @@ pub fn local_attachment_path(
     attachment_filename: &str,
 ) -> PathBuf {
     path_getter
-        .get_temp_path()
+        .get_data_path()
         .join("pad")
         .join(format!("{}_{}.raw", diary_id, attachment_filename))
 }
@@ -46,6 +46,6 @@ pub fn local_attachment_dir(
     path_getter: &impl PathGetter,
 ) -> PathBuf {
     path_getter
-        .get_temp_path()
+        .get_data_path()
         .join("pad")
 }
