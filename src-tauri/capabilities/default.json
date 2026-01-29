@@ -10,6 +10,7 @@
     "core:default",
     "opener:default",
     "store:default",
+    "dialog:default",
     "fs:allow-app-write",
     "fs:allow-app-write-recursive",
     "fs:allow-appcache-write",

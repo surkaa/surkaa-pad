@@ -295,6 +295,7 @@ async fn delete_attachment(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // TODO 去掉两个 log 插件中的一个
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -317,6 +318,8 @@ pub fn run() {
         )
         // 注册 os 插件
         .plugin(tauri_plugin_os::init())
+        // 注册 dialog 插件
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(Crypto::new());
             app.manage(OssState::new());
