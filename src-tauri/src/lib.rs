@@ -8,7 +8,7 @@ mod task;
 use crate::attachment::DownloadAttachmentEvent;
 use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
 use crate::diary::DiaryManifest;
-use crate::diary::MemoryDiaryCache;
+use crate::diary::DiaryMemoryCache;
 use crate::diary::{diary_create, diary_delete, diary_sync, diary_update_diary_content_only};
 use crate::object::OssState;
 use crate::storage::local_attachment_dir;
@@ -114,7 +114,7 @@ async fn init_oss_client(
 /// * `Result<Vec<DiaryManifest>, String>` - 成功时返回日记列表，失败时返回错误信息
 #[tauri::command]
 async fn list_local_diaries(
-    cache: State<'_, MemoryDiaryCache>,
+    cache: State<'_, DiaryMemoryCache>,
 ) -> Result<Vec<DiaryManifest>, String> {
     Ok(cache.list())
 }
@@ -126,7 +126,7 @@ async fn list_local_diaries(
 /// * `Result<Option<DiaryManifest>, String>` - 如果传入了 UUID，成功时返回该日记的清单，否则返回 None；失败时返回错误信息
 #[tauri::command]
 async fn sync_from_oss(
-    cache: State<'_, MemoryDiaryCache>,
+    cache: State<'_, DiaryMemoryCache>,
     em: State<'_, Crypto>,
     client: State<'_, OssState>,
     uuid: Option<String>,
@@ -141,7 +141,7 @@ async fn sync_from_oss(
 /// * `Result<Vec<DiaryManifest>, String>` - 成功时返回匹配的日记列表，失败时返回错误信息
 #[tauri::command]
 async fn search_diaries(
-    cache: State<'_, MemoryDiaryCache>,
+    cache: State<'_, DiaryMemoryCache>,
     keyword: &str,
 ) -> Result<Vec<String>, String> {
     let diaries = cache.list();
@@ -320,7 +320,7 @@ pub fn run() {
             app.manage(Crypto::new());
             app.manage(OssState::new());
             app.manage(TaskPool::new());
-            app.manage(MemoryDiaryCache::new());
+            app.manage(DiaryMemoryCache::new());
 
             let app_handle = app.handle();
 

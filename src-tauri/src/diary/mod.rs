@@ -4,7 +4,7 @@ mod types;
 use crate::crypto::Crypto;
 use crate::object::{ObjectMetadata, OssClient};
 use crate::storage::{is_remote_manifest_key, remote_manifest_key};
-pub use memory_cache::MemoryDiaryCache;
+pub use memory_cache::DiaryMemoryCache;
 use chrono::Utc;
 use serde_json::from_slice;
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
 pub async fn diary_sync(
-    dc: &MemoryDiaryCache,
+    dc: &DiaryMemoryCache,
     crypto: &Crypto,
     client: Arc<OssClient>,
     uuid: Option<String>,

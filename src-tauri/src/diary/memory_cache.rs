@@ -3,11 +3,11 @@ use dashmap::DashMap;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
-pub struct MemoryDiaryCache {
+pub struct DiaryMemoryCache {
     diaries: Arc<Mutex<DashMap<String, Arc<DiaryManifest>>>>,
 }
 
-impl MemoryDiaryCache {
+impl DiaryMemoryCache {
     pub fn new() -> Self {
         Self {
             diaries: Arc::new(Mutex::new(DashMap::new())),
