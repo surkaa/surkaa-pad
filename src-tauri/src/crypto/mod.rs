@@ -277,4 +277,33 @@ mod tests {
             println!("解析完成: {}", output_path.display());
         }
     }
+
+    #[test]
+    fn test_encrypt_and_decrypt_big_data() {
+        dotenvy::dotenv().ok();
+        let password = std::env::var("TEST_PASSWORD").expect("TEST_PASSWORD 未设置");
+        let salt = std::env::var("TEST_SALT").expect("TEST_PASSWORD 未设置");
+        let crypto = Crypto::new();
+        let _ = crypto.derive_dek(password, salt).expect("派生密钥失败");
+
+        // 创建一个随机5MB的文件
+        let mut random_data = vec![0u8; 5 * 1024 * 1024];
+        OsRng.fill_bytes(&mut random_data);
+
+        // 加密测试
+        let encrypt_start = std::time::Instant::now();
+        let (encrypted_data, nonce) = crypto.encrypt(&random_data).expect("无法加密大文件");
+        let encrypt_duration = encrypt_start.elapsed();
+        println!("加密大文件用时: {:?}", encrypt_duration);
+
+        // 解密测试
+        let decrypt_start = std::time::Instant::now();
+        let decrypted_data = crypto
+            .decrypt(&encrypted_data, &nonce)
+            .expect("无法解密大文件");
+        let decrypt_duration = decrypt_start.elapsed();
+        println!("解密大文件用时: {:?}", decrypt_duration);
+
+        assert_eq!(random_data, decrypted_data);
+    }
 }
