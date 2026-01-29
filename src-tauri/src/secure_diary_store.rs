@@ -359,7 +359,6 @@ pub async fn diary_download_attachment(
         let _ = event.send(DownloadAttachmentEvent::Completed {
             file_path: temp_path.to_string_lossy().to_string(),
         });
-        // return Ok(temp_path);
     }
 
     // 启动异步下载任务
@@ -368,11 +367,6 @@ pub async fn diary_download_attachment(
     let temp_path_clone = temp_path.clone();
     let attachment_key = format!("{}/{}", id, filename);
 
-    // // 克隆用于在任务结束时移除句柄
-    // let handle_map_clone = download_handles.clone();
-    // let eid_clone = eid.clone();
-
-    // let handle = spawn(async move {
     let (mut stream, len) = client_clone
         .download(&attachment_key)
         .await
@@ -414,13 +408,6 @@ pub async fn diary_download_attachment(
             let message = format!("解密附件时出现错误: {}", e);
             log::error!("{}", message.clone());
             let _ = event.send(DownloadAttachmentEvent::Error { message });
-
-            // // 任务结束：无论是成功 (Ok) 还是错误 (Err)，都需要清除句柄
-            // let mut handle_guard = handle_map_clone
-            //     .lock()
-            //     .map_err(|_| "Failed to acquire lock (poisoned)")
-            //     .unwrap();
-            // handle_guard.remove(&eid);
             return;
         }
     };
@@ -452,29 +439,6 @@ pub async fn diary_download_attachment(
         });
         let _ = cfm.add_cache_file(temp_path);
     }
-
-    // // 任务结束：无论是成功 (Ok) 还是错误 (Err)，都需要清除句柄
-    // let mut handle_guard = handle_map_clone
-    //     .lock()
-    //     .map_err(|_| "Failed to acquire lock (poisoned)")
-    //     .unwrap();
-    // handle_guard.remove(&eid);
-    // });
-
-    // // 2. 将新的 JoinHandle 存储到 HashMap 中
-    // let mut handle_guard = download_handles
-    //     .lock()
-    //     .map_err(|_| "Failed to acquire lock (poisoned)")?;
-    //
-    // // 如果该 eid 已存在，先取消旧任务 (防止重复下载冲突)
-    // if let Some(old_handle) = handle_guard.remove(&eid_clone) {
-    //     old_handle.abort();
-    //     log::warn!("发现重复的附件下载任务 {}，已取消旧任务。", &eid_clone);
-    // }
-    //
-    // handle_guard.insert(eid_clone, handle);
-    //
-    // Ok(temp_path)
 }
 
 /// 删除指定日记的指定附件
