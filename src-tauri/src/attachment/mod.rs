@@ -2,9 +2,9 @@ pub mod types;
 
 use crate::attachment::types::{AttachmentMeta, DownloadAttachmentEvent, ATTACHMENT_EXTENSION};
 use crate::crypto::Crypto;
-use crate::diary::diary_get_diary_manifest;
+use crate::diary::diary_get;
 use crate::diary::types::{DiaryManifest, MANIFEST_FILE_NAME};
-use crate::object::{OssClient};
+use crate::object::OssClient;
 use chrono::Utc;
 use futures::StreamExt;
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 /// 添加附件到指定日记
-pub async fn diary_add_attachment(
+pub async fn attachment_upload(
     crypto: &Crypto,
     client: Arc<OssClient>,
     id: String,
@@ -35,7 +35,7 @@ pub async fn diary_add_attachment(
         nonce: nonce.clone(),
     };
 
-    let (mut manifest, _) = diary_get_diary_manifest(crypto, client.clone(), id.clone()).await?;
+    let (mut manifest, _) = diary_get(crypto, client.clone(), id.clone()).await?;
     manifest.attachments.push(attachment);
     manifest.updated = Utc::now().timestamp_millis();
     let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
@@ -61,8 +61,8 @@ pub async fn diary_add_attachment(
     Ok(manifest)
 }
 
-/// 下载指定日记的指定附件 下载完成后emit attachment_downloaded返回eid
-pub async fn diary_download_attachment(
+/// 下载指定日记的指定附件
+pub async fn attachment_download(
     crypto: Arc<Crypto>,
     client: Arc<OssClient>,
     app_handle: AppHandle,
@@ -77,12 +77,9 @@ pub async fn diary_download_attachment(
         .resolve(&filename, BaseDirectory::Temp)
         .expect("Failed to resolve temp path");
 
-    // 启动异步下载任务
-    let em_clone = crypto.clone();
-    let client_clone = client.clone();
     let attachment_key = format!("{}/{}", id, filename);
 
-    let (mut stream, len) = client_clone
+    let (mut stream, len) = client
         .download(&attachment_key)
         .await
         .map_err(|e| {
@@ -117,7 +114,7 @@ pub async fn diary_download_attachment(
     let _ = event.send(DownloadAttachmentEvent::Decrypting);
 
     // 解密数据
-    let decrypted_data = match em_clone.decrypt(&allocated, &nonce) {
+    let decrypted_data = match crypto.decrypt(&allocated, &nonce) {
         Ok(data) => data,
         Err(e) => {
             let message = format!("解密附件时出现错误: {}", e);
@@ -141,7 +138,6 @@ pub async fn diary_download_attachment(
         })
         .unwrap();
 
-    // TODO 存的是明文附件，可能有风险，但是目前这点就先不管了，如果存密文的话，打开反而更麻烦
     if let Err(e) = temp_file.write_all(&decrypted_data).await {
         let message = format!("无法写入临时文件 {}: {}", temp_path.display(), e);
         log::error!("{}", message.clone());
@@ -156,14 +152,14 @@ pub async fn diary_download_attachment(
 }
 
 /// 删除指定日记的指定附件
-pub async fn diary_delete_attachment(
+pub async fn attachment_delete(
     crypto: &Crypto,
     client: Arc<OssClient>,
     id: String,
     file_name: String,
 ) -> Result<DiaryManifest, String> {
     // 更新 manifest，移除附件元数据
-    let (mut manifest, _) = diary_get_diary_manifest(crypto, client.clone(), id.clone()).await?;
+    let (mut manifest, _) = diary_get(crypto, client.clone(), id.clone()).await?;
     manifest.attachments.retain(|att| att.filename != file_name);
     manifest.updated = Utc::now().timestamp_millis();
 

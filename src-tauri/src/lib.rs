@@ -5,12 +5,10 @@ mod object;
 mod task;
 
 use crate::attachment::types::DownloadAttachmentEvent;
-use crate::attachment::{diary_add_attachment, diary_delete_attachment, diary_download_attachment};
+use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
 use crate::diary::cache::MemoryDiaryCache;
 use crate::diary::types::DiaryManifest;
-use crate::diary::{
-    diary_create_diary, diary_delete_diary, diary_update_diary_content_only, pad_sync_from_oss,
-};
+use crate::diary::{diary_create, diary_delete, diary_sync, diary_update_diary_content_only};
 use crate::object::OssState;
 use crate::task::TaskPool;
 use crypto::Crypto;
@@ -131,7 +129,7 @@ async fn sync_from_oss(
     client: State<'_, OssState>,
     uuid: Option<String>,
 ) -> Result<Option<DiaryManifest>, String> {
-    pad_sync_from_oss(cache.deref(), em.deref(), client.get_client()?, uuid).await
+    diary_sync(cache.deref(), em.deref(), client.get_client()?, uuid).await
 }
 
 /// 根据日记内容搜索日记
@@ -167,7 +165,7 @@ async fn save_diary(
     client: State<'_, OssState>,
     content: &str,
 ) -> Result<DiaryManifest, String> {
-    diary_create_diary(crypto.deref(), client.get_client()?, content).await
+    diary_create(crypto.deref(), client.get_client()?, content).await
 }
 
 /// 更新日记的内容
@@ -193,7 +191,7 @@ async fn update_diary_content_only(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 async fn delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), String> {
-    diary_delete_diary(client.get_client()?, uuid).await
+    diary_delete(client.get_client()?, uuid).await
 }
 
 //------------
@@ -228,7 +226,7 @@ async fn add_attachment(
     // 删除缓存文件
     remove_file(temp_path).map_err(|e| format!("无法删除临时文件: {}", e))?;
 
-    diary_add_attachment(crypto.deref(), client.get_client()?, uuid, bytes, minetype).await
+    attachment_upload(crypto.deref(), client.get_client()?, uuid, bytes, minetype).await
 }
 
 /// 下载附件
@@ -254,7 +252,7 @@ fn download_attachment(
     let app_handle = app_handle.clone();
     let on_event = on_event.clone();
     tp.spawn(async move {
-        diary_download_attachment(
+        attachment_download(
             Arc::new(crypto),
             client,
             app_handle,
@@ -290,7 +288,7 @@ async fn delete_attachment(
     uuid: String,
     filename: String,
 ) -> Result<DiaryManifest, String> {
-    diary_delete_attachment(crypto.deref(), client.get_client()?, uuid, filename).await
+    attachment_delete(crypto.deref(), client.get_client()?, uuid, filename).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

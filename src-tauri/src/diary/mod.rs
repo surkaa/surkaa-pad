@@ -13,62 +13,15 @@ use tauri_plugin_log::log;
 use uuid::Uuid;
 
 /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
-pub async fn pad_sync_from_oss(
+pub async fn diary_sync(
     dc: &MemoryDiaryCache,
     crypto: &Crypto,
     client: Arc<OssClient>,
     uuid: Option<String>,
 ) -> Result<Option<DiaryManifest>, String> {
-    // 获取远程列表
-    let remote_diaries_map: HashMap<String, String> = diary_list_diaries(client.clone(), &uuid)
-        .await?
-        .iter()
-        .map(|(uuid, diary)| (uuid.clone(), diary.etag().to_string()))
-        .collect();
-    log::info!(
-        "远程日记列表获取成功，共 {} 条日记",
-        remote_diaries_map.len()
-    );
-    // 对比本地和远程的 UUID 和 ETag
-    for (uuid, _remote_etag) in remote_diaries_map.iter() {
-        // 下载和解密日记Manifest
-        let (manifest, _) =
-            diary_get_diary_manifest(&crypto, client.clone(), uuid.to_string()).await?;
-        // 更新内存缓存
-        dc.insert(uuid, manifest);
-    }
-
-    // 返回指定 UUID 的 Manifest（如果有的话）
-    if let Some(filter_uuid) = uuid {
-        Ok(dc.get(&filter_uuid))
-    } else {
-        Ok(None)
-    }
-}
-
-/// 将加密的字节流解密为 DiaryManifest 结构体 本应为私有方法 但为了缓存加载需要公开
-pub async fn diary_decrypt_bytes_to_manifest(
-    crypto: &Crypto,
-    encrypted_data: &Vec<u8>,
-) -> Result<DiaryManifest, String> {
-    let manifest_bytes = crypto.decrypt_from_full_ciphertext(encrypted_data)?;
-
-    // 反序列化 JSON
-    let manifest =
-        from_slice(&manifest_bytes).map_err(|e| format!("Failed to parse manifest JSON: {}", e))?;
-
-    Ok(manifest)
-}
-
-/// 提供安全的日记存储功能 结合有日记存储方案的逻辑 只用于管理日记及其附件的增删改查
-/// 列出所有日记 UUID -> ObjectInfo 映射
-pub async fn diary_list_diaries(
-    client: Arc<OssClient>,
-    uuid: &Option<String>,
-) -> Result<HashMap<String, ObjectMetadata>, String> {
     let (objects, _) = client
         .list(
-            &match uuid {
+            &match &uuid {
                 Some(id) => format!("{}/{}", id, MANIFEST_FILE_NAME),
                 None => "".to_string(),
             },
@@ -89,11 +42,33 @@ pub async fn diary_list_diaries(
             unique_objets.entry(diary_id.to_string()).or_insert(object);
         }
     }
-    Ok(unique_objets)
+    // 获取远程列表
+    let remote_diaries_map: HashMap<String, String> = unique_objets
+        .iter()
+        .map(|(uuid, diary)| (uuid.clone(), diary.etag().to_string()))
+        .collect();
+    log::info!(
+        "远程日记列表获取成功，共 {} 条日记",
+        remote_diaries_map.len()
+    );
+    // 对比本地和远程的 UUID 和 ETag
+    for (uuid, _remote_etag) in remote_diaries_map.iter() {
+        // 下载和解密日记Manifest
+        let (manifest, _) = diary_get(&crypto, client.clone(), uuid.to_string()).await?;
+        // 更新内存缓存
+        dc.insert(uuid, manifest);
+    }
+
+    // 返回指定 UUID 的 Manifest（如果有的话）
+    if let Some(filter_uuid) = uuid {
+        Ok(dc.get(&filter_uuid))
+    } else {
+        Ok(None)
+    }
 }
 
 /// 根据内容创建新的日记并存储到云端
-pub async fn diary_create_diary(
+pub async fn diary_create(
     crypto: &Crypto,
     client: Arc<OssClient>,
     content: &str,
@@ -130,34 +105,28 @@ pub async fn diary_create_diary(
     Ok(manifest)
 }
 
-/// 直接下载指定 ID 的加密 manifest 字节流用于缓存
-pub async fn diary_download_encrypted_manifest(
-    client: Arc<OssClient>,
-    id: &str,
-) -> Result<Vec<u8>, String> {
-    let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
-
-    client
-        .download_bytes(&object_key)
-        .await
-        .map_err(|e| format!("Failed to download encrypted manifest for caching: {}", e))
-}
-
 /// 获取并解密指定 ID 的日记 manifest
-pub async fn diary_get_diary_manifest(
+pub async fn diary_get(
     crypto: &Crypto,
     client: Arc<OssClient>,
     id: String,
 ) -> Result<(DiaryManifest, Vec<u8>), String> {
-    let encrypted_data = diary_download_encrypted_manifest(client, &id).await?;
+    let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
+    let encrypted_data = client
+        .download_bytes(&object_key)
+        .await
+        .map_err(|e| format!("未能下载加密清单用于缓存: {}", e))?;
 
-    let manifest = diary_decrypt_bytes_to_manifest(crypto, &encrypted_data).await?;
+    let manifest_bytes = crypto.decrypt_from_full_ciphertext(&encrypted_data)?;
+
+    // 反序列化 JSON
+    let manifest = from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
 
     Ok((manifest, encrypted_data))
 }
 
 /// 删除指定 ID 的日记及其所有附件
-pub async fn diary_delete_diary(client: Arc<OssClient>, id: String) -> Result<(), String> {
+pub async fn diary_delete(client: Arc<OssClient>, id: String) -> Result<(), String> {
     let (objects, _) = client
         .list(&format!("{}/", id), None)
         .await
@@ -181,7 +150,7 @@ pub async fn diary_update_diary_content_only(
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
     // 先获取现有的 manifest
-    let (mut manifest, _) = diary_get_diary_manifest(crypto, client.clone(), id.clone()).await?;
+    let (mut manifest, _) = diary_get(crypto, client.clone(), id.clone()).await?;
 
     // 更新内容和更新时间
     manifest.content = new_content.to_string();
