@@ -2,6 +2,7 @@ mod attachment;
 mod crypto;
 mod diary;
 mod object;
+mod storage;
 mod task;
 
 use crate::attachment::DownloadAttachmentEvent;
