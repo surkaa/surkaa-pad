@@ -7,36 +7,8 @@ use crate::secure_diary_store::{
     diary_get_diary_manifest, diary_list_diaries, DiaryManifest,
 };
 use std::collections::{HashMap};
-use std::env::current_dir;
-use std::fs::{create_dir_all};
-use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
 use tauri_plugin_log::log;
-
-const CACHE_ATTACHMENT_DIR: &str = "attachment_cache";
-// const ATTACHMENT_EXTENSION: &str = ".enc";
-
-/// 获取应用的附件缓存目录
-pub fn pad_get_attachment_cache_dir(app_handle: Option<&AppHandle>) -> PathBuf {
-    let path = if let Some(app_handle) = app_handle {
-        app_handle
-            .path()
-            .app_data_dir()
-            .unwrap()
-            .join(CACHE_ATTACHMENT_DIR)
-    } else {
-        let mut path = current_dir().expect("Failed to get current directory");
-        path.push(CACHE_ATTACHMENT_DIR);
-
-        path
-    };
-
-    if !path.exists() {
-        create_dir_all(&path).expect("Failed to create attachment cache directory");
-    }
-    path
-}
 
 /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
 pub async fn pad_sync_from_oss(

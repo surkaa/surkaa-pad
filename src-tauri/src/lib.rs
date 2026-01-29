@@ -1,11 +1,9 @@
-pub mod cache_file_manager;
 mod crypto;
 mod diary;
 mod object;
 pub mod secure_diary_store;
 mod task;
 
-use crate::cache_file_manager::CacheFileManager;
 use crate::diary::cache::MemoryDiaryCache;
 use crate::diary::pad_sync_from_oss;
 use crate::object::OssState;
@@ -21,7 +19,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_log::{log, Target, TargetKind};
 use tauri_plugin_store::Builder;
 //------------
@@ -245,7 +243,6 @@ fn download_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
-    cfm: State<'_, CacheFileManager>,
     app_handle: AppHandle,
     on_event: Channel<DownloadAttachmentEvent>,
     uuid: String,
@@ -254,14 +251,12 @@ fn download_attachment(
 ) -> Result<String, String> {
     let crypto = crypto.inner().clone();
     let client = client.get_client()?.clone();
-    let cfm = cfm.inner().clone();
     let app_handle = app_handle.clone();
     let on_event = on_event.clone();
     tp.spawn(async move {
         diary_download_attachment(
             Arc::new(crypto),
             client,
-            Arc::new(cfm),
             app_handle,
             on_event,
             uuid,
@@ -328,47 +323,9 @@ pub fn run() {
             app.manage(OssState::new());
             app.manage(TaskPool::new());
             app.manage(MemoryDiaryCache::new());
-            let cfm = CacheFileManager::new();
-            app.manage(cfm.clone());
 
             #[cfg(mobile)]
             let _ = app.handle().plugin(tauri_plugin_biometric::init());
-
-            let main_window = app.get_webview_window("main").unwrap();
-
-            // 监听窗口关闭事件
-            main_window.on_window_event(move |event| {
-                match event {
-                    WindowEvent::CloseRequested { .. } => {
-                        // 在异步运行时中执行清理操作
-                        let files = cfm.get_cache_files().unwrap_or_default();
-                        log::info!(
-                            "请求关闭窗口, 将开始清理缓存文件, 共计 {} 个文件",
-                            files.len()
-                        );
-                        for file_path in files {
-                            if !file_path.exists() {
-                                log::warn!("缓存文件不存在，跳过删除: {:?}", file_path);
-                                continue;
-                            }
-
-                            // 删除缓存文件
-                            match remove_file(&file_path) {
-                                Ok(_) => log::info!("已删除缓存文件: {:?}", file_path),
-                                Err(e) => {
-                                    log::error!("删除缓存文件时出错 {:?}: {}", file_path, e);
-                                }
-                            }
-                        }
-                    }
-                    WindowEvent::Destroyed => {
-                        // 窗口已销毁
-                        log::info!("Window destroyed");
-                    }
-                    _ => {}
-                }
-            });
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -1,6 +1,4 @@
-use crate::cache_file_manager::CacheFileManager;
 use crate::crypto::Crypto;
-use crate::diary::{pad_get_attachment_cache_dir};
 use crate::object::{ObjectMetadata, OssClient};
 use chrono::Utc;
 use futures::StreamExt;
@@ -255,7 +253,6 @@ pub async fn diary_add_attachment(
 pub async fn diary_download_attachment(
     crypto: Arc<Crypto>,
     client: Arc<OssClient>,
-    cfm: Arc<CacheFileManager>,
     app_handle: AppHandle,
     event: Channel<DownloadAttachmentEvent>,
     id: String,
@@ -266,26 +263,11 @@ pub async fn diary_download_attachment(
     let temp_path = app_handle
         .path()
         .resolve(&filename, BaseDirectory::Temp)
-        .unwrap_or_else(|e| {
-            log::error!(
-                "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
-                e
-            );
-            pad_get_attachment_cache_dir(Some(&app_handle)).join(&filename)
-        });
-
-    if temp_path.exists() {
-        // 直接返回缓存路径
-        log::info!("附件 {} 已存在于缓存，直接使用缓存文件。", filename);
-        let _ = event.send(DownloadAttachmentEvent::Completed {
-            file_path: temp_path.to_string_lossy().to_string(),
-        });
-    }
+        .expect("Failed to resolve temp path");
 
     // 启动异步下载任务
     let em_clone = crypto.clone();
     let client_clone = client.clone();
-    let temp_path_clone = temp_path.clone();
     let attachment_key = format!("{}/{}", id, filename);
 
     let (mut stream, len) = client_clone
@@ -338,10 +320,10 @@ pub async fn diary_download_attachment(
     let _ = event.send(DownloadAttachmentEvent::Decrypted { decrypted_size });
 
     // 保存到临时目录下，再返回给前端临时路径
-    let mut temp_file = tokio::fs::File::create(&temp_path_clone)
+    let mut temp_file = tokio::fs::File::create(&temp_path)
         .await
         .map_err(|e| {
-            let message = format!("无法创建临时文件 {}: {}", temp_path_clone.display(), e);
+            let message = format!("无法创建临时文件 {}: {}", temp_path.display(), e);
             log::error!("{}", message.clone());
             let _ = event.send(DownloadAttachmentEvent::Error { message });
         })
@@ -349,16 +331,15 @@ pub async fn diary_download_attachment(
 
     // TODO 存的是明文附件，可能有风险，但是目前这点就先不管了，如果存密文的话，打开反而更麻烦
     if let Err(e) = temp_file.write_all(&decrypted_data).await {
-        let message = format!("无法写入临时文件 {}: {}", temp_path_clone.display(), e);
+        let message = format!("无法写入临时文件 {}: {}", temp_path.display(), e);
         log::error!("{}", message.clone());
         let _ = event.send(DownloadAttachmentEvent::Error { message });
     } else {
-        log::info!("附件已保存到临时文件 {}", temp_path_clone.display());
+        log::info!("附件已保存到临时文件 {}", temp_path.display());
         // 发送完成事件
         let _ = event.send(DownloadAttachmentEvent::Completed {
-            file_path: temp_path_clone.to_string_lossy().to_string(),
+            file_path: temp_path.to_string_lossy().to_string(),
         });
-        let _ = cfm.add_cache_file(temp_path);
     }
 }
 
