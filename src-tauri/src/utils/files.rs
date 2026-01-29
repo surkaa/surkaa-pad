@@ -1,16 +1,29 @@
+use crate::object::ByteStream;
 use std::fs::File;
 use std::io;
+use tokio_util::io::ReaderStream;
+
+pub fn open_file_stream(path_or_uri: &str) -> Result<(u64, ByteStream), String> {
+    let file = open_file(path_or_uri).map_err(|e| format!("无法打开文件{}:{}", path_or_uri, e))?;
+    let metadata = file
+        .metadata()
+        .map_err(|e| format!("无法获取文件元数据: {}", e))?;
+    let file_size = metadata.len();
+    let tokio_file = tokio::fs::File::from_std(file);
+    let stream = ReaderStream::new(tokio_file);
+    Ok((file_size, Box::pin(stream)))
+}
 
 /// 在 Windows 上直接打开路径
 #[cfg(target_os = "windows")]
-pub fn open_file(path: &str) -> io::Result<File> {
+fn open_file(path: &str) -> io::Result<File> {
     let path = std::path::PathBuf::from(path);
     File::open(path)
 }
 
 /// 在 Android 上通过 ContentResolver 获取文件描述符
 #[cfg(target_os = "android")]
-pub fn open_file(uri_string: &str) -> io::Result<File> {
+fn open_file(uri_string: &str) -> io::Result<File> {
     use std::os::unix::io::FromRawFd;
 
     // 获取 Android Context
@@ -101,6 +114,6 @@ pub fn open_file(uri_string: &str) -> io::Result<File> {
 
 /// 在 IOS 未实现
 #[cfg(target_os = "ios")]
-pub fn open_file(path: &str) -> io::Result<()> {
+fn open_file(path: &str) -> io::Result<()> {
     todo!()
 }
