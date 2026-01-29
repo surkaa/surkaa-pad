@@ -29,6 +29,10 @@ const processDownloadAttachment = (type: DownloadAttachmentEvent['event'], statu
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const cancelFns = ref<Function[]>([]);
 
+watch(() => cancelFns.value.length, (newLength) => {
+  console.log(`有${newLength}的URL转换待处理.`);
+});
+
 const innerHTML = computed(() => {
   let res = model.value.replace(/<<(IMG|VID|AUD):(.+?)>>/g, (match, tag, fn) => {
     const a = diary.attachments.find(att => att.filename === fn);

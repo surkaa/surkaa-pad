@@ -1,4 +1,8 @@
-use crate::secure_diary_store::{DiaryManifest, SecureDiaryStore};
+use crate::crypto::Crypto;
+use crate::object::OssClient;
+use crate::secure_diary_store::{
+    diary_decrypt_bytes_to_manifest, diary_get_diary_manifest, diary_list_diaries, DiaryManifest,
+};
 use std::collections::{HashMap, HashSet};
 use std::env::current_dir;
 use std::fs::{create_dir_all, read_dir, write};
@@ -7,8 +11,6 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::log;
 use tokio::sync::Mutex;
-use crate::crypto::Crypto;
-use crate::object::OssClient;
 
 const CACHE_DIARY_DIR: &str = "diary_cache";
 const CACHE_ATTACHMENT_DIR: &str = "attachment_cache";
@@ -83,7 +85,6 @@ impl AppState {
         &self,
         cache: &DiaryMemoryCache,
         crypto: &Crypto,
-        store: &SecureDiaryStore,
         app_handle: Option<&AppHandle>,
     ) -> Result<(), String> {
         let cache_dir = self.get_diary_cache_dir(app_handle);
@@ -117,9 +118,8 @@ impl AppState {
                     .unwrap_or(filename);
 
                 // 3. 解密和反序列化
-                if let Ok(manifest) = store
-                    .decrypt_bytes_to_manifest(&crypto, &encrypted_data)
-                    .await
+                if let Ok(manifest) =
+                    diary_decrypt_bytes_to_manifest(&crypto, &encrypted_data).await
                 {
                     // 4. 存入内存
                     map.insert(uuid.to_string(), manifest);
@@ -140,7 +140,6 @@ impl AppState {
         cache: &DiaryMemoryCache,
         crypto: &Crypto,
         client: Arc<OssClient>,
-        store: &SecureDiaryStore,
         app_handle: Option<&AppHandle>,
         uuid: Option<String>,
     ) -> Result<Option<DiaryManifest>, String> {
@@ -180,8 +179,7 @@ impl AppState {
             }
         }
         // 获取远程列表
-        let remote_diaries_map: HashMap<String, String> = store
-            .list_diaries(client.clone(), &uuid)
+        let remote_diaries_map: HashMap<String, String> = diary_list_diaries(client.clone(), &uuid)
             .await?
             .iter()
             .map(|(uuid, diary)| (uuid.clone(), diary.etag().to_string()))
@@ -199,9 +197,8 @@ impl AppState {
                 log::info!("日记缓存未命中 {}. 准备下载.", uuid);
 
                 // 下载和解密日记Manifest
-                let (manifest, manifest_bytes) = store
-                    .get_diary_manifest(&crypto, client.clone(), uuid.to_string())
-                    .await?;
+                let (manifest, manifest_bytes) =
+                    diary_get_diary_manifest(&crypto, client.clone(), uuid.to_string()).await?;
 
                 let new_filename = format!("{}_{}{}", uuid, remote_etag, ATTACHMENT_EXTENSION);
                 let new_file_path = cache_dir.join(&new_filename);

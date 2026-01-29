@@ -1,9 +1,6 @@
 import {Channel, convertFileSrc, invoke} from "@tauri-apps/api/core";
 import {DownloadAttachmentEvent} from "../types";
 
-type NullableFn = (() => void) | null;
-
-const cancelMap: Map<string, NullableFn> = new Map();
 const cacheFileMap: Map<string, string> = new Map();
 
 
@@ -38,16 +35,17 @@ export function convertFilename2URL(
     emit: (type: DownloadAttachmentEvent['event'], msg: string) => void,
     urlCallback: (url: string) => void
 ): () => void {
+    let ct: string | "will_cancel" | null = null;
     const cancelFn = () => {
-        // 取消监听事件
-        const record = cancelMap.get(eid);
-        if (!record) return;
-        record();
-        cancelMap.delete(eid);
+        if (ct) {
+            cancelDownloadFn(ct);
+        } else {
+            ct = "will_cancel";
+        }
     };
 
-    const cancelDownloadFn = () => {
-        invoke("cancel_download_attachment", {eid}).then(bool => {
+    const cancelDownloadFn = (cancelToken: string) => {
+        invoke("cancel_task", {cancelToken}).then(bool => {
             console.log(`[ConvertFilename2URL] 取消下载任务 ${eid}: ${bool}`);
         });
     };
@@ -61,8 +59,6 @@ export function convertFilename2URL(
             case "started":
                 totalMB = msg.data.totalSize >> 20;
                 console.log(`[ConvertFilename2URL] 下载附件 ${eid} 开始，大小 ${totalMB}MB`);
-                // 添加取消下载函数到映射
-                cancelMap.set(eid, cancelDownloadFn);
                 break;
             case "downloadProgress":
                 const downloadedMB = msg.data.downloaded >> 20;
@@ -89,8 +85,13 @@ export function convertFilename2URL(
         }
     }
 
-    invoke("download_attachment", {uuid, nonce, eid, filename, onEvent}).then(() => {
-        console.log(`[ConvertFilename2URL] 已调用下载附件接口，eid: ${eid}`);
+    invoke<string>("download_attachment", {uuid, nonce, eid, filename, onEvent}).then((cancelToken) => {
+        console.log(`[ConvertFilename2URL] 已调用下载附件接口，eid: ${eid}, cancelToken: ${cancelToken}`);
+        if (ct === "will_cancel") {
+            cancelDownloadFn(cancelToken);
+        } else {
+            ct = cancelToken;
+        }
     });
 
     return cancelFn;

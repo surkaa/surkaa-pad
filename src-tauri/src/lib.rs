@@ -3,14 +3,21 @@ mod crypto;
 mod object;
 pub mod secure_diary_store;
 pub mod surkaa_pad;
+mod task;
 
 use crate::cache_file_manager::CacheFileManager;
 use crate::object::OssState;
-use crate::secure_diary_store::{DiaryManifest, DownloadAttachmentEvent, SecureDiaryStore};
+use crate::secure_diary_store::{
+    diary_add_attachment, diary_create_diary, diary_delete_attachment, diary_delete_diary,
+    diary_download_attachment, diary_update_diary_content_only, DiaryManifest,
+    DownloadAttachmentEvent,
+};
 use crate::surkaa_pad::{AppState, DiaryMemoryCache};
+use crate::task::TaskPool;
 use crypto::Crypto;
 use std::fs::{read, remove_file};
 use std::ops::Deref;
+use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager, State, WindowEvent};
@@ -110,12 +117,11 @@ async fn init_oss_client(
 async fn list_local_diaries(
     cache: State<'_, DiaryMemoryCache>,
     em: State<'_, Crypto>,
-    store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
 ) -> Result<Vec<DiaryManifest>, String> {
     app_state
-        .load_cache_to_memory(cache.deref(), em.deref(), store.deref(), Some(&app_handle))
+        .load_cache_to_memory(cache.deref(), em.deref(), Some(&app_handle))
         .await?;
     let diaries = app_state.list_cached_diaries(cache.deref()).await;
     Ok(diaries)
@@ -131,7 +137,6 @@ async fn sync_from_oss(
     cache: State<'_, DiaryMemoryCache>,
     em: State<'_, Crypto>,
     client: State<'_, OssState>,
-    store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: Option<String>,
@@ -141,7 +146,6 @@ async fn sync_from_oss(
             cache.deref(),
             em.deref(),
             client.get_client()?,
-            store.deref(),
             Some(&app_handle),
             uuid,
         )
@@ -180,20 +184,18 @@ async fn search_diaries(
 async fn save_diary(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
     content: &str,
 ) -> Result<DiaryManifest, String> {
-    store
-        .create_diary(
-            crypto.deref(),
-            client.get_client()?,
-            app_state.deref(),
-            Some(&app_handle),
-            content,
-        )
-        .await
+    diary_create_diary(
+        crypto.deref(),
+        client.get_client()?,
+        app_state.deref(),
+        Some(&app_handle),
+        content,
+    )
+    .await
 }
 
 /// 更新日记的内容
@@ -206,22 +208,20 @@ async fn save_diary(
 async fn update_diary_content_only(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
-    store
-        .update_diary_content_only(
-            crypto.deref(),
-            client.get_client()?,
-            app_state.deref(),
-            Some(&app_handle),
-            uuid,
-            new_content,
-        )
-        .await
+    diary_update_diary_content_only(
+        crypto.deref(),
+        client.get_client()?,
+        app_state.deref(),
+        Some(&app_handle),
+        uuid,
+        new_content,
+    )
+    .await
 }
 
 /// 删除日记
@@ -232,19 +232,17 @@ async fn update_diary_content_only(
 #[tauri::command]
 async fn delete_diary(
     client: State<'_, OssState>,
-    store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
 ) -> Result<(), String> {
-    store
-        .delete_diary(
-            client.get_client()?,
-            app_state.deref(),
-            Some(&app_handle),
-            uuid,
-        )
-        .await
+    diary_delete_diary(
+        client.get_client()?,
+        app_state.deref(),
+        Some(&app_handle),
+        uuid,
+    )
+    .await
 }
 
 //------------
@@ -262,7 +260,6 @@ async fn delete_diary(
 async fn add_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
@@ -281,17 +278,16 @@ async fn add_attachment(
     // 删除缓存文件
     remove_file(temp_path).map_err(|e| format!("无法删除临时文件: {}", e))?;
 
-    store
-        .add_attachment(
-            crypto.deref(),
-            client.get_client()?,
-            app_state.deref(),
-            Some(&app_handle),
-            uuid,
-            bytes,
-            minetype,
-        )
-        .await
+    diary_add_attachment(
+        crypto.deref(),
+        client.get_client()?,
+        app_state.deref(),
+        Some(&app_handle),
+        uuid,
+        bytes,
+        minetype,
+    )
+    .await
 }
 
 /// 下载附件
@@ -305,7 +301,7 @@ async fn add_attachment(
 fn download_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    store: State<'_, SecureDiaryStore>,
+    tp: State<'_, TaskPool>,
     app_state: State<'_, AppState>,
     cfm: State<'_, CacheFileManager>,
     app_handle: AppHandle,
@@ -313,36 +309,37 @@ fn download_attachment(
     uuid: String,
     filename: String,
     nonce: Vec<u8>,
-    eid: String,
-) -> Result<(), String> {
-    let attachment_cache = store
-        .download_attachment(
-            client.get_client()?,
-            crypto.deref(),
-            app_state.deref(),
+) -> Result<String, String> {
+    let crypto = crypto.inner().clone();
+    let client = client.get_client()?.clone();
+    let app_state = app_state.inner().clone();
+    let cfm = cfm.inner().clone();
+    let app_handle = app_handle.clone();
+    let on_event = on_event.clone();
+    tp.spawn(async move {
+        diary_download_attachment(
+            Arc::new(crypto),
+            client,
+            Arc::new(app_state),
+            Arc::new(cfm),
             app_handle,
             on_event,
             uuid,
             filename,
             nonce,
-            eid,
         )
-        .map_err(|e| format!("下载附件失败: {}", e))?;
-
-    cfm.add_cache_file(attachment_cache)
+        .await;
+    })
 }
 
-/// 取消下载附件 用于附件太大还未下载完成时 页面就退出了
+/// 取消任务
 /// # Arguments
-/// * `eid` - 附件下载任务 ID
+/// * `cancel_token` - 任务取消令牌
 /// # Returns
 /// * `Result<bool, String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
-fn cancel_download_attachment(
-    store: State<'_, SecureDiaryStore>,
-    eid: &str,
-) -> Result<bool, String> {
-    store.cancel_download(eid)
+fn cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, String> {
+    tp.cancel(cancel_token)
 }
 
 /// 删除附件
@@ -355,22 +352,20 @@ fn cancel_download_attachment(
 async fn delete_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    store: State<'_, SecureDiaryStore>,
     app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
     filename: String,
 ) -> Result<DiaryManifest, String> {
-    store
-        .delete_attachment(
-            crypto.deref(),
-            client.get_client()?,
-            app_state.deref(),
-            Some(&app_handle),
-            uuid,
-            filename,
-        )
-        .await
+    diary_delete_attachment(
+        crypto.deref(),
+        client.get_client()?,
+        app_state.deref(),
+        Some(&app_handle),
+        uuid,
+        filename,
+    )
+    .await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -401,7 +396,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(Crypto::new());
             app.manage(OssState::new());
-            app.manage(SecureDiaryStore::default());
+            app.manage(TaskPool::new());
             app.manage(DiaryMemoryCache::new());
             app.manage(AppState::default());
             let cfm = CacheFileManager::new();
@@ -460,7 +455,7 @@ pub fn run() {
             delete_diary,
             add_attachment,
             download_attachment,
-            cancel_download_attachment,
+            cancel_task,
             delete_attachment,
             biometric_unlock
         ])
