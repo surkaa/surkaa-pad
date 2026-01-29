@@ -1,10 +1,10 @@
-mod cache;
+mod memory_cache;
 mod types;
 
 use crate::crypto::Crypto;
 use crate::object::{ObjectMetadata, OssClient};
 use crate::storage::{is_remote_manifest_key, remote_manifest_key};
-pub use cache::MemoryDiaryCache;
+pub use memory_cache::MemoryDiaryCache;
 use chrono::Utc;
 use serde_json::from_slice;
 use std::collections::HashMap;
