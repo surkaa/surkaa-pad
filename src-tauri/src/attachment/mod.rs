@@ -4,13 +4,15 @@ pub use crate::attachment::types::{AttachmentMeta, DownloadAttachmentEvent};
 use crate::crypto::Crypto;
 use crate::diary::{diary_get, DiaryManifest};
 use crate::object::OssClient;
-use crate::storage::{local_attachment_path, remote_attachments_key, remote_manifest_key, PathGetter};
+use crate::storage::{
+    local_attachment_path, remote_attachments_key, remote_manifest_key, PathGetter,
+};
 use chrono::Utc;
 use futures::StreamExt;
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::{AppHandle};
 use tauri_plugin_log::log;
+use tokio::fs::{create_dir_all, File};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
@@ -67,104 +69,79 @@ pub async fn attachment_download(
     crypto: Arc<Crypto>,
     client: Arc<OssClient>,
     pg: impl PathGetter,
-    event: Channel<DownloadAttachmentEvent>,
+    event: Arc<Channel<DownloadAttachmentEvent>>,
     id: String,
     filename: String,
     nonce: Vec<u8>,
 ) {
-    // 先检查有没有本地缓存，有的话直接返回缓存路径
-    let temp_file_full_path = local_attachment_path(pg, &id, &filename);
-    if temp_file_full_path.exists() {
-        log::info!(
-            "附件 {} 已存在于本地缓存，直接返回缓存路径",
-            temp_file_full_path.display()
-        );
-        let _ = event.send(DownloadAttachmentEvent::Completed {
-            file_path: temp_file_full_path.to_string_lossy().to_string(),
-        });
-        return;
-    }
-
-    let attachment_key = remote_attachments_key(&id, &filename);
-
-    let (mut stream, len) = client
-        .download(&attachment_key)
-        .await
-        .map_err(|e| {
-            let message = format!("下载启动失败: {}", e);
-            log::error!("{}", message.clone());
-            let _ = event.send(DownloadAttachmentEvent::Error { message });
-        })
-        .unwrap();
-
-    let _ = event.send(DownloadAttachmentEvent::Started { total_size: len });
-
-    let mut downloaded: u64 = 0;
-    let mut allocated: Vec<u8> = Vec::with_capacity(len as usize);
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk
-            .map_err(|e| {
-                let message = format!("下载时出现错误: {}", e);
-                log::error!("{}", message.clone());
-                let _ = event.send(DownloadAttachmentEvent::Error { message });
-            })
-            .unwrap();
-        downloaded += chunk.len() as u64;
-        // 发送进度更新事件
-        let _ = event.send(DownloadAttachmentEvent::DownloadProgress { downloaded });
-
-        // 存储 chunk 到临时缓冲区
-        allocated.extend_from_slice(&chunk);
-    }
-
-    // 提示前端下载完成并开始解密
-    let _ = event.send(DownloadAttachmentEvent::Decrypting);
-
-    // 解密数据
-    let decrypted_data = match crypto.decrypt(&allocated, &nonce) {
-        Ok(data) => data,
-        Err(e) => {
-            let message = format!("解密附件时出现错误: {}", e);
-            log::error!("{}", message.clone());
-            let _ = event.send(DownloadAttachmentEvent::Error { message });
-            return;
+    let end_event = event.clone();
+    let logic = async move {
+        // 先检查有没有本地缓存，有的话直接返回缓存路径
+        let temp_file_full_path = local_attachment_path(pg, &id, &filename);
+        if temp_file_full_path.exists() {
+            log::info!(
+                "附件 {} 已存在于本地缓存，直接返回缓存路径",
+                temp_file_full_path.display()
+            );
+            return Ok(temp_file_full_path.to_string_lossy().to_string());
         }
+
+        let attachment_key = remote_attachments_key(&id, &filename);
+
+        let (mut stream, len) = client.download(&attachment_key).await?;
+
+        let _ = event.send(DownloadAttachmentEvent::Started { total_size: len });
+
+        let mut downloaded: u64 = 0;
+        let mut allocated: Vec<u8> = Vec::with_capacity(len as usize);
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("下载附件时出错: {}", e))?;
+            downloaded += chunk.len() as u64;
+            // 发送进度更新事件
+            let _ = event.send(DownloadAttachmentEvent::DownloadProgress { downloaded });
+
+            // 存储 chunk 到临时缓冲区
+            allocated.extend_from_slice(&chunk);
+        }
+
+        // 提示前端下载完成并开始解密
+        let _ = event.send(DownloadAttachmentEvent::Decrypting);
+
+        // 解密数据
+        let decrypted_data = crypto.decrypt(&allocated, &nonce)?;
+
+        // 发送解密完成事件
+        let decrypted_size = decrypted_data.len() as u64;
+        let _ = event.send(DownloadAttachmentEvent::Decrypted { decrypted_size });
+
+        // 确保创建了父目录
+        if let Some(parent) = temp_file_full_path.parent() {
+            create_dir_all(parent)
+                .await
+                .map_err(|e| format!("无法创建附件临时目录 {}: {}", parent.display(), e))?;
+        }
+
+        // 写入临时文件
+        let mut temp_file = File::create(&temp_file_full_path)
+            .await
+            .map_err(|e| format!("无法创建临时文件 {}: {}", temp_file_full_path.display(), e))?;
+        temp_file
+            .write_all(&decrypted_data)
+            .await
+            .map_err(|e| format!("无法写入临时文件 {}: {}", temp_file_full_path.display(), e))?;
+        log::info!("附件已保存到临时文件 {}", temp_file_full_path.display());
+
+        Ok(temp_file_full_path.to_string_lossy().to_string())
     };
 
-    // 发送解密完成事件
-    let decrypted_size = decrypted_data.len() as u64;
-    let _ = event.send(DownloadAttachmentEvent::Decrypted { decrypted_size });
-
-    // 确保创建了父目录
-    if let Some(parent) = temp_file_full_path.parent() {
-        if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            let message = format!("无法创建临时文件父目录 {}: {}", parent.display(), e);
-            log::error!("{}", message.clone());
-            let _ = event.send(DownloadAttachmentEvent::Error { message });
-            return;
+    match logic.await {
+        Ok(file_path) => {
+            let _ = end_event.send(DownloadAttachmentEvent::Completed { file_path });
         }
-    }
-
-    // 写入临时文件
-    match tokio::fs::File::create(&temp_file_full_path).await {
-        Ok(mut temp_file) => {
-            if let Err(e) = temp_file.write_all(&decrypted_data).await {
-                let message = format!("无法写入临时文件 {}: {}", temp_file_full_path.display(), e);
-                log::error!("{}", message.clone());
-                let _ = event.send(DownloadAttachmentEvent::Error { message });
-            } else {
-                log::info!("附件已保存到临时文件 {}", temp_file_full_path.display());
-                // 发送完成事件
-                let _ = event.send(DownloadAttachmentEvent::Completed {
-                    file_path: temp_file_full_path.to_string_lossy().to_string(),
-                });
-            }
-        }
-        Err(e) => {
-            let message = format!("无法创建临时文件 {}: {}", temp_file_full_path.display(), e);
-            log::error!("{}", message.clone());
-            let _ = event.send(DownloadAttachmentEvent::Error { message });
+        Err(message) => {
+            log::error!("附件下载失败: {}", message);
+            let _ = end_event.send(DownloadAttachmentEvent::Error { message });
         }
     }
 }

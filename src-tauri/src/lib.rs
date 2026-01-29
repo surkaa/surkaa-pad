@@ -257,7 +257,7 @@ fn download_attachment(
             Arc::new(crypto),
             client,
             app_handle,
-            on_event,
+            Arc::new(on_event),
             uuid,
             filename,
             nonce,
