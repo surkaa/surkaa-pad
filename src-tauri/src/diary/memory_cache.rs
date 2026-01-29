@@ -7,6 +7,7 @@ pub struct DiaryMemoryCache {
     diaries: Arc<Mutex<DashMap<String, Arc<DiaryManifest>>>>,
 }
 
+// TODO refactor unwraps
 impl DiaryMemoryCache {
     pub fn new() -> Self {
         Self {

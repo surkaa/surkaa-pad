@@ -4,6 +4,7 @@ mod diary;
 mod object;
 mod storage;
 mod task;
+mod utils;
 
 use crate::attachment::DownloadAttachmentEvent;
 use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
