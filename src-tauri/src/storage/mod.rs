@@ -8,6 +8,10 @@ pub fn remote_manifest_key(diary_id: &str) -> String {
     format!("{}/manifest.enc", diary_id)
 }
 
+pub fn is_remote_manifest_key(key: &str) -> bool {
+    key.ends_with("/manifest.enc")
+}
+
 /// 日记附件在云存储中的路径
 pub fn remote_attachments_key(diary_id: &str, attachment_id: &str) -> String {
     format!("{}/{}.enc", diary_id, attachment_id)

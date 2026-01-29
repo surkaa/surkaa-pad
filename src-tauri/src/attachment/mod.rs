@@ -2,8 +2,9 @@ mod types;
 
 pub use crate::attachment::types::{AttachmentMeta, DownloadAttachmentEvent, ATTACHMENT_EXTENSION};
 use crate::crypto::Crypto;
-use crate::diary::{diary_get, DiaryManifest, MANIFEST_FILE_NAME};
+use crate::diary::{diary_get, DiaryManifest};
 use crate::object::OssClient;
+use crate::storage::remote_manifest_key;
 use chrono::Utc;
 use futures::StreamExt;
 use std::sync::Arc;
@@ -37,7 +38,7 @@ pub async fn attachment_upload(
     let (mut manifest, _) = diary_get(crypto, client.clone(), id.clone()).await?;
     manifest.attachments.push(attachment);
     manifest.updated = Utc::now().timestamp_millis();
-    let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
+    let manifest_key = remote_manifest_key(&id);
     let manifest_json = serde_json::to_vec(&manifest)
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
     // 加密
@@ -170,7 +171,7 @@ pub async fn attachment_delete(
     let mut encrypted_manifest = manifest_nonce;
     encrypted_manifest.extend_from_slice(&ciphertext);
     // 上传更新后的 manifest
-    let manifest_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
+    let manifest_key = remote_manifest_key(&id);
     client
         .upload_bytes(&manifest_key, &encrypted_manifest)
         .await

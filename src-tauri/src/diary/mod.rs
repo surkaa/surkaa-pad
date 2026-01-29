@@ -3,13 +3,14 @@ mod types;
 
 use crate::crypto::Crypto;
 use crate::object::{ObjectMetadata, OssClient};
+use crate::storage::{is_remote_manifest_key, remote_manifest_key};
 pub use cache::MemoryDiaryCache;
 use chrono::Utc;
 use serde_json::from_slice;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri_plugin_log::log;
-pub use types::{DiaryManifest, MANIFEST_FILE_NAME};
+pub use types::{DiaryManifest};
 use uuid::Uuid;
 
 /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
@@ -22,7 +23,7 @@ pub async fn diary_sync(
     let (objects, _) = client
         .list(
             &match &uuid {
-                Some(id) => format!("{}/{}", id, MANIFEST_FILE_NAME),
+                Some(id) => remote_manifest_key(id),
                 None => "".to_string(),
             },
             None,
@@ -32,7 +33,7 @@ pub async fn diary_sync(
     let mut unique_objets: HashMap<String, ObjectMetadata> = HashMap::new();
     for object in objects {
         // 去掉末尾不是以manifest.enc结尾的
-        if !object.key().ends_with(MANIFEST_FILE_NAME) {
+        if !is_remote_manifest_key(&object.key()) {
             continue;
         }
         if let Some(pos) = object.key().find('/') {
@@ -96,7 +97,7 @@ pub async fn diary_create(
     encrypted_manifest.extend_from_slice(&ciphertext);
 
     // 上传到 OSS
-    let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
+    let object_key = remote_manifest_key(&id);
     client
         .upload_bytes(&object_key, &encrypted_manifest)
         .await
@@ -111,7 +112,7 @@ pub async fn diary_get(
     client: Arc<OssClient>,
     id: String,
 ) -> Result<(DiaryManifest, Vec<u8>), String> {
-    let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
+    let object_key = remote_manifest_key(&id);
     let encrypted_data = client
         .download_bytes(&object_key)
         .await
@@ -168,7 +169,7 @@ pub async fn diary_update_diary_content_only(
     encrypted_manifest.extend_from_slice(&ciphertext);
 
     // 上传到 OSS，覆盖原有的 manifest
-    let object_key = format!("{}/{}", id, MANIFEST_FILE_NAME);
+    let object_key = remote_manifest_key(&id);
     client
         .upload_bytes(&object_key, &encrypted_manifest)
         .await

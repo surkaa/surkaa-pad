@@ -1,8 +1,6 @@
 use crate::attachment::AttachmentMeta;
 use serde::{Deserialize, Serialize};
 
-pub const MANIFEST_FILE_NAME: &str = "manifest.enc";
-
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct DiaryManifest {
