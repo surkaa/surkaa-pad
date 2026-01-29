@@ -68,7 +68,7 @@ pub async fn attachment_upload(
 pub async fn attachment_download(
     crypto: Arc<Crypto>,
     client: Arc<OssClient>,
-    pg: impl PathGetter,
+    pg: &impl PathGetter,
     event: Arc<Channel<DownloadAttachmentEvent>>,
     id: String,
     filename: String,

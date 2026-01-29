@@ -249,14 +249,12 @@ fn download_attachment(
     nonce: Vec<u8>,
 ) -> Result<String, String> {
     let crypto = crypto.inner().clone();
-    let client = client.get_client()?.clone();
-    let app_handle = app_handle.clone();
-    let on_event = on_event.clone();
+    let client = client.get_client()?;
     tp.spawn(async move {
         attachment_download(
             Arc::new(crypto),
             client,
-            app_handle,
+            &app_handle,
             Arc::new(on_event),
             uuid,
             filename,

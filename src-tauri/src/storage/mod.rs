@@ -19,7 +19,7 @@ pub fn remote_attachments_key(diary_id: &str, attachment_filename: &str) -> Stri
 
 /// 日记主文件在本地缓存中的路径
 pub fn local_manifest_path(
-    path_getter: impl PathGetter,
+    path_getter: &impl PathGetter,
     diary_id: &str,
     hash_or_etag: &str,
 ) -> PathBuf {
@@ -31,7 +31,7 @@ pub fn local_manifest_path(
 
 /// 日记附件在本地临时目录的路径
 pub fn local_attachment_path(
-    path_getter: impl PathGetter,
+    path_getter: &impl PathGetter,
     diary_id: &str,
     attachment_filename: &str,
 ) -> PathBuf {
