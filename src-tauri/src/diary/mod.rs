@@ -1,4 +1,7 @@
+pub mod cache;
+
 use crate::crypto::Crypto;
+use crate::diary::cache::DiaryCache;
 use crate::object::OssClient;
 use crate::secure_diary_store::{
     diary_decrypt_bytes_to_manifest, diary_get_diary_manifest, diary_list_diaries, DiaryManifest,
@@ -10,29 +13,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::log;
-use tokio::sync::Mutex;
 
 const CACHE_DIARY_DIR: &str = "diary_cache";
 const CACHE_ATTACHMENT_DIR: &str = "attachment_cache";
 const ATTACHMENT_EXTENSION: &str = ".enc";
-
-// 内存缓存：解密后的明文日记列表，用于搜索和展示
-// 使用 HashMap 以 ID 为 Key，方便快速查找
-pub struct DiaryMemoryCache {
-    /// 日记列表，Key 为日记 ID，Value 为解密后的 DiaryManifest
-    pub diaries: Mutex<HashMap<String, DiaryManifest>>,
-    // 标记数据是否已加载
-    pub loaded: Mutex<bool>,
-}
-
-impl DiaryMemoryCache {
-    pub fn new() -> Self {
-        Self {
-            diaries: Mutex::new(HashMap::new()),
-            loaded: Mutex::new(false),
-        }
-    }
-}
 
 /// 获取应用的日记缓存目录
 pub fn pad_get_diary_cache_dir(app_handle: Option<&AppHandle>) -> PathBuf {
@@ -78,16 +62,14 @@ pub fn pad_get_attachment_cache_dir(app_handle: Option<&AppHandle>) -> PathBuf {
 
 /// 将本地文件加载到内存缓存中
 pub async fn pad_load_cache_to_memory(
-    cache: &DiaryMemoryCache,
+    dc: &DiaryCache,
     crypto: &Crypto,
     app_handle: Option<&AppHandle>,
 ) -> Result<(), String> {
     let cache_dir = pad_get_diary_cache_dir(app_handle);
-    let mut map = cache.diaries.lock().await;
-    map.clear(); // 清空旧数据，准备加载新数据
+    dc.clean();
 
     if !cache_dir.exists() {
-        *cache.loaded.lock().await = true;
         return Ok(());
     }
 
@@ -115,7 +97,7 @@ pub async fn pad_load_cache_to_memory(
             // 3. 解密和反序列化
             if let Ok(manifest) = diary_decrypt_bytes_to_manifest(&crypto, &encrypted_data).await {
                 // 4. 存入内存
-                map.insert(uuid.to_string(), manifest);
+                dc.insert(uuid, manifest);
             } else {
                 // 记录错误，但继续处理其他文件
                 eprintln!("Warning: Failed to decrypt cached file: {}", path.display());
@@ -123,13 +105,12 @@ pub async fn pad_load_cache_to_memory(
         }
     }
 
-    *cache.loaded.lock().await = true;
     Ok(())
 }
 
 /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
 pub async fn pad_sync_from_oss(
-    cache: &DiaryMemoryCache,
+    dc: &DiaryCache,
     crypto: &Crypto,
     client: Arc<OssClient>,
     app_handle: Option<&AppHandle>,
@@ -212,8 +193,7 @@ pub async fn pad_sync_from_oss(
             );
 
             // 更新内存缓存
-            let mut map = cache.diaries.lock().await;
-            map.insert(uuid.to_string(), manifest);
+            dc.insert(uuid, manifest);
         } else {
             log::info!("日记缓存命中 {}. 跳过下载.", uuid);
         }
@@ -244,8 +224,7 @@ pub async fn pad_sync_from_oss(
 
     // 返回指定 UUID 的 Manifest（如果有的话）
     if let Some(filter_uuid) = uuid {
-        let map = cache.diaries.lock().await;
-        Ok(map.get(&filter_uuid).cloned())
+        Ok(dc.get(&filter_uuid))
     } else {
         Ok(None)
     }
@@ -258,9 +237,4 @@ async fn pad_remove_file(path: &PathBuf) -> Result<(), String> {
             .map_err(|e| format!("文件删除失败 {}: {}", path.display(), e))?;
     }
     Ok(())
-}
-
-pub async fn pad_list_cached_diaries(cache: &DiaryMemoryCache) -> Vec<DiaryManifest> {
-    let map = cache.diaries.lock().await;
-    map.values().cloned().collect()
 }

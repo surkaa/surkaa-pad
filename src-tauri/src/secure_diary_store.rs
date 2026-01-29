@@ -1,19 +1,19 @@
+use crate::cache_file_manager::CacheFileManager;
 use crate::crypto::Crypto;
+use crate::diary::{pad_get_attachment_cache_dir, pad_get_diary_cache_dir};
 use crate::object::{ObjectMetadata, OssClient};
-use crate::surkaa_pad::{pad_get_attachment_cache_dir, pad_get_diary_cache_dir};
 use chrono::Utc;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::from_slice;
 use std::collections::HashMap;
-use std::sync::{Arc};
+use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::log;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
-use crate::cache_file_manager::CacheFileManager;
 
 const MANIFEST_FILE_NAME: &str = "manifest.enc";
 const ATTACHMENT_EXTENSION: &str = ".enc";
@@ -342,8 +342,7 @@ pub async fn diary_download_attachment(
                 "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
                 e
             );
-            pad_get_attachment_cache_dir(Some(&app_handle))
-                .join(&filename)
+            pad_get_attachment_cache_dir(Some(&app_handle)).join(&filename)
         });
 
     if temp_path.exists() {
