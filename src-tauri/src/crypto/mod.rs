@@ -40,6 +40,16 @@ impl Crypto {
         }
     }
 
+    #[cfg(test)]
+    pub fn from_env() -> Self {
+        dotenvy::dotenv().ok();
+        let password = std::env::var("TEST_PASSWORD").expect("TEST_PASSWORD 未设置");
+        let salt = std::env::var("TEST_SALT").expect("TEST_PASSWORD 未设置");
+        let crypto = Crypto::new();
+        let _ = crypto.derive_dek(password, salt).expect("派生密钥失败");
+        crypto
+    }
+
     pub fn algorithm(&self) -> &str {
         &self.algorithm
     }
@@ -189,12 +199,9 @@ mod tests {
     fn convert_enc2normal() {
         use crate::diary::DiaryManifest;
         dotenvy::dotenv().ok();
-        let password = std::env::var("TEST_PASSWORD").expect("TEST_PASSWORD 未设置");
-        let salt = std::env::var("TEST_SALT").expect("TEST_PASSWORD 未设置");
         let enc_dir = std::env::var("TEST_ENC_DIR").expect("TEST_ENC_DIR 未设置");
         let output_dir = std::env::var("TEST_OUTPUT_DIR").expect("TEST_OUTPUT_DIR 未设置");
-        let crypto = Crypto::new();
-        let _ = crypto.derive_dek(password, salt).expect("派生密钥失败");
+        let crypto = Crypto::from_env();
         let diary_filename = "manifest.enc";
 
         let enc_path = std::path::Path::new(&enc_dir);
@@ -280,11 +287,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_and_decrypt_big_data() {
-        dotenvy::dotenv().ok();
-        let password = std::env::var("TEST_PASSWORD").expect("TEST_PASSWORD 未设置");
-        let salt = std::env::var("TEST_SALT").expect("TEST_PASSWORD 未设置");
-        let crypto = Crypto::new();
-        let _ = crypto.derive_dek(password, salt).expect("派生密钥失败");
+        let crypto = Crypto::from_env();
 
         // 创建一个随机5MB的文件
         let mut random_data = vec![0u8; 5 * 1024 * 1024];
