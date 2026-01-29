@@ -1,6 +1,6 @@
 use crate::crypto::Crypto;
 use crate::object::{ObjectMetadata, OssClient};
-use crate::surkaa_pad::AppState;
+use crate::surkaa_pad::{pad_get_attachment_cache_dir, pad_get_diary_cache_dir};
 use chrono::Utc;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -91,7 +91,6 @@ pub async fn diary_list_diaries(
 pub async fn diary_create_diary(
     crypto: &Crypto,
     client: Arc<OssClient>,
-    app_state: &AppState,
     app_handle: Option<&AppHandle>,
     content: &str,
 ) -> Result<DiaryManifest, String> {
@@ -128,7 +127,7 @@ pub async fn diary_create_diary(
     let digest = md5::compute(&encrypted_manifest);
     let etag = format!("{:X}", digest);
     let filename = format!("{}_{}{}", id, etag, ATTACHMENT_EXTENSION);
-    let cache_dir = app_state.get_diary_cache_dir(app_handle);
+    let cache_dir = pad_get_diary_cache_dir(app_handle);
     let file_path = cache_dir.join(&filename);
     std::fs::write(&file_path, &encrypted_manifest)
         .map_err(|e| format!("Failed to write cache file {}: {}", filename, e))?;
@@ -165,7 +164,6 @@ pub async fn diary_get_diary_manifest(
 /// 删除指定 ID 的日记及其所有附件
 pub async fn diary_delete_diary(
     client: Arc<OssClient>,
-    app_state: &AppState,
     app_handle: Option<&AppHandle>,
     id: String,
 ) -> Result<(), String> {
@@ -184,7 +182,7 @@ pub async fn diary_delete_diary(
         if object.key().ends_with(MANIFEST_FILE_NAME) {
             let filename = format!("{}_{}{}", id, object.etag(), ATTACHMENT_EXTENSION);
             log::info!("Also deleting cached file {}", filename);
-            let cache_dir = app_state.get_diary_cache_dir(app_handle);
+            let cache_dir = pad_get_diary_cache_dir(app_handle);
             let file_path = cache_dir.join(&filename);
             if file_path.exists() {
                 std::fs::remove_file(&file_path)
@@ -201,7 +199,6 @@ pub async fn diary_delete_diary(
 pub async fn diary_update_diary_content_only(
     crypto: &Crypto,
     client: Arc<OssClient>,
-    app_state: &AppState,
     app_handle: Option<&AppHandle>,
     id: String,
     new_content: &str,
@@ -232,14 +229,13 @@ pub async fn diary_update_diary_content_only(
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
     // 更新本地缓存
-    replace_local_cache_file(app_state, app_handle, &id, &encrypted_manifest)
+    replace_local_cache_file(app_handle, &id, &encrypted_manifest)
         .expect("Failed to update local cache file");
 
     Ok(manifest)
 }
 
 fn replace_local_cache_file(
-    app_state: &AppState,
     app_handle: Option<&AppHandle>,
     id: &str,
     new_bytes: &Vec<u8>,
@@ -248,7 +244,7 @@ fn replace_local_cache_file(
     let new_etag = format!("{:X}", new_digest);
     let new_filename = format!("{}_{}{}", id, new_etag, ATTACHMENT_EXTENSION);
 
-    let cache_dir = app_state.get_diary_cache_dir(app_handle);
+    let cache_dir = pad_get_diary_cache_dir(app_handle);
 
     // 在未知ETag的情况下，删除旧文件，先列出目录中的所有文件
     let entries = std::fs::read_dir(&cache_dir)
@@ -279,7 +275,6 @@ fn replace_local_cache_file(
 pub async fn diary_add_attachment(
     crypto: &Crypto,
     client: Arc<OssClient>,
-    app_state: &AppState,
     app_handle: Option<&AppHandle>,
     id: String,
     attachment_bytes: Vec<u8>,
@@ -321,7 +316,7 @@ pub async fn diary_add_attachment(
         .map_err(|e| format!("Failed to upload attachment: {}", e))?;
 
     // 更新本地缓存
-    replace_local_cache_file(app_state, app_handle, &id, &encrypted_manifest)
+    replace_local_cache_file(app_handle, &id, &encrypted_manifest)
         .expect("Failed to update local cache file");
 
     Ok(manifest)
@@ -331,7 +326,6 @@ pub async fn diary_add_attachment(
 pub async fn diary_download_attachment(
     crypto: Arc<Crypto>,
     client: Arc<OssClient>,
-    app_state: Arc<AppState>,
     cfm: Arc<CacheFileManager>,
     app_handle: AppHandle,
     event: Channel<DownloadAttachmentEvent>,
@@ -348,8 +342,7 @@ pub async fn diary_download_attachment(
                 "无法解析临时目录路径，将使用软件下的attachment_cache目录: {}",
                 e
             );
-            app_state
-                .get_attachment_cache_dir(Some(&app_handle))
+            pad_get_attachment_cache_dir(Some(&app_handle))
                 .join(&filename)
         });
 
@@ -445,7 +438,6 @@ pub async fn diary_download_attachment(
 pub async fn diary_delete_attachment(
     crypto: &Crypto,
     client: Arc<OssClient>,
-    app_state: &AppState,
     app_handle: Option<&AppHandle>,
     id: String,
     file_name: String,
@@ -477,7 +469,7 @@ pub async fn diary_delete_attachment(
         .map_err(|e| format!("Failed to delete attachment: {}", e))?;
 
     // 更新本地缓存
-    replace_local_cache_file(app_state, app_handle, &id, &encrypted_manifest)
+    replace_local_cache_file(app_handle, &id, &encrypted_manifest)
         .expect("Failed to update local cache file");
 
     Ok(manifest)

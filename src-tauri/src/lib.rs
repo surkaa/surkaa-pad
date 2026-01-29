@@ -12,7 +12,7 @@ use crate::secure_diary_store::{
     diary_download_attachment, diary_update_diary_content_only, DiaryManifest,
     DownloadAttachmentEvent,
 };
-use crate::surkaa_pad::{AppState, DiaryMemoryCache};
+use crate::surkaa_pad::{pad_list_cached_diaries, pad_load_cache_to_memory, pad_sync_from_oss, DiaryMemoryCache};
 use crate::task::TaskPool;
 use crypto::Crypto;
 use std::fs::{read, remove_file};
@@ -117,13 +117,11 @@ async fn init_oss_client(
 async fn list_local_diaries(
     cache: State<'_, DiaryMemoryCache>,
     em: State<'_, Crypto>,
-    app_state: State<'_, AppState>,
     app_handle: AppHandle,
 ) -> Result<Vec<DiaryManifest>, String> {
-    app_state
-        .load_cache_to_memory(cache.deref(), em.deref(), Some(&app_handle))
+    pad_load_cache_to_memory(cache.deref(), em.deref(), Some(&app_handle))
         .await?;
-    let diaries = app_state.list_cached_diaries(cache.deref()).await;
+    let diaries = pad_list_cached_diaries(cache.deref()).await;
     Ok(diaries)
 }
 
@@ -137,12 +135,10 @@ async fn sync_from_oss(
     cache: State<'_, DiaryMemoryCache>,
     em: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: Option<String>,
 ) -> Result<Option<DiaryManifest>, String> {
-    app_state
-        .sync_from_oss(
+    pad_sync_from_oss(
             cache.deref(),
             em.deref(),
             client.get_client()?,
@@ -184,14 +180,12 @@ async fn search_diaries(
 async fn save_diary(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_state: State<'_, AppState>,
     app_handle: AppHandle,
     content: &str,
 ) -> Result<DiaryManifest, String> {
     diary_create_diary(
         crypto.deref(),
         client.get_client()?,
-        app_state.deref(),
         Some(&app_handle),
         content,
     )
@@ -208,7 +202,6 @@ async fn save_diary(
 async fn update_diary_content_only(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
     new_content: &str,
@@ -216,7 +209,6 @@ async fn update_diary_content_only(
     diary_update_diary_content_only(
         crypto.deref(),
         client.get_client()?,
-        app_state.deref(),
         Some(&app_handle),
         uuid,
         new_content,
@@ -232,17 +224,10 @@ async fn update_diary_content_only(
 #[tauri::command]
 async fn delete_diary(
     client: State<'_, OssState>,
-    app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
 ) -> Result<(), String> {
-    diary_delete_diary(
-        client.get_client()?,
-        app_state.deref(),
-        Some(&app_handle),
-        uuid,
-    )
-    .await
+    diary_delete_diary(client.get_client()?, Some(&app_handle), uuid).await
 }
 
 //------------
@@ -260,7 +245,6 @@ async fn delete_diary(
 async fn add_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
     filename: String,
@@ -281,7 +265,6 @@ async fn add_attachment(
     diary_add_attachment(
         crypto.deref(),
         client.get_client()?,
-        app_state.deref(),
         Some(&app_handle),
         uuid,
         bytes,
@@ -302,7 +285,6 @@ fn download_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
-    app_state: State<'_, AppState>,
     cfm: State<'_, CacheFileManager>,
     app_handle: AppHandle,
     on_event: Channel<DownloadAttachmentEvent>,
@@ -312,7 +294,6 @@ fn download_attachment(
 ) -> Result<String, String> {
     let crypto = crypto.inner().clone();
     let client = client.get_client()?.clone();
-    let app_state = app_state.inner().clone();
     let cfm = cfm.inner().clone();
     let app_handle = app_handle.clone();
     let on_event = on_event.clone();
@@ -320,7 +301,6 @@ fn download_attachment(
         diary_download_attachment(
             Arc::new(crypto),
             client,
-            Arc::new(app_state),
             Arc::new(cfm),
             app_handle,
             on_event,
@@ -352,7 +332,6 @@ fn cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, Stri
 async fn delete_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_state: State<'_, AppState>,
     app_handle: AppHandle,
     uuid: String,
     filename: String,
@@ -360,7 +339,6 @@ async fn delete_attachment(
     diary_delete_attachment(
         crypto.deref(),
         client.get_client()?,
-        app_state.deref(),
         Some(&app_handle),
         uuid,
         filename,
@@ -398,7 +376,6 @@ pub fn run() {
             app.manage(OssState::new());
             app.manage(TaskPool::new());
             app.manage(DiaryMemoryCache::new());
-            app.manage(AppState::default());
             let cfm = CacheFileManager::new();
             app.manage(cfm.clone());
 
