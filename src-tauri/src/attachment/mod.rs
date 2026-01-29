@@ -1,9 +1,8 @@
-pub mod types;
+mod types;
 
-use crate::attachment::types::{AttachmentMeta, DownloadAttachmentEvent, ATTACHMENT_EXTENSION};
+pub use crate::attachment::types::{AttachmentMeta, DownloadAttachmentEvent, ATTACHMENT_EXTENSION};
 use crate::crypto::Crypto;
-use crate::diary::diary_get;
-use crate::diary::types::{DiaryManifest, MANIFEST_FILE_NAME};
+use crate::diary::{diary_get, DiaryManifest, MANIFEST_FILE_NAME};
 use crate::object::OssClient;
 use chrono::Utc;
 use futures::StreamExt;

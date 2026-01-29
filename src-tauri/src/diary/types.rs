@@ -1,4 +1,4 @@
-use crate::attachment::types::AttachmentMeta;
+use crate::attachment::AttachmentMeta;
 use serde::{Deserialize, Serialize};
 
 pub const MANIFEST_FILE_NAME: &str = "manifest.enc";

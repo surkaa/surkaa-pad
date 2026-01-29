@@ -1,15 +1,15 @@
-pub mod cache;
-pub mod types;
+mod cache;
+mod types;
 
 use crate::crypto::Crypto;
-use crate::diary::cache::MemoryDiaryCache;
-use crate::diary::types::{DiaryManifest, MANIFEST_FILE_NAME};
 use crate::object::{ObjectMetadata, OssClient};
+pub use cache::MemoryDiaryCache;
 use chrono::Utc;
 use serde_json::from_slice;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri_plugin_log::log;
+pub use types::{DiaryManifest, MANIFEST_FILE_NAME};
 use uuid::Uuid;
 
 /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest

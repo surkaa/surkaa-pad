@@ -4,10 +4,10 @@ mod diary;
 mod object;
 mod task;
 
-use crate::attachment::types::DownloadAttachmentEvent;
+use crate::attachment::DownloadAttachmentEvent;
 use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
-use crate::diary::cache::MemoryDiaryCache;
-use crate::diary::types::DiaryManifest;
+use crate::diary::DiaryManifest;
+use crate::diary::MemoryDiaryCache;
 use crate::diary::{diary_create, diary_delete, diary_sync, diary_update_diary_content_only};
 use crate::object::OssState;
 use crate::task::TaskPool;

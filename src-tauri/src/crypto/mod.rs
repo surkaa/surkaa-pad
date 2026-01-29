@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn convert_enc2normal() {
-        use crate::diary::types::{DiaryManifest};
+        use crate::diary::DiaryManifest;
         dotenvy::dotenv().ok();
         let password = std::env::var("TEST_PASSWORD").expect("TEST_PASSWORD 未设置");
         let salt = std::env::var("TEST_SALT").expect("TEST_PASSWORD 未设置");
@@ -209,12 +209,13 @@ mod tests {
             std::fs::create_dir_all(&output_path).expect("无法创建输出目录");
 
             let manifest_path = diary_dir_path.join(diary_filename);
-            let encrypted_manifest = std::fs::read(&manifest_path).expect("无法读取manifest.enc文件");
+            let encrypted_manifest =
+                std::fs::read(&manifest_path).expect("无法读取manifest.enc文件");
             let decrypted_manifest = crypto
                 .decrypt_from_full_ciphertext(&encrypted_manifest)
                 .expect("无法解密manifest文件");
-            let manifest: DiaryManifest = serde_json::from_slice(&decrypted_manifest)
-                .expect("无法解析DiaryManifest JSON");
+            let manifest: DiaryManifest =
+                serde_json::from_slice(&decrypted_manifest).expect("无法解析DiaryManifest JSON");
 
             let mut content = manifest.content.clone();
             let mut filename_mapping = std::collections::HashMap::new();
@@ -251,11 +252,16 @@ mod tests {
             }
 
             for (old_filename, new_filename) in filename_mapping {
-                let tag_pattern = format!("<{}:{}>",
-                                          if new_filename.ends_with(".jpg") { "IMG" }
-                                          else if new_filename.ends_with(".mp3") { "AUD" }
-                                          else { "VID" },
-                                          old_filename
+                let tag_pattern = format!(
+                    "<{}:{}>",
+                    if new_filename.ends_with(".jpg") {
+                        "IMG"
+                    } else if new_filename.ends_with(".mp3") {
+                        "AUD"
+                    } else {
+                        "VID"
+                    },
+                    old_filename
                 );
                 content = content.replace(&tag_pattern, &new_filename);
             }
@@ -264,7 +270,8 @@ mod tests {
             std::fs::write(&diary_content_path, content).expect("无法写入日记内容");
 
             let manifest_json_path = output_path.join("manifest.json");
-            let manifest_json = serde_json::to_string_pretty(&manifest).expect("无法序列化manifest");
+            let manifest_json =
+                serde_json::to_string_pretty(&manifest).expect("无法序列化manifest");
             std::fs::write(&manifest_json_path, manifest_json).expect("无法写入manifest.json");
 
             println!("解析完成: {}", output_path.display());
