@@ -1,17 +1,17 @@
+mod attachment;
 mod crypto;
 mod diary;
 mod object;
-pub mod secure_diary_store;
 mod task;
 
+use crate::attachment::types::DownloadAttachmentEvent;
+use crate::attachment::{diary_add_attachment, diary_delete_attachment, diary_download_attachment};
 use crate::diary::cache::MemoryDiaryCache;
-use crate::diary::pad_sync_from_oss;
-use crate::object::OssState;
-use crate::secure_diary_store::{
-    diary_add_attachment, diary_create_diary, diary_delete_attachment, diary_delete_diary,
-    diary_download_attachment, diary_update_diary_content_only, DiaryManifest,
-    DownloadAttachmentEvent,
+use crate::diary::types::DiaryManifest;
+use crate::diary::{
+    diary_create_diary, diary_delete_diary, diary_update_diary_content_only, pad_sync_from_oss,
 };
+use crate::object::OssState;
 use crate::task::TaskPool;
 use crypto::Crypto;
 use std::fs::{read, remove_file};

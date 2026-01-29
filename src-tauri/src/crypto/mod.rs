@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn convert_enc2normal() {
-        use crate::secure_diary_store::{DiaryManifest};
+        use crate::diary::types::{DiaryManifest};
         dotenvy::dotenv().ok();
         let password = std::env::var("TEST_PASSWORD").expect("TEST_PASSWORD 未设置");
         let salt = std::env::var("TEST_SALT").expect("TEST_PASSWORD 未设置");

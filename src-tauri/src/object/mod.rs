@@ -63,14 +63,6 @@ impl ObjectMetadata {
         &self.key
     }
 
-    pub fn size(&self) -> u64 {
-        self.size
-    }
-
-    pub fn last_modified(&self) -> &chrono::DateTime<Utc> {
-        &self.last_modified
-    }
-
     pub fn etag(&self) -> &str {
         &self.etag
     }
