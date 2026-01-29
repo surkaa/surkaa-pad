@@ -3,7 +3,7 @@ mod types;
 pub use crate::attachment::types::{AttachmentMeta, DownloadAttachmentEvent};
 use crate::crypto::Crypto;
 use crate::diary::{diary_get, DiaryManifest};
-use crate::object::OssClient;
+use crate::object::{ByteStream, OssClient};
 use crate::storage::{
     local_attachment_path, remote_attachments_key, remote_manifest_key, PathGetter,
 };
@@ -21,9 +21,17 @@ pub async fn attachment_upload(
     crypto: &Crypto,
     client: Arc<OssClient>,
     id: String,
-    attachment_bytes: Vec<u8>,
     mime_type: String,
+    len: u64,
+    mut stream: ByteStream,
 ) -> Result<DiaryManifest, String> {
+    // 读取流数据到内存
+    let mut attachment_bytes: Vec<u8> = Vec::with_capacity(len as usize);
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("未能读取附件流:{}", e))?;
+        attachment_bytes.extend_from_slice(&chunk);
+    }
+    // 加密附件数据
     let (encrypted_bytes, nonce) = crypto.encrypt(&attachment_bytes)?;
 
     let file_name = Uuid::new_v4().to_string();

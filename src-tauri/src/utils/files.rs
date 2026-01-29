@@ -3,8 +3,8 @@ use std::fs::File;
 use std::io;
 use tokio_util::io::ReaderStream;
 
-pub fn open_file_stream(path_or_uri: &str) -> Result<(u64, ByteStream), String> {
-    let file = open_file(path_or_uri).map_err(|e| format!("无法打开文件{}:{}", path_or_uri, e))?;
+pub fn open_file_stream(access_str: &str) -> Result<(u64, ByteStream), String> {
+    let file = open_file(access_str).map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
     let metadata = file
         .metadata()
         .map_err(|e| format!("无法获取文件元数据: {}", e))?;

@@ -6,6 +6,7 @@ mod storage;
 mod task;
 mod utils;
 
+use std::ops::Deref;
 use crate::attachment::DownloadAttachmentEvent;
 use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
 use crate::diary::DiaryManifest;
@@ -14,15 +15,11 @@ use crate::diary::{diary_create, diary_delete, diary_sync, diary_update_diary_co
 use crate::object::OssState;
 use crate::storage::local_attachment_dir;
 use crate::task::TaskPool;
+use crate::utils::open_file_stream;
 use crypto::Crypto;
-use std::fs::{read, remove_file};
-use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_log::{log, Target, TargetKind};
-use tauri_plugin_store::Builder;
 //------------
 // 解锁与加密解密 以及初始化云端存储客户端
 //------------
@@ -204,7 +201,7 @@ async fn delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), S
 /// 添加附件
 /// # Arguments
 /// * `uuid` - 日记 UUID
-/// * `filename` - 临时附件文件名
+/// * `access_str` - 文件访问路径。
 /// * `minetype` - 附件 MIME 类型
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
@@ -212,24 +209,22 @@ async fn delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), S
 async fn add_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    app_handle: AppHandle,
     uuid: String,
-    filename: String,
+    access_str: String,
     minetype: String,
 ) -> Result<DiaryManifest, String> {
     // 获取临时文件的完整路径
-    let temp_path = app_handle
-        .path()
-        .resolve(&filename, BaseDirectory::Temp)
-        .map_err(|e| format!("无法解析临时文件路径: {}", e))?;
+    let (len, stream) = open_file_stream(&access_str)?;
 
-    // 在 Rust 中安全地读取大文件字节 (Vec<u8>)
-    let bytes: Vec<u8> = read(&temp_path).map_err(|e| format!("无法读取临时文件: {}", e))?;
-
-    // 删除缓存文件
-    remove_file(temp_path).map_err(|e| format!("无法删除临时文件: {}", e))?;
-
-    attachment_upload(crypto.deref(), client.get_client()?, uuid, bytes, minetype).await
+    attachment_upload(
+        crypto.deref(),
+        client.get_client()?,
+        uuid,
+        minetype,
+        len,
+        stream,
+    )
+    .await
 }
 
 /// 下载附件
@@ -295,24 +290,18 @@ async fn delete_attachment(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // TODO 去掉两个 log 插件中的一个
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .level(log::LevelFilter::Info)
-                .build(),
-        )
         .plugin(tauri_plugin_opener::init())
         // 注册 Store 插件
-        .plugin(Builder::default().build())
+        .plugin(tauri_plugin_store::Builder::default().build())
         // 注册文件系统插件
         .plugin(tauri_plugin_fs::init())
         // 注册日志插件
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
-                    Target::new(TargetKind::Stdout),
-                    Target::new(TargetKind::LogDir { file_name: None }),
-                    Target::new(TargetKind::Webview),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
                 ])
                 .build(),
         )

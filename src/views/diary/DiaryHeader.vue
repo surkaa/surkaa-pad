@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { useRouter } from "vue-router";
-import { showToast } from "../../utils";
+import {ref} from "vue";
+import {useRouter} from "vue-router";
+import {open} from "@tauri-apps/plugin-dialog";
+import {join} from "@tauri-apps/api/path";
 
 const props = defineProps<{
   mode: 'edit' | 'view';
@@ -20,12 +21,11 @@ const emit = defineEmits<{
   (e: 'save'): void;
   (e: 'delete'): void;
   (e: 'open-audio-drawer'): void;
-  (e: 'upload-file', payload: { tagPrefix: string, file: File }): void;
+  (e: 'upload-file', tagPrefix: 'IMG' | 'VID', accessStr: string): void;
 }>();
 
 const router = useRouter();
 const showMediaMenu = ref(false);
-const fileInputRef = ref<HTMLInputElement | null>(null);
 
 function toggleMediaMenu() {
   showMediaMenu.value = !showMediaMenu.value;
@@ -35,56 +35,25 @@ function mediaSelected() {
   showMediaMenu.value = false;
 }
 
-// 触发图片选择
-function triggerAddImage() {
+// 触发图片或图片选择
+function triggerAddImageOrVideo(isImage: boolean) {
   if (props.isNew) { return; } // 父组件已有校验，这里也可以保留或依赖父组件逻辑，但原逻辑是在触发时校验
-  if (fileInputRef.value) {
-    fileInputRef.value.accept = 'image/*';
-    fileInputRef.value.click();
-  }
-  mediaSelected();
-}
-
-// 触发视频选择
-function triggerAddVideo() {
-  if (props.isNew) { return; }
-  if (fileInputRef.value) {
-    fileInputRef.value.accept = 'video/*';
-    fileInputRef.value.click();
-  }
-  mediaSelected();
-}
-
-// 根据文件类型确定 Marker 前缀 (辅助函数)
-function getTagPrefix(mimeType: string): 'IMG' | 'VID' | 'AUD' | null {
-  if (mimeType.startsWith('image/')) return 'IMG';
-  if (mimeType.startsWith('video/')) return 'VID';
-  if (mimeType.startsWith('audio/')) return 'AUD';
-  return null;
-}
-
-function handleMediaSelect(event: Event) {
-  const input = event.target as HTMLInputElement;
-  if (!input.files || input.files.length === 0) return;
-
-  if (props.isNew) {
-    showToast("请先保存一次日记再上传图片（需要生成日记ID）", 'info');
-    input.value = "";
-    return;
-  }
-
-  const file = input.files[0];
-  const tagPrefix = getTagPrefix(file.type);
-
-  if (!tagPrefix) {
-    showToast("不支持的文件类型: " + file.type, 'error');
-    input.value = "";
-    return;
-  }
-
-  // 将文件传递给父组件处理上传逻辑
-  emit('upload-file', { tagPrefix, file });
-  input.value = "";
+  const filters = isImage
+      ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }]
+      : [{ name: 'Videos', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'] }];
+  open({
+    multiple: false,
+    filters
+  }).then(selected => {
+    if (typeof selected === 'string' && selected.length > 0) {
+      emit('upload-file', isImage ? 'IMG' : 'VID', selected);
+      mediaSelected();
+    } else {
+      console.log('未选择文件');
+    }
+  }).catch(err => {
+    console.error('文件选择失败:', err);
+  })
 }
 
 function handleBack() {
@@ -162,13 +131,13 @@ function handleBack() {
 
         <transition name="media-menu">
           <div v-if="showMediaMenu" id="media-menu-dropdown">
-            <button @click="triggerAddImage" class="media-option">
+            <button @click="triggerAddImageOrVideo(true)" class="media-option">
               <svg viewBox="0 0 24 24" width="16" height="16">
                 <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
               </svg>
               <span>图片</span>
             </button>
-            <button @click="triggerAddVideo" class="media-option">
+            <button @click="triggerAddImageOrVideo(false)" class="media-option">
               <svg viewBox="0 0 24 24" width="16" height="16">
                 <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
               </svg>
@@ -187,15 +156,6 @@ function handleBack() {
     </div>
 
     <div class="header-actions">
-      <input
-          type="file"
-          ref="fileInputRef"
-          style="display: none"
-          accept="image/*,video/*"
-          @change="handleMediaSelect"
-          multiple
-      />
-
       <button
           id="diary-detail-header-save-btn"
           @click="emit('save')"

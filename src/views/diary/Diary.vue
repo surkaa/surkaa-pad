@@ -5,10 +5,11 @@ import {invoke} from "@tauri-apps/api/core";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
 import {showToast} from "../../utils";
 import RichTextEditor from "../../components/RichTextEditor.vue";
-import {saveAttachment} from "../../utils";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import DiaryHeader from "./DiaryHeader.vue";
 import DiaryFooter from "./DiaryFooter.vue";
+import {BaseDirectory, writeFile} from "@tauri-apps/plugin-fs";
+import {appDataDir, join} from "@tauri-apps/api/path";
 
 const router = useRouter();
 
@@ -69,7 +70,7 @@ function toggleMode() {
 
 function updateDownMsg(type: DownloadAttachmentEvent['event'], msg: string) {
   renderMsg.value = msg;
-  if (type =='completed') {
+  if (type == 'completed') {
     downType.value = null;
     return;
   }
@@ -213,26 +214,33 @@ async function deleteDiary() {
 }
 
 // 处理来自Header的文件选择上传
-function handleFileUpload({ tagPrefix, file }: { tagPrefix: string, file: File }) {
-  console.log("选择的文件: ", file);
-  uploadAttachment(tagPrefix, file.type, file.stream()).then(() => {
-    // 处理完成，无需额外操作，input值清理已在子组件完成
-  });
+function handleFileUpload(tagPrefix: 'IMG' | 'VID', accessStr: string) {
+  console.log("选择的文件: ", accessStr);
+  const minetype = tagPrefix === 'IMG' ? 'image/*' : 'video/*';
+  uploadAttachment(tagPrefix, minetype, accessStr);
 }
 
 function recordedAudio(minetype: string, stream: ReadableStream<Uint8Array>) {
-  uploadAttachment('AUD', minetype, stream);
+  // 将录音写入应用数据目录或临时目录
+  const filename = `audio_cache/${diary.value.id}_${new Date().getTime()}.tmp`;
+  writeFile(filename, stream, {
+    baseDir: BaseDirectory.AppData
+  }).then(appDataDir)
+      .then((appDataDir) => join(appDataDir, filename))
+      .then(accessStr => uploadAttachment('AUD', minetype, accessStr));
 }
 
 // 处理图片选择与上传
-async function uploadAttachment(tagPrefix: string, minetype: string, stream: ReadableStream<Uint8Array>) {
+async function uploadAttachment(tagPrefix: string, minetype: string, accessStr: string) {
   try {
     uploadLoading.value = true;
     // 插入前先保存当前日记内容，确保最新状态，避免删掉的东西又被加回去
     await saveDiary();
 
     // 调用后端上传
-    const updatedManifest = await saveAttachment(diary.value.id, minetype, stream);
+    const updatedManifest = await invoke<DiaryManifest>("add_attachment", {
+      uuid: diary.value.id, minetype, accessStr,
+    });
 
     // 找出新增加的文件名
     // 比较新旧 attachments 列表，找到多出来的那个
@@ -303,6 +311,7 @@ function openPreviewMedia(eid: string) {
     }
   });
 }
+
 // TODO 不用先输入点东西才能保存，因为我可能希望直接能够打开保存然后上传附件
 onMounted(async () => {
   if (history.state.diary) {
