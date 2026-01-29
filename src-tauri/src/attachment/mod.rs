@@ -1,16 +1,15 @@
 mod types;
 
-pub use crate::attachment::types::{AttachmentMeta, DownloadAttachmentEvent, ATTACHMENT_EXTENSION};
+pub use crate::attachment::types::{AttachmentMeta, DownloadAttachmentEvent};
 use crate::crypto::Crypto;
 use crate::diary::{diary_get, DiaryManifest};
 use crate::object::OssClient;
-use crate::storage::remote_manifest_key;
+use crate::storage::{local_attachment_path, remote_attachments_key, remote_manifest_key, PathGetter};
 use chrono::Utc;
 use futures::StreamExt;
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle};
 use tauri_plugin_log::log;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
@@ -25,7 +24,7 @@ pub async fn attachment_upload(
 ) -> Result<DiaryManifest, String> {
     let (encrypted_bytes, nonce) = crypto.encrypt(&attachment_bytes)?;
 
-    let file_name = Uuid::new_v4().to_string() + ATTACHMENT_EXTENSION;
+    let file_name = Uuid::new_v4().to_string();
 
     // 创建附件元数据
     let attachment = AttachmentMeta {
@@ -35,13 +34,15 @@ pub async fn attachment_upload(
         nonce: nonce.clone(),
     };
 
+    // 更新 manifest，添加附件元数据
     let (mut manifest, _) = diary_get(crypto, client.clone(), id.clone()).await?;
     manifest.attachments.push(attachment);
     manifest.updated = Utc::now().timestamp_millis();
+
+    // 更新到云端
     let manifest_key = remote_manifest_key(&id);
     let manifest_json = serde_json::to_vec(&manifest)
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
-    // 加密
     let (ciphertext, manifest_nonce) = crypto.encrypt(&manifest_json)?;
     let mut encrypted_manifest = manifest_nonce;
     encrypted_manifest.extend_from_slice(&ciphertext);
@@ -52,7 +53,7 @@ pub async fn attachment_upload(
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
     // 上传附件
-    let attachment_key = format!("{}/{}", id, file_name);
+    let attachment_key = remote_attachments_key(&id, &file_name);
     client
         .upload_bytes(&attachment_key, &encrypted_bytes)
         .await
@@ -65,25 +66,32 @@ pub async fn attachment_upload(
 pub async fn attachment_download(
     crypto: Arc<Crypto>,
     client: Arc<OssClient>,
-    app_handle: AppHandle,
+    pg: impl PathGetter,
     event: Channel<DownloadAttachmentEvent>,
     id: String,
     filename: String,
     nonce: Vec<u8>,
 ) {
     // 先检查有没有本地缓存，有的话直接返回缓存路径
-    let temp_path = app_handle
-        .path()
-        .resolve(&filename, BaseDirectory::Temp)
-        .expect("Failed to resolve temp path");
+    let temp_file_full_path = local_attachment_path(pg, &id, &filename);
+    if temp_file_full_path.exists() {
+        log::info!(
+            "附件 {} 已存在于本地缓存，直接返回缓存路径",
+            temp_file_full_path.display()
+        );
+        let _ = event.send(DownloadAttachmentEvent::Completed {
+            file_path: temp_file_full_path.to_string_lossy().to_string(),
+        });
+        return;
+    }
 
-    let attachment_key = format!("{}/{}", id, filename);
+    let attachment_key = remote_attachments_key(&id, &filename);
 
     let (mut stream, len) = client
         .download(&attachment_key)
         .await
         .map_err(|e| {
-            let message = format!("Failed to start download: {}", e);
+            let message = format!("下载启动失败: {}", e);
             log::error!("{}", message.clone());
             let _ = event.send(DownloadAttachmentEvent::Error { message });
         })
@@ -128,26 +136,36 @@ pub async fn attachment_download(
     let decrypted_size = decrypted_data.len() as u64;
     let _ = event.send(DownloadAttachmentEvent::Decrypted { decrypted_size });
 
-    // 保存到临时目录下，再返回给前端临时路径
-    let mut temp_file = tokio::fs::File::create(&temp_path)
-        .await
-        .map_err(|e| {
-            let message = format!("无法创建临时文件 {}: {}", temp_path.display(), e);
+    // 确保创建了父目录
+    if let Some(parent) = temp_file_full_path.parent() {
+        if let Err(e) = tokio::fs::create_dir_all(parent).await {
+            let message = format!("无法创建临时文件父目录 {}: {}", parent.display(), e);
             log::error!("{}", message.clone());
             let _ = event.send(DownloadAttachmentEvent::Error { message });
-        })
-        .unwrap();
+            return;
+        }
+    }
 
-    if let Err(e) = temp_file.write_all(&decrypted_data).await {
-        let message = format!("无法写入临时文件 {}: {}", temp_path.display(), e);
-        log::error!("{}", message.clone());
-        let _ = event.send(DownloadAttachmentEvent::Error { message });
-    } else {
-        log::info!("附件已保存到临时文件 {}", temp_path.display());
-        // 发送完成事件
-        let _ = event.send(DownloadAttachmentEvent::Completed {
-            file_path: temp_path.to_string_lossy().to_string(),
-        });
+    // 写入临时文件
+    match tokio::fs::File::create(&temp_file_full_path).await {
+        Ok(mut temp_file) => {
+            if let Err(e) = temp_file.write_all(&decrypted_data).await {
+                let message = format!("无法写入临时文件 {}: {}", temp_file_full_path.display(), e);
+                log::error!("{}", message.clone());
+                let _ = event.send(DownloadAttachmentEvent::Error { message });
+            } else {
+                log::info!("附件已保存到临时文件 {}", temp_file_full_path.display());
+                // 发送完成事件
+                let _ = event.send(DownloadAttachmentEvent::Completed {
+                    file_path: temp_file_full_path.to_string_lossy().to_string(),
+                });
+            }
+        }
+        Err(e) => {
+            let message = format!("无法创建临时文件 {}: {}", temp_file_full_path.display(), e);
+            log::error!("{}", message.clone());
+            let _ = event.send(DownloadAttachmentEvent::Error { message });
+        }
     }
 }
 
@@ -178,7 +196,7 @@ pub async fn attachment_delete(
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
     // 删除附件对象
-    let attachment_key = format!("{}/{}", id, file_name);
+    let attachment_key = remote_attachments_key(&id, &file_name);
     client
         .delete(&attachment_key)
         .await

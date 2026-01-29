@@ -3,13 +3,13 @@ use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 
 /// 获取本地缓存路径的 trait
-pub trait CachePathGetter {
+pub trait PathGetter {
     fn get_cache_path(&self) -> PathBuf;
 
     fn get_temp_path(&self) -> PathBuf;
 }
 
-impl CachePathGetter for AppHandle {
+impl PathGetter for AppHandle {
     fn get_cache_path(&self) -> PathBuf {
         self.path()
             .resolve("", BaseDirectory::AppCache)
@@ -43,7 +43,7 @@ impl MockCacheGetter {
 }
 
 #[cfg(test)]
-impl CachePathGetter for MockCacheGetter {
+impl PathGetter for MockCacheGetter {
     fn get_cache_path(&self) -> PathBuf {
         self.root.join("cache")
     }

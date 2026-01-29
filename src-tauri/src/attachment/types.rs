@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-pub const ATTACHMENT_EXTENSION: &str = ".enc";
-
 #[derive(Clone, Serialize)]
 #[serde(
     rename_all = "camelCase",
