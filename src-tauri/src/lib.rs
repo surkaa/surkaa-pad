@@ -331,7 +331,7 @@ pub fn run() {
                         let _ = std::fs::remove_dir_all(&attachment_dir);
                     }
                     // 删除录音文件夹
-                    let recording_dir = utils::local_recording_dir(&app_handle);
+                    let recording_dir = local_recording_dir(&app_handle);
                     if recording_dir.exists() {
                         let _ = std::fs::remove_dir_all(&recording_dir);
                     }
