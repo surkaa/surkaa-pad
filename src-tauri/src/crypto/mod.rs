@@ -26,17 +26,23 @@ impl std::ops::Deref for DerivedKey {
     }
 }
 
+struct InnerCrypto {
+    dek: OnceLock<DerivedKey>,
+    algorithm: String,
+}
+
 #[derive(Clone)]
 pub struct Crypto {
-    dek: Arc<OnceLock<DerivedKey>>,
-    algorithm: String,
+    inner: Arc<InnerCrypto>,
 }
 
 impl Crypto {
     pub fn new() -> Self {
         Crypto {
-            dek: Arc::new(OnceLock::new()),
-            algorithm: "AES256-GCM_v1".to_string(),
+            inner: Arc::new(InnerCrypto {
+                dek: OnceLock::new(),
+                algorithm: "AES-256-GCM".to_string(),
+            }),
         }
     }
 
@@ -51,13 +57,13 @@ impl Crypto {
     }
 
     pub fn algorithm(&self) -> &str {
-        &self.algorithm
+        &self.inner.algorithm
     }
 
     /// 利用提供的派生密钥解密给定数据
     pub fn decrypt(&self, ciphertext: &[u8], nonce_bytes: &[u8]) -> Result<Vec<u8>, String> {
         // 从前NONCE_LEN字节中提取nonce
-        let dek = self.dek.get().ok_or("未派生密钥".to_string())?;
+        let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
         let cipher =
             Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|e| format!("无效的密钥: {:?}", e))?;
 
@@ -81,7 +87,7 @@ impl Crypto {
 
     /// 使用提供的派生密钥对给定数据进行加密。
     pub fn encrypt(&self, data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
-        let dek = self.dek.get().ok_or("未派生密钥".to_string())?;
+        let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
         let cipher =
             Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|e| format!("无效的密钥: {:?}", e))?;
 
@@ -128,7 +134,7 @@ impl Crypto {
                 println!("派生的 DEK (Base64): {}", dek_b64);
             }
             let derived_key = DerivedKey(dek_array);
-            let _ = self.dek.set(derived_key);
+            let _ = self.inner.dek.set(derived_key);
             let dek_string = hex::encode(dek_array);
             dek_array.zeroize();
             Ok(dek_string)
@@ -147,7 +153,7 @@ impl Crypto {
         let mut dek_array = [0u8; KEY_LEN];
         dek_array.copy_from_slice(&dek_bytes);
         let derived_key = DerivedKey(dek_array);
-        let _ = self.dek.set(derived_key);
+        let _ = self.inner.dek.set(derived_key);
         dek_array.zeroize();
         Ok(())
     }
