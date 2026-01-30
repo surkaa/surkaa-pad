@@ -6,7 +6,6 @@ mod storage;
 mod task;
 mod utils;
 
-use std::ops::Deref;
 use crate::attachment::DownloadAttachmentEvent;
 use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
 use crate::diary::DiaryManifest;
@@ -17,6 +16,7 @@ use crate::storage::{local_attachment_dir, local_recording_dir};
 use crate::task::TaskPool;
 use crate::utils::open_file_stream;
 use crypto::Crypto;
+use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
@@ -31,6 +31,7 @@ use tauri::{AppHandle, Manager, State};
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn unlock(
     crypto: State<'_, Crypto>,
     master_password: String,
@@ -45,6 +46,7 @@ async fn unlock(
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn biometric_unlock(crypto: State<'_, Crypto>, dek: String) -> Result<(), String> {
     crypto.init_by_dek_string(dek)
 }
@@ -55,6 +57,7 @@ async fn biometric_unlock(crypto: State<'_, Crypto>, dek: String) -> Result<(), 
 /// # Returns
 /// * `Result<(Vec<u8>, Vec<u8>), String>` - 成功时返回 (密文, nonce)，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn encrypt_data(
     crypto: State<'_, Crypto>,
     data: String,
@@ -69,6 +72,7 @@ async fn encrypt_data(
 /// # Returns
 /// * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn decrypt_data(
     crypto: State<'_, Crypto>,
     ciphertext: Vec<u8>,
@@ -88,6 +92,7 @@ async fn decrypt_data(
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn init_oss_client(
     client_state: State<'_, OssState>,
     akid: String,
@@ -111,6 +116,7 @@ async fn init_oss_client(
 /// # Returns
 /// * `Result<Vec<DiaryManifest>, String>` - 成功时返回日记列表，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn list_local_diaries(
     cache: State<'_, DiaryMemoryCache>,
 ) -> Result<Vec<DiaryManifest>, String> {
@@ -123,6 +129,7 @@ async fn list_local_diaries(
 /// # Returns
 /// * `Result<Option<DiaryManifest>, String>` - 如果传入了 UUID，成功时返回该日记的清单，否则返回 None；失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn sync_from_oss(
     cache: State<'_, DiaryMemoryCache>,
     em: State<'_, Crypto>,
@@ -138,6 +145,7 @@ async fn sync_from_oss(
 /// # Returns
 /// * `Result<Vec<DiaryManifest>, String>` - 成功时返回匹配的日记列表，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn search_diaries(
     cache: State<'_, DiaryMemoryCache>,
     keyword: &str,
@@ -160,6 +168,7 @@ async fn search_diaries(
 /// # Returns
 /// * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn save_diary(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
@@ -175,6 +184,7 @@ async fn save_diary(
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn update_diary_content_only(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
@@ -190,6 +200,7 @@ async fn update_diary_content_only(
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), String> {
     diary_delete(client.get_client()?, uuid).await
 }
@@ -206,6 +217,7 @@ async fn delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), S
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn add_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
@@ -235,6 +247,7 @@ async fn add_attachment(
 /// # Returns
 /// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 fn download_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
@@ -267,6 +280,7 @@ fn download_attachment(
 /// # Returns
 /// * `Result<bool, String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 fn cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, String> {
     tp.cancel(cancel_token)
 }
@@ -278,6 +292,7 @@ fn cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, Stri
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
+#[specta::specta]
 async fn delete_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
@@ -289,6 +304,34 @@ async fn delete_attachment(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let builder =
+        tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
+            unlock,
+            encrypt_data,
+            decrypt_data,
+            init_oss_client,
+            list_local_diaries,
+            sync_from_oss,
+            search_diaries,
+            save_diary,
+            update_diary_content_only,
+            delete_diary,
+            add_attachment,
+            download_attachment,
+            cancel_task,
+            delete_attachment,
+            biometric_unlock
+        ]);
+
+    #[cfg(debug_assertions)]
+    #[cfg(windows)]
+    builder
+        .export(
+            specta_typescript::Typescript::default(),
+            "../src/bindings.ts",
+        )
+        .expect("Failed to export typescript bindings");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         // 注册 Store 插件
@@ -300,7 +343,9 @@ pub fn run() {
             tauri_plugin_log::Builder::new()
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: None,
+                    }),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
                 ])
                 .build(),
@@ -309,7 +354,8 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         // 注册 dialog 插件
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .invoke_handler(builder.invoke_handler())
+        .setup(move |app| {
             app.manage(Crypto::new());
             app.manage(OssState::new());
             app.manage(TaskPool::new());
@@ -338,25 +384,9 @@ pub fn run() {
                 }
                 _ => {}
             });
+            builder.mount_events(app);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            unlock,
-            encrypt_data,
-            decrypt_data,
-            init_oss_client,
-            list_local_diaries,
-            sync_from_oss,
-            search_diaries,
-            save_diary,
-            update_diary_content_only,
-            delete_diary,
-            add_attachment,
-            download_attachment,
-            cancel_task,
-            delete_attachment,
-            biometric_unlock
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
