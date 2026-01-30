@@ -20,7 +20,7 @@ const {
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'recorded', minetype: string, stream: ReadableStream<Uint8Array>): void;
+  (e: 'recorded', mimetype: string, stream: ReadableStream<Uint8Array>): void;
 }>();
 
 // 格式化时长显示（MM:SS）

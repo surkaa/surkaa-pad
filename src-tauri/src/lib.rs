@@ -202,7 +202,7 @@ async fn delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), S
 /// # Arguments
 /// * `uuid` - 日记 UUID
 /// * `access_str` - 文件访问路径。
-/// * `minetype` - 附件 MIME 类型
+/// * `mimetype` - 附件 MIME 类型
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
@@ -211,7 +211,7 @@ async fn add_attachment(
     client: State<'_, OssState>,
     uuid: String,
     access_str: String,
-    minetype: String,
+    mimetype: String,
 ) -> Result<DiaryManifest, String> {
     // 获取临时文件的完整路径
     let (len, stream) = open_file_stream(&access_str)?;
@@ -220,7 +220,7 @@ async fn add_attachment(
         crypto.deref(),
         client.get_client()?,
         uuid,
-        minetype,
+        mimetype,
         len,
         stream,
     )

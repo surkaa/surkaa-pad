@@ -215,15 +215,15 @@ async function deleteDiary() {
 // 处理来自Header的文件选择上传
 function handleFileUpload(tagPrefix: 'IMG' | 'VID', accessStr: string) {
   console.log("选择的文件: ", accessStr);
-  const minetype = tagPrefix === 'IMG' ? 'image/*' : 'video/*';
-  uploadAttachment(tagPrefix, minetype, accessStr);
+  const mimetype = tagPrefix === 'IMG' ? 'image/*' : 'video/*';
+  uploadAttachment(tagPrefix, mimetype, accessStr);
 }
 
-function recordedAudio(minetype: string, stream: ReadableStream<Uint8Array>) {
+function recordedAudio(mimetype: string, stream: ReadableStream<Uint8Array>) {
   joinAndCreateLocalRecordingDir(diary.value.id, stream)
       .then(accessStr => {
         console.log('录音文件已保存至: ', accessStr);
-        uploadAttachment('AUD', minetype, accessStr);
+        uploadAttachment('AUD', mimetype, accessStr);
       })
       .catch(err => {
         console.error('保存录音文件失败: ', err);
@@ -232,7 +232,7 @@ function recordedAudio(minetype: string, stream: ReadableStream<Uint8Array>) {
 }
 
 // 处理图片选择与上传
-async function uploadAttachment(tagPrefix: string, minetype: string, accessStr: string) {
+async function uploadAttachment(tagPrefix: string, mimetype: string, accessStr: string) {
   try {
     uploadLoading.value = true;
     // 插入前先保存当前日记内容，确保最新状态，避免删掉的东西又被加回去
@@ -240,7 +240,7 @@ async function uploadAttachment(tagPrefix: string, minetype: string, accessStr: 
 
     // 调用后端上传
     const updatedManifest = await invoke<DiaryManifest>("add_attachment", {
-      uuid: diary.value.id, minetype, accessStr,
+      uuid: diary.value.id, mimetype, accessStr,
     });
 
     // 找出新增加的文件名
