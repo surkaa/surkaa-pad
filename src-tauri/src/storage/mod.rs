@@ -49,3 +49,12 @@ pub fn local_attachment_dir(
         .get_data_path()
         .join("pad")
 }
+
+/// 获取录音文件夹
+pub fn local_recording_dir(
+    path_getter: &impl PathGetter,
+) -> PathBuf {
+    path_getter
+        .get_data_path()
+        .join("audio_cache")
+}

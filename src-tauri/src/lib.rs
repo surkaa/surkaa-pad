@@ -13,7 +13,7 @@ use crate::diary::DiaryManifest;
 use crate::diary::DiaryMemoryCache;
 use crate::diary::{diary_create, diary_delete, diary_sync, diary_update_diary_content_only};
 use crate::object::OssState;
-use crate::storage::local_attachment_dir;
+use crate::storage::{local_attachment_dir, local_recording_dir};
 use crate::task::TaskPool;
 use crate::utils::open_file_stream;
 use crypto::Crypto;
@@ -325,9 +325,15 @@ pub fn run() {
             let app_handle = app_handle.clone();
             main_window.on_window_event(move |event| match event {
                 tauri::WindowEvent::CloseRequested { .. } => {
+                    // 删除附件文件夹
                     let attachment_dir = local_attachment_dir(&app_handle);
                     if attachment_dir.exists() {
                         let _ = std::fs::remove_dir_all(&attachment_dir);
+                    }
+                    // 删除录音文件夹
+                    let recording_dir = utils::local_recording_dir(&app_handle);
+                    if recording_dir.exists() {
+                        let _ = std::fs::remove_dir_all(&recording_dir);
                     }
                 }
                 _ => {}

@@ -8,8 +8,7 @@ import RichTextEditor from "../../components/RichTextEditor.vue";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import DiaryHeader from "./DiaryHeader.vue";
 import DiaryFooter from "./DiaryFooter.vue";
-import {BaseDirectory, create, writeFile} from "@tauri-apps/plugin-fs";
-import {appDataDir, join} from "@tauri-apps/api/path";
+import {joinAndCreateLocalRecordingDir} from "../../utils/storage.ts";
 
 const router = useRouter();
 
@@ -221,15 +220,7 @@ function handleFileUpload(tagPrefix: 'IMG' | 'VID', accessStr: string) {
 }
 
 function recordedAudio(minetype: string, stream: ReadableStream<Uint8Array>) {
-  // 将录音写入应用数据目录或临时目录
-  const filename = `audio_cache/${diary.value.id}_${new Date().getTime()}.tmp`;
-  // 先确保audio_cache目录存在
-  create("audio_cache", {baseDir: BaseDirectory.AppData})
-      .then(() => writeFile(filename, stream, {
-        baseDir: BaseDirectory.AppData
-      }))
-      .then(appDataDir)
-      .then((appDataDir) => join(appDataDir, filename))
+  joinAndCreateLocalRecordingDir(diary.value.id, stream)
       .then(accessStr => {
         console.log('录音文件已保存至: ', accessStr);
         uploadAttachment('AUD', minetype, accessStr);
