@@ -111,20 +111,27 @@ impl AliyunObjectSummary {
     }
 }
 
-pub struct OssClient {
+pub struct OssClientInner {
     endpoint: String,
     akid: String,
     sakey: String,
     bucket: String,
 }
 
+#[derive(Clone)]
+pub struct OssClient {
+    inner: Arc<OssClientInner>,
+}
+
 impl OssClient {
     pub fn new(endpoint: String, akid: String, sakey: String, bucket: String) -> Self {
         Self {
-            endpoint,
-            akid,
-            sakey,
-            bucket,
+            inner: Arc::new(OssClientInner {
+                endpoint,
+                akid,
+                sakey,
+                bucket,
+            })
         }
     }
 
@@ -142,7 +149,7 @@ impl OssClient {
     fn get_url(&self, path: &str, query: &str) -> String {
         format!(
             "https://{}.{}/{}?{}",
-            self.bucket, self.endpoint, path, query
+            self.inner.bucket, self.inner.endpoint, path, query
         )
     }
 
@@ -156,7 +163,7 @@ impl OssClient {
         let date = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
 
         // 签名字符串构造: VERB + \n + Content-MD5(可选) + \n + Content-Type + \n + Date + \n + CanonicalizedResource
-        let canonicalized_resource = format!("/{}/{}", self.bucket, path);
+        let canonicalized_resource = format!("/{}/{}", self.inner.bucket, path);
         let string_to_sign = format!(
             "{}\n\n{}\n{}\n{}",
             method.as_str(),
@@ -167,7 +174,7 @@ impl OssClient {
 
         // HMAC-SHA1 签名
         type HmacSha1 = Hmac<Sha1>;
-        let mut mac = HmacSha1::new_from_slice(self.sakey.as_bytes())
+        let mut mac = HmacSha1::new_from_slice(self.inner.sakey.as_bytes())
             .map_err(|e| format!("非法长度{}", e))?;
         mac.update(string_to_sign.as_bytes());
         let signature = STANDARD.encode(mac.finalize().into_bytes());
@@ -184,7 +191,7 @@ impl OssClient {
         );
         headers.insert(
             "Authorization",
-            HeaderValue::from_str(&format!("OSS {}:{}", self.akid, signature))
+            HeaderValue::from_str(&format!("OSS {}:{}", self.inner.akid, signature))
                 .map_err(|e| format!("未能创建authorization头:{}", e))?,
         );
 
