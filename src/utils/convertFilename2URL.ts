@@ -1,5 +1,5 @@
-import {Channel, convertFileSrc, invoke} from "@tauri-apps/api/core";
-import {DownloadAttachmentEvent} from "../types";
+import {Channel, convertFileSrc} from "@tauri-apps/api/core";
+import {commands, DownloadAttachmentEvent} from "../bindings.ts";
 
 const cacheFileMap: Map<string, string> = new Map();
 
@@ -46,9 +46,9 @@ export function convertFilename2URL(
     };
 
     const cancelDownloadFn = (cancelToken: string) => {
-        invoke("cancel_task", {cancelToken}).then(bool => {
+        commands.cancelTask(cancelToken).then(bool => {
             console.log(`[ConvertFilename2URL] 取消下载任务 ${eid}: ${bool}`);
-        });
+        })
     };
 
     const onEvent = new Channel<DownloadAttachmentEvent>();
@@ -85,8 +85,12 @@ export function convertFilename2URL(
                 console.warn(`[ConvertFilename2URL] 未知的下载附件事件类型: ${(msg as any).event}`);
         }
     }
-
-    invoke<string>("download_attachment", {uuid, nonce, eid, filename, onEvent}).then((cancelToken) => {
+    commands.downloadAttachment(onEvent, uuid, filename, nonce).then(res => {
+        if (res.status == 'error') {
+            console.error(`[ConvertFilename2URL] 下载附件接口调用失败，eid: ${eid}, 错误信息: ${res.error}`);
+            return;
+        }
+        const cancelToken = res.data;
         console.log(`[ConvertFilename2URL] 已调用下载附件接口，eid: ${eid}, cancelToken: ${cancelToken}`);
         if (ct === "will_cancel") {
             cancelDownloadFn(cancelToken);

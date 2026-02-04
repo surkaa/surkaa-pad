@@ -255,7 +255,7 @@ async biometricUnlock(dek: string) : Promise<Result<null, string>> {
 
 export type AttachmentMeta = { filename: string; mimetype: string; size: number; nonce: number[] }
 export type DiaryManifest = { id: string; algorithm: string; content: string; created: number; updated: number; attachments: AttachmentMeta[] }
-export type DownloadAttachmentEvent = { event: "started"; data: { total_size: number } } | { event: "downloadProgress"; data: { downloaded: number } } | { event: "decrypting" } | { event: "decrypted"; data: { decrypted_size: number } } | { event: "completed"; data: { file_path: string } } | { event: "error"; data: { message: string } }
+export type DownloadAttachmentEvent = { event: "started"; data: { totalSize: number } } | { event: "downloadProgress"; data: { downloaded: number } } | { event: "decrypting" } | { event: "decrypted"; data: { decryptedSize: number } } | { event: "completed"; data: { filePath: string } } | { event: "error"; data: { message: string } }
 export type TAURI_CHANNEL<TSend> = null
 
 /** tauri-specta globals **/

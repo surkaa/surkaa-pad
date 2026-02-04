@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import {computed, onMounted, ref, watch} from "vue";
-import {DiaryManifest, DownloadAttachmentEvent} from "../../types";
-import {invoke} from "@tauri-apps/api/core";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
 import {showToast} from "../../utils";
 import RichTextEditor from "../../components/RichTextEditor.vue";
@@ -9,6 +7,7 @@ import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import DiaryHeader from "./DiaryHeader.vue";
 import DiaryFooter from "./DiaryFooter.vue";
 import {joinAndCreateLocalRecordingDir} from "../../utils/storage.ts";
+import {commands, DiaryManifest, DownloadAttachmentEvent} from "../../bindings.ts";
 
 const router = useRouter();
 
@@ -149,10 +148,7 @@ async function saveDiary(afterAddAttachment = false) {
 
         // 并行调用删除接口 必须删完再保存 保持数据一致性
         await Promise.all(filesToDelete.map(att =>
-            invoke("delete_attachment", {
-              uuid: diary.value.id,
-              filename: att.filename
-            })
+            commands.deleteAttachment(diary.value.id, att.filename)
         ));
       }
     }
@@ -160,22 +156,27 @@ async function saveDiary(afterAddAttachment = false) {
     if (isNew.value) {
       // 新建日记
       console.log("新建日记", diary.value);
-      const d = await invoke<DiaryManifest>("save_diary", {
-        content: diary.value.content
-      });
-      diary.value = d;
-      lastSavedContent.value = d.content;
+      let d = await commands.saveDiary(diary.value.content);
+      if (d.status == 'error') {
+        console.error("保存日记失败", d.error);
+        showToast('保存日记失败: ' + d.error, 'error');
+        return;
+      }
+      diary.value = d.data;
+      lastSavedContent.value = d.data.content;
       console.log("日记保存成功, Diary: ", d);
       showToast("日记保存成功", 'success');
     } else {
       // 更新日记
       console.log("更新日记, Old Diary: ", diary.value);
-      const d = await invoke<DiaryManifest>("update_diary_content_only", {
-        uuid: diary.value.id,
-        newContent: diary.value.content
-      });
-      diary.value = d;
-      lastSavedContent.value = d.content;
+      let d = await commands.updateDiaryContentOnly(diary.value.id, diary.value.content);
+      if (d.status == 'error') {
+        console.error("保存日记失败", d.error);
+        showToast('保存日记失败: ' + d.error, 'error');
+        return;
+      }
+      diary.value = d.data;
+      lastSavedContent.value = d.data.content;
       console.log("日记更新成功, Diary: ", d);
     }
   } catch (e) {
@@ -199,7 +200,12 @@ async function deleteDiary() {
 
   delLoading.value = true;
   try {
-    await invoke("delete_diary", {uuid: diary.value.id});
+    let res = await commands.deleteDiary(diary.value.id);
+    if (res.status == 'error') {
+      console.error("删除日记失败", res.error);
+      showToast('删除日记失败: ' + res.error, 'error');
+      return;
+    }
     console.log("日记删除成功");
     isDelBack.value = true;
     router.back();
@@ -239,9 +245,13 @@ async function uploadAttachment(tagPrefix: string, mimetype: string, accessStr: 
     await saveDiary();
 
     // 调用后端上传
-    const updatedManifest = await invoke<DiaryManifest>("add_attachment", {
-      uuid: diary.value.id, mimetype, accessStr,
-    });
+    const res = await commands.addAttachment(diary.value.id, mimetype, accessStr);
+    if (res.status == 'error') {
+      console.error("上传图片失败", res.error);
+      showToast("上传图片失败: " + res.error, 'error');
+      return;
+    }
+    const updatedManifest = res.data;
 
     // 找出新增加的文件名
     // 比较新旧 attachments 列表，找到多出来的那个

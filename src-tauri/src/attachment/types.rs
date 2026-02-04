@@ -9,6 +9,7 @@ use specta::Type;
     content = "data"
 )]
 pub enum DownloadAttachmentEvent {
+    #[serde(rename_all = "camelCase")]
     Started {
         #[specta(type = f64)]
         total_size: u64,
@@ -18,10 +19,12 @@ pub enum DownloadAttachmentEvent {
         downloaded: u64,
     },
     Decrypting,
+    #[serde(rename_all = "camelCase")]
     Decrypted {
         #[specta(type = f64)]
         decrypted_size: u64,
     },
+    #[serde(rename_all = "camelCase")]
     Completed {
         file_path: String,
     },

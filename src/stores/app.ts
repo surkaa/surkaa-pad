@@ -2,11 +2,11 @@
 import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
 import {OssConfigType, ThemeType} from "../types";
-import {invoke} from "@tauri-apps/api/core";
 import {markRaw, ref} from "vue";
 import {window} from "@tauri-apps/api";
 import {showToast} from "../utils";
 import {biometricCipher} from "@tauri-apps/plugin-biometric";
+import {commands} from "../bindings.ts";
 
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
@@ -67,16 +67,15 @@ export const useAppStore = defineStore('app', () => {
         }
 
         // 解锁
-        await invoke<number[]>('unlock', {
-            masterPassword,
-            salt: SALE
-        });
+        await commands.unlock(masterPassword, SALE);
 
         // 加密oss配置
         const configJson = JSON.stringify(ossConfig);
-        const [encrypted_data, nonce] = await invoke<[number[], number[]]>('encrypt_data', {
-            data: configJson
-        });
+        const res = await commands.encryptData(configJson);
+        if (res.status == 'error') {
+            throw new Error(`加密配置失败: ${res.error}`);
+        }
+        const [encrypted_data, nonce] = res.data;
 
         const encryptedConfig = [...nonce, ...encrypted_data];
 
@@ -104,21 +103,27 @@ export const useAppStore = defineStore('app', () => {
     }
 
     async function unlock(masterPassword: string) {
-        await invoke<number[]>('unlock', {
-            masterPassword,
-            salt: SALE
-        });
+        await commands.unlock(masterPassword, SALE);
     }
 
     async function initOss(encryptedConfig: number[]) {
         const nonce = encryptedConfig.slice(0, 12);
         const ciphertext = encryptedConfig.slice(12);
-        const ossJsonStr = await invoke<string>('decrypt_data', {
-            ciphertext,
-            nonce
-        });
+        const res = await commands.decryptData(ciphertext, nonce);
+        if (res.status == 'error') {
+            throw new Error(`解密配置失败: ${res.error}`);
+        }
+        const ossJsonStr = res.data;
         const ossConfig = JSON.parse(ossJsonStr) as OssConfigType;
-        await invoke('init_oss_client', {...ossConfig});
+        const initRes = await commands.initOssClient(
+            ossConfig.akid,
+            ossConfig.aks,
+            ossConfig.bucket,
+            ossConfig.endpoint
+        );
+        if (initRes.status == 'error') {
+            throw new Error(`初始化 OSS 客户端失败: ${initRes.error}`);
+        }
     }
 
     function setTimeoutForCloseApp() {
@@ -152,14 +157,19 @@ export const useAppStore = defineStore('app', () => {
     }
 
     async function searchWithKeyword(keyword: string): Promise<string[]> {
-        return await invoke<string[]>('search_diaries', {keyword});
+        const res = await commands.searchDiaries(keyword);
+        if (res.status == 'error') {
+            throw new Error(`搜索日记失败: ${res.error}`);
+        }
+        return res.data;
     }
 
     async function enableBiometric(masterPassword: string) {
-        const dek = await invoke<string>('unlock', {
-            masterPassword,
-            salt: SALE
-        });
+        const res = await commands.unlock(masterPassword, SALE);
+        if (res.status == 'error') {
+            throw new Error(`解锁失败: ${res.error}`);
+        }
+        const dek = res.data;
 
         console.log('启用生物识别，获取到DEK：', dek);
 
@@ -180,9 +190,10 @@ export const useAppStore = defineStore('app', () => {
             dataToDecrypt: encryptedDek
         });
 
-        await invoke<number[]>('biometric_unlock', {
-            dek: data
-        });
+        const res = await commands.biometricUnlock(data);
+        if (res.status == 'error') {
+            throw new Error(`生物识别解锁失败: ${res.error}`);
+        }
     }
 
     async function disableBiometric() {

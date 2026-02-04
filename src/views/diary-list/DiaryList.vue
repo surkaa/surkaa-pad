@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import {computed, nextTick, onMounted, onUnmounted, ref, toRaw, watch, type WatchHandle} from "vue";
-import {DiaryManifest} from "../../types";
 import {useAppStore} from "../../stores/app.ts";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
 import {showToast} from "../../utils";
-import {invoke} from "@tauri-apps/api/core";
 import {debounce} from "../../utils";
 import DiaryListHeader from "./DiaryListHeader.vue";
 import DiaryListActionBar from "./DiaryListActionBar.vue";
 import DiaryCard from "./DiaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
+import {commands, DiaryManifest} from "../../bindings.ts";
 
 type OrderBy = 'created' | 'updated';
 
@@ -73,8 +72,12 @@ async function performSearch(term: string) {
 }
 
 function loadLocalDiaries() {
-  invoke<DiaryManifest[]>('list_local_diaries').then(remoteDiaries => {
-    diaries.value = remoteDiaries;
+  commands.listLocalDiaries().then(res => {
+    if (res.status == "error") {
+      showToast('加载本地日记失败: ' + res.error, 'error');
+      return;
+    }
+    diaries.value = res.data;
     // 恢复滚动位置
     if (appStore.savedScrollPosition > 0 && scrollContainer.value) {
       // 使用 nextTick 确保列表渲染完毕
@@ -93,7 +96,12 @@ async function syncFromOss(uuid?: string): Promise<DiaryManifest | null> {
   return new Promise(resolve => {
     if (isSyncing.value) return resolve(null); // 防止重复点击
     isSyncing.value = true;
-    invoke<DiaryManifest | null>('sync_from_oss', {uuid}).then(diary => {
+    commands.syncFromOss(uuid ? uuid : null).then(res => {
+      if (res.status == "error") {
+        showToast('同步失败: ' + res.error, 'error');
+        return resolve(null);
+      }
+      const diary = res.data;
       // 同步完成后重新加载列表
       loadLocalDiaries();
       resolve(diary);

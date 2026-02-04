@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type {AttachmentMeta, DiaryManifest} from "../../types";
 import {formatBytes, formatTimestamp, getCurEmoji} from "../../utils";
+import {AttachmentMeta, DiaryManifest} from "../../bindings.ts";
 
 defineProps<{
   diary: DiaryManifest;
