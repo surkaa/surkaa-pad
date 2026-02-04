@@ -8,9 +8,9 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:msi:dev": "tauri dev",
+    "tauri:msi:dev": "tauri dev --config ./src-tauri/tauri.dev.json",
     "tauri:msi:build": "tauri build",
-    "tauri:android:dev": "tauri android dev",
+    "tauri:android:dev": "tauri android dev --config ./src-tauri/tauri.dev.json",
     "build:android:build": "tauri android build --target aarch64 --apk true --aab true"
   },
   "dependencies": {
