@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 要实现的功能：
 // 渲染内容文本（包括媒体文件）
-import {DiaryManifest, DownloadAttachmentEvent} from "../types";
+import {DiaryManifest, DownloadAttachmentEvent} from "../bindings";
 import {computed, onMounted, onUnmounted, ref, watch} from "vue";
 import {convertFilename2URL} from "../utils";
 import {useAppStore} from "../stores/app.ts";

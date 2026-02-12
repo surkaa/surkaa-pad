@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatTimestamp, getCurEmoji } from "../../utils";
-import {DownloadAttachmentEvent} from "../../types";
+import {DownloadAttachmentEvent} from "../../bindings.ts";
 
 defineProps<{
   contentLen: number;
