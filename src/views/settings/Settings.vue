@@ -94,6 +94,7 @@ import {useRouter} from 'vue-router';
 import {useAppStore} from "../../stores/app.ts";
 import {showToast} from "../../utils";
 import {platform} from "@tauri-apps/plugin-os";
+import { confirm } from '@tauri-apps/plugin-dialog';
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -122,7 +123,7 @@ async function handleBiometricToggle(e: Event) {
     checkbox.checked = false;
   } else {
     // 关闭流程：直接关闭
-    if (confirm('确定要关闭生物识别解锁吗？')) {
+    if (await confirm('确定要关闭生物识别解锁吗？')) {
       await appStore.disableBiometric();
       showToast('生物识别已禁用', 'info');
     } else {
@@ -151,8 +152,8 @@ function cancelBiometric() {
   verifyPassword.value = '';
 }
 
-function handleReset() {
-  if (confirm('确定要重置所有配置吗？此操作不可撤销。')) {
+async function handleReset() {
+  if (await confirm('确定要重置所有配置吗？此操作不可撤销。')) {
     appStore.resetConfig().then(() => {
       showToast('配置已重置', 'success');
       router.replace('/unlock');
