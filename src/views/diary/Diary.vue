@@ -5,7 +5,6 @@ import {showToast} from "../../utils";
 import RichTextEditor from "../../components/RichTextEditor.vue";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import DiaryHeader from "./DiaryHeader.vue";
-import DiaryFooter from "./DiaryFooter.vue";
 import {joinAndCreateLocalRecordingDir} from "../../utils/storage.ts";
 import {commands, DiaryManifest, DownloadAttachmentEvent} from "../../bindings.ts";
 
@@ -36,31 +35,8 @@ const downType = ref<DownloadAttachmentEvent['event'] | null>(null);
 const renderMsg = ref('');
 const isDelBack = ref(false);
 const showAudioDrawer = ref(false);
-
-const statusMsg = computed(() => {
-  if (uploadLoading.value) {
-    return "上传附件中...";
-  }
-  if (saveLoading.value) {
-    return "保存日记中...";
-  }
-  if (renderLoading.value) {
-    return "加载日记中...";
-  }
-  if (delLoading.value) {
-    return "删除日记中...";
-  }
-  return mode.value === 'edit' ? '编辑模式' : renderMsg.value;
-});
 const cursorPosition = ref<number>();
 const lastSavedContent = ref("");
-
-const contentLen = computed(() => {
-  // 去除掉<<tag:filename>>标记、换行、空格后的纯文本长度
-  if (!diary.value.content) return 0;
-  const textOnly = diary.value.content.replace(/<<[A-Z]{3}:[^>]+>>/g, '').replace(/\s+/g, '');
-  return textOnly.length;
-});
 
 function toggleMode() {
   mode.value = (mode.value === 'edit' ? 'view' : 'edit');
@@ -393,14 +369,6 @@ onMounted(async () => {
         />
       </div>
     </section>
-
-    <DiaryFooter
-        :content-len="contentLen"
-        :down-type="downType"
-        :status-msg="statusMsg"
-        :updated="diary.updated"
-        :created="diary.created"
-    />
 
     <capture-audio-drawer
         :visible="showAudioDrawer"
