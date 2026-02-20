@@ -86,6 +86,7 @@ pub struct OssClientInner {
     akid: String,
     sakey: String,
     bucket: String,
+    http_client: reqwest::Client,
 }
 
 #[derive(Clone)]
@@ -101,6 +102,7 @@ impl OssClient {
                 akid,
                 sakey,
                 bucket,
+                http_client: reqwest::Client::new()
             }),
         }
     }
@@ -176,8 +178,7 @@ impl OssClient {
 
         let stream_reader = reqwest::Body::wrap_stream(stream);
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self.inner.http_client
             .put(url)
             .headers(headers)
             .body(stream_reader)
@@ -199,8 +200,7 @@ impl OssClient {
         let len = data.len();
         headers.insert(reqwest::header::CONTENT_LENGTH, len.into());
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self.inner.http_client
             .put(url)
             .headers(headers)
             .body(data.clone())
@@ -219,8 +219,7 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::DELETE, key, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self.inner.http_client
             .delete(url)
             .headers(headers)
             .send()
@@ -234,6 +233,7 @@ impl OssClient {
         }
     }
 
+    // TODO 未来真用上了可以考虑调用 https://help.aliyun.com/zh/oss/developer-reference/deletemultipleobjects 接口
     pub async fn delete_with_prefix(&self, prefix: &str) -> Result<u32, String> {
         // 列出所有匹配的对象
         let mut next_token: Option<String> = None;
@@ -260,8 +260,7 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::HEAD, key, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self.inner.http_client
             .head(url)
             .headers(headers)
             .send()
@@ -326,8 +325,7 @@ impl OssClient {
 
         let headers = self.build_headers(&Method::GET, &sign_path, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self.inner.http_client
             .get(url)
             .headers(headers)
             .send()
@@ -354,8 +352,7 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::GET, key, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self.inner.http_client
             .get(url)
             .headers(headers)
             .send()
@@ -384,8 +381,7 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::GET, key, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self.inner.http_client
             .get(url)
             .headers(headers)
             .send()
