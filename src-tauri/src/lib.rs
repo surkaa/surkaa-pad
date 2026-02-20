@@ -14,7 +14,7 @@ use crate::crypto::command::{
 };
 use crate::crypto::Crypto;
 use crate::diary::command::{
-    cmd_delete_diary, cmd_list_diaries, cmd_save_diary, cmd_update_diary_content_only,
+    cmd_delete_diary, cmd_page_diary_ids, cmd_save_diary, cmd_update_diary_content_only,
 };
 use crate::diary::DiaryMemoryCache;
 use crate::object::command::cmd_init_oss_client;
@@ -40,7 +40,7 @@ pub fn run() {
             cmd_update_diary_content_only,
             cmd_delete_diary,
             // 日记列表操作
-            cmd_list_diaries,
+            cmd_page_diary_ids,
             // 附件相关操作
             cmd_add_attachment,
             cmd_download_attachment,
