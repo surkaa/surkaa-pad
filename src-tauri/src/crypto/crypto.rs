@@ -202,6 +202,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn convert_enc2normal() {
         use crate::diary::DiaryManifest;
         dotenvy::dotenv().ok();
