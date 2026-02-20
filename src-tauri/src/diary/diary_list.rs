@@ -22,31 +22,7 @@ pub(super) async fn get_diary_summary(
     id: String,
 ) -> Result<DiarySummary, String> {
     let diary = diary_get(cache, crypto, client, id).await?;
-    let title = diary
-        .content
-        .lines()
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let mut attachment_map = std::collections::HashMap::new();
-    for att in diary.attachments {
-        for prefix in ["IMG", "AUD", "VID"] {
-            let mark = format!("<<{}:{}>>", prefix, att.filename);
-            if diary.content.contains(&mark) {
-                attachment_map.insert(prefix.to_string(), att.clone());
-                break;
-            }
-        }
-    }
-
-    Ok(DiarySummary {
-        id: diary.id,
-        created: diary.created,
-        updated: diary.updated,
-        title,
-        attachment_map,
-    })
+    Ok(DiarySummary::from_manifest(diary))
 }
 
 pub(super) async fn get_diary_content(

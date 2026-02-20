@@ -30,6 +30,36 @@ pub struct DiarySummary {
     pub attachment_map: HashMap<String, AttachmentMeta>,
 }
 
+impl DiarySummary {
+    pub fn from_manifest(manifest: DiaryManifest) -> Self {
+        let title = manifest
+            .content
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let mut attachment_map = HashMap::new();
+        for att in manifest.attachments {
+            for prefix in ["IMG", "AUD", "VID"] {
+                let mark = format!("<<{}:{}>>", prefix, att.filename);
+                if manifest.content.contains(&mark) {
+                    attachment_map.insert(prefix.to_string(), att.clone());
+                    break;
+                }
+            }
+        }
+
+        Self {
+            id: manifest.id,
+            created: manifest.created,
+            updated: manifest.updated,
+            title,
+            attachment_map,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Type)]
 #[serde(
     rename_all = "camelCase",
