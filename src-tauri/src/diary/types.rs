@@ -29,3 +29,16 @@ pub struct DiarySummary {
     /// 附件Map，key：IMG、AUD、VID，value：AttachmentMeta
     pub attachment_map: HashMap<String, AttachmentMeta>,
 }
+
+#[derive(Clone, Serialize, Type)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "event",
+    content = "data"
+)]
+pub enum SearchDiariesEvent {
+    Match(DiarySummary),
+    Unmatch(String),
+    Error(String),
+}

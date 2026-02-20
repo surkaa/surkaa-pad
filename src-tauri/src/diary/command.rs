@@ -1,11 +1,15 @@
+use std::sync::Arc;
+use tauri::ipc::Channel;
 use crate::crypto::Crypto;
 use crate::object::{NextToken, OssState};
 
 use crate::diary::diary::{delete_diary, save_diary, update_diary_content_only};
 use crate::diary::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
-use crate::diary::types::DiarySummary;
+use crate::diary::types::{DiarySummary, SearchDiariesEvent};
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use tauri::State;
+use crate::diary::diary_search::search_diaries;
+use crate::task::TaskPool;
 
 /// 根据内容保存日记
 /// # Arguments
@@ -101,4 +105,34 @@ pub async fn cmd_get_diary_content(
 ) -> Result<String, String> {
     let client = client.get_client()?;
     get_diary_content(&cache, &crypto, &client, uuid).await
+}
+
+/// 搜索日记
+/// # Arguments
+/// * `keyword` - 搜索关键词，可通过空格分隔多个关键词
+/// # Returns
+/// * `Result<String, String>` - 成功时返回搜索任务token，可用于取消搜索任务，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_search_diaries(
+    cache: State<'_, DiaryMemoryCache>,
+    crypto: State<'_, Crypto>,
+    client: State<'_, OssState>,
+    tp: State<'_, TaskPool>,
+    event: Channel<SearchDiariesEvent>,
+    keyword: String,
+) -> Result<String, String> {
+    let cache = cache.inner().clone();
+    let crypto = crypto.inner().clone();
+    let client = client.get_client()?;
+    let event = event.clone();
+    tp.spawn(async move {
+        search_diaries(
+            &cache,
+            &crypto,
+            &client,
+            Arc::new(event),
+            keyword,
+        ).await;
+    })
 }
