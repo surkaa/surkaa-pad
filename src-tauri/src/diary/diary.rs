@@ -60,7 +60,7 @@ pub async fn diary_get(
     crypto: &Crypto,
     client: &OssClient,
     id: String,
-) -> Result<(DiaryManifest, Vec<u8>), String> {
+) -> Result<DiaryManifest, String> {
     let object_key = remote_manifest_key(&id);
     let encrypted_data = client
         .download_bytes(&object_key)
@@ -72,7 +72,7 @@ pub async fn diary_get(
     // 反序列化 JSON
     let manifest = from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
 
-    Ok((manifest, encrypted_data))
+    Ok(manifest)
 }
 
 /// 删除日记及其所有附件
@@ -118,7 +118,7 @@ pub async fn update_diary_content_only(
 ) -> Result<DiaryManifest, String> {
     let client = client.get_client()?;
     // 先获取现有的 manifest
-    let (mut manifest, _) = diary_get(crypto.deref(), &client, uuid.clone()).await?;
+    let mut manifest = diary_get(crypto.deref(), &client, uuid.clone()).await?;
 
     // 更新内容和更新时间
     manifest.content = new_content.to_string();

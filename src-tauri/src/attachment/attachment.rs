@@ -58,7 +58,7 @@ pub async fn add_attachment(
     };
 
     // 更新 manifest，添加附件元数据
-    let (mut manifest, _) = diary_get(crypto.deref(), &client, uuid.clone()).await?;
+    let mut manifest = diary_get(crypto.deref(), &client, uuid.clone()).await?;
     manifest.attachments.push(attachment);
     manifest.updated = Utc::now().timestamp_millis();
 
@@ -217,7 +217,7 @@ pub async fn delete_attachment(
 ) -> Result<DiaryManifest, String> {
     let client = client.get_client()?;
     // 更新 manifest，移除附件元数据
-    let (mut manifest, _) = diary_get(crypto.deref(), &client, uuid.clone()).await?;
+    let mut manifest = diary_get(crypto.deref(), &client, uuid.clone()).await?;
     manifest.attachments.retain(|att| att.filename != file_name);
     manifest.updated = Utc::now().timestamp_millis();
 
