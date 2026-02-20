@@ -1,7 +1,7 @@
 use crate::attachment::types::DownloadAttachmentEvent;
 use crate::attachment::AttachmentMeta;
 use crate::crypto::Crypto;
-use crate::diary::{diary_get, DiaryManifest};
+use crate::diary::{diary_get, DiaryManifest, DiaryMemoryCache};
 use crate::object::{OssClient, OssState};
 use crate::storage::{
     local_attachment_path, remote_attachments_key, remote_manifest_key, PathGetter,
@@ -20,6 +20,7 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 pub(super) async fn add_attachment(
+    cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
     uuid: String,
@@ -49,7 +50,7 @@ pub(super) async fn add_attachment(
     };
 
     // 更新 manifest，添加附件元数据
-    let mut manifest = diary_get(crypto, client, uuid.clone()).await?;
+    let mut manifest = diary_get(cache, crypto, client, uuid.clone()).await?;
     manifest.attachments.push(attachment);
     manifest.updated = Utc::now().timestamp_millis();
 
@@ -158,13 +159,14 @@ pub(super) async fn download_attachment(
 }
 
 pub(super) async fn delete_attachment(
+    cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
     uuid: String,
     file_name: String,
 ) -> Result<DiaryManifest, String> {
     // 更新 manifest，移除附件元数据
-    let mut manifest = diary_get(crypto, client, uuid.clone()).await?;
+    let mut manifest = diary_get(cache, crypto, client, uuid.clone()).await?;
     manifest.attachments.retain(|att| att.filename != file_name);
     manifest.updated = Utc::now().timestamp_millis();
 

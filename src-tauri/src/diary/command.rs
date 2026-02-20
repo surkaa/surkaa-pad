@@ -2,8 +2,9 @@ use crate::crypto::Crypto;
 use crate::object::{NextToken, OssState};
 
 use crate::diary::diary::{delete_diary, save_diary, update_diary_content_only};
-use crate::diary::diary_list::page_diary_ids;
-use crate::diary::DiaryManifest;
+use crate::diary::diary_list::{get_diary_summary, page_diary_ids};
+use crate::diary::types::DiarySummary;
+use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use tauri::State;
 
 /// 根据内容保存日记
@@ -43,13 +44,14 @@ pub async fn cmd_delete_diary(client: State<'_, OssState>, uuid: String) -> Resu
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_update_diary_content_only(
+    cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     uuid: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
     let client = client.get_client()?;
-    update_diary_content_only(&crypto, &client, uuid, new_content).await
+    update_diary_content_only(&cache, &crypto, &client, uuid, new_content).await
 }
 
 /// 分页列出diary主键列表
@@ -60,9 +62,26 @@ pub async fn cmd_update_diary_content_only(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_page_diary_ids(
-    client: tauri::State<'_, OssState>,
+    client: State<'_, OssState>,
     next_token: NextToken,
 ) -> Result<(Vec<String>, NextToken), String> {
     let client = client.get_client()?;
     page_diary_ids(&client, next_token).await
+}
+
+/// 获取日记Summary
+/// # Arguments
+/// * `uuid` - 日记 UUID
+/// # Returns
+/// * `Result<DiarySummary, String>` - 成功时返回日记 Summary，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_get_diary_summary(
+    cache: State<'_, DiaryMemoryCache>,
+    crypto: State<'_, Crypto>,
+    client: State<'_, OssState>,
+    uuid: String,
+) -> Result<DiarySummary, String> {
+    let client = client.get_client()?;
+    get_diary_summary(&cache, &crypto, &client, uuid).await
 }

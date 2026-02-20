@@ -1,7 +1,7 @@
 use crate::attachment::attachment::{add_attachment, delete_attachment, download_attachment};
 use crate::attachment::types::DownloadAttachmentEvent;
 use crate::crypto::Crypto;
-use crate::diary::DiaryManifest;
+use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use crate::object::OssState;
 use crate::task::TaskPool;
 use std::ops::Deref;
@@ -19,6 +19,7 @@ use tauri::{AppHandle, State};
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_add_attachment(
+    cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     uuid: String,
@@ -26,7 +27,7 @@ pub async fn cmd_add_attachment(
     mimetype: String,
 ) -> Result<DiaryManifest, String> {
     let client = client.get_client()?;
-    add_attachment(crypto.deref(), &client, uuid, access_str, mimetype).await
+    add_attachment(&cache, crypto.deref(), &client, uuid, access_str, mimetype).await
 }
 
 /// 下载日记附件
@@ -73,11 +74,12 @@ pub fn cmd_download_attachment(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_delete_attachment(
+    cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     uuid: String,
     file_name: String,
 ) -> Result<DiaryManifest, String> {
     let client = client.get_client()?;
-    delete_attachment(crypto.deref(), &client, uuid, file_name).await
+    delete_attachment(&cache, crypto.deref(), &client, uuid, file_name).await
 }

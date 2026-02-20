@@ -2,10 +2,9 @@ use crate::crypto::Crypto;
 use crate::object::OssClient;
 use crate::storage::remote_manifest_key;
 
-use crate::diary::DiaryManifest;
+use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use chrono::Utc;
 use serde_json::from_slice;
-use std::ops::Deref;
 use uuid::Uuid;
 
 /// 根据内容保存日记
@@ -54,11 +53,19 @@ pub(super) async fn save_diary(
 
 /// 获取并解密指定 ID 的日记 manifest
 pub async fn diary_get(
+    cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
     id: String,
 ) -> Result<DiaryManifest, String> {
     let object_key = remote_manifest_key(&id);
+    if let Some(diary) = cache.get(&id) {
+        // 如果本地有，则先检查和远程的元数据（修改时间和ETag）是否一致，如果不一致则说明远程有更新，需要重新下载
+        let metadata = client.get_metadata(&object_key).await?;
+        if diary.updated == metadata.last_modified().timestamp_millis() {
+            return Ok(diary.clone());
+        }
+    }
     let encrypted_data = client
         .download_bytes(&object_key)
         .await
@@ -67,7 +74,10 @@ pub async fn diary_get(
     let manifest_bytes = crypto.decrypt_from_full_ciphertext(&encrypted_data)?;
 
     // 反序列化 JSON
-    let manifest = from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
+    let manifest: DiaryManifest = from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
+
+    // 更新缓存
+    cache.insert(&id, manifest.clone());
 
     Ok(manifest)
 }
@@ -104,13 +114,14 @@ pub(super) async fn delete_diary(client: &OssClient, uuid: String) -> Result<(),
 #[tauri::command]
 #[specta::specta]
 pub(super) async fn update_diary_content_only(
+    cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
     uuid: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
     // 先获取现有的 manifest
-    let mut manifest = diary_get(crypto, client, uuid.clone()).await?;
+    let mut manifest = diary_get(cache, crypto, client, uuid.clone()).await?;
 
     // 更新内容和更新时间
     manifest.content = new_content.to_string();

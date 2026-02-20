@@ -32,6 +32,10 @@ impl ObjectMetadata {
     pub fn etag(&self) -> &str {
         &self.etag
     }
+    
+    pub fn last_modified(&self) -> chrono::DateTime<Utc> {
+        self.last_modified
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
