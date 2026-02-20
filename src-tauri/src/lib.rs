@@ -10,7 +10,7 @@ use crate::attachment::DownloadAttachmentEvent;
 use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
 use crate::diary::DiaryManifest;
 use crate::diary::DiaryMemoryCache;
-use crate::diary::{diary_create, diary_delete, diary_sync, diary_update_diary_content_only};
+use crate::diary::{diary_create, diary_delete, diary_sync, diary_update_content_only};
 use crate::object::OssState;
 use crate::storage::{local_attachment_dir, local_recording_dir};
 use crate::task::TaskPool;
@@ -191,7 +191,7 @@ async fn update_diary_content_only(
     uuid: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
-    diary_update_diary_content_only(crypto.deref(), client.get_client()?, uuid, new_content).await
+    diary_update_content_only(crypto.deref(), client.get_client()?, uuid, new_content).await
 }
 
 /// 删除日记
