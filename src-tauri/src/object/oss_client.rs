@@ -12,6 +12,7 @@ use std::sync::Arc;
 use crate::object::types::ByteStream;
 use tauri::http::header::{CONTENT_TYPE, DATE};
 use tauri::http::{HeaderMap, HeaderValue, Method};
+use crate::object::NextToken;
 
 const STREAM_MINE_TYPE: &str = "application/octet-stream";
 
@@ -302,8 +303,8 @@ impl OssClient {
     pub async fn list(
         &self,
         prefix: &str,
-        next_token: Option<String>,
-    ) -> Result<(Vec<ObjectMetadata>, Option<String>), String> {
+        next_token: NextToken,
+    ) -> Result<(Vec<ObjectMetadata>, NextToken), String> {
         // 构造基础查询参数
         let mut query_params = format!("list-type=2&prefix={}&max-keys=1000", prefix);
 

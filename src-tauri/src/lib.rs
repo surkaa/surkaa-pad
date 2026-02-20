@@ -8,8 +8,9 @@ mod utils;
 
 use crate::attachment::{add_attachment, delete_attachment, download_attachment};
 use crate::crypto::{biometric_unlock, decrypt_data, encrypt_data, unlock, Crypto};
-use crate::diary::DiaryMemoryCache;
-use crate::diary::{delete_diary, save_diary, update_diary_content_only};
+use crate::diary::{
+    delete_diary, list_diaries, save_diary, update_diary_content_only, DiaryMemoryCache,
+};
 use crate::object::{init_oss_client, OssState};
 use crate::storage::{local_attachment_dir, local_recording_dir};
 use crate::task::{cancel_task, TaskPool};
@@ -19,18 +20,25 @@ use tauri::Manager;
 pub fn run() {
     let builder =
         tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
+            // 解锁与加密解密
             unlock,
             encrypt_data,
             decrypt_data,
+            biometric_unlock,
+            // 客户端初始化
             init_oss_client,
+            // 日记基本操作
             save_diary,
             update_diary_content_only,
             delete_diary,
+            // 日记列表操作
+            list_diaries,
+            // 附件相关操作
             add_attachment,
             download_attachment,
-            cancel_task,
             delete_attachment,
-            biometric_unlock
+            // 其他
+            cancel_task,
         ]);
 
     #[cfg(debug_assertions)]
