@@ -48,3 +48,13 @@ pub(super) async fn get_diary_summary(
         attachment_map,
     })
 }
+
+pub(super) async fn get_diary_content(
+    cache: &DiaryMemoryCache,
+    crypto: &Crypto,
+    client: &OssClient,
+    id: String,
+) -> Result<String, String> {
+    let diary = diary_get(cache, crypto, client, id).await?;
+    Ok(diary.content)
+}
