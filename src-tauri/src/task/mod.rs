@@ -1,3 +1,4 @@
 mod task;
+pub mod command;
 
-pub use task::{cmd_cancel_task, TaskPool};
+pub use task::TaskPool;

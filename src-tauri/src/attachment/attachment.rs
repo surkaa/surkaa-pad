@@ -1,5 +1,5 @@
-use std::ops::Deref;
-use crate::attachment::{AttachmentMeta, DownloadAttachmentEvent};
+use crate::attachment::types::DownloadAttachmentEvent;
+use crate::attachment::AttachmentMeta;
 use crate::crypto::Crypto;
 use crate::diary::{diary_get, DiaryManifest};
 use crate::object::{OssClient, OssState};
@@ -10,6 +10,7 @@ use crate::task::TaskPool;
 use crate::utils::open_file_stream;
 use chrono::Utc;
 use futures::StreamExt;
+use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
@@ -18,23 +19,13 @@ use tokio::fs::{create_dir_all, File};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-/// 给日记添加附件
-/// # Arguments
-/// * `uuid` - 日记 UUID
-/// * `access_str` - 文件访问路径。
-/// * `mimetype` - 附件 MIME 类型
-/// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-pub async fn cmd_add_attachment(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+pub(super) async fn add_attachment(
+    crypto: &Crypto,
+    client: &OssClient,
     uuid: String,
     access_str: String,
     mimetype: String,
 ) -> Result<DiaryManifest, String> {
-    let client = client.get_client()?;
     // 获取临时文件的完整路径
     let (len, mut stream) = open_file_stream(&access_str)?;
 
@@ -58,7 +49,7 @@ pub async fn cmd_add_attachment(
     };
 
     // 更新 manifest，添加附件元数据
-    let mut manifest = diary_get(crypto.deref(), &client, uuid.clone()).await?;
+    let mut manifest = diary_get(crypto, client, uuid.clone()).await?;
     manifest.attachments.push(attachment);
     manifest.updated = Utc::now().timestamp_millis();
 
@@ -85,42 +76,7 @@ pub async fn cmd_add_attachment(
     Ok(manifest)
 }
 
-/// 下载日记附件
-/// # Arguments
-/// * `uuid` - 日记 UUID
-/// * `filename` - 附件 ID
-/// * `nonce` - 解密iv
-/// # Returns
-/// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-pub fn cmd_download_attachment(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    tp: State<'_, TaskPool>,
-    app_handle: AppHandle,
-    on_event: Channel<DownloadAttachmentEvent>,
-    uuid: String,
-    filename: String,
-    nonce: Vec<u8>,
-) -> Result<String, String> {
-    let crypto = crypto.inner().clone();
-    let client = client.get_client()?;
-    tp.spawn(async move {
-        download_attachment_inner(
-            crypto,
-            client,
-            &app_handle,
-            Arc::new(on_event),
-            uuid,
-            filename,
-            nonce,
-        )
-        .await;
-    })
-}
-
-async fn download_attachment_inner(
+pub(super) async fn download_attachment(
     crypto: Crypto,
     client: OssClient,
     pg: &impl PathGetter,
@@ -201,23 +157,14 @@ async fn download_attachment_inner(
     }
 }
 
-/// 删除日记的附件
-/// # Arguments
-/// * `uuid` - 日记 UUID
-/// * `filename` - 附件 ID
-/// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-pub async fn cmd_delete_attachment(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+pub(super) async fn delete_attachment(
+    crypto: &Crypto,
+    client: &OssClient,
     uuid: String,
     file_name: String,
 ) -> Result<DiaryManifest, String> {
-    let client = client.get_client()?;
     // 更新 manifest，移除附件元数据
-    let mut manifest = diary_get(crypto.deref(), &client, uuid.clone()).await?;
+    let mut manifest = diary_get(crypto, client, uuid.clone()).await?;
     manifest.attachments.retain(|att| att.filename != file_name);
     manifest.updated = Utc::now().timestamp_millis();
 

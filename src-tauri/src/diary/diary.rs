@@ -1,14 +1,12 @@
 use crate::crypto::Crypto;
-use crate::object::{OssClient, OssState};
+use crate::object::OssClient;
 use crate::storage::remote_manifest_key;
 
 use crate::diary::DiaryManifest;
 use chrono::Utc;
 use serde_json::from_slice;
 use std::ops::Deref;
-use tauri::State;
 use uuid::Uuid;
-
 
 /// 根据内容保存日记
 /// # Arguments
@@ -17,12 +15,11 @@ use uuid::Uuid;
 /// * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_save_diary(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+pub(super) async fn save_diary(
+    crypto: &Crypto,
+    client: &OssClient,
     content: &str,
 ) -> Result<DiaryManifest, String> {
-    let client = client.get_client()?;
     let id = Uuid::new_v4().to_string();
     // 创建一个简单的 manifest
     let manifest = DiaryManifest {
@@ -82,11 +79,7 @@ pub async fn diary_get(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_delete_diary(
-    client: State<'_, OssState>,
-    uuid: String
-) -> Result<(), String> {
-    let client = client.get_client()?;
+pub(super) async fn delete_diary(client: &OssClient, uuid: String) -> Result<(), String> {
     let (objects, _) = client
         .list(&format!("{}/", uuid), None)
         .await
@@ -110,15 +103,14 @@ pub async fn cmd_delete_diary(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_update_diary_content_only(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+pub(super) async fn update_diary_content_only(
+    crypto: &Crypto,
+    client: &OssClient,
     uuid: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
-    let client = client.get_client()?;
     // 先获取现有的 manifest
-    let mut manifest = diary_get(crypto.deref(), &client, uuid.clone()).await?;
+    let mut manifest = diary_get(crypto, client, uuid.clone()).await?;
 
     // 更新内容和更新时间
     manifest.content = new_content.to_string();
