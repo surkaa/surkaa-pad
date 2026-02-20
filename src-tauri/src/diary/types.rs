@@ -16,6 +16,12 @@ pub struct DiaryManifest {
     pub attachments: Vec<AttachmentMeta>, // 附件列表
 }
 
+impl DiaryManifest {
+    pub fn contains(&self, keyword: &str) -> bool {
+        self.content.to_lowercase().contains(&keyword.to_lowercase())
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DiarySummary {
@@ -70,5 +76,6 @@ impl DiarySummary {
 pub enum SearchDiariesEvent {
     Match(DiarySummary),
     Unmatch(String),
+    Finished,
     Error(String),
 }
