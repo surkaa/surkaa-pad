@@ -6,5 +6,5 @@ pub use memory_cache::DiaryMemoryCache;
 pub use types::DiaryManifest;
 
 pub use diary::{
-    diary_create, diary_delete, diary_get, diary_update_content_only,
+    save_diary, delete_diary, diary_get, update_diary_content_only,
 };

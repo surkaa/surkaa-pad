@@ -10,8 +10,8 @@ use crate::attachment::DownloadAttachmentEvent;
 use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
 use crate::diary::DiaryManifest;
 use crate::diary::DiaryMemoryCache;
-use crate::diary::{diary_create, diary_delete, diary_update_content_only};
-use crate::object::{NextToken, OssState};
+use crate::diary::{delete_diary, save_diary, update_diary_content_only};
+use crate::object::OssState;
 use crate::storage::{local_attachment_dir, local_recording_dir};
 use crate::task::TaskPool;
 use crate::utils::open_file_stream;
@@ -104,75 +104,6 @@ async fn init_oss_client(
         .initialize(akid, aks, endpoint, bucket)
         .await
         .map_err(|e| e.to_string())
-}
-
-//------------
-// 日记查询与同步
-//------------
-/// 根据日记内容搜索日记
-/// # Arguments
-/// * `keyword` - 搜索关键词
-/// # Returns
-/// * `Result<Vec<DiaryManifest>, String>` - 成功时返回匹配的日记列表，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-async fn search_diaries(
-    cache: State<'_, DiaryMemoryCache>,
-    keyword: &str,
-) -> Result<Vec<String>, String> {
-    let diaries = cache.list();
-    let results: Vec<DiaryManifest> = diaries
-        .into_iter()
-        .filter(|diary| diary.content.contains(keyword))
-        .collect();
-    Ok(results.into_iter().map(|diary| diary.id).collect())
-}
-
-//------------
-// 日记操作相关
-//------------
-
-/// 根据内容保存日记
-/// # Arguments
-/// * `content` - 日记内容
-/// # Returns
-/// * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-async fn save_diary(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    content: &str,
-) -> Result<DiaryManifest, String> {
-    diary_create(crypto.deref(), &client.get_client()?, content).await
-}
-
-/// 更新日记的内容
-/// # Arguments
-/// * `uuid` - 日记 UUID
-/// * `new_content` - 新的日记内容
-/// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-async fn update_diary_content_only(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    uuid: String,
-    new_content: &str,
-) -> Result<DiaryManifest, String> {
-    diary_update_content_only(crypto.deref(), &client.get_client()?, uuid, new_content).await
-}
-
-/// 删除日记
-/// # Arguments
-/// * `uuid` - 日记 UUID
-/// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-async fn delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), String> {
-    diary_delete(&client.get_client()?, uuid).await
 }
 
 //------------
@@ -280,7 +211,6 @@ pub fn run() {
             encrypt_data,
             decrypt_data,
             init_oss_client,
-            search_diaries,
             save_diary,
             update_diary_content_only,
             delete_diary,
