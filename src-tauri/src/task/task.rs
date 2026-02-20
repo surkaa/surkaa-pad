@@ -72,6 +72,6 @@ impl TaskPool {
 /// * `Result<bool, String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub fn cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, String> {
+pub fn cmd_cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, String> {
     tp.cancel(cancel_token)
 }

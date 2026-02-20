@@ -27,7 +27,7 @@ use uuid::Uuid;
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn add_attachment(
+pub async fn cmd_add_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     uuid: String,
@@ -94,7 +94,7 @@ pub async fn add_attachment(
 /// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub fn download_attachment(
+pub fn cmd_download_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
@@ -209,7 +209,7 @@ async fn download_attachment_inner(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_attachment(
+pub async fn cmd_delete_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     uuid: String,

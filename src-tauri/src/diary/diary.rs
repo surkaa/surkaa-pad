@@ -17,7 +17,7 @@ use uuid::Uuid;
 /// * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn save_diary(
+pub async fn cmd_save_diary(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     content: &str,
@@ -82,7 +82,7 @@ pub async fn diary_get(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_diary(
+pub async fn cmd_delete_diary(
     client: State<'_, OssState>,
     uuid: String
 ) -> Result<(), String> {
@@ -110,7 +110,7 @@ pub async fn delete_diary(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn update_diary_content_only(
+pub async fn cmd_update_diary_content_only(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     uuid: String,

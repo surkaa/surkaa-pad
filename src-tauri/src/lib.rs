@@ -6,14 +6,14 @@ mod storage;
 mod task;
 mod utils;
 
-use crate::attachment::{add_attachment, delete_attachment, download_attachment};
-use crate::crypto::{biometric_unlock, decrypt_data, encrypt_data, unlock, Crypto};
+use crate::attachment::{cmd_add_attachment, cmd_delete_attachment, cmd_download_attachment};
+use crate::crypto::{cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock, Crypto};
 use crate::diary::{
-    delete_diary, list_diaries, save_diary, update_diary_content_only, DiaryMemoryCache,
+    cmd_delete_diary, cmd_list_diaries, cmd_save_diary, cmd_update_diary_content_only, DiaryMemoryCache,
 };
-use crate::object::{init_oss_client, OssState};
+use crate::object::{cmd_init_oss_client, OssState};
 use crate::storage::{local_attachment_dir, local_recording_dir};
-use crate::task::{cancel_task, TaskPool};
+use crate::task::{cmd_cancel_task, TaskPool};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,24 +21,24 @@ pub fn run() {
     let builder =
         tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
             // 解锁与加密解密
-            unlock,
-            encrypt_data,
-            decrypt_data,
-            biometric_unlock,
+            cmd_unlock,
+            cmd_encrypt_data,
+            cmd_decrypt_data,
+            cmd_biometric_unlock,
             // 客户端初始化
-            init_oss_client,
+            cmd_init_oss_client,
             // 日记基本操作
-            save_diary,
-            update_diary_content_only,
-            delete_diary,
+            cmd_save_diary,
+            cmd_update_diary_content_only,
+            cmd_delete_diary,
             // 日记列表操作
-            list_diaries,
+            cmd_list_diaries,
             // 附件相关操作
-            add_attachment,
-            download_attachment,
-            delete_attachment,
+            cmd_add_attachment,
+            cmd_download_attachment,
+            cmd_delete_attachment,
             // 其他
-            cancel_task,
+            cmd_cancel_task,
         ]);
 
     #[cfg(debug_assertions)]

@@ -7,7 +7,7 @@ use crate::object::{NextToken, OssState};
 /// * `Vec<String>` - diary主键列表
 #[tauri::command]
 #[specta::specta]
-pub async fn list_diaries(
+pub async fn cmd_list_diaries(
     client: tauri::State<'_, OssState>,
     next_token: NextToken,
 ) -> Result<(Vec<String>, NextToken), String> {

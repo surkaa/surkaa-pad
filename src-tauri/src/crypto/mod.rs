@@ -2,4 +2,4 @@ mod crypto;
 mod command;
 
 pub use crypto::Crypto;
-pub use command::{unlock, biometric_unlock, decrypt_data, encrypt_data};
+pub use command::{cmd_unlock, cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data};

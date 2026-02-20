@@ -9,7 +9,7 @@ use crate::crypto::Crypto;
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn unlock(
+pub async fn cmd_unlock(
     crypto: State<'_, Crypto>,
     master_password: String,
     salt: String,
@@ -24,7 +24,7 @@ pub async fn unlock(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn biometric_unlock(crypto: State<'_, Crypto>, dek: String) -> Result<(), String> {
+pub async fn cmd_biometric_unlock(crypto: State<'_, Crypto>, dek: String) -> Result<(), String> {
     crypto.init_by_dek_string(dek)
 }
 
@@ -35,7 +35,7 @@ pub async fn biometric_unlock(crypto: State<'_, Crypto>, dek: String) -> Result<
 /// * `Result<(Vec<u8>, Vec<u8>), String>` - 成功时返回 (密文, nonce)，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn encrypt_data(
+pub async fn cmd_encrypt_data(
     crypto: State<'_, Crypto>,
     data: String,
 ) -> Result<(Vec<u8>, Vec<u8>), String> {
@@ -50,7 +50,7 @@ pub async fn encrypt_data(
 /// * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn decrypt_data(
+pub async fn cmd_decrypt_data(
     crypto: State<'_, Crypto>,
     ciphertext: Vec<u8>,
     nonce: Vec<u8>,

@@ -43,7 +43,7 @@ impl OssState {
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn init_oss_client(
+pub async fn cmd_init_oss_client(
     client_state: State<'_, OssState>,
     akid: String,
     aks: String,

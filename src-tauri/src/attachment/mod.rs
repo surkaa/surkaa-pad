@@ -2,4 +2,4 @@ mod types;
 mod attachment;
 
 pub use types::{AttachmentMeta, DownloadAttachmentEvent};
-pub use attachment::{add_attachment, download_attachment, delete_attachment};
+pub use attachment::{cmd_add_attachment, cmd_download_attachment, cmd_delete_attachment};
