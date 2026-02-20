@@ -1,68 +1,15 @@
 use crate::crypto::Crypto;
-use crate::object::{ObjectMetadata, OssClient};
+use crate::object::{ObjectMetadata, OssClient, OssState};
 use crate::storage::{is_remote_manifest_key, remote_manifest_key};
 
 use chrono::Utc;
 use serde_json::from_slice;
 use std::collections::HashMap;
+use tauri::State;
 use tauri_plugin_log::log;
 use uuid::Uuid;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
 
-/// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
-pub async fn diary_sync(
-    dc: &DiaryMemoryCache,
-    crypto: &Crypto,
-    client: &OssClient,
-    uuid: Option<String>,
-) -> Result<Option<DiaryManifest>, String> {
-    let (objects, _) = client
-        .list(
-            &match &uuid {
-                Some(id) => remote_manifest_key(id),
-                None => "".to_string(),
-            },
-            None,
-        )
-        .await?;
-    // 去掉末尾的斜杠和文件名，只保留日记 ID
-    let mut unique_objets: HashMap<String, ObjectMetadata> = HashMap::new();
-    for object in objects {
-        // 去掉末尾不是以manifest.enc结尾的
-        if !is_remote_manifest_key(&object.key()) {
-            continue;
-        }
-        if let Some(pos) = object.key().find('/') {
-            // 提取日记 ID（使用切片）
-            let diary_id = &object.key()[..pos];
-            // 插入到 HashMap，确保唯一性
-            unique_objets.entry(diary_id.to_string()).or_insert(object);
-        }
-    }
-    // 获取远程列表
-    let remote_diaries_map: HashMap<String, String> = unique_objets
-        .iter()
-        .map(|(uuid, diary)| (uuid.clone(), diary.etag().to_string()))
-        .collect();
-    log::info!(
-        "远程日记列表获取成功，共 {} 条日记",
-        remote_diaries_map.len()
-    );
-    // 对比本地和远程的 UUID 和 ETag
-    for (uuid, _remote_etag) in remote_diaries_map.iter() {
-        // 下载和解密日记Manifest
-        let (manifest, _) = diary_get(&crypto, client, uuid.to_string()).await?;
-        // 更新内存缓存
-        dc.insert(uuid, manifest);
-    }
-
-    // 返回指定 UUID 的 Manifest（如果有的话）
-    if let Some(filter_uuid) = uuid {
-        Ok(dc.get(&filter_uuid))
-    } else {
-        Ok(None)
-    }
-}
 
 /// 根据内容创建新的日记并存储到云端
 pub async fn diary_create(

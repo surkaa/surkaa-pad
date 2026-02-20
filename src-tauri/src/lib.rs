@@ -10,8 +10,8 @@ use crate::attachment::DownloadAttachmentEvent;
 use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
 use crate::diary::DiaryManifest;
 use crate::diary::DiaryMemoryCache;
-use crate::diary::{diary_create, diary_delete, diary_sync, diary_update_content_only};
-use crate::object::OssState;
+use crate::diary::{diary_create, diary_delete, diary_update_content_only};
+use crate::object::{NextToken, OssState};
 use crate::storage::{local_attachment_dir, local_recording_dir};
 use crate::task::TaskPool;
 use crate::utils::open_file_stream;
@@ -109,36 +109,6 @@ async fn init_oss_client(
 //------------
 // 日记查询与同步
 //------------
-
-/// 列出本地缓存的日记列表
-/// # Arguments
-/// 无需手动传参数
-/// # Returns
-/// * `Result<Vec<DiaryManifest>, String>` - 成功时返回日记列表，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-async fn list_local_diaries(
-    cache: State<'_, DiaryMemoryCache>,
-) -> Result<Vec<DiaryManifest>, String> {
-    Ok(cache.list())
-}
-
-/// 从 OSS 同步日记到本地缓存
-/// # Arguments
-/// * `uuid` - 可选的日记 UUID，若提供则只同步该日记，否则同步所有日记
-/// # Returns
-/// * `Result<Option<DiaryManifest>, String>` - 如果传入了 UUID，成功时返回该日记的清单，否则返回 None；失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-async fn sync_from_oss(
-    cache: State<'_, DiaryMemoryCache>,
-    em: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    uuid: Option<String>,
-) -> Result<Option<DiaryManifest>, String> {
-    diary_sync(cache.deref(), em.deref(), &client.get_client()?, uuid).await
-}
-
 /// 根据日记内容搜索日记
 /// # Arguments
 /// * `keyword` - 搜索关键词
@@ -310,8 +280,6 @@ pub fn run() {
             encrypt_data,
             decrypt_data,
             init_oss_client,
-            list_local_diaries,
-            sync_from_oss,
             search_diaries,
             save_diary,
             update_diary_content_only,

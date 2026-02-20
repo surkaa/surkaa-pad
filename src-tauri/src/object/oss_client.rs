@@ -1,4 +1,3 @@
-
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use bytes::Bytes;
@@ -8,45 +7,14 @@ use futures_util::TryStreamExt;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
-use std::sync::{Arc, OnceLock};
-use std::{io::Error, pin::Pin};
+use std::io::Error;
+use std::sync::Arc;
 
+use crate::object::types::ByteStream;
 use tauri::http::header::{CONTENT_TYPE, DATE};
 use tauri::http::{HeaderMap, HeaderValue, Method};
 
 const STREAM_MINE_TYPE: &str = "application/octet-stream";
-
-pub struct OssState(OnceLock<OssClient>);
-
-impl OssState {
-    pub fn new() -> Self {
-        Self(OnceLock::new())
-    }
-
-    pub async fn initialize(
-        &self,
-        akid: String,
-        sakey: String,
-        endpoint: String,
-        bucket: String,
-    ) -> Result<(), String> {
-        // 创建 OssClient
-        let client = OssClient::new(endpoint, akid, sakey, bucket);
-        // 测试 client 是否可用
-        let _ = client.list("", None).await?;
-        // 存储 client
-        self.0
-            .set(client)
-            .map_err(|_| String::from("OssClient 已初始化"))?;
-        Ok(())
-    }
-
-    pub fn get_client(&self) -> Result<OssClient, String> {
-        self.0.get().cloned().ok_or(String::from("OssClient 未初始化"))
-    }
-}
-
-pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>>;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ObjectMetadata {
@@ -129,7 +97,7 @@ impl OssClient {
                 akid,
                 sakey,
                 bucket,
-            })
+            }),
         }
     }
 
