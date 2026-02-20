@@ -12,6 +12,7 @@ pub(super) async fn search_diaries(
     client: &OssClient,
     event: Arc<dyn MessageSender<SearchDiariesEvent>>,
     keyword: String,
+    or: bool,
 ) {
     let ec = event.clone();
     let keywords = keyword.split_whitespace().collect::<Vec<_>>();
@@ -27,15 +28,25 @@ pub(super) async fn search_diaries(
                 let kc = keywords.clone();
                 async move {
                     let diary = diary_get(cache, crypto, client, id).await?;
-                    for keyword in kc {
-                        if diary.contains(keyword) {
-                            ecc.send(SearchDiariesEvent::Match(DiarySummary::from_manifest(diary)))?;
-                            break; // TODO 多个关键词时，目前是“或”，后续可考虑添加切换成“与”的选项
-                        }
-                    }
+
+                    let content = diary.content();
+                    // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词
+                    let is_match = if or {
+                        kc.iter().any(|keyword| content.contains(keyword))
+                    } else {
+                        kc.iter().all(|keyword| content.contains(keyword))
+                    };
+
+                    ecc.send(if is_match {
+                        SearchDiariesEvent::Match(DiarySummary::from_manifest(diary))
+                    } else {
+                        SearchDiariesEvent::Unmatch(diary.id)
+                    })?;
+
                     Ok::<(), String>(())
                 }
             });
+
             for res in futures_util::future::join_all(fetches).await {
                 res?;
             }
@@ -46,6 +57,7 @@ pub(super) async fn search_diaries(
             }
             nt = next_token;
         }
+
         Ok::<(), String>(())
     };
 

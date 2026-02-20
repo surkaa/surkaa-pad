@@ -17,6 +17,10 @@ pub struct DiaryManifest {
 }
 
 impl DiaryManifest {
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+
     pub fn contains(&self, keyword: &str) -> bool {
         self.content.to_lowercase().contains(&keyword.to_lowercase())
     }

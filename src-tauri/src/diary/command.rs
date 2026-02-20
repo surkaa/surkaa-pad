@@ -121,6 +121,7 @@ pub fn cmd_search_diaries(
     tp: State<'_, TaskPool>,
     event: Channel<SearchDiariesEvent>,
     keyword: String,
+    or: bool,
 ) -> Result<String, String> {
     let cache = cache.inner().clone();
     let crypto = crypto.inner().clone();
@@ -133,6 +134,7 @@ pub fn cmd_search_diaries(
             &client,
             Arc::new(event),
             keyword,
+            or,
         ).await;
     })
 }
