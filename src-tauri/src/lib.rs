@@ -136,7 +136,7 @@ async fn sync_from_oss(
     client: State<'_, OssState>,
     uuid: Option<String>,
 ) -> Result<Option<DiaryManifest>, String> {
-    diary_sync(cache.deref(), em.deref(), client.get_client()?, uuid).await
+    diary_sync(cache.deref(), em.deref(), &client.get_client()?, uuid).await
 }
 
 /// 根据日记内容搜索日记
@@ -174,7 +174,7 @@ async fn save_diary(
     client: State<'_, OssState>,
     content: &str,
 ) -> Result<DiaryManifest, String> {
-    diary_create(crypto.deref(), client.get_client()?, content).await
+    diary_create(crypto.deref(), &client.get_client()?, content).await
 }
 
 /// 更新日记的内容
@@ -191,7 +191,7 @@ async fn update_diary_content_only(
     uuid: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
-    diary_update_content_only(crypto.deref(), client.get_client()?, uuid, new_content).await
+    diary_update_content_only(crypto.deref(), &client.get_client()?, uuid, new_content).await
 }
 
 /// 删除日记
@@ -202,7 +202,7 @@ async fn update_diary_content_only(
 #[tauri::command]
 #[specta::specta]
 async fn delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), String> {
-    diary_delete(client.get_client()?, uuid).await
+    diary_delete(&client.get_client()?, uuid).await
 }
 
 //------------
@@ -230,7 +230,7 @@ async fn add_attachment(
 
     attachment_upload(
         crypto.deref(),
-        client.get_client()?,
+        &client.get_client()?,
         uuid,
         mimetype,
         len,
@@ -262,7 +262,7 @@ fn download_attachment(
     let client = client.get_client()?;
     tp.spawn(async move {
         attachment_download(
-            Arc::new(crypto),
+            crypto,
             client,
             &app_handle,
             Arc::new(on_event),
@@ -299,7 +299,7 @@ async fn delete_attachment(
     uuid: String,
     filename: String,
 ) -> Result<DiaryManifest, String> {
-    attachment_delete(crypto.deref(), client.get_client()?, uuid, filename).await
+    attachment_delete(crypto.deref(), &client.get_client()?, uuid, filename).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

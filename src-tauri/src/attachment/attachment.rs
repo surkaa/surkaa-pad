@@ -15,7 +15,7 @@ use crate::storage::{local_attachment_path, remote_attachments_key, remote_manif
 /// 添加附件到指定日记
 pub async fn attachment_upload(
     crypto: &Crypto,
-    client: Arc<OssClient>,
+    client: &OssClient,
     id: String,
     mime_type: String,
     len: u64,
@@ -41,7 +41,7 @@ pub async fn attachment_upload(
     };
 
     // 更新 manifest，添加附件元数据
-    let (mut manifest, _) = diary_get(crypto, client.clone(), id.clone()).await?;
+    let (mut manifest, _) = diary_get(crypto, client, id.clone()).await?;
     manifest.attachments.push(attachment);
     manifest.updated = Utc::now().timestamp_millis();
 
@@ -70,8 +70,8 @@ pub async fn attachment_upload(
 
 /// 下载指定日记的指定附件
 pub async fn attachment_download(
-    crypto: Arc<Crypto>,
-    client: Arc<OssClient>,
+    crypto: Crypto,
+    client: OssClient,
     pg: &impl PathGetter,
     event: Arc<Channel<DownloadAttachmentEvent>>,
     id: String,
@@ -153,12 +153,12 @@ pub async fn attachment_download(
 /// 删除指定日记的指定附件
 pub async fn attachment_delete(
     crypto: &Crypto,
-    client: Arc<OssClient>,
+    client: &OssClient,
     id: String,
     file_name: String,
 ) -> Result<DiaryManifest, String> {
     // 更新 manifest，移除附件元数据
-    let (mut manifest, _) = diary_get(crypto, client.clone(), id.clone()).await?;
+    let (mut manifest, _) = diary_get(crypto, client, id.clone()).await?;
     manifest.attachments.retain(|att| att.filename != file_name);
     manifest.updated = Utc::now().timestamp_millis();
 

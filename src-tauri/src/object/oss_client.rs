@@ -16,7 +16,7 @@ use tauri::http::{HeaderMap, HeaderValue, Method};
 
 const STREAM_MINE_TYPE: &str = "application/octet-stream";
 
-pub struct OssState(OnceLock<Arc<OssClient>>);
+pub struct OssState(OnceLock<OssClient>);
 
 impl OssState {
     pub fn new() -> Self {
@@ -36,16 +36,13 @@ impl OssState {
         let _ = client.list("", None).await?;
         // 存储 client
         self.0
-            .set(Arc::new(client))
+            .set(client)
             .map_err(|_| String::from("OssClient 已初始化"))?;
         Ok(())
     }
 
-    pub fn get_client(&self) -> Result<Arc<OssClient>, String> {
-        self.0
-            .get()
-            .cloned()
-            .ok_or(String::from("OssClient 未初始化"))
+    pub fn get_client(&self) -> Result<OssClient, String> {
+        self.0.get().cloned().ok_or(String::from("OssClient 未初始化"))
     }
 }
 

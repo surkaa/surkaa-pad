@@ -5,17 +5,15 @@ use crate::storage::{is_remote_manifest_key, remote_manifest_key};
 use chrono::Utc;
 use serde_json::from_slice;
 use std::collections::HashMap;
-use std::sync::Arc;
 use tauri_plugin_log::log;
 use uuid::Uuid;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
 
-// TODO 统一 Arc 和 &
 /// 从 OSS 执行全量同步：清空本地缓存，下载所有 Manifest
 pub async fn diary_sync(
     dc: &DiaryMemoryCache,
     crypto: &Crypto,
-    client: Arc<OssClient>,
+    client: &OssClient,
     uuid: Option<String>,
 ) -> Result<Option<DiaryManifest>, String> {
     let (objects, _) = client
@@ -53,7 +51,7 @@ pub async fn diary_sync(
     // 对比本地和远程的 UUID 和 ETag
     for (uuid, _remote_etag) in remote_diaries_map.iter() {
         // 下载和解密日记Manifest
-        let (manifest, _) = diary_get(&crypto, client.clone(), uuid.to_string()).await?;
+        let (manifest, _) = diary_get(&crypto, client, uuid.to_string()).await?;
         // 更新内存缓存
         dc.insert(uuid, manifest);
     }
@@ -69,7 +67,7 @@ pub async fn diary_sync(
 /// 根据内容创建新的日记并存储到云端
 pub async fn diary_create(
     crypto: &Crypto,
-    client: Arc<OssClient>,
+    client: &OssClient,
     content: &str,
 ) -> Result<DiaryManifest, String> {
     let id = Uuid::new_v4().to_string();
@@ -107,7 +105,7 @@ pub async fn diary_create(
 /// 获取并解密指定 ID 的日记 manifest
 pub async fn diary_get(
     crypto: &Crypto,
-    client: Arc<OssClient>,
+    client: &OssClient,
     id: String,
 ) -> Result<(DiaryManifest, Vec<u8>), String> {
     let object_key = remote_manifest_key(&id);
@@ -125,7 +123,7 @@ pub async fn diary_get(
 }
 
 /// 删除指定 ID 的日记及其所有附件
-pub async fn diary_delete(client: Arc<OssClient>, id: String) -> Result<(), String> {
+pub async fn diary_delete(client: &OssClient, id: String) -> Result<(), String> {
     let (objects, _) = client
         .list(&format!("{}/", id), None)
         .await
@@ -144,12 +142,12 @@ pub async fn diary_delete(client: Arc<OssClient>, id: String) -> Result<(), Stri
 /// 仅更新日记的文本和元数据，不涉及附件
 pub async fn diary_update_content_only(
     crypto: &Crypto,
-    client: Arc<OssClient>,
+    client: &OssClient,
     id: String,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
     // 先获取现有的 manifest
-    let (mut manifest, _) = diary_get(crypto, client.clone(), id.clone()).await?;
+    let (mut manifest, _) = diary_get(crypto, client, id.clone()).await?;
 
     // 更新内容和更新时间
     manifest.content = new_content.to_string();
