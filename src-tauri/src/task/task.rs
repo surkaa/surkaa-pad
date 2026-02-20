@@ -1,0 +1,77 @@
+
+use std::collections::HashMap;
+use std::future::Future;
+use std::sync::{Arc, Mutex};
+use tauri::async_runtime::JoinHandle;
+use tauri::State;
+
+#[derive(Clone)]
+pub struct TaskPool {
+    // 任务句柄容器
+    tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+}
+
+impl TaskPool {
+    pub fn new() -> Self {
+        Self {
+            tasks: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// 接收一个异步任务并直接执行
+    pub fn spawn<F>(&self, task: F) -> Result<String, String>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let cancel_token = uuid::Uuid::new_v4().to_string();
+        let tasks_map = self.tasks.clone();
+        let token_for_cleanup = cancel_token.clone();
+        let token_for_return = cancel_token.clone();
+
+        // 包装任务：先执行业务，再执行清理
+        let wrapped_task = async move {
+            task.await;
+            if let Ok(mut guard) = tasks_map.lock() {
+                guard.remove(&token_for_cleanup);
+                #[cfg(debug_assertions)]
+                println!("任务完成并移除: {}", token_for_cleanup);
+            }
+        };
+
+        // 获取锁 (必须在 spawn 之前获取，防止竞态条件)
+        let mut guard = self.tasks.lock().map_err(|e| format!("锁中毒: {}", e))?;
+
+        // 启动任务
+        let handle = tauri::async_runtime::spawn(wrapped_task);
+
+        // 存入句柄
+        guard.insert(cancel_token, handle);
+
+        Ok(token_for_return)
+    }
+
+    /// 取消任务
+    fn cancel(&self, cancel_token: &str) -> Result<bool, String> {
+        let mut guard = self.tasks.lock().map_err(|e| format!("锁中毒: {}", e))?;
+
+        if let Some(handle) = guard.remove(cancel_token) {
+            // 取消该任务
+            handle.abort();
+            Ok(true)
+        } else {
+            // 未找到对应的任务任务
+            Ok(false)
+        }
+    }
+}
+
+/// 取消任务
+/// # Arguments
+/// * `cancel_token` - 任务取消令牌
+/// # Returns
+/// * `Result<bool, String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, String> {
+    tp.cancel(cancel_token)
+}

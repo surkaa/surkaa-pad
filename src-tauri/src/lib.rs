@@ -7,12 +7,12 @@ mod task;
 mod utils;
 
 use crate::attachment::{add_attachment, delete_attachment, download_attachment};
+use crate::crypto::Crypto;
 use crate::diary::DiaryMemoryCache;
 use crate::diary::{delete_diary, save_diary, update_diary_content_only};
 use crate::object::OssState;
 use crate::storage::{local_attachment_dir, local_recording_dir};
-use crate::task::TaskPool;
-use crypto::Crypto;
+use crate::task::{cancel_task, TaskPool};
 use tauri::{Manager, State};
 //------------
 // 解锁与加密解密 以及初始化云端存储客户端
@@ -98,17 +98,6 @@ async fn init_oss_client(
         .initialize(akid, aks, endpoint, bucket)
         .await
         .map_err(|e| e.to_string())
-}
-
-/// 取消任务
-/// # Arguments
-/// * `cancel_token` - 任务取消令牌
-/// # Returns
-/// * `Result<bool, String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-fn cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, String> {
-    tp.cancel(cancel_token)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
