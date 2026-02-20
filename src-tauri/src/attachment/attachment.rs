@@ -18,6 +18,7 @@ use tauri_plugin_log::log;
 use tokio::fs::{create_dir_all, File};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
+use crate::utils::message_sender::MessageSender;
 
 pub(super) async fn add_attachment(
     cache: &DiaryMemoryCache,
@@ -81,7 +82,7 @@ pub(super) async fn download_attachment(
     crypto: Crypto,
     client: OssClient,
     pg: &impl PathGetter,
-    event: Arc<Channel<DownloadAttachmentEvent>>,
+    event: Arc<dyn MessageSender<DownloadAttachmentEvent>>,
     uuid: String,
     filename: String,
     nonce: Vec<u8>, // TODO 考虑删掉这个参数
