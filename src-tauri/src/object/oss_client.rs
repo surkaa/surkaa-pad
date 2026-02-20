@@ -2,7 +2,6 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use bytes::Bytes;
 use chrono::Utc;
-use futures::Stream;
 use futures_util::TryStreamExt;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};

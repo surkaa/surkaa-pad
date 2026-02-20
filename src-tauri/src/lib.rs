@@ -6,20 +6,14 @@ mod storage;
 mod task;
 mod utils;
 
-use crate::attachment::DownloadAttachmentEvent;
-use crate::attachment::{attachment_delete, attachment_download, attachment_upload};
-use crate::diary::DiaryManifest;
+use crate::attachment::{add_attachment, delete_attachment, download_attachment};
 use crate::diary::DiaryMemoryCache;
 use crate::diary::{delete_diary, save_diary, update_diary_content_only};
 use crate::object::OssState;
 use crate::storage::{local_attachment_dir, local_recording_dir};
 use crate::task::TaskPool;
-use crate::utils::open_file_stream;
 use crypto::Crypto;
-use std::ops::Deref;
-use std::sync::Arc;
-use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State};
+use tauri::{Manager, State};
 //------------
 // 解锁与加密解密 以及初始化云端存储客户端
 //------------
@@ -106,75 +100,6 @@ async fn init_oss_client(
         .map_err(|e| e.to_string())
 }
 
-//------------
-// 附件操作相关
-//------------
-
-/// 添加附件
-/// # Arguments
-/// * `uuid` - 日记 UUID
-/// * `access_str` - 文件访问路径。
-/// * `mimetype` - 附件 MIME 类型
-/// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-async fn add_attachment(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    uuid: String,
-    access_str: String,
-    mimetype: String,
-) -> Result<DiaryManifest, String> {
-    // 获取临时文件的完整路径
-    let (len, stream) = open_file_stream(&access_str)?;
-
-    attachment_upload(
-        crypto.deref(),
-        &client.get_client()?,
-        uuid,
-        mimetype,
-        len,
-        stream,
-    )
-    .await
-}
-
-/// 下载附件
-/// # Arguments
-/// * `uuid` - 日记 UUID
-/// * `filename` - 附件 ID
-/// * `nonce` - 解密iv
-/// # Returns
-/// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-fn download_attachment(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    tp: State<'_, TaskPool>,
-    app_handle: AppHandle,
-    on_event: Channel<DownloadAttachmentEvent>,
-    uuid: String,
-    filename: String,
-    nonce: Vec<u8>,
-) -> Result<String, String> {
-    let crypto = crypto.inner().clone();
-    let client = client.get_client()?;
-    tp.spawn(async move {
-        attachment_download(
-            crypto,
-            client,
-            &app_handle,
-            Arc::new(on_event),
-            uuid,
-            filename,
-            nonce,
-        )
-        .await;
-    })
-}
-
 /// 取消任务
 /// # Arguments
 /// * `cancel_token` - 任务取消令牌
@@ -184,23 +109,6 @@ fn download_attachment(
 #[specta::specta]
 fn cancel_task(tp: State<'_, TaskPool>, cancel_token: &str) -> Result<bool, String> {
     tp.cancel(cancel_token)
-}
-
-/// 删除附件
-/// # Arguments
-/// * `uuid` - 日记 UUID
-/// * `filename` - 附件 ID
-/// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-async fn delete_attachment(
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    uuid: String,
-    filename: String,
-) -> Result<DiaryManifest, String> {
-    attachment_delete(crypto.deref(), &client.get_client()?, uuid, filename).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

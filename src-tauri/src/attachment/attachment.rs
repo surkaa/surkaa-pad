@@ -1,26 +1,43 @@
+use std::ops::Deref;
+use crate::attachment::{AttachmentMeta, DownloadAttachmentEvent};
+use crate::crypto::Crypto;
+use crate::diary::{diary_get, DiaryManifest};
+use crate::object::{OssClient, OssState};
+use crate::storage::{
+    local_attachment_path, remote_attachments_key, remote_manifest_key, PathGetter,
+};
+use crate::task::TaskPool;
+use crate::utils::open_file_stream;
 use chrono::Utc;
 use futures::StreamExt;
 use std::sync::Arc;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, State};
 use tauri_plugin_log::log;
 use tokio::fs::{create_dir_all, File};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
-use crate::attachment::{AttachmentMeta, DownloadAttachmentEvent};
-use crate::crypto::Crypto;
-use crate::diary::{diary_get, DiaryManifest};
-use crate::object::{ByteStream, OssClient};
-use crate::storage::{local_attachment_path, remote_attachments_key, remote_manifest_key, PathGetter};
 
-/// 添加附件到指定日记
-pub async fn attachment_upload(
-    crypto: &Crypto,
-    client: &OssClient,
-    id: String,
-    mime_type: String,
-    len: u64,
-    mut stream: ByteStream,
+/// 给日记添加附件
+/// # Arguments
+/// * `uuid` - 日记 UUID
+/// * `access_str` - 文件访问路径。
+/// * `mimetype` - 附件 MIME 类型
+/// # Returns
+/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub async fn add_attachment(
+    crypto: State<'_, Crypto>,
+    client: State<'_, OssState>,
+    uuid: String,
+    access_str: String,
+    mimetype: String,
 ) -> Result<DiaryManifest, String> {
+    let client = client.get_client()?;
+    // 获取临时文件的完整路径
+    let (len, mut stream) = open_file_stream(&access_str)?;
+
     // 读取流数据到内存
     let mut attachment_bytes: Vec<u8> = Vec::with_capacity(len as usize);
     while let Some(chunk) = stream.next().await {
@@ -35,18 +52,18 @@ pub async fn attachment_upload(
     // 创建附件元数据
     let attachment = AttachmentMeta {
         filename: file_name.clone(),
-        mimetype: mime_type,
+        mimetype,
         size: encrypted_bytes.len() as u64,
         nonce: nonce.clone(),
     };
 
     // 更新 manifest，添加附件元数据
-    let (mut manifest, _) = diary_get(crypto, client, id.clone()).await?;
+    let (mut manifest, _) = diary_get(crypto.deref(), &client, uuid.clone()).await?;
     manifest.attachments.push(attachment);
     manifest.updated = Utc::now().timestamp_millis();
 
     // 更新到云端
-    let manifest_key = remote_manifest_key(&id);
+    let manifest_key = remote_manifest_key(&uuid);
     let manifest_json = serde_json::to_vec(&manifest)
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
     let (ciphertext, manifest_nonce) = crypto.encrypt(&manifest_json)?;
@@ -59,7 +76,7 @@ pub async fn attachment_upload(
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
     // 上传附件
-    let attachment_key = remote_attachments_key(&id, &file_name);
+    let attachment_key = remote_attachments_key(&uuid, &file_name);
     client
         .upload_bytes(&attachment_key, &encrypted_bytes)
         .await
@@ -68,20 +85,54 @@ pub async fn attachment_upload(
     Ok(manifest)
 }
 
-/// 下载指定日记的指定附件
-pub async fn attachment_download(
+/// 下载日记附件
+/// # Arguments
+/// * `uuid` - 日记 UUID
+/// * `filename` - 附件 ID
+/// * `nonce` - 解密iv
+/// # Returns
+/// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub fn download_attachment(
+    crypto: State<'_, Crypto>,
+    client: State<'_, OssState>,
+    tp: State<'_, TaskPool>,
+    app_handle: AppHandle,
+    on_event: Channel<DownloadAttachmentEvent>,
+    uuid: String,
+    filename: String,
+    nonce: Vec<u8>,
+) -> Result<String, String> {
+    let crypto = crypto.inner().clone();
+    let client = client.get_client()?;
+    tp.spawn(async move {
+        download_attachment_inner(
+            crypto,
+            client,
+            &app_handle,
+            Arc::new(on_event),
+            uuid,
+            filename,
+            nonce,
+        )
+        .await;
+    })
+}
+
+async fn download_attachment_inner(
     crypto: Crypto,
     client: OssClient,
     pg: &impl PathGetter,
     event: Arc<Channel<DownloadAttachmentEvent>>,
-    id: String,
+    uuid: String,
     filename: String,
-    nonce: Vec<u8>,
+    nonce: Vec<u8>, // TODO 考虑删掉这个参数
 ) {
     let end_event = event.clone();
     let logic = async move {
         // 先检查有没有本地缓存，有的话直接返回缓存路径
-        let temp_file_full_path = local_attachment_path(pg, &id, &filename);
+        let temp_file_full_path = local_attachment_path(pg, &uuid, &filename);
         if temp_file_full_path.exists() {
             log::info!(
                 "附件 {} 已存在于本地缓存，直接返回缓存路径",
@@ -90,7 +141,7 @@ pub async fn attachment_download(
             return Ok(temp_file_full_path.to_string_lossy().to_string());
         }
 
-        let attachment_key = remote_attachments_key(&id, &filename);
+        let attachment_key = remote_attachments_key(&uuid, &filename);
 
         let (mut stream, len) = client.download(&attachment_key).await?;
 
@@ -150,15 +201,23 @@ pub async fn attachment_download(
     }
 }
 
-/// 删除指定日记的指定附件
-pub async fn attachment_delete(
-    crypto: &Crypto,
-    client: &OssClient,
-    id: String,
+/// 删除日记的附件
+/// # Arguments
+/// * `uuid` - 日记 UUID
+/// * `filename` - 附件 ID
+/// # Returns
+/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_attachment(
+    crypto: State<'_, Crypto>,
+    client: State<'_, OssState>,
+    uuid: String,
     file_name: String,
 ) -> Result<DiaryManifest, String> {
+    let client = client.get_client()?;
     // 更新 manifest，移除附件元数据
-    let (mut manifest, _) = diary_get(crypto, client, id.clone()).await?;
+    let (mut manifest, _) = diary_get(crypto.deref(), &client, uuid.clone()).await?;
     manifest.attachments.retain(|att| att.filename != file_name);
     manifest.updated = Utc::now().timestamp_millis();
 
@@ -170,14 +229,14 @@ pub async fn attachment_delete(
     let mut encrypted_manifest = manifest_nonce;
     encrypted_manifest.extend_from_slice(&ciphertext);
     // 上传更新后的 manifest
-    let manifest_key = remote_manifest_key(&id);
+    let manifest_key = remote_manifest_key(&uuid);
     client
         .upload_bytes(&manifest_key, &encrypted_manifest)
         .await
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
     // 删除附件对象
-    let attachment_key = remote_attachments_key(&id, &file_name);
+    let attachment_key = remote_attachments_key(&uuid, &file_name);
     client
         .delete(&attachment_key)
         .await
