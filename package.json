@@ -14,6 +14,7 @@
     "build:android:build": "tauri android build --target aarch64 --apk true --aab true"
   },
   "dependencies": {
+    "@quasar/extras": "^1.17.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-biometric": "file:../Forks/tauri-plugins-workspace/plugins/biometric",
     "@tauri-apps/plugin-dialog": "~2.6.0",
@@ -23,10 +24,12 @@
     "@tauri-apps/plugin-os": "^2.3.2",
     "@tauri-apps/plugin-store": "^2.4.1",
     "pinia": "^3.0.4",
+    "quasar": "^2.18.6",
     "vue": "^3.5.13",
     "vue-router": "^4.6.3"
   },
   "devDependencies": {
+    "@quasar/vite-plugin": "^1.10.0",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.0.3",
     "@vitejs/plugin-vue": "^5.2.1",

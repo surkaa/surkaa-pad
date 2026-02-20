@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@quasar/extras':
+        specifier: ^1.17.0
+        version: 1.17.0
       '@tauri-apps/api':
         specifier: ^2
         version: 2.9.0
@@ -35,6 +38,9 @@ importers:
       pinia:
         specifier: ^3.0.4
         version: 3.0.4(typescript@5.6.3)(vue@3.5.24(typescript@5.6.3))
+      quasar:
+        specifier: ^2.18.6
+        version: 2.18.6
       vue:
         specifier: ^3.5.13
         version: 3.5.24(typescript@5.6.3)
@@ -42,6 +48,9 @@ importers:
         specifier: ^4.6.3
         version: 4.6.3(vue@3.5.24(typescript@5.6.3))
     devDependencies:
+      '@quasar/vite-plugin':
+        specifier: ^1.10.0
+        version: 1.10.0(@vitejs/plugin-vue@5.2.4(vite@6.4.1(@types/node@25.0.3)(sass-embedded@1.93.3)(sass@1.93.3))(vue@3.5.24(typescript@5.6.3)))(quasar@2.18.6)(vite@6.4.1(@types/node@25.0.3)(sass-embedded@1.93.3)(sass@1.93.3))(vue@3.5.24(typescript@5.6.3))
       '@tauri-apps/cli':
         specifier: ^2
         version: 2.9.4
@@ -326,6 +335,18 @@ packages:
   '@parcel/watcher@2.5.1':
     resolution: {integrity: sha512-dfUnCxiN9H4ap84DvD2ubjw+3vUNpstxa0TneY/Paat8a3R4uQZDLSvWjmznAY/DoahqTHl9V46HF/Zs3F29pg==}
     engines: {node: '>= 10.0.0'}
+
+  '@quasar/extras@1.17.0':
+    resolution: {integrity: sha512-KqAHdSJfIDauiR1nJ8rqHWT0diqD0QradZKoVIZJAilHAvgwyPIY7MbyR2z4RIMkUIMUSqBZcbshMpEw+9A30w==}
+
+  '@quasar/vite-plugin@1.10.0':
+    resolution: {integrity: sha512-4PJoTclz4ZjAfyqe0+hlkKcFJt0e2NX3Ac3hy8ILqUPdtZ24nCo5/xEHvTxZGBQMKRPwwePbO8CVs4n9EKJEug==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@vitejs/plugin-vue': ^2.0.0 || ^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0
+      quasar: ^2.16.0
+      vite: ^2.0.0 || ^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0
+      vue: ^3.0.0
 
   '@rollup/rollup-android-arm-eabi@4.53.3':
     resolution: {integrity: sha512-mRSi+4cBjrRLoaal2PnqH82Wqyb+d3HsPUN/W+WslCXsZsyHa9ZeQQX/pQsZaVIWDkPcpV6jJ+3KLbTbgnwv8w==}
@@ -762,6 +783,10 @@ packages:
     resolution: {integrity: sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg==}
     engines: {node: ^10 || ^12 || >=14}
 
+  quasar@2.18.6:
+    resolution: {integrity: sha512-ZlK+vJXOBPSFDCNQDBDNwSI+AHoqaFPxK8ve6mhsYLhMKWI5b8zsGY9VU1xYjngO2aBvU4fvGWXy4tTbzrBk8Q==}
+    engines: {node: '>= 10.18.1', npm: '>= 6.13.4', yarn: '>= 1.21.1'}
+
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
     engines: {node: '>= 14.18.0'}
@@ -1156,6 +1181,15 @@ snapshots:
       '@parcel/watcher-win32-ia32': 2.5.1
       '@parcel/watcher-win32-x64': 2.5.1
     optional: true
+
+  '@quasar/extras@1.17.0': {}
+
+  '@quasar/vite-plugin@1.10.0(@vitejs/plugin-vue@5.2.4(vite@6.4.1(@types/node@25.0.3)(sass-embedded@1.93.3)(sass@1.93.3))(vue@3.5.24(typescript@5.6.3)))(quasar@2.18.6)(vite@6.4.1(@types/node@25.0.3)(sass-embedded@1.93.3)(sass@1.93.3))(vue@3.5.24(typescript@5.6.3))':
+    dependencies:
+      '@vitejs/plugin-vue': 5.2.4(vite@6.4.1(@types/node@25.0.3)(sass-embedded@1.93.3)(sass@1.93.3))(vue@3.5.24(typescript@5.6.3))
+      quasar: 2.18.6
+      vite: 6.4.1(@types/node@25.0.3)(sass-embedded@1.93.3)(sass@1.93.3)
+      vue: 3.5.24(typescript@5.6.3)
 
   '@rollup/rollup-android-arm-eabi@4.53.3':
     optional: true
@@ -1562,6 +1596,8 @@ snapshots:
       nanoid: 3.3.11
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  quasar@2.18.6: {}
 
   readdirp@4.1.2:
     optional: true
