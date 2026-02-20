@@ -7,36 +7,13 @@ mod task;
 mod utils;
 
 use crate::attachment::{add_attachment, delete_attachment, download_attachment};
-use crate::crypto::{Crypto, unlock, biometric_unlock, encrypt_data, decrypt_data};
+use crate::crypto::{biometric_unlock, decrypt_data, encrypt_data, unlock, Crypto};
 use crate::diary::DiaryMemoryCache;
 use crate::diary::{delete_diary, save_diary, update_diary_content_only};
-use crate::object::OssState;
+use crate::object::{init_oss_client, OssState};
 use crate::storage::{local_attachment_dir, local_recording_dir};
 use crate::task::{cancel_task, TaskPool};
-use tauri::{Manager, State};
-
-/// 初始化 OSS 客户端
-/// # Arguments
-/// * `akid` - 访问密钥 ID
-/// * `aks` - 访问密钥 Secret
-/// * `bucket` - 存储桶名称
-/// * `endpoint` - OSS 端点
-/// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-async fn init_oss_client(
-    client_state: State<'_, OssState>,
-    akid: String,
-    aks: String,
-    bucket: String,
-    endpoint: String,
-) -> Result<(), String> {
-    client_state
-        .initialize(akid, aks, endpoint, bucket)
-        .await
-        .map_err(|e| e.to_string())
-}
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
