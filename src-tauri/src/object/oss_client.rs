@@ -367,9 +367,19 @@ impl OssClient {
         Ok((objects, next_token))
     }
 
-    pub async fn download(&self, key: &str) -> Result<(ByteStream, u64), String> {
+    pub async fn download(&self, key: &str, range: Option<(u64, u64)>) -> Result<(ByteStream, u64), String> {
         let url = self.get_url(key, "");
-        let headers = self.build_headers(&Method::GET, key, "")?;
+        let mut headers = self.build_headers(&Method::GET, key, "")?;
+
+        // 1. 如果传入了 range，构建并插入标准的 HTTP Range 请求头
+        if let Some((start, end)) = range {
+            let range_val = format!("bytes={}-{}", start, end);
+            headers.insert(
+                reqwest::header::RANGE,
+                HeaderValue::from_str(&range_val)
+                    .map_err(|e| format!("未能创建Range头: {}", e))?,
+            );
+        }
 
         let resp = self
             .inner
@@ -515,7 +525,7 @@ mod tests {
         assert_eq!(objects[0], metadata, "列出的元数据应匹配获取的元数据");
 
         // 下载对象
-        let (mut download_stream, _) = client.download(key).await.expect("下载失败");
+        let (mut download_stream, _) = client.download(key, None).await.expect("下载失败");
         let mut downloaded_data = Vec::new();
         while let Some(chunk) = download_stream.try_next().await.expect("读取下载流失败") {
             downloaded_data.extend_from_slice(&chunk);
@@ -598,6 +608,36 @@ mod tests {
             .delete_with_prefix("folder/")
             .await
             .expect("删除失败");
+        assert_empty(&client, "测试结束后对象存储应为空").await;
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_download_range() {
+        let client = OssClient::from_env();
+        assert_empty(&client, "测试开始前对象存储应为空").await;
+        let key = "test_range.txt";
+        let content = "This is a test file for range download.";
+        add_object(&client, key, content).await;
+
+        // 下载部分内容
+        let (mut download_stream, len) = client.download(key, Some((5, 15))).await.expect("下载失败");
+        let mut downloaded_data = Vec::new();
+        while let Some(chunk) = download_stream.try_next().await.expect("读取下载流失败") {
+            downloaded_data.extend_from_slice(&chunk);
+        }
+        let downloaded_str = String::from_utf8(downloaded_data).expect("下载数据不是有效的UTF-8");
+        assert_eq!(
+            len, 11,
+            "下载的内容长度应为请求的范围长度 (15 - 5 + 1)"
+        );
+        assert_eq!(
+            downloaded_str, &content[5..=15],
+            "下载的范围数据应与原内容匹配"
+        );
+
+        // 清理
+        client.delete(key).await.expect("删除失败");
         assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 }
