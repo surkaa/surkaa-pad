@@ -10,9 +10,9 @@ use std::io::Error;
 use std::sync::Arc;
 
 use crate::object::types::ByteStream;
+use crate::object::NextToken;
 use tauri::http::header::{CONTENT_TYPE, DATE};
 use tauri::http::{HeaderMap, HeaderValue, Method};
-use crate::object::NextToken;
 
 const STREAM_MINE_TYPE: &str = "application/octet-stream";
 
@@ -32,7 +32,7 @@ impl ObjectMetadata {
     pub fn etag(&self) -> &str {
         &self.etag
     }
-    
+
     pub fn last_modified(&self) -> chrono::DateTime<Utc> {
         self.last_modified
     }
@@ -102,7 +102,7 @@ impl OssClient {
                 akid,
                 sakey,
                 bucket,
-                http_client: reqwest::Client::new()
+                http_client: reqwest::Client::new(),
             }),
         }
     }
@@ -170,15 +170,23 @@ impl OssClient {
         Ok(headers)
     }
 
-    pub async fn upload(&self, key: &str, len: u64, stream: ByteStream) -> Result<(), String> {
+    pub async fn upload(
+        &self,
+        key: &str,
+        len: u64,
+        stream: ByteStream,
+        mimetype: &str,
+    ) -> Result<(), String> {
         let url = self.get_url(key, "");
-        let mut headers = self.build_headers(&Method::PUT, key, STREAM_MINE_TYPE)?;
+        let mut headers = self.build_headers(&Method::PUT, key, mimetype)?;
         // 显式设置 Content-Length
         headers.insert(reqwest::header::CONTENT_LENGTH, len.into());
 
         let stream_reader = reqwest::Body::wrap_stream(stream);
 
-        let resp = self.inner.http_client
+        let resp = self
+            .inner
+            .http_client
             .put(url)
             .headers(headers)
             .body(stream_reader)
@@ -200,7 +208,9 @@ impl OssClient {
         let len = data.len();
         headers.insert(reqwest::header::CONTENT_LENGTH, len.into());
 
-        let resp = self.inner.http_client
+        let resp = self
+            .inner
+            .http_client
             .put(url)
             .headers(headers)
             .body(data.clone())
@@ -219,7 +229,9 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::DELETE, key, "")?;
 
-        let resp = self.inner.http_client
+        let resp = self
+            .inner
+            .http_client
             .delete(url)
             .headers(headers)
             .send()
@@ -260,7 +272,9 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::HEAD, key, "")?;
 
-        let resp = self.inner.http_client
+        let resp = self
+            .inner
+            .http_client
             .head(url)
             .headers(headers)
             .send()
@@ -328,7 +342,9 @@ impl OssClient {
 
         let headers = self.build_headers(&Method::GET, &sign_path, "")?;
 
-        let resp = self.inner.http_client
+        let resp = self
+            .inner
+            .http_client
             .get(url)
             .headers(headers)
             .send()
@@ -355,7 +371,9 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::GET, key, "")?;
 
-        let resp = self.inner.http_client
+        let resp = self
+            .inner
+            .http_client
             .get(url)
             .headers(headers)
             .send()
@@ -384,7 +402,9 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::GET, key, "")?;
 
-        let resp = self.inner.http_client
+        let resp = self
+            .inner
+            .http_client
             .get(url)
             .headers(headers)
             .send()
@@ -409,8 +429,8 @@ impl OssClient {
 mod tests {
     use super::*;
     use futures_util::stream::iter;
-    use std::iter::once;
     use serial_test::serial;
+    use std::iter::once;
 
     async fn assert_empty(client: &OssClient, msg: &str) {
         // 检查有没有遗留的测试文件
@@ -425,7 +445,10 @@ mod tests {
         let len = content.len() as u64;
         let bytes = Bytes::from_static(content.as_bytes());
         let stream: ByteStream = Box::pin(iter(once(Ok::<_, Error>(bytes))));
-        client.upload(key, len, stream).await.expect("上传失败");
+        client
+            .upload(key, len, stream, STREAM_MINE_TYPE)
+            .await
+            .expect("上传失败");
     }
 
     #[serial]
@@ -472,7 +495,7 @@ mod tests {
         });
         let stream: ByteStream = Box::pin(stream);
         client
-            .upload(key, file_size, stream)
+            .upload(key, file_size, stream, STREAM_MINE_TYPE)
             .await
             .expect("上传失败");
 
@@ -523,7 +546,10 @@ mod tests {
             let len = content.len() as u64;
             let bytes = Bytes::from_static(content.as_bytes());
             let stream: ByteStream = Box::pin(iter(once(Ok::<_, Error>(bytes))));
-            client.upload(key, len, stream).await.expect("上传失败");
+            client
+                .upload(key, len, stream, STREAM_MINE_TYPE)
+                .await
+                .expect("上传失败");
         }
 
         // 确认上传

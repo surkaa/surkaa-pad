@@ -1,7 +1,7 @@
 use crate::attachment::types::{AddAttachmentEvent, DownloadAttachmentEvent};
 use crate::crypto::Crypto;
 use crate::diary::{diary_get, DiaryManifest, DiaryMemoryCache};
-use crate::object::OssClient;
+use crate::object::{ByteStream, OssClient};
 use crate::storage::{remote_attachments_key, remote_manifest_key, PathGetter};
 use crate::utils::message_sender::MessageSender;
 use chrono::Utc;
@@ -14,8 +14,9 @@ pub(super) async fn add_attachment(
     pg: &impl PathGetter,
     event: Arc<dyn MessageSender<AddAttachmentEvent>>,
     id: &str,
-    access_str: String,
-    mimetype: String,
+    mimetype: &str,
+    encrypt: bool,
+    (size, mut stream): (u64, ByteStream),
 ) {
     // TODO 记得更新缓存
 }

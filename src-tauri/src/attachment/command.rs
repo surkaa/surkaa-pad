@@ -4,6 +4,7 @@ use crate::crypto::Crypto;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use crate::object::OssState;
 use crate::task::TaskPool;
+use crate::utils::open_file_stream;
 use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;
@@ -14,6 +15,7 @@ use tauri::{AppHandle, State};
 /// * `id` - 日记 ID
 /// * `access_str` - 文件访问路径。
 /// * `mimetype` - 附件 MIME 类型
+/// * `encrypt` - 是否需要加密
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
@@ -26,12 +28,14 @@ pub fn cmd_add_attachment(
     app_handle: AppHandle,
     event: Channel<AddAttachmentEvent>,
     id: String,
-    access_str: String,
+    access_str: &str,
     mimetype: String,
+    encrypt: bool,
 ) -> Result<String, String> {
     let cache = cache.inner().clone();
     let crypto = crypto.inner().clone();
     let client = client.get_client()?;
+    let file = open_file_stream(access_str)?;
     tp.spawn(async move {
         add_attachment(
             cache,
@@ -40,9 +44,11 @@ pub fn cmd_add_attachment(
             &app_handle,
             Arc::new(event),
             &id,
-            access_str,
-            mimetype
-        ).await;
+            &mimetype,
+            encrypt,
+            file,
+        )
+        .await;
     })
 }
 
