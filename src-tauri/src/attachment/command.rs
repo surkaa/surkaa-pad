@@ -101,8 +101,8 @@ pub async fn cmd_delete_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     id: &str,
-    file_name: String,
+    filename: String,
 ) -> Result<DiaryManifest, String> {
     let client = client.get_client()?;
-    delete_attachment(&cache, crypto.deref(), &client, id, file_name).await
+    delete_attachment(&cache, crypto.deref(), &client, id, filename).await
 }

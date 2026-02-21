@@ -37,11 +37,11 @@ pub(super) async fn delete_attachment(
     crypto: &Crypto,
     client: &OssClient,
     id: &str,
-    file_name: String,
+    filename: String,
 ) -> Result<DiaryManifest, String> {
     // 更新 manifest，移除附件元数据
     let mut manifest = diary_get(cache, crypto, client, id).await?;
-    manifest.attachments.retain(|att| att.filename != file_name);
+    manifest.attachments.retain(|att| att.filename != filename);
     manifest.updated = Utc::now().timestamp_millis();
 
     // 序列化
@@ -59,7 +59,7 @@ pub(super) async fn delete_attachment(
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
     // 删除附件对象
-    let attachment_key = remote_attachments_key(id, &file_name);
+    let attachment_key = remote_attachments_key(id, &filename);
     client
         .delete(&attachment_key)
         .await
