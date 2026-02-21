@@ -8,7 +8,7 @@ use crate::utils::open_file_stream;
 use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{State};
 
 /// 给日记添加附件
 /// # Arguments
@@ -25,7 +25,6 @@ pub fn cmd_add_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
-    app_handle: AppHandle,
     event: Channel<AddAttachmentEvent>,
     id: String,
     access_str: &str,
@@ -41,7 +40,6 @@ pub fn cmd_add_attachment(
             cache,
             crypto,
             client,
-            &app_handle,
             Arc::new(event),
             &id,
             &mimetype,
@@ -66,7 +64,6 @@ pub fn cmd_download_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
-    app_handle: AppHandle,
     on_event: Channel<DownloadAttachmentEvent>,
     id: String,
     filename: String,
@@ -79,7 +76,6 @@ pub fn cmd_download_attachment(
             cache,
             crypto,
             client,
-            &app_handle,
             Arc::new(on_event),
             &id,
             filename,
