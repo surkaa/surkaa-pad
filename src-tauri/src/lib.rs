@@ -6,9 +6,8 @@ mod storage;
 mod task;
 mod utils;
 
-use crate::attachment::command::{
-    cmd_add_attachment, cmd_delete_attachment,
-};
+use crate::attachment::attachment_protocol;
+use crate::attachment::command::{cmd_add_attachment, cmd_delete_attachment};
 use crate::crypto::command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
 };
@@ -20,13 +19,21 @@ use crate::diary::command::{
 use crate::diary::DiaryMemoryCache;
 use crate::object::command::cmd_init_oss_client;
 use crate::object::OssState;
-use crate::storage::{local_attachment_dir, local_recording_dir};
 use crate::task::command::cmd_cancel_task;
 use crate::task::TaskPool;
-use tauri::Manager;
+use tauri::{App, Manager};
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+fn run_setup(app: &mut App) {
+    app.manage(Crypto::new());
+    app.manage(OssState::new());
+    app.manage(TaskPool::new());
+    app.manage(DiaryMemoryCache::new());
+
+    #[cfg(target_os = "android")]
+    let _ = app_handle.plugin(tauri_plugin_biometric::init());
+}
+
+fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     let builder =
         tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
             // 解锁与加密解密
@@ -61,6 +68,13 @@ pub fn run() {
         )
         .expect("Failed to export typescript bindings");
 
+    builder
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let builder = generate_specta_builder();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         // 注册 Store 插件
@@ -84,35 +98,9 @@ pub fn run() {
         // 注册 dialog 插件
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
+        .register_asynchronous_uri_scheme_protocol("attachment", attachment_protocol)
         .setup(move |app| {
-            app.manage(Crypto::new());
-            app.manage(OssState::new());
-            app.manage(TaskPool::new());
-            app.manage(DiaryMemoryCache::new());
-
-            let app_handle = app.handle();
-
-            #[cfg(mobile)]
-            let _ = app_handle.plugin(tauri_plugin_biometric::init());
-
-            let main_window = app.get_webview_window("main").expect("无法获取主窗口");
-
-            let app_handle = app_handle.clone();
-            main_window.on_window_event(move |event| match event {
-                tauri::WindowEvent::CloseRequested { .. } => {
-                    // 删除附件文件夹
-                    let attachment_dir = local_attachment_dir(&app_handle);
-                    if attachment_dir.exists() {
-                        let _ = std::fs::remove_dir_all(&attachment_dir);
-                    }
-                    // 删除录音文件夹
-                    let recording_dir = local_recording_dir(&app_handle);
-                    if recording_dir.exists() {
-                        let _ = std::fs::remove_dir_all(&recording_dir);
-                    }
-                }
-                _ => {}
-            });
+            run_setup(app);
             builder.mount_events(app);
             Ok(())
         })
