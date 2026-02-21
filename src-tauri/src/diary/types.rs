@@ -1,4 +1,5 @@
 use crate::attachment::AttachmentMeta;
+use crate::crypto::types::EncryptionAlgorithm;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -7,8 +8,8 @@ use std::collections::HashMap;
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
 pub struct DiaryManifest {
     pub id: String,
-    pub algorithm: String, // 加密算法名称
-    pub content: String,   // 日记正文
+    pub algorithm: EncryptionAlgorithm, // 加密算法名称
+    pub content: String,                // 日记正文
     #[specta(type = f64)]
     pub created: i64,
     #[specta(type = f64)]
@@ -22,7 +23,9 @@ impl DiaryManifest {
     }
 
     pub fn contains(&self, keyword: &str) -> bool {
-        self.content.to_lowercase().contains(&keyword.to_lowercase())
+        self.content
+            .to_lowercase()
+            .contains(&keyword.to_lowercase())
     }
 }
 

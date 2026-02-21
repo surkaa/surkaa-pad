@@ -1,3 +1,4 @@
+use crate::crypto::types::EncryptionAlgorithm;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -42,11 +43,14 @@ pub struct AttachmentMeta {
     #[serde(default)]
     pub encrypted: bool,
     pub nonce: Option<Vec<u8>>, // 用于加密该文件的独立 IV
+    #[serde(default)]
+    pub algorithm: EncryptionAlgorithm,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::types::EncryptionAlgorithm::Gcm;
     use serde_json::from_str;
 
     // 测试AttachmentMeta的向下兼容能力
@@ -67,8 +71,10 @@ mod tests {
         let att1: AttachmentMeta = from_str(old1).expect("未能将旧的AttachmentMeta反序列化");
         let att2: AttachmentMeta = from_str(old2).expect("未能将旧的AttachmentMeta反序列化");
         assert_eq!(att1.nonce, Some(vec![1, 2, 3, 4]));
-        assert!(!att1.encrypted); // 新字段，旧数据中默认为 false
+        assert!(!att1.encrypted);
+        assert_eq!(att1.algorithm, Gcm);
         assert_eq!(att2.nonce, None);
-        assert!(!att2.encrypted); // 新字段，旧数据中默认为 false
+        assert!(!att2.encrypted);
+        assert_eq!(att2.algorithm, Gcm);
     }
 }

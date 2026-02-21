@@ -3,6 +3,7 @@ use crate::object::OssClient;
 use crate::storage::remote_manifest_key;
 
 use crate::attachment::AttachmentMeta;
+use crate::crypto::types::EncryptionAlgorithm::Gcm;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use chrono::Utc;
 use serde_json::from_slice;
@@ -18,7 +19,7 @@ pub(super) async fn save_diary(
     // 创建一个简单的 manifest
     let manifest = DiaryManifest {
         id: id.clone(),
-        algorithm: crypto.algorithm().to_string(),
+        algorithm: Gcm,
         content: content.to_string(),
         created: Utc::now().timestamp_millis(),
         updated: Utc::now().timestamp_millis(),

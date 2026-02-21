@@ -28,7 +28,6 @@ impl std::ops::Deref for DerivedKey {
 
 struct InnerCrypto {
     dek: OnceLock<DerivedKey>,
-    algorithm: String,
 }
 
 #[derive(Clone)]
@@ -41,7 +40,6 @@ impl Crypto {
         Crypto {
             inner: Arc::new(InnerCrypto {
                 dek: OnceLock::new(),
-                algorithm: "AES-256-GCM".to_string(),
             }),
         }
     }
@@ -54,10 +52,6 @@ impl Crypto {
         let crypto = Crypto::new();
         let _ = crypto.derive_dek(password, salt).expect("派生密钥失败");
         crypto
-    }
-
-    pub fn algorithm(&self) -> &str {
-        &self.inner.algorithm
     }
 
     /// 利用提供的派生密钥解密给定数据
