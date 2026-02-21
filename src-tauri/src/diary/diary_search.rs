@@ -27,7 +27,7 @@ pub(super) async fn search_diaries(
                 let ecc = event.clone();
                 let kc = keywords.clone();
                 async move {
-                    let diary = diary_get(cache, crypto, client, id).await?;
+                    let diary = diary_get(cache, crypto, client, &id).await?;
 
                     let content = diary.content();
                     // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词

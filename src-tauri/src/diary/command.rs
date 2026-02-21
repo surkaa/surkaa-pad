@@ -15,7 +15,7 @@ use crate::task::TaskPool;
 /// # Arguments
 /// * `content` - 日记内容
 /// # Returns
-/// * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
+/// * `Result<String, String>` - 成功时返回日记ID，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_save_diary(
@@ -29,7 +29,7 @@ pub async fn cmd_save_diary(
 
 /// 删除日记及其所有附件
 /// # Arguments
-/// * `uuid` - 日记 UUID
+/// * `id` - 日记ID
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
@@ -37,16 +37,16 @@ pub async fn cmd_save_diary(
 pub async fn cmd_delete_diary(
     cache: State<'_, DiaryMemoryCache>,
     client: State<'_, OssState>,
-    uuid: String
+    id: &str
 ) -> Result<(), String> {
     let cache = cache.inner().clone();
     let client = client.get_client()?;
-    delete_diary(&cache, &client, uuid).await
+    delete_diary(&cache, &client, id).await
 }
 
 /// 更新日记的内容
 /// # Arguments
-/// * `uuid` - 日记 UUID
+/// * `id` - 日记ID
 /// * `new_content` - 新的日记内容
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
@@ -56,11 +56,11 @@ pub async fn cmd_update_diary_content_only(
     cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    uuid: String,
+    id: &str,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
     let client = client.get_client()?;
-    update_diary_content_only(&cache, &crypto, &client, uuid, new_content).await
+    update_diary_content_only(&cache, &crypto, &client, id, new_content).await
 }
 
 /// 分页列出diary主键列表
@@ -80,7 +80,7 @@ pub async fn cmd_page_diary_ids(
 
 /// 获取日记Summary
 /// # Arguments
-/// * `uuid` - 日记 UUID
+/// * `id` - 日记ID
 /// # Returns
 /// * `Result<DiarySummary, String>` - 成功时返回日记 Summary，失败时返回错误信息
 #[tauri::command]
@@ -89,15 +89,15 @@ pub async fn cmd_get_diary_summary(
     cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    uuid: String,
+    id: &str,
 ) -> Result<DiarySummary, String> {
     let client = client.get_client()?;
-    get_diary_summary(&cache, &crypto, &client, uuid).await
+    get_diary_summary(&cache, &crypto, &client, id).await
 }
 
 /// 获取日记内容
 /// # Arguments
-/// * `uuid` - 日记 UUID
+/// * `id` - 日记ID
 /// # Returns
 /// * `Result<String, String>` - 成功时返回日记内容，失败时返回错误信息
 #[tauri::command]
@@ -106,10 +106,10 @@ pub async fn cmd_get_diary_content(
     cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    uuid: String,
+    id: &str,
 ) -> Result<String, String> {
     let client = client.get_client()?;
-    get_diary_content(&cache, &crypto, &client, uuid).await
+    get_diary_content(&cache, &crypto, &client, id).await
 }
 
 /// 搜索日记

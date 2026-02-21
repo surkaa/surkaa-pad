@@ -11,7 +11,7 @@ use uuid::Uuid;
 /// # Arguments
 /// * `content` - 日记内容
 /// # Returns
-/// * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
+/// * `Result<String, String>` - 成功时返回日记 ID，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub(super) async fn save_diary(
@@ -56,11 +56,11 @@ pub async fn diary_get(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
-    id: String,
+    id: &str,
 ) -> Result<DiaryManifest, String> {
-    let object_key = remote_manifest_key(&id);
+    let object_key = remote_manifest_key(id);
     let metadata = client.get_metadata(&object_key).await?;
-    if let Some((diary, etag)) = cache.get(&id) {
+    if let Some((diary, etag)) = cache.get(id) {
         if etag == metadata.etag() {
             return Ok(diary.clone());
         }
@@ -77,14 +77,14 @@ pub async fn diary_get(
         from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
 
     // 更新缓存
-    cache.insert(&id, manifest.clone(), metadata.etag().to_string());
+    cache.insert(id, manifest.clone(), metadata.etag().to_string());
 
     Ok(manifest)
 }
 
 /// 删除日记及其所有附件
 /// # Arguments
-/// * `uuid` - 日记 UUID
+/// * `uuid` - 日记 ID
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
@@ -92,7 +92,7 @@ pub async fn diary_get(
 pub(super) async fn delete_diary(
     cache: &DiaryMemoryCache,
     client: &OssClient,
-    uuid: String
+    uuid: &str
 ) -> Result<(), String> {
     let (objects, _) = client
         .list(&format!("{}/", uuid), None)
@@ -114,7 +114,7 @@ pub(super) async fn delete_diary(
 
 /// 更新日记的内容
 /// # Arguments
-/// * `uuid` - 日记 UUID
+/// * `uuid` - 日记 ID
 /// * `new_content` - 新的日记内容
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
@@ -124,11 +124,11 @@ pub(super) async fn update_diary_content_only(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
-    uuid: String,
+    id: &str,
     new_content: &str,
 ) -> Result<DiaryManifest, String> {
     // 先获取现有的 manifest
-    let mut manifest = diary_get(cache, crypto, client, uuid.clone()).await?;
+    let mut manifest = diary_get(cache, crypto, client, id).await?;
 
     // 更新内容和更新时间
     manifest.content = new_content.to_string();
@@ -146,7 +146,7 @@ pub(super) async fn update_diary_content_only(
     encrypted_manifest.extend_from_slice(&ciphertext);
 
     // 上传到 OSS，覆盖原有的 manifest
-    let object_key = remote_manifest_key(&uuid);
+    let object_key = remote_manifest_key(id);
     client
         .upload_bytes(&object_key, &encrypted_manifest)
         .await
@@ -154,7 +154,7 @@ pub(super) async fn update_diary_content_only(
 
     // 获取ETag并更新缓存
     let metadata = client.get_metadata(&object_key).await?;
-    cache.insert(&uuid, manifest.clone(), metadata.etag().to_string());
+    cache.insert(id, manifest.clone(), metadata.etag().to_string());
 
     Ok(manifest)
 }
@@ -188,14 +188,14 @@ mod tests {
 
         assert_eq!(saved_manifest.content, initial_content);
         assert!(!saved_manifest.id.is_empty());
-        let uuid = saved_manifest.id.clone();
+        let id = saved_manifest.id.clone();
 
         // 测试读取 - 验证远端拉取并写入缓存
-        let fetched_manifest = diary_get(&cache, &crypto, &client, uuid.clone())
+        let fetched_manifest = diary_get(&cache, &crypto, &client, &id)
             .await
             .expect("远程获取日记失败");
 
-        assert_eq!(fetched_manifest.id, uuid);
+        assert_eq!(fetched_manifest.id, id);
         assert_eq!(fetched_manifest.content, initial_content);
 
         // 为了确保 update 生成的时间戳严格大于前一次，休眠防 Flaky Test
@@ -204,7 +204,7 @@ mod tests {
         // 测试更新
         let updated_content = "Updated content for testing.";
         let updated_manifest =
-            update_diary_content_only(&cache, &crypto, &client, uuid.clone(), updated_content)
+            update_diary_content_only(&cache, &crypto, &client, &id, updated_content)
                 .await
                 .expect("未能更新日记");
 
@@ -212,19 +212,19 @@ mod tests {
         assert!(updated_manifest.updated > saved_manifest.updated);
 
         // 测试再次读取 - 验证缓存失效/更新机制
-        let refetched_manifest = diary_get(&cache, &crypto, &client, uuid.clone())
+        let refetched_manifest = diary_get(&cache, &crypto, &client, &id)
             .await
             .expect("未能重新获取更新的日记");
 
         assert_eq!(refetched_manifest.content, updated_content);
 
         // 测试删除
-        delete_diary(&cache, &client, uuid.clone())
+        delete_diary(&cache, &client, &id)
             .await
             .expect("删除日记失败");
 
         // 验证删除有效性
-        let not_found_result = diary_get(&cache, &crypto, &client, uuid.clone()).await;
+        let not_found_result = diary_get(&cache, &crypto, &client, &id).await;
         assert!(not_found_result.is_err(), "删除后日记不应被检索");
     }
 }

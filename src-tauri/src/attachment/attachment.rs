@@ -13,7 +13,7 @@ pub(super) async fn add_attachment(
     client: OssClient,
     pg: &impl PathGetter,
     event: Arc<dyn MessageSender<AddAttachmentEvent>>,
-    uuid: String,
+    id: &str,
     access_str: String,
     mimetype: String,
 ) {
@@ -26,7 +26,7 @@ pub(super) async fn download_attachment(
     client: OssClient,
     pg: &impl PathGetter,
     event: Arc<dyn MessageSender<DownloadAttachmentEvent>>,
-    uuid: String,
+    id: &str,
     filename: String,
 ) {
 }
@@ -35,11 +35,11 @@ pub(super) async fn delete_attachment(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
-    uuid: String,
+    id: &str,
     file_name: String,
 ) -> Result<DiaryManifest, String> {
     // 更新 manifest，移除附件元数据
-    let mut manifest = diary_get(cache, crypto, client, uuid.clone()).await?;
+    let mut manifest = diary_get(cache, crypto, client, id).await?;
     manifest.attachments.retain(|att| att.filename != file_name);
     manifest.updated = Utc::now().timestamp_millis();
 
@@ -51,14 +51,14 @@ pub(super) async fn delete_attachment(
     let mut encrypted_manifest = manifest_nonce;
     encrypted_manifest.extend_from_slice(&ciphertext);
     // 上传更新后的 manifest
-    let manifest_key = remote_manifest_key(&uuid);
+    let manifest_key = remote_manifest_key(id);
     client
         .upload_bytes(&manifest_key, &encrypted_manifest)
         .await
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
     // 删除附件对象
-    let attachment_key = remote_attachments_key(&uuid, &file_name);
+    let attachment_key = remote_attachments_key(id, &file_name);
     client
         .delete(&attachment_key)
         .await
@@ -66,7 +66,7 @@ pub(super) async fn delete_attachment(
 
     // 获取ETag并更新缓存
     let metadata = client.get_metadata(&manifest_key).await?;
-    cache.insert(&uuid, manifest.clone(), metadata.etag().to_string());
+    cache.insert(id, manifest.clone(), metadata.etag().to_string());
 
     Ok(manifest)
 }

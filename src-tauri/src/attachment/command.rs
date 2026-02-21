@@ -11,7 +11,7 @@ use tauri::{AppHandle, State};
 
 /// 给日记添加附件
 /// # Arguments
-/// * `uuid` - 日记 UUID
+/// * `id` - 日记 ID
 /// * `access_str` - 文件访问路径。
 /// * `mimetype` - 附件 MIME 类型
 /// # Returns
@@ -25,7 +25,7 @@ pub fn cmd_add_attachment(
     tp: State<'_, TaskPool>,
     app_handle: AppHandle,
     event: Channel<AddAttachmentEvent>,
-    uuid: String,
+    id: String,
     access_str: String,
     mimetype: String,
 ) -> Result<String, String> {
@@ -39,7 +39,7 @@ pub fn cmd_add_attachment(
             client,
             &app_handle,
             Arc::new(event),
-            uuid,
+            &id,
             access_str,
             mimetype
         ).await;
@@ -48,7 +48,7 @@ pub fn cmd_add_attachment(
 
 /// 下载日记附件
 /// # Arguments
-/// * `uuid` - 日记 UUID
+/// * `id` - 日记 ID
 /// * `filename` - 附件 ID
 /// * `nonce` - 解密iv
 /// # Returns
@@ -62,7 +62,7 @@ pub fn cmd_download_attachment(
     tp: State<'_, TaskPool>,
     app_handle: AppHandle,
     on_event: Channel<DownloadAttachmentEvent>,
-    uuid: String,
+    id: String,
     filename: String,
 ) -> Result<String, String> {
     let cache = cache.inner().clone();
@@ -75,7 +75,7 @@ pub fn cmd_download_attachment(
             client,
             &app_handle,
             Arc::new(on_event),
-            uuid,
+            &id,
             filename,
         )
         .await;
@@ -84,7 +84,7 @@ pub fn cmd_download_attachment(
 
 /// 删除日记的附件
 /// # Arguments
-/// * `uuid` - 日记 UUID
+/// * `id` - 日记 ID
 /// * `filename` - 附件 ID
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
@@ -94,9 +94,9 @@ pub async fn cmd_delete_attachment(
     cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
-    uuid: String,
+    id: &str,
     file_name: String,
 ) -> Result<DiaryManifest, String> {
     let client = client.get_client()?;
-    delete_attachment(&cache, crypto.deref(), &client, uuid, file_name).await
+    delete_attachment(&cache, crypto.deref(), &client, id, file_name).await
 }

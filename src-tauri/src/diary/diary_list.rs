@@ -25,7 +25,7 @@ pub(super) async fn get_diary_summary(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
-    id: String,
+    id: &str,
 ) -> Result<DiarySummary, String> {
     let diary = diary_get(cache, crypto, client, id).await?;
     Ok(DiarySummary::from_manifest(diary))
@@ -35,7 +35,7 @@ pub(super) async fn get_diary_content(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
-    id: String,
+    id: &str,
 ) -> Result<String, String> {
     let diary = diary_get(cache, crypto, client, id).await?;
     Ok(diary.content)
@@ -91,11 +91,11 @@ mod tests {
         assert_eq!(all_ids.len(), test_count);
         assert_eq!(page_count, 3, "分页逻辑错误，预期3页但实际{}", page_count);
         for id in all_ids.clone() {
-            let summary = get_diary_summary(&cache, &crypto, &client, id.clone())
+            let summary = get_diary_summary(&cache, &crypto, &client, &id)
                 .await
                 .expect("无法获取日记摘要");
             assert_eq!(summary.title, title);
-            let content = get_diary_content(&cache, &crypto, &client, id)
+            let content = get_diary_content(&cache, &crypto, &client, &id)
                 .await
                 .expect("无法获取日记内容");
             assert_eq!(content, content);
@@ -103,7 +103,7 @@ mod tests {
 
         // 清理测试数据
         for id in all_ids {
-            let _ = delete_diary(&cache, &client, id)
+            let _ = delete_diary(&cache, &client, &id)
                 .await
                 .expect("无法删除测试日记");
         }
