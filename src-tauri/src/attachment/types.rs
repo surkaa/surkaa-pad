@@ -8,29 +8,28 @@ use specta::Type;
     tag = "event",
     content = "data"
 )]
+pub enum AddAttachmentEvent {
+    Started,
+    /// 0-100 的上传进度百分比
+    Progress(u8),
+    Completed(AttachmentMeta),
+    Error(String),
+}
+
+#[derive(Clone, Serialize, Type)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "event",
+    content = "data"
+)]
 pub enum DownloadAttachmentEvent {
-    #[serde(rename_all = "camelCase")]
-    Started {
-        #[specta(type = f64)]
-        total_size: u64,
-    },
-    DownloadProgress {
-        #[specta(type = f64)]
-        downloaded: u64,
-    },
-    Decrypting,
-    #[serde(rename_all = "camelCase")]
-    Decrypted {
-        #[specta(type = f64)]
-        decrypted_size: u64,
-    },
-    #[serde(rename_all = "camelCase")]
-    Completed {
-        file_path: String,
-    },
-    Error {
-        message: String,
-    },
+    Started,
+    /// 0-100 的下载进度百分比
+    Progress(u8),
+    /// 下载完成，保存在应用目录AppData下的路径
+    Completed(String),
+    Error(String),
 }
 
 // 单个附件的元数据

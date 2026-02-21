@@ -1,5 +1,5 @@
 use crate::attachment::attachment::{add_attachment, delete_attachment, download_attachment};
-use crate::attachment::types::DownloadAttachmentEvent;
+use crate::attachment::types::{AddAttachmentEvent, DownloadAttachmentEvent};
 use crate::crypto::Crypto;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use crate::object::OssState;
@@ -18,16 +18,32 @@ use tauri::{AppHandle, State};
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_add_attachment(
+pub fn cmd_add_attachment(
     cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
+    tp: State<'_, TaskPool>,
+    app_handle: AppHandle,
+    event: Channel<AddAttachmentEvent>,
     uuid: String,
     access_str: String,
     mimetype: String,
-) -> Result<DiaryManifest, String> {
+) -> Result<String, String> {
+    let cache = cache.inner().clone();
+    let crypto = crypto.inner().clone();
     let client = client.get_client()?;
-    add_attachment(&cache, crypto.deref(), &client, uuid, access_str, mimetype).await
+    tp.spawn(async move {
+        add_attachment(
+            cache,
+            crypto,
+            client,
+            &app_handle,
+            Arc::new(event),
+            uuid,
+            access_str,
+            mimetype
+        ).await;
+    })
 }
 
 /// 下载日记附件
@@ -40,6 +56,7 @@ pub async fn cmd_add_attachment(
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_download_attachment(
+    cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
@@ -47,19 +64,19 @@ pub fn cmd_download_attachment(
     on_event: Channel<DownloadAttachmentEvent>,
     uuid: String,
     filename: String,
-    nonce: Vec<u8>,
 ) -> Result<String, String> {
+    let cache = cache.inner().clone();
     let crypto = crypto.inner().clone();
     let client = client.get_client()?;
     tp.spawn(async move {
         download_attachment(
+            cache,
             crypto,
             client,
             &app_handle,
             Arc::new(on_event),
             uuid,
             filename,
-            nonce,
         )
         .await;
     })
