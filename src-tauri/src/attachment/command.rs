@@ -1,5 +1,5 @@
-use crate::attachment::attachment::{add_attachment, delete_attachment, download_attachment};
-use crate::attachment::types::{AddAttachmentEvent, DownloadAttachmentEvent};
+use crate::attachment::attachment::{add_attachment, delete_attachment};
+use crate::attachment::types::AddAttachmentEvent;
 use crate::crypto::Crypto;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use crate::object::OssState;
@@ -8,7 +8,7 @@ use crate::utils::open_file_stream;
 use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::{State};
+use tauri::State;
 
 /// 给日记添加附件
 /// # Arguments
@@ -45,40 +45,6 @@ pub fn cmd_add_attachment(
             &mimetype,
             encrypted,
             file,
-        )
-        .await;
-    })
-}
-
-/// 下载日记附件
-/// # Arguments
-/// * `id` - 日记 ID
-/// * `filename` - 附件 ID
-/// * `nonce` - 解密iv
-/// # Returns
-/// * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
-pub fn cmd_download_attachment(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    tp: State<'_, TaskPool>,
-    on_event: Channel<DownloadAttachmentEvent>,
-    id: String,
-    filename: String,
-) -> Result<String, String> {
-    let cache = cache.inner().clone();
-    let crypto = crypto.inner().clone();
-    let client = client.get_client()?;
-    tp.spawn(async move {
-        download_attachment(
-            cache,
-            crypto,
-            client,
-            Arc::new(on_event),
-            &id,
-            filename,
         )
         .await;
     })

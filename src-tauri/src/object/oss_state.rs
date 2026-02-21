@@ -1,11 +1,12 @@
 use crate::object::OssClient;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
-pub struct OssState(OnceLock<OssClient>);
+#[derive(Clone)]
+pub struct OssState(Arc<OnceLock<OssClient>>);
 
 impl OssState {
     pub fn new() -> Self {
-        Self(OnceLock::new())
+        Self(Arc::new(OnceLock::new()))
     }
 
     pub async fn initialize(

@@ -7,7 +7,7 @@ mod task;
 mod utils;
 
 use crate::attachment::command::{
-    cmd_add_attachment, cmd_delete_attachment, cmd_download_attachment,
+    cmd_add_attachment, cmd_delete_attachment,
 };
 use crate::crypto::command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
@@ -47,7 +47,6 @@ pub fn run() {
             cmd_search_diaries,
             // 附件相关操作
             cmd_add_attachment,
-            cmd_download_attachment,
             cmd_delete_attachment,
             // 其他
             cmd_cancel_task,

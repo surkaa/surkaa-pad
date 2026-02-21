@@ -1,4 +1,4 @@
-use crate::attachment::types::{AddAttachmentEvent, DownloadAttachmentEvent};
+use crate::attachment::types::AddAttachmentEvent;
 use crate::attachment::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Ctr;
 use crate::crypto::Crypto;
@@ -69,16 +69,6 @@ pub(super) async fn add_attachment(
             let _ = event.send(AddAttachmentEvent::Completed(attachment));
         }
     }
-}
-
-pub(super) async fn download_attachment(
-    cache: DiaryMemoryCache,
-    crypto: Crypto,
-    client: OssClient,
-    event: Arc<dyn MessageSender<DownloadAttachmentEvent>>,
-    id: &str,
-    filename: String,
-) {
 }
 
 pub(super) async fn delete_attachment(
