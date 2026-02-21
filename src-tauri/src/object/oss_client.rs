@@ -309,7 +309,10 @@ impl OssClient {
         next_token: NextToken,
     ) -> Result<(Vec<ObjectMetadata>, NextToken), String> {
         // 构造基础查询参数
+        #[cfg(not(debug_assertions))]
         let mut query_params = format!("list-type=2&prefix={}&max-keys=1000", prefix);
+        #[cfg(debug_assertions)] // 测试环境下单页为10个，方便测试分页逻辑
+        let mut query_params = format!("list-type=2&prefix={}&max-keys=10", prefix);
 
         // 处理签名路径
         // 注意：OSS 要求 continuation-token 必须出现在签名字符串的 CanonicalizedResource 中

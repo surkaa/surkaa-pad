@@ -1,9 +1,18 @@
-use std::path::PathBuf;
 use crate::storage::types::PathGetter;
+use std::path::PathBuf;
 
 /// 日记主文件在云存储中的路径
 pub fn remote_manifest_key(diary_id: &str) -> String {
     format!("{}/manifest.enc", diary_id)
+}
+
+/// 将日记主文件的key解析出日记ID
+pub fn diary_id_from_manifest_key(key: &str) -> Option<String> {
+    if let Some(stripped) = key.strip_suffix("/manifest.enc") {
+        Some(stripped.to_string())
+    } else {
+        None
+    }
 }
 
 pub fn is_remote_manifest_key(key: &str) -> bool {
@@ -40,19 +49,11 @@ pub fn local_attachment_path(
 }
 
 /// 日记附件在本地临时目录的文件夹路径
-pub fn local_attachment_dir(
-    path_getter: &impl PathGetter,
-) -> PathBuf {
-    path_getter
-        .get_data_path()
-        .join("pad")
+pub fn local_attachment_dir(path_getter: &impl PathGetter) -> PathBuf {
+    path_getter.get_data_path().join("pad")
 }
 
 /// 获取录音文件夹
-pub fn local_recording_dir(
-    path_getter: &impl PathGetter,
-) -> PathBuf {
-    path_getter
-        .get_data_path()
-        .join("audio_cache")
+pub fn local_recording_dir(path_getter: &impl PathGetter) -> PathBuf {
+    path_getter.get_data_path().join("audio_cache")
 }
