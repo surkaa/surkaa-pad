@@ -2,11 +2,13 @@ use crate::crypto::Crypto;
 use crate::object::OssClient;
 use crate::storage::remote_manifest_key;
 
+use crate::attachment::AttachmentMeta;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use chrono::Utc;
 use serde_json::from_slice;
 use uuid::Uuid;
 
+// TODO 统一函数命名格式 以及diary和manifest
 pub(super) async fn save_diary(
     crypto: &Crypto,
     client: &OssClient,
@@ -78,7 +80,7 @@ pub async fn diary_get(
 pub(super) async fn delete_diary(
     cache: &DiaryMemoryCache,
     client: &OssClient,
-    uuid: &str
+    uuid: &str,
 ) -> Result<(), String> {
     let (objects, _) = client
         .list(&format!("{}/", uuid), None)
@@ -98,6 +100,36 @@ pub(super) async fn delete_diary(
     Ok(())
 }
 
+async fn update_diary(
+    cache: &DiaryMemoryCache,
+    crypto: &Crypto,
+    client: &OssClient,
+    diary: &DiaryManifest,
+) -> Result<(), String> {
+    // 序列化为 JSON
+    let manifest_json = serde_json::to_vec(&diary).map_err(|e| format!("未能序列化日记: {}", e))?;
+
+    // 加密 manifest
+    let (ciphertext, nonce) = crypto.encrypt(&manifest_json)?;
+
+    // 组合 nonce 和 ciphertext，前面放 nonce
+    let mut encrypted_manifest = nonce;
+    encrypted_manifest.extend_from_slice(&ciphertext);
+
+    // 上传到 OSS，覆盖原有的 manifest
+    let object_key = remote_manifest_key(&diary.id);
+    client
+        .upload_bytes(&object_key, &encrypted_manifest)
+        .await
+        .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
+
+    // 获取ETag并更新缓存
+    let metadata = client.get_metadata(&object_key).await?;
+    cache.insert(&diary.id, diary.clone(), metadata.etag().to_string());
+
+    Ok(())
+}
+
 pub(super) async fn update_diary_content_only(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
@@ -112,36 +144,44 @@ pub(super) async fn update_diary_content_only(
     manifest.content = new_content.to_string();
     manifest.updated = Utc::now().timestamp_millis();
 
-    // 序列化为 JSON
-    let manifest_json = serde_json::to_vec(&manifest)
-        .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
-
-    // 加密 manifest
-    let (ciphertext, nonce) = crypto.encrypt(&manifest_json)?;
-
-    // 组合 nonce 和 ciphertext，前面放 nonce
-    let mut encrypted_manifest = nonce;
-    encrypted_manifest.extend_from_slice(&ciphertext);
-
-    // 上传到 OSS，覆盖原有的 manifest
-    let object_key = remote_manifest_key(id);
-    client
-        .upload_bytes(&object_key, &encrypted_manifest)
-        .await
-        .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
-
-    // 获取ETag并更新缓存
-    let metadata = client.get_metadata(&object_key).await?;
-    cache.insert(id, manifest.clone(), metadata.etag().to_string());
+    update_diary(cache, crypto, client, &manifest).await?;
 
     Ok(manifest)
+}
+
+pub(crate) async fn update_diary_attachment(
+    cache: &DiaryMemoryCache,
+    crypto: &Crypto,
+    client: &OssClient,
+    id: &str,
+    new_attachment: &AttachmentMeta,
+) -> Result<(), String> {
+    let mut diary = diary_get(&cache, &crypto, &client, id).await?;
+    diary.attachments.push(new_attachment.clone());
+    diary.updated = Utc::now().timestamp_millis();
+    update_diary(cache, crypto, client, &diary).await?;
+    Ok(())
+}
+
+pub(crate) async fn delete_diary_attachment(
+    cache: &DiaryMemoryCache,
+    crypto: &Crypto,
+    client: &OssClient,
+    id: &str,
+    filename: &str,
+) -> Result<(), String> {
+    let mut diary = diary_get(&cache, &crypto, &client, id).await?;
+    diary.attachments.retain(|att| att.filename != filename);
+    diary.updated = Utc::now().timestamp_millis();
+    update_diary(cache, crypto, client, &diary).await?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use serial_test::serial;
+    use std::time::Duration;
 
     #[serial]
     #[tokio::test]
