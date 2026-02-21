@@ -1,9 +1,9 @@
+use crate::crypto::types::EncryptionAlgorithm::Gcm;
 use crate::crypto::Crypto;
 use crate::diary::{diary_get, DiaryMemoryCache};
 use crate::object::OssState;
-use tauri::http::{Request, Response, StatusCode};
+use tauri::http::{HeaderMap, Request, Response, StatusCode};
 use tauri::{Manager, UriSchemeContext, UriSchemeResponder, Wry};
-use crate::crypto::types::EncryptionAlgorithm::Gcm;
 
 pub fn attachment_protocol(
     context: UriSchemeContext<Wry>,
@@ -42,7 +42,7 @@ async fn attachment_protocol_inner(
         return;
     }
 
-    let tag = segments[0];
+    let _tag = segments[0];
     let id = segments[1];
     let filename = segments[2];
 
@@ -71,18 +71,63 @@ async fn attachment_protocol_inner(
         return;
     }
 
-    let range_header = request.headers()
-        .get(tauri::http::header::RANGE)
-        .and_then(|h| h.to_str().ok());
+    let range = parse_range_header(request.headers());
 
-    match tag {
-        "image" => {}
-        "audio" => {}
-        "video" => {}
-        _ => {
+    let range = match range {
+        HttpRange::Full => (0, attachment.size - 1),
+        HttpRange::Range(start, end) => {
+            let end = end.unwrap_or(attachment.size - 1);
+            if start >= attachment.size || end >= attachment.size || start > end {
+                responder.respond(bad_request_response());
+                return;
+            }
+            (start, end)
+        }
+        HttpRange::Invalid => {
             responder.respond(bad_request_response());
             return;
         }
+    };
+}
+
+pub enum HttpRange {
+    /// 没有 Range 头（比如图片），返回全量数据 200 OK
+    Full,
+    /// 包含合法的 Range 头，返回 206 Partial Content
+    /// (起始字节, 结束字节: 若浏览器未指定则为 None)
+    Range(u64, Option<u64>),
+    /// Range 头格式错误，应返回 416 Range Not Satisfiable 或兜底返回 Full
+    Invalid,
+}
+
+pub fn parse_range_header(headers: &HeaderMap) -> HttpRange {
+    let Some(header_val) = headers.get(tauri::http::header::RANGE) else {
+        return HttpRange::Full;
+    };
+
+    let Ok(range_str) = header_val.to_str() else {
+        return HttpRange::Invalid;
+    };
+
+    if !range_str.starts_with("bytes=") {
+        return HttpRange::Invalid;
+    }
+
+    let parts: Vec<&str> = range_str[6..].split('-').collect();
+    if parts.is_empty() || parts.len() > 2 {
+        return HttpRange::Invalid;
+    }
+
+    let start = parts[0].parse::<u64>().unwrap_or(0);
+
+    if parts.len() == 1 || parts[1].is_empty() {
+        // 应对 "bytes=500000-" 的情况
+        HttpRange::Range(start, None)
+    } else if let Ok(end) = parts[1].parse::<u64>() {
+        // 应对 "bytes=500000-600000" 的情况
+        HttpRange::Range(start, Some(end))
+    } else {
+        HttpRange::Invalid
     }
 }
 
