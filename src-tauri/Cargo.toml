@@ -64,6 +64,10 @@ specta = "=2.0.0-rc.22"
 specta-typescript = "0.0.9"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 
+# 本地Http代理处理流视频
+axum = "0.8.8"
+tower-http = { version = "0.6.8", features = ["cors", "fs"] }
+
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-biometric = { path = "../../Forks/tauri-plugins-workspace/plugins/biometric" }
 jni = "0.21.1"

@@ -69,10 +69,13 @@ pub(super) async fn delete_attachment(
 #[cfg(test)]
 mod tests {
     use crate::crypto::Crypto;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_video_attachment() {
         let crypto = Crypto::from_env();
+        let test_mp4_full_path = std::env::var("MP4_FILE").expect("未设置视频文件路径");
+        let temp_dir = tempdir().expect("无法创建临时目录");
         
     }
 }
