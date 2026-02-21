@@ -1,20 +1,32 @@
+use crate::object::ByteStream;
+use aes::cipher::{KeyIvInit, StreamCipher};
 use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::aes::cipher::crypto_common::rand_core::RngCore;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use argon2::password_hash::SaltString;
 use argon2::{Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
+use bytes::Bytes;
+use futures_util::StreamExt;
 use std::sync::{Arc, OnceLock};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-/// 定义常量
+/// 定义 AES-GCM 的 nonce 长度
 const NONCE_LEN: usize = 12;
+
 /// 定义派生密钥的长度（字节），AES-256 需要 32 字节
 const KEY_LEN: usize = 32;
+
 /// 定义内存成本（KiB）
 #[cfg(debug_assertions)]
 const MEMORY_COST_KIB: u32 = 1024;
 #[cfg(not(debug_assertions))]
 const MEMORY_COST_KIB: u32 = 256 * 1024;
+
+// 定义 AES-256-CTR 类型 (128BE代表128位大端序计数器)
+type Aes256Ctr = ctr::Ctr128BE<aes::Aes256>;
+
+// 定义 CTR 模式的 NONCE(IV) 长度
+const CTR_NONCE_LEN: usize = 16;
 
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct DerivedKey(pub [u8; KEY_LEN]);
@@ -77,6 +89,40 @@ impl Crypto {
         }
         let (nonce_bytes, ciphertext) = full_ciphertext.split_at(NONCE_LEN);
         self.decrypt(ciphertext, nonce_bytes)
+    }
+
+    /// 使用CTR流式加密包装流
+    pub fn encrypt_streaming(&self, stream: ByteStream) -> Result<(ByteStream, Vec<u8>), String> {
+        let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
+
+        // 生成随机NONCE
+        let mut nonce = [0u8; CTR_NONCE_LEN];
+        OsRng.fill_bytes(&mut nonce);
+
+        let cipher = Aes256Ctr::new(dek.as_ref().into(), (&nonce).into());
+
+        let mapped_stream = ctr_stream_cipher(stream, cipher);
+
+        Ok((mapped_stream, nonce.to_vec()))
+    }
+
+    /// 使用CTR流式解密
+    pub fn decrypt_streaming(
+        &self,
+        stream: ByteStream,
+        nonce: &[u8],
+    ) -> Result<ByteStream, String> {
+        let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
+
+        if nonce.len() != CTR_NONCE_LEN {
+            return Err("NONCE 长度错误".to_string());
+        }
+
+        let cipher = Aes256Ctr::new(dek.as_ref().into(), nonce.into());
+
+        let mapped_stream = ctr_stream_cipher(stream, cipher);
+
+        Ok(mapped_stream)
     }
 
     /// 使用提供的派生密钥对给定数据进行加密。
@@ -151,6 +197,17 @@ impl Crypto {
         dek_array.zeroize();
         Ok(())
     }
+}
+
+fn ctr_stream_cipher(stream: ByteStream, mut cipher: Aes256Ctr) -> ByteStream {
+    Box::pin(stream.map(move |result| match result {
+        Ok(bytes) => {
+            let mut buffer = bytes.to_vec();
+            cipher.apply_keystream(&mut buffer);
+            Ok(Bytes::from(buffer))
+        }
+        Err(e) => Err(e),
+    }))
 }
 
 #[cfg(test)]
@@ -233,10 +290,8 @@ mod tests {
                 let encrypted_data = std::fs::read(&encrypted_attachment_path)
                     .expect(&format!("无法读取附件文件: {}", attachment.filename));
 
-                let nonce = attachment.nonce.clone().expect("附件缺少nonce");
-
                 let decrypted_data = crypto
-                    .decrypt(&encrypted_data, &nonce)
+                    .decrypt(&encrypted_data, &attachment.nonce)
                     .expect(&format!("无法解密附件: {}", attachment.filename));
 
                 let new_extension = if content.contains(&format!("<IMG:{}>", attachment.filename)) {
@@ -311,5 +366,67 @@ mod tests {
         println!("解密大文件用时: {:?}", decrypt_duration);
 
         assert_eq!(random_data, decrypted_data);
+    }
+
+    fn create_mock_stream(data: Vec<u8>, chunk_size: usize) -> ByteStream {
+        use futures_util::stream;
+        let chunks: Vec<_> = data
+            .chunks(chunk_size)
+            .map(|chunk| Ok(Bytes::from(chunk.to_vec())))
+            .collect();
+
+        Box::pin(stream::iter(chunks))
+    }
+
+    #[tokio::test]
+    async fn test_ctr_streaming_encrypt_decrypt() {
+        let crypto = Crypto::from_env();
+
+        // 1. 生成 1MB + 42 字节的随机测试数据（故意弄一个非整数倍长度，测试流的边界处理）
+        let mut original_data = vec![0u8; 1024 * 1024 + 42];
+        OsRng.fill_bytes(&mut original_data);
+
+        // --- 流式加密阶段 ---
+        let encrypt_start = std::time::Instant::now();
+
+        // 模拟 64KB 为一个 Chunk 的数据流
+        let input_stream = create_mock_stream(original_data.clone(), 64 * 1024);
+
+        // 【注意】：这里假设你已经把名字改正确了，即 encrypt_streaming 是负责生成 nonce 的那个！
+        let (mut encrypted_stream, nonce) = crypto.encrypt_streaming(input_stream).expect("流式加密失败");
+
+        // 消费流，把加密后的块重新收集到 Vec 中
+        let mut encrypted_data = Vec::new();
+        while let Some(chunk_result) = encrypted_stream.next().await {
+            let chunk = chunk_result.expect("读取加密流失败");
+            encrypted_data.extend_from_slice(&chunk);
+        }
+
+        let encrypt_duration = encrypt_start.elapsed();
+        println!("CTR 流式加密用时: {:?}", encrypt_duration);
+
+        // 验证：加密后的数据长度应与原数据一致（CTR 特性，0 字节膨胀），且内容不同
+        assert_eq!(original_data.len(), encrypted_data.len());
+        assert_ne!(original_data, encrypted_data);
+        assert_eq!(nonce.len(), 16); // 验证 IV 长度必须是 16 字节
+
+        // --- 流式解密阶段 ---
+        let decrypt_start = std::time::Instant::now();
+
+        // 将刚才收集的密文再次变成 Stream 喂给解密器
+        let encrypted_input_stream = create_mock_stream(encrypted_data, 64 * 1024);
+        let mut decrypted_stream = crypto.decrypt_streaming(encrypted_input_stream, &nonce).expect("流式解密失败");
+
+        let mut decrypted_data = Vec::new();
+        while let Some(chunk_result) = decrypted_stream.next().await {
+            let chunk = chunk_result.expect("读取解密流失败");
+            decrypted_data.extend_from_slice(&chunk);
+        }
+
+        let decrypt_duration = decrypt_start.elapsed();
+        println!("CTR 流式解密用时: {:?}", decrypt_duration);
+
+        // 终极验证：解密后的明文必须和最开始的原始数据一模一样
+        assert_eq!(original_data, decrypted_data);
     }
 }
