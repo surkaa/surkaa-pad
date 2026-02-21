@@ -34,9 +34,14 @@ pub async fn cmd_save_diary(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_delete_diary(client: State<'_, OssState>, uuid: String) -> Result<(), String> {
+pub async fn cmd_delete_diary(
+    cache: State<'_, DiaryMemoryCache>,
+    client: State<'_, OssState>,
+    uuid: String
+) -> Result<(), String> {
+    let cache = cache.inner().clone();
     let client = client.get_client()?;
-    delete_diary(&client, uuid).await
+    delete_diary(&cache, &client, uuid).await
 }
 
 /// 更新日记的内容

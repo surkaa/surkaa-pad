@@ -17,6 +17,7 @@ pub(super) async fn add_attachment(
     access_str: String,
     mimetype: String,
 ) {
+    // TODO 记得更新缓存
 }
 
 pub(super) async fn download_attachment(
@@ -62,6 +63,10 @@ pub(super) async fn delete_attachment(
         .delete(&attachment_key)
         .await
         .map_err(|e| format!("Failed to delete attachment: {}", e))?;
+
+    // 获取ETag并更新缓存
+    let metadata = client.get_metadata(&manifest_key).await?;
+    cache.insert(&uuid, manifest.clone(), metadata.etag().to_string());
 
     Ok(manifest)
 }

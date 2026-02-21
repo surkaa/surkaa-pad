@@ -26,6 +26,10 @@ impl DiaryMemoryCache {
         self.diaries.insert(id.to_string(), Arc::new((diary, etag)));
     }
 
+    pub fn remove(&self, id: &str) {
+        self.diaries.remove(id);
+    }
+
     pub fn list(&self) -> Vec<DiaryManifest> {
         self.diaries.iter().map(|v| v.as_ref().0.clone()).collect()
     }

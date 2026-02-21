@@ -89,7 +89,11 @@ pub async fn diary_get(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub(super) async fn delete_diary(client: &OssClient, uuid: String) -> Result<(), String> {
+pub(super) async fn delete_diary(
+    cache: &DiaryMemoryCache,
+    client: &OssClient,
+    uuid: String
+) -> Result<(), String> {
     let (objects, _) = client
         .list(&format!("{}/", uuid), None)
         .await
@@ -101,6 +105,9 @@ pub(super) async fn delete_diary(client: &OssClient, uuid: String) -> Result<(),
             .await
             .map_err(|e| format!("Failed to delete object {}: {}", object.key(), e))?;
     }
+
+    // 删除缓存
+    cache.remove(&uuid);
 
     Ok(())
 }
@@ -144,6 +151,10 @@ pub(super) async fn update_diary_content_only(
         .upload_bytes(&object_key, &encrypted_manifest)
         .await
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
+
+    // 获取ETag并更新缓存
+    let metadata = client.get_metadata(&object_key).await?;
+    cache.insert(&uuid, manifest.clone(), metadata.etag().to_string());
 
     Ok(manifest)
 }
@@ -206,7 +217,7 @@ mod tests {
         assert_eq!(refetched_manifest.content, updated_content);
 
         // 测试删除
-        delete_diary(&client, uuid.clone())
+        delete_diary(&cache, &client, uuid.clone())
             .await
             .expect("删除日记失败");
 
