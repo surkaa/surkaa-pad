@@ -149,7 +149,7 @@ pub(super) async fn update_diary_content_only(
     Ok(manifest)
 }
 
-pub(crate) async fn update_diary_attachment(
+pub async fn update_diary_attachment(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
@@ -163,7 +163,7 @@ pub(crate) async fn update_diary_attachment(
     Ok(())
 }
 
-pub(crate) async fn delete_diary_attachment(
+pub async fn delete_diary_attachment(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
