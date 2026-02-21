@@ -239,8 +239,10 @@ mod tests {
                 let encrypted_data = std::fs::read(&encrypted_attachment_path)
                     .expect(&format!("无法读取附件文件: {}", attachment.filename));
 
+                let nonce = attachment.nonce.clone().expect("附件缺少nonce");
+
                 let decrypted_data = crypto
-                    .decrypt(&encrypted_data, &attachment.nonce)
+                    .decrypt(&encrypted_data, &nonce)
                     .expect(&format!("无法解密附件: {}", attachment.filename));
 
                 let new_extension = if content.contains(&format!("<IMG:{}>", attachment.filename)) {
