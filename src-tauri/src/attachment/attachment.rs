@@ -1,6 +1,9 @@
 use crate::attachment::types::{AddAttachmentEvent, DownloadAttachmentEvent};
+use crate::attachment::AttachmentMeta;
+use crate::crypto::types::EncryptionAlgorithm::Ctr;
 use crate::crypto::Crypto;
-use crate::diary::{diary_get, DiaryManifest, DiaryMemoryCache};
+use crate::diary::{diary_get, update_diary_attachment, DiaryManifest, DiaryMemoryCache};
+use crate::object::tracker_stream::tracker_stream;
 use crate::object::{ByteStream, OssClient};
 use crate::storage::{remote_attachments_key, remote_manifest_key, PathGetter};
 use crate::utils::message_sender::MessageSender;
@@ -16,9 +19,54 @@ pub(super) async fn add_attachment(
     id: &str,
     mimetype: &str,
     encrypt: bool,
-    (size, mut stream): (u64, ByteStream),
+    (len, stream): (u64, ByteStream),
 ) {
-    // TODO 记得更新缓存
+    // 直接都使用CTR来加密
+    let filename = uuid::Uuid::new_v4().to_string();
+    // 包装流 用来更新进度
+    let ec = event.clone();
+    let stream = tracker_stream(len, stream, move |progress| {
+        let _ = ec.send(AddAttachmentEvent::Progress(progress));
+    });
+
+    let logic = async move {
+        let attachment = if !encrypt {
+            // 直接上传
+            let key = remote_attachments_key(id, &filename);
+            client.upload(&key, len, stream, mimetype).await?;
+            // 运行到这里代表上传完成且没有错误
+            AttachmentMeta {
+                filename,
+                mimetype: mimetype.to_string(),
+                size: len,
+                nonce: None,
+                encrypted: false,
+                algorithm: Ctr,
+            }
+        } else {
+            // TODO 使用 AES-256-CTR 加密后上传
+            AttachmentMeta {
+                filename: filename.clone(),
+                mimetype: mimetype.to_string(),
+                size: len,
+                nonce: None,
+                encrypted: true,
+                algorithm: Ctr,
+            }
+        };
+        // 更新日记
+        update_diary_attachment(&cache, &crypto, &client, id, &attachment).await?;
+        Ok::<AttachmentMeta, String>(attachment)
+    };
+
+    match logic.await {
+        Err(e) => {
+            let _ = event.send(AddAttachmentEvent::Error(e));
+        }
+        Ok(attachment) => {
+            let _ = event.send(AddAttachmentEvent::Completed(attachment));
+        }
+    }
 }
 
 pub(super) async fn download_attachment(
@@ -82,6 +130,5 @@ mod tests {
         let crypto = Crypto::from_env();
         let test_mp4_full_path = std::env::var("MP4_FILE").expect("未设置视频文件路径");
         let temp_dir = tempdir().expect("无法创建临时目录");
-        
     }
 }
