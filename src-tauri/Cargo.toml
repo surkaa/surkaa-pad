@@ -55,6 +55,8 @@ aead = "0.5"
 argon2 = "0.5"
 aes-gcm = "0.10"
 zeroize = { version = "1.8", features = ["derive"] }
+aes = "0.8.4"
+ctr = "0.9.2"
 
 # 并发哈希映射
 dashmap = "6"
