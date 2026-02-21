@@ -45,7 +45,9 @@ pub(super) async fn get_diary_content(
 mod tests {
     use super::*;
     use crate::diary::diary::{delete_diary, save_diary};
+    use serial_test::serial;
 
+    #[serial]
     #[tokio::test]
     async fn test_diary_list() {
         // 初始化依赖

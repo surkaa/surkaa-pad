@@ -163,7 +163,9 @@ pub(super) async fn update_diary_content_only(
 mod tests {
     use super::*;
     use std::time::Duration;
+    use serial_test::serial;
 
+    #[serial]
     #[tokio::test]
     async fn test_diary_crud_lifecycle() {
         // 初始化依赖

@@ -409,11 +409,8 @@ impl OssClient {
 mod tests {
     use super::*;
     use futures_util::stream::iter;
-    use once_cell::sync::Lazy;
     use std::iter::once;
-    use std::sync::Mutex;
-
-    static SEQUENTIAL_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+    use serial_test::serial;
 
     async fn assert_empty(client: &OssClient, msg: &str) {
         // 检查有没有遗留的测试文件
@@ -431,9 +428,9 @@ mod tests {
         client.upload(key, len, stream).await.expect("上传失败");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_oss() {
-        let _guard = SEQUENTIAL_LOCK.lock().unwrap();
         let client = OssClient::from_env();
         let key = "test_upload.txt";
         let content = "This is a test line for OSS upload and download testing.";
@@ -512,9 +509,9 @@ mod tests {
         assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_batch_delete() {
-        let _guard = SEQUENTIAL_LOCK.lock().unwrap();
         let client = OssClient::from_env();
         assert_empty(&client, "测试开始前对象存储应为空").await;
 
@@ -552,9 +549,9 @@ mod tests {
         assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_list() {
-        let _guard = SEQUENTIAL_LOCK.lock().unwrap();
         let client = OssClient::from_env();
         assert_empty(&client, "测试开始前对象存储应为空").await;
         add_object(&client, "folder/test1.txt", "Test file 1").await;
