@@ -59,10 +59,9 @@ pub async fn diary_get(
     id: String,
 ) -> Result<DiaryManifest, String> {
     let object_key = remote_manifest_key(&id);
-    if let Some(diary) = cache.get(&id) {
-        // 如果本地有，则先检查和远程的元数据（修改时间和ETag）是否一致，如果不一致则说明远程有更新，需要重新下载
-        let metadata = client.get_metadata(&object_key).await?;
-        if diary.updated == metadata.last_modified().timestamp_millis() {
+    let metadata = client.get_metadata(&object_key).await?;
+    if let Some((diary, etag)) = cache.get(&id) {
+        if etag == metadata.etag() {
             return Ok(diary.clone());
         }
     }
@@ -74,10 +73,11 @@ pub async fn diary_get(
     let manifest_bytes = crypto.decrypt_from_full_ciphertext(&encrypted_data)?;
 
     // 反序列化 JSON
-    let manifest: DiaryManifest = from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
+    let manifest: DiaryManifest =
+        from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
 
     // 更新缓存
-    cache.insert(&id, manifest.clone());
+    cache.insert(&id, manifest.clone(), metadata.etag().to_string());
 
     Ok(manifest)
 }
@@ -146,4 +146,72 @@ pub(super) async fn update_diary_content_only(
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
     Ok(manifest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_diary_crud_lifecycle() {
+        // 初始化依赖
+        let crypto = Crypto::from_env();
+        let client = OssClient::from_env();
+        let cache = DiaryMemoryCache::new();
+
+        // 判断为空，确保测试环境干净
+        let (objects, _) = client.list("", None).await.expect("未能列出对象");
+        assert!(
+            objects.is_empty(),
+            "测试环境不干净。请确保运行测试前OSS桶是空的。"
+        );
+
+        // 测试创建
+        let initial_content = "Integration test diary content.";
+        let saved_manifest = save_diary(&crypto, &client, initial_content)
+            .await
+            .expect("未能保存日记");
+
+        assert_eq!(saved_manifest.content, initial_content);
+        assert!(!saved_manifest.id.is_empty());
+        let uuid = saved_manifest.id.clone();
+
+        // 测试读取 - 验证远端拉取并写入缓存
+        let fetched_manifest = diary_get(&cache, &crypto, &client, uuid.clone())
+            .await
+            .expect("远程获取日记失败");
+
+        assert_eq!(fetched_manifest.id, uuid);
+        assert_eq!(fetched_manifest.content, initial_content);
+
+        // 为了确保 update 生成的时间戳严格大于前一次，休眠防 Flaky Test
+        tokio::time::sleep(Duration::from_millis(5)).await;
+
+        // 测试更新
+        let updated_content = "Updated content for testing.";
+        let updated_manifest =
+            update_diary_content_only(&cache, &crypto, &client, uuid.clone(), updated_content)
+                .await
+                .expect("未能更新日记");
+
+        assert_eq!(updated_manifest.content, updated_content);
+        assert!(updated_manifest.updated > saved_manifest.updated);
+
+        // 测试再次读取 - 验证缓存失效/更新机制
+        let refetched_manifest = diary_get(&cache, &crypto, &client, uuid.clone())
+            .await
+            .expect("未能重新获取更新的日记");
+
+        assert_eq!(refetched_manifest.content, updated_content);
+
+        // 测试删除
+        delete_diary(&client, uuid.clone())
+            .await
+            .expect("删除日记失败");
+
+        // 验证删除有效性
+        let not_found_result = diary_get(&cache, &crypto, &client, uuid.clone()).await;
+        assert!(not_found_result.is_err(), "删除后日记不应被检索");
+    }
 }
