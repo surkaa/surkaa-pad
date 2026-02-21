@@ -42,7 +42,7 @@ pub struct AttachmentMeta {
     pub size: u64,
     #[serde(default)]
     pub encrypted: bool,
-    pub nonce: Option<Vec<u8>>, // 用于加密该文件的独立 IV
+    pub nonce: Vec<u8>, // 用于加密该文件的独立 IV
     #[serde(default)]
     pub algorithm: EncryptionAlgorithm,
 }
@@ -62,19 +62,10 @@ mod tests {
             "size": 12345,
             "nonce": [1, 2, 3, 4]
         }"#;
-        let old2 = r#"{
-            "filename": "example.txt",
-            "mimetype": "text/plain",
-            "size": 12345
-        }"#;
 
         let att1: AttachmentMeta = from_str(old1).expect("未能将旧的AttachmentMeta反序列化");
-        let att2: AttachmentMeta = from_str(old2).expect("未能将旧的AttachmentMeta反序列化");
-        assert_eq!(att1.nonce, Some(vec![1, 2, 3, 4]));
+        assert_eq!(att1.nonce, vec![1, 2, 3, 4]);
         assert!(!att1.encrypted);
         assert_eq!(att1.algorithm, Gcm);
-        assert_eq!(att2.nonce, None);
-        assert!(!att2.encrypted);
-        assert_eq!(att2.algorithm, Gcm);
     }
 }

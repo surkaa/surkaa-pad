@@ -39,7 +39,7 @@ pub(super) async fn add_attachment(
                 filename,
                 mimetype: mimetype.to_string(),
                 size: len,
-                nonce: None,
+                nonce: vec![], // 不加密时 nonce 为空
                 encrypted: false,
                 algorithm: Ctr,
             }
@@ -49,7 +49,7 @@ pub(super) async fn add_attachment(
                 filename: filename.clone(),
                 mimetype: mimetype.to_string(),
                 size: len,
-                nonce: None,
+                nonce: vec![],
                 encrypted: true,
                 algorithm: Ctr,
             }
