@@ -7,13 +7,6 @@ use chrono::Utc;
 use serde_json::from_slice;
 use uuid::Uuid;
 
-/// 根据内容保存日记
-/// # Arguments
-/// * `content` - 日记内容
-/// # Returns
-/// * `Result<String, String>` - 成功时返回日记 ID，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
 pub(super) async fn save_diary(
     crypto: &Crypto,
     client: &OssClient,
@@ -82,13 +75,6 @@ pub async fn diary_get(
     Ok(manifest)
 }
 
-/// 删除日记及其所有附件
-/// # Arguments
-/// * `uuid` - 日记 ID
-/// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
 pub(super) async fn delete_diary(
     cache: &DiaryMemoryCache,
     client: &OssClient,
@@ -112,14 +98,6 @@ pub(super) async fn delete_diary(
     Ok(())
 }
 
-/// 更新日记的内容
-/// # Arguments
-/// * `uuid` - 日记 ID
-/// * `new_content` - 新的日记内容
-/// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
-#[tauri::command]
-#[specta::specta]
 pub(super) async fn update_diary_content_only(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
