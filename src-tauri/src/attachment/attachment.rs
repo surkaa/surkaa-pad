@@ -65,3 +65,14 @@ pub(super) async fn delete_attachment(
 
     Ok(manifest)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::crypto::Crypto;
+
+    #[tokio::test]
+    async fn test_video_attachment() {
+        let crypto = Crypto::from_env();
+        
+    }
+}
