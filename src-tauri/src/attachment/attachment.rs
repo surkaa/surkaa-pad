@@ -20,6 +20,7 @@ pub(super) async fn add_attachment(
     encrypted: bool,
     (size, stream): (u64, ByteStream),
 ) {
+    let _ = event.send(AddAttachmentEvent::Started);
     // 直接都使用CTR来加密
     let filename = uuid::Uuid::new_v4().to_string();
     // 包装流 用来更新进度
