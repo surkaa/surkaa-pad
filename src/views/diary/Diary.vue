@@ -8,6 +8,7 @@ import DiaryHeader from "./DiaryHeader.vue";
 import DiaryFooter from "./DiaryFooter.vue";
 import {joinAndCreateLocalRecordingDir} from "../../utils/storage.ts";
 import {commands, DiaryManifest, DownloadAttachmentEvent} from "../../bindings.ts";
+import {confirm} from "@tauri-apps/plugin-dialog";
 
 const router = useRouter();
 
@@ -75,7 +76,7 @@ function updateDownMsg(type: DownloadAttachmentEvent['event'], msg: string) {
   downType.value = type;
 }
 
-onBeforeRouteLeave((to, from, next) => {
+onBeforeRouteLeave(async (to, from, next) => {
   console.log('准备离开日记详情页', {to, from});
   if (isDelBack.value) {
     // 如果是删除后返回，直接放行
@@ -89,7 +90,7 @@ onBeforeRouteLeave((to, from, next) => {
   }
   // 如果是新建日记且内容不为空，提示保存
   if (isNew.value && diary.value.content && diary.value.content.length > 0) {
-    const confirmSave = confirm("日记尚未保存，要不先保存再返回？");
+    const confirmSave = await confirm("日记尚未保存，要不先保存再返回？");
     if (confirmSave) {
       saveDiary().then(next);
       return;
@@ -102,7 +103,7 @@ onBeforeRouteLeave((to, from, next) => {
   }
   // 如果内容有变更，提示保存
   if (diary.value.content !== lastSavedContent.value) {
-    const confirmSave = confirm("日记内容有变更，要不先保存再返回？");
+    const confirmSave = await confirm("日记内容有变更，要不先保存再返回？");
     if (confirmSave) {
       saveDiary().then(next);
       return;
@@ -190,12 +191,12 @@ async function saveDiary(afterAddAttachment = false) {
 // 删除当前日记
 async function deleteDiary() {
   if (isNew.value) {
-    const confirmAbandon = confirm("当前日记未保存, 确认放弃并返回吗?");
+    const confirmAbandon = await confirm("当前日记未保存, 确认放弃并返回吗?");
     if (confirmAbandon) router.back();
     return;
   }
 
-  const confirmDelete = confirm("⚠️ 确认永久删除这篇日记吗?");
+  const confirmDelete = await confirm("⚠️ 确认永久删除这篇日记吗?");
   if (!confirmDelete) return;
 
   delLoading.value = true;
@@ -245,7 +246,7 @@ async function uploadAttachment(tagPrefix: string, mimetype: string, accessStr: 
     await saveDiary();
 
     // 调用后端上传
-    const res = await commands.addAttachment(diary.value.id, mimetype, accessStr);
+    const res = await commands.addAttachment(diary.value.id, accessStr, mimetype);
     if (res.status == 'error') {
       console.error("上传图片失败", res.error);
       showToast("上传图片失败: " + res.error, 'error');
