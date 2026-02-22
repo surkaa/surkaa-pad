@@ -32,6 +32,10 @@ async function loadDiaryInfo(id: string) {
   diaryContent.value = contentRes.data;
 }
 
+function operate() {
+  console.log('操作按钮被点击');
+}
+
 onMounted(async () => {
   diaryId.value = route.params.id as string || "";
   if (!isNew.value) {
@@ -42,7 +46,12 @@ onMounted(async () => {
 
 <template>
   <main>
-    <DiaryHeader class="header"/>
+    <DiaryHeader
+        class="header"
+        :title="diary?.title"
+        @back="$router.back()"
+        @operate="operate"
+    />
     <LiveRichEditor class="editor"/>
     <EditToolbar class="toolbar"/>
   </main>
