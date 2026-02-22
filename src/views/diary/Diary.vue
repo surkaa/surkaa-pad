@@ -7,6 +7,8 @@ import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useQuasar} from "quasar";
 import {formatTimestamp} from "../../utils";
+import {platform} from "@tauri-apps/plugin-os";
+import {useKeyboardShow} from "../../composables/useKeyboardShow.ts";
 
 const $q = useQuasar();
 const route = useRoute();
@@ -16,6 +18,10 @@ const diary = ref<DiarySummary>();
 const diaryContent = ref<string>("");
 
 const showMenu = ref(false);
+const showToolbar = ref(false);
+const showToolbarPanel = ref(false);
+const canUndo = computed(() => false);
+const canRedo = computed(() => false);
 
 const isNew = computed(() => diaryId.value.trim() === "");
 
@@ -61,11 +67,23 @@ function showDiaryDetail() {
   });
 }
 
+function setupToolbar() {
+  const p = platform();
+  if (p == 'android') {
+    // 目前这个键盘只测试了安卓手机
+    useKeyboardShow(showToolbar);
+  } else {
+    // 其他平台默认显示工具栏
+    showToolbar.value = true;
+  }
+}
+
 onMounted(async () => {
   diaryId.value = route.params.id as string || "";
   if (!isNew.value) {
     await loadDiaryInfo(diaryId.value);
   }
+  setupToolbar();
 });
 </script>
 
@@ -79,8 +97,17 @@ onMounted(async () => {
         @operate="operate"
         style="width: 100%; flex-shrink: 0"
     />
-    <LiveRichEditor v-model="diaryContent" style="width: 100%; flex: 1"/>
-    <EditToolbar style="width: 100%; flex-shrink: 0"/>
+    <LiveRichEditor
+        v-model="diaryContent"
+        style="width: 100%; flex: 1"
+    />
+    <EditToolbar
+        :view="showToolbar || showToolbarPanel"
+        :panelOpen="showToolbarPanel"
+        :undo="canUndo"
+        :redo="canRedo"
+        style="width: 100%; flex-shrink: 0"
+    />
 
     <q-dialog v-model="showMenu" position="bottom">
       <q-card class="action-sheet-card">
