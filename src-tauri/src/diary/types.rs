@@ -21,12 +21,6 @@ impl DiaryManifest {
     pub fn content(&self) -> &str {
         &self.content
     }
-
-    pub fn contains(&self, keyword: &str) -> bool {
-        self.content
-            .to_lowercase()
-            .contains(&keyword.to_lowercase())
-    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
@@ -39,36 +33,33 @@ pub struct DiarySummary {
     pub updated: i64,
     /// 日记标题，取自正文的第一行
     pub title: String,
-    /// 附件Map，key：IMG、AUD、VID，value：AttachmentMeta
-    pub attachment_map: HashMap<String, AttachmentMeta>,
+    /// 附件列表
+    pub attachments: Vec<AttachmentMeta>,
 }
 
 impl DiarySummary {
     pub fn from_manifest(manifest: DiaryManifest) -> Self {
-        let title = manifest
-            .content
-            .lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        let mut attachment_map = HashMap::new();
-        for att in manifest.attachments {
-            for prefix in ["IMG", "AUD", "VID"] {
-                let mark = format!("<<{}:{}>>", prefix, att.filename);
-                if manifest.content.contains(&mark) {
-                    attachment_map.insert(prefix.to_string(), att.clone());
-                    break;
-                }
+        let mut first_line = manifest.content.lines().next().unwrap_or("").to_string();
+
+        // 循环查找并移除 "<<...>>" 结构
+        while let Some(start) = first_line.find("<<") {
+            if let Some(end_offset) = first_line[start..].find(">>") {
+                // start 是 "<<" 的起始位置，end_offset 是 ">>" 相对 start 的偏移量
+                // +2 是为了包含 ">>" 本身的长度
+                first_line.replace_range(start..start + end_offset + 2, "");
+            } else {
+                break; // 如果没有成对的 ">>"，停止处理以防死循环
             }
         }
+
+        let title = first_line.trim().to_string();
 
         Self {
             id: manifest.id,
             created: manifest.created,
             updated: manifest.updated,
             title,
-            attachment_map,
+            attachments: manifest.attachments,
         }
     }
 }
@@ -85,4 +76,24 @@ pub enum SearchDiariesEvent {
     Unmatch(String),
     Finished,
     Error(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_diary_summary_title_from_manifest() {
+        let manifest = DiaryManifest {
+            id: "1".to_string(),
+            algorithm: EncryptionAlgorithm::Gcm,
+            content: "My first diary entry<<IMG:filename>>1<<IMG:filename>>\n This is the content.".to_string(),
+            created: 0,
+            updated: 0,
+            attachments: vec![],
+        };
+
+        let summary = DiarySummary::from_manifest(manifest.clone());
+        assert_eq!(summary.title, "My first diary entry1");
+    }
 }

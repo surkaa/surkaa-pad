@@ -265,9 +265,9 @@ export type DiarySummary = { id: string; created: number; updated: number;
  */
 title: string; 
 /**
- * 附件Map，key：IMG、AUD、VID，value：AttachmentMeta
+ * 附件列表
  */
-attachmentMap: Partial<{ [key in string]: AttachmentMeta }> }
+attachments: AttachmentMeta[] }
 export type EncryptionAlgorithm = "AES-256-GCM" | "AES-256-CTR"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type TAURI_CHANNEL<TSend> = null
