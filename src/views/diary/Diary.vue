@@ -2,6 +2,9 @@
 import {computed, onMounted, ref} from "vue";
 import {commands, DiarySummary} from "../../bindings.ts";
 import {useRoute} from "vue-router";
+import DiaryHeader from "./DiaryHeader.vue";
+import LiveRichEditor from "../../components/LiveRichEditor.vue";
+import EditToolbar from "../../components/EditToolbar.vue";
 
 const route = useRoute();
 
@@ -39,8 +42,9 @@ onMounted(async () => {
 
 <template>
   <main>
-    <h1>{{ diary?.title }}</h1>
-    <span v-text="diaryContent"></span>
+    <DiaryHeader/>
+    <LiveRichEditor/>
+    <EditToolbar/>
   </main>
 </template>
 
