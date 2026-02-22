@@ -77,9 +77,10 @@ onMounted(async () => {
         @back="$router.back()"
         @info="showDiaryDetail"
         @operate="operate"
+        style="width: 100%; flex-shrink: 0"
     />
-    <LiveRichEditor class="editor"/>
-    <EditToolbar class="toolbar"/>
+    <LiveRichEditor style="width: 100%; flex: 1"/>
+    <EditToolbar style="width: 100%; flex-shrink: 0"/>
 
     <q-dialog v-model="showMenu" position="bottom">
       <q-card class="action-sheet-card">
@@ -105,22 +106,6 @@ main {
   flex-direction: column;
   width: 100%;
   height: 100%;
-
-  .header {
-    width: 100%;
-    flex-shrink: 0;
-  }
-
-  .editor {
-    width: 100%;
-    flex: 1;
-    overflow: auto;
-  }
-
-  .toolbar {
-    width: 100%;
-    flex-shrink: 0;
-  }
 
   .action-sheet-card {
     width: 100%;
