@@ -6,6 +6,7 @@ use crate::storage::remote_attachments_key;
 use tauri::http::{HeaderMap, Request, Response, StatusCode};
 use tauri::{Manager, UriSchemeContext, UriSchemeResponder, Wry};
 use futures_util::StreamExt;
+use tauri_plugin_log::log;
 
 pub fn attachment_protocol(
     context: UriSchemeContext<Wry>,
@@ -16,6 +17,8 @@ pub fn attachment_protocol(
     let cache = app_handle.state::<DiaryMemoryCache>().inner().clone();
     let crypto = app_handle.state::<Crypto>().inner().clone();
     let oss_state = app_handle.state::<OssState>().inner().clone();
+    log::info!("收到附件协议请求: {}", request.uri());
+    // TODO 测试一下有没有使用这个线程池的必要
     tauri::async_runtime::spawn(attachment_protocol_inner(
         cache, crypto, oss_state, request, responder,
     ));
