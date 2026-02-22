@@ -106,6 +106,7 @@ onMounted(async () => {
         :panelOpen="showToolbarPanel"
         :undo="canUndo"
         :redo="canRedo"
+        @additionalAction="showToolbarPanel = !showToolbarPanel"
         style="width: 100%; flex-shrink: 0"
     />
 

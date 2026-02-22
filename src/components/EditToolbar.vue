@@ -46,19 +46,25 @@ const emit = defineEmits<{
       <transition name="panel-expand">
         <div v-show="panelOpen" class="more-panel">
           <div class="row q-col-gutter-md">
-            <div class="col-3 flex column flex-center">
+            <div class="col-3 flex flex-center">
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertPhoto')">
                 <q-icon name="image" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">照片</span>
               </q-btn>
+            </div>
+            <div class="col-3 flex flex-center">
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('takePhoto')">
                 <q-icon name="camera" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">拍摄</span>
               </q-btn>
+            </div>
+            <div class="col-3 flex flex-center">
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
-                <q-icon name="audio" size="28px" class="q-mb-xs"/>
+                <q-icon name="mic" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">录音</span>
               </q-btn>
+            </div>
+            <div class="col-3 flex flex-center">
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertFile')">
                 <q-icon name="attach_file" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">文件</span>
