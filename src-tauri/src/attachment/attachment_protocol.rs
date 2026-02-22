@@ -25,7 +25,6 @@ pub fn attachment_protocol(
     let crypto = app_handle.state::<Crypto>().inner().clone();
     let oss_state = app_handle.state::<OssState>().inner().clone();
     log::info!("收到附件协议请求: {}", request.uri());
-    // TODO 测试一下有没有使用这个线程池的必要
     tauri::async_runtime::spawn(attachment_protocol_inner(
         cache, crypto, oss_state, request, responder,
     ));
