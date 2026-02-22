@@ -91,7 +91,6 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   flex-direction: column;
-  z-index: 9999;
 
   .toolbar-header {
     display: flex;

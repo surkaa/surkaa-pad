@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from "vue";
+import {computed, onMounted, ref, watch} from "vue";
 import {commands, DiarySummary} from "../../bindings.ts";
-import {useRoute} from "vue-router";
+import {useRoute, useRouter} from "vue-router";
 import DiaryHeader from "./DiaryHeader.vue";
 import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
@@ -12,6 +12,7 @@ import {useKeyboardShow} from "../../composables/useKeyboardShow.ts";
 
 const $q = useQuasar();
 const route = useRoute();
+const router = useRouter();
 
 const diaryId = ref<string>("");
 const diary = ref<DiarySummary>();
@@ -20,6 +21,7 @@ const diaryContent = ref<string>("");
 const showMenu = ref(false);
 const showToolbar = ref(false);
 const showToolbarPanel = ref(false);
+const showToolbarAfterMenu = ref(false);
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
 
@@ -45,6 +47,41 @@ async function loadDiaryInfo(id: string) {
 
 function operate() {
   showMenu.value = true;
+}
+
+function deleteDiary() {
+  if (!diaryId.value) {
+    console.log('没有日记ID，无法删除');
+    return;
+  }
+  $q.dialog({
+    title: '确认删除',
+    message: '确定要删除这篇日记吗？此操作无法撤销。',
+    ok: {
+      label: '删除',
+      color: 'negative',
+      flat: true
+    },
+    cancel: {
+      label: '取消',
+      color: 'primary',
+      flat: true
+    }
+  }).onOk(async () => {
+    const res = await commands.cmdDeleteDiary(diaryId.value);
+    if (res.status === 'error') {
+      $q.notify({
+        type: 'negative',
+        message: `删除日记失败: ${res.error}`
+      });
+    } else {
+      $q.notify({
+        type: 'positive',
+        message: '日记已删除'
+      });
+      router.back();
+    }
+  });
 }
 
 function showDiaryDetail() {
@@ -78,6 +115,18 @@ function setupToolbar() {
   }
 }
 
+watch(showMenu, (newVal) => {
+  if (newVal) {
+    // 打开菜单时隐藏工具栏
+    showToolbarAfterMenu.value = showToolbar.value;
+    showToolbar.value = false;
+    showToolbarPanel.value = false;
+  } else {
+    // 关闭菜单时恢复工具栏状态
+    showToolbar.value = showToolbarAfterMenu.value;
+  }
+});
+
 onMounted(async () => {
   diaryId.value = route.params.id as string || "";
   if (!isNew.value) {
@@ -107,6 +156,7 @@ onMounted(async () => {
         :undo="canUndo"
         :redo="canRedo"
         @additionalAction="showToolbarPanel = !showToolbarPanel"
+        v-click-outside="() => showToolbarPanel = false"
         style="width: 100%; flex-shrink: 0"
     />
 
@@ -116,8 +166,8 @@ onMounted(async () => {
           <q-item clickable v-ripple @click="">
             <q-item-section>操作1</q-item-section>
           </q-item>
-          <q-item clickable v-ripple @click="">
-            <q-item-section>操作2</q-item-section>
+          <q-item clickable v-ripple @click="deleteDiary">
+            <q-item-section>删除</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="showMenu = false">
             <q-item-section>取消</q-item-section>
