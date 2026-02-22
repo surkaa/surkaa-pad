@@ -79,7 +79,7 @@ onMounted(async () => {
         @operate="operate"
         style="width: 100%; flex-shrink: 0"
     />
-    <LiveRichEditor style="width: 100%; flex: 1"/>
+    <LiveRichEditor v-model="diaryContent" style="width: 100%; flex: 1"/>
     <EditToolbar style="width: 100%; flex-shrink: 0"/>
 
     <q-dialog v-model="showMenu" position="bottom">
