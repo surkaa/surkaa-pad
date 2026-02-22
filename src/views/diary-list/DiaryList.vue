@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from "vue";
+import {computed, nextTick, onActivated, onDeactivated, onMounted, ref} from "vue";
 import {useRouter} from "vue-router";
 import DiaryListHeader from "./DiaryListHeader.vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {commands, DiarySummary} from "../../bindings.ts";
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 10;
 
 const router = useRouter();
 const diaryIds = ref<string[]>([]);
@@ -14,6 +14,10 @@ const diarySummaries = ref<Record<string, DiarySummary | null>>({});
 const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
+
+// 用于记录滚动位置，保持在列表页和详情页切换时的滚动状态
+const savedScrollTop = ref(0);
+const scrollContainer = ref<HTMLElement | null>(null);
 
 // 日记统计信息
 const diaryStats = computed(() => {
@@ -27,6 +31,11 @@ const diaryStats = computed(() => {
     withAttachments,
   };
 });
+
+function handleScroll(e: Event) {
+  const target = e.target as HTMLElement;
+  savedScrollTop.value = target.scrollTop;
+}
 
 // 获取单个日记的摘要
 async function loadDiarySummer(id: string) {
@@ -98,6 +107,19 @@ function openDiary(id?: string) {
 onMounted(async () => {
   console.log("DiaryList mounted");
 });
+
+onActivated(async () => {
+  console.log("DiaryList activated");
+  // 等待 DOM 渲染完毕
+  await nextTick();
+  if (scrollContainer.value) {
+    scrollContainer.value.scrollTop = savedScrollTop.value;
+  }
+});
+
+onDeactivated(() => {
+  console.log("DiaryList deactivated");
+});
 </script>
 
 <template>
@@ -105,8 +127,13 @@ onMounted(async () => {
     <DiaryListHeader :stats="diaryStats"/>
 
     <div class="main-content">
-      <section id="list" class="scroll-container" ref="scrollContainer">
-        <q-infinite-scroll v-show="diaryIds.length > 0 || !isFirstLoadFinished" @load="onLoad" :offset="250">
+      <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">
+        <q-infinite-scroll
+            scroll-target="#list"
+            v-show="diaryIds.length > 0 || !isFirstLoadFinished"
+            @load="onLoad"
+            :offset="250"
+        >
           <DiarySummaryCard
               v-for="id in diaryIds"
               :key="id"
