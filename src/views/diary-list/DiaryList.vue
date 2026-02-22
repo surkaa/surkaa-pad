@@ -6,9 +6,7 @@ import DiaryListHeader from "./DiaryListHeader.vue";
 import DiaryListActionBar from "./DiaryListActionBar.vue";
 import DiaryCard from "./DiaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
-import {AddAttachmentEvent, commands, DiaryManifest} from "../../bindings.ts";
-import {Channel} from "@tauri-apps/api/core";
-import {open} from "@tauri-apps/plugin-dialog"
+import {DiaryManifest} from "../../bindings.ts";
 
 type OrderBy = 'created' | 'updated';
 
@@ -147,8 +145,6 @@ onBeforeRouteLeave((to, _from, next) => {
   next();
 });
 
-const url = ref<string>("");
-
 onMounted(async () => {
   console.log("DiaryList mounted");
   // syncFromOss(); // 现在每次都会同步日记，下载量比较大，可能确实需要增加一个缓存，但是需要封装好
@@ -169,55 +165,6 @@ onMounted(async () => {
   // }, {
   //   immediate: true
   // });
-  // 创建测试日记和测试附件
-  let res = await commands.cmdSaveDiary("test");
-  let diary: DiaryManifest;
-  if (res.status == 'error') {
-    console.error("创建测试日记失败：", res.error);
-    return;
-  } else {
-    diary = res.data;
-  }
-  let select = await open({
-    multiple: false,
-    directory: false,
-    filters: [
-      {name: 'Video', extensions: ['mp4']},
-    ]
-  });
-  if (!select || select.length === 0) {
-    console.log("未选择文件，跳过添加附件");
-    return;
-  }
-  let event = new Channel<AddAttachmentEvent>();
-  event.onmessage = (msg => {
-    switch (msg.event) {
-      case "started":
-        console.log("添加附件开始");
-        break;
-      case "progress":
-        console.log("添加附件进度：", msg.data);
-        break;
-      case "completed":
-        console.log("添加附件完成：", msg.data);
-        url.value = `http://attachment.localhost/image/${diary.id}/${msg.data.filename}`;
-        break;
-      case "error":
-        console.error("添加附件错误：", msg.data);
-        return;
-    }
-  });
-  let attRes = await commands.cmdAddAttachment(
-      event,
-      diary.id,
-      select,
-      "video/mp4",
-      true,
-  );
-  if (attRes.status == 'error') {
-    console.error("添加附件失败：", attRes.error);
-    return;
-  }
 });
 
 onUnmounted(() => {
@@ -239,8 +186,6 @@ onUnmounted(() => {
           :is-syncing="isSyncing"
 
       />
-
-      <video :src="url" controls style="max-width: 100%; margin-top: 16px;" v-if="url"></video>
 
       <section id="list" class="scroll-container" ref="scrollContainer">
         <div class="list-header" v-if="filteredDiaries.length > 0">
