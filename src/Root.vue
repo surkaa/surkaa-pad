@@ -79,5 +79,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <router-view/>
+  <router-view v-slot="{ Component }">
+    <keep-alive>
+      <component :is="Component" :key="$route.fullPath"/>
+    </keep-alive>
+  </router-view>
 </template>

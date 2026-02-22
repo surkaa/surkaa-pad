@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import {computed, onMounted, ref} from "vue";
-import {useAppStore} from "../../stores/app.ts";
-import {onBeforeRouteLeave, useRouter} from "vue-router";
+import {useRouter} from "vue-router";
 import DiaryListHeader from "./DiaryListHeader.vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
-import {DiarySummary} from "../../bindings.ts";
+import {commands, DiarySummary} from "../../bindings.ts";
 
 const router = useRouter();
-const appStore = useAppStore();
 const diaryIds = ref<string[]>([]);
 const diarySummaries = ref<Record<string, DiarySummary | null>>({});
-const isSyncing = ref(false); // 新增同步状态Loading
-const scrollContainer = ref<HTMLElement | null>(null);
+const nextToken = ref<string | null>(null);
+// 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
+const isFirstLoadFinished = ref(false);
 
 // 日记统计信息
 const diaryStats = computed(() => {
@@ -27,6 +26,62 @@ const diaryStats = computed(() => {
   };
 });
 
+// 获取单个日记的摘要
+async function loadDiarySummer(id: string) {
+  try {
+    const res = await commands.cmdGetDiarySummary(id);
+    if (res.status === 'error') {
+      console.error(`加载日记 ${id} 摘要失败:`, res.error);
+      return;
+    }
+    diarySummaries.value[id] = res.data;
+  } catch (e) {
+    console.error(`请求日记 ${id} 摘要失败:`, e);
+  }
+}
+
+// 无限滚动的核心回调函数
+async function onLoad(index: number, done: (stop?: boolean) => void) {
+  try {
+    const res = await commands.cmdPageDiaryIds(nextToken.value);
+    if (res.status == 'error') {
+      console.error('加载日记ID失败:', res.error);
+      done(true);
+      return;
+    }
+    const [ids, nt] = res.data;
+    console.log(`Page ${index} loaded. IDs:`, ids, 'Next:', nt);
+    if (!ids || ids.length === 0) {
+      done(true);
+      return;
+    }
+
+    for (const id of ids) {
+      if (!diarySummaries.value[id]) {
+        // 初始化占位
+        diarySummaries.value[id] = null;
+        // 加入渲染列表
+        diaryIds.value.push(id);
+        // 异步加载摘要
+        loadDiarySummer(id).then();
+      }
+    }
+
+    nextToken.value = nt;
+
+    // 如果 nextToken 为空，说明没有下一页了，否则表示本次加载完成，可以准备下一次
+    done(nt === null);
+  } catch (error) {
+    console.error('加载失败:', error);
+    done(true);
+  } finally {
+    // 标记首次加载完成
+    if (!isFirstLoadFinished.value) {
+      isFirstLoadFinished.value = true;
+    }
+  }
+}
+
 // 绑定到列表项点击
 function openDiary(id?: string) {
   if (!id) {
@@ -37,15 +92,6 @@ function openDiary(id?: string) {
   // 打开已有日记
   router.push({name: 'DiaryDetail', params: {id}});
 }
-
-onBeforeRouteLeave((to, _from, next) => {
-  // 只有当目标路由是详情页时才保存（可选，但更精确）
-  if (scrollContainer.value && to.name === 'DiaryDetail') {
-    appStore.savedScrollPosition = scrollContainer.value.scrollTop;
-    console.log('保存列表滚动位置:', appStore.savedScrollPosition);
-  }
-  next();
-});
 
 onMounted(async () => {
   console.log("DiaryList mounted");
@@ -58,27 +104,24 @@ onMounted(async () => {
 
     <div class="main-content">
       <section id="list" class="scroll-container" ref="scrollContainer">
-        <transition-group name="list" tag="ul" class="diary-list">
+        <q-infinite-scroll v-show="diaryIds.length > 0 || !isFirstLoadFinished" @load="onLoad" :offset="250">
           <DiarySummaryCard
               v-for="id in diaryIds"
               :key="id"
               :diary="diarySummaries[id]"
               @click="openDiary(id)"
           />
-        </transition-group>
+        </q-infinite-scroll>
 
         <div v-if="diaryIds.length === 0">
-          <DiaryListEmpty
-              :is-syncing="isSyncing"
-              @create="openDiary(undefined)"
-          />
+          <DiaryListEmpty @create="openDiary()"/>
         </div>
       </section>
     </div>
 
     <button
         class="fab"
-        @click="openDiary(undefined)"
+        @click="openDiary()"
         title="新建日记"
     >
       <span class="fab-icon">+</span>

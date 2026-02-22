@@ -24,7 +24,7 @@ function getAttachmentInfo(attachments?: AttachmentMeta[]) {
 </script>
 
 <template>
-  <li class="diary-card">
+  <div class="diary-card">
     <div class="card-header">
       <div class="date-group">
         <span class="date-primary">
@@ -86,7 +86,7 @@ function getAttachmentInfo(attachments?: AttachmentMeta[]) {
         </svg>
       </span>
     </div>
-  </li>
+  </div>
 </template>
 
 <style scoped lang="scss">
@@ -96,6 +96,7 @@ function getAttachmentInfo(attachments?: AttachmentMeta[]) {
   border-radius: var(--pad-radius-lg);
   margin-bottom: 16px;
   padding: 20px;
+  margin-top: 2px;
   cursor: pointer;
   transition: all var(--pad-transition-base);
   box-shadow: var(--pad-shadow-md);
