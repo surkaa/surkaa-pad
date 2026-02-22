@@ -9,8 +9,6 @@ defineProps<{
     filtered: number;
     withAttachments: number;
     lastUpdated: number;
-    hasSearch: boolean;
-    searchCount: number;
   }
 }>();
 
@@ -67,7 +65,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="stats-section" v-if="!stats.hasSearch">
+      <div class="stats-section">
         <div class="stat-item">
           <span class="stat-icon">📚</span>
           <div class="stat-values">
@@ -80,15 +78,6 @@ onUnmounted(() => {
           <div class="stat-values">
             <span class="stat-value">{{ stats.withAttachments }}</span>
             <span class="stat-label">含附件</span>
-          </div>
-        </div>
-      </div>
-      <div class="stats-section" v-else>
-        <div class="stat-item search-stat">
-          <span class="stat-icon">🔍</span>
-          <div class="stat-values">
-            <span class="stat-value">{{ stats.searchCount }}</span>
-            <span class="stat-label">条结果</span>
           </div>
         </div>
       </div>
@@ -143,12 +132,6 @@ onUnmounted(() => {
         flex-direction: column;
         align-items: center;
         min-width: 60px;
-
-        &.search-stat {
-          .stat-icon {
-            background-color: var(--pad-success-color);
-          }
-        }
 
         .stat-icon {
           font-size: 20px;

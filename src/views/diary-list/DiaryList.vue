@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, ref} from "vue";
+import {computed, onMounted, ref} from "vue";
 import {useAppStore} from "../../stores/app.ts";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
 import DiaryListHeader from "./DiaryListHeader.vue";
-import DiaryListActionBar from "./DiaryListActionBar.vue";
 import DiaryCard from "./DiaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {DiaryManifest} from "../../bindings.ts";
@@ -15,7 +14,6 @@ const appStore = useAppStore();
 const diaries = ref<DiaryManifest[]>([]);
 const matchIds = ref<Set<string>>(new Set());
 const isSyncing = ref(false); // 新增同步状态Loading
-// const watcher = ref<WatchHandle | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
 const filteredDiaries = computed<DiaryManifest[]>(() => {
   if (matchIds.value.size === 0 && appStore.keyword.trim() !== '') {
@@ -37,10 +35,6 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
   });
 });
 const orderBy = ref<OrderBy>('created');
-// 防抖搜索函数
-// const debouncedSearch = debounce((term: string) => {
-//   performSearch(term);
-// }, 300);
 
 // 日记统计信息
 const diaryStats = computed(() => {
@@ -56,18 +50,8 @@ const diaryStats = computed(() => {
     filtered,
     withAttachments,
     lastUpdated,
-    hasSearch: appStore.keyword.trim() !== '',
-    searchCount: matchIds.value.size
   };
 });
-
-// async function performSearch(term: string) {
-//   const matchIdArr = await appStore.searchWithKeyword(term);
-//   matchIds.value = new Set(matchIdArr);
-//   showToast('找到 ' + matchIdArr.length + ' 条相关日记', 'success', 1000, {
-//     position: 'top-center',
-//   });
-// }
 
 // function loadLocalDiaries() {
 //   commands.listLocalDiaries().then(res => {
@@ -133,7 +117,7 @@ function openDiary(diary?: DiaryManifest) {
   //     name: 'DiaryDetail',
   //     state: {diary: toRaw(newDiary)}
   //   });
-  // }).then(() => watcher.value && watcher.value.pause());
+  // });
 }
 
 onBeforeRouteLeave((to, _from, next) => {
@@ -147,32 +131,6 @@ onBeforeRouteLeave((to, _from, next) => {
 
 onMounted(async () => {
   console.log("DiaryList mounted");
-  // syncFromOss(); // 现在每次都会同步日记，下载量比较大，可能确实需要增加一个缓存，但是需要封装好
-  // if (watcher.value) {
-  //   watcher.value.resume();
-  //   return;
-  // }
-  // watcher.value = watch(() => appStore.keyword, async (term) => {
-  //   // 立即清空搜索（不等待防抖）
-  //   if (!term.trim()) {
-  //     matchIds.value = new Set();
-  //     debouncedSearch.cancel(); // 取消待执行的搜索
-  //     return;
-  //   }
-  //
-  //   // 使用防抖搜索
-  //   debouncedSearch(term);
-  // }, {
-  //   immediate: true
-  // });
-});
-
-onUnmounted(() => {
-  console.log('DiaryList unmounted');
-  // if (watcher.value) {
-  //   watcher.value.stop();
-  // }
-  // debouncedSearch.cancel();
 });
 </script>
 
@@ -181,17 +139,11 @@ onUnmounted(() => {
     <DiaryListHeader :stats="diaryStats"/>
 
     <div class="main-content">
-      <DiaryListActionBar
-          v-model:keyword="appStore.keyword"
-          :is-syncing="isSyncing"
-
-      />
-
       <section id="list" class="scroll-container" ref="scrollContainer">
         <div class="list-header" v-if="filteredDiaries.length > 0">
           <div class="list-info">
             <span class="info-text">
-              {{ diaryStats.hasSearch ? '搜索到' : '共' }} {{ filteredDiaries.length }} 篇日记
+              共 {{ filteredDiaries.length }} 篇日记
             </span>
             <svg viewBox="0 0 24 24" width="14" height="14" class="sort-icon" v-if="orderBy === 'created'">
               <path
@@ -216,7 +168,6 @@ onUnmounted(() => {
         <div v-if="filteredDiaries.length === 0">
           <DiaryListEmpty
               :is-syncing="isSyncing"
-              :has-search="diaryStats.hasSearch"
               @create="openDiary(undefined)"
           />
         </div>
@@ -226,7 +177,7 @@ onUnmounted(() => {
     <button
         class="fab"
         @click="openDiary(undefined)"
-        :title="diaryStats.hasSearch ? '新建日记' : '写新日记'"
+        title="新建日记"
     >
       <span class="fab-icon">+</span>
       <span class="fab-text">新建</span>

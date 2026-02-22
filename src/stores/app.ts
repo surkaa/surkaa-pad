@@ -156,14 +156,6 @@ export const useAppStore = defineStore('app', () => {
         await store.value.save();
     }
 
-    // async function searchWithKeyword(keyword: string): Promise<string[]> {
-    //     const res = await commands.searchDiaries(keyword);
-    //     if (res.status == 'error') {
-    //         throw new Error(`搜索日记失败: ${res.error}`);
-    //     }
-    //     return res.data;
-    // }
-
     async function enableBiometric(masterPassword: string) {
         const res = await commands.cmdUnlock(masterPassword, SALE);
         if (res.status == 'error') {
@@ -215,7 +207,6 @@ export const useAppStore = defineStore('app', () => {
         initOss,
         saveConfigAndLogin,
         resetConfig,
-        // searchWithKeyword,
         setTimeoutForCloseApp,
         setTheme,
         initStore,
