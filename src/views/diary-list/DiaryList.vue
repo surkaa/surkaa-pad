@@ -182,7 +182,7 @@ onMounted(async () => {
     multiple: false,
     directory: false,
     filters: [
-      {name: 'Audio', extensions: ['mp3']},
+      {name: 'Video', extensions: ['mp4']},
     ]
   });
   if (!select || select.length === 0) {
@@ -211,7 +211,7 @@ onMounted(async () => {
       event,
       diary.id,
       select,
-      "audio/mpeg",
+      "video/mp4",
       true,
   );
   if (attRes.status == 'error') {
@@ -240,7 +240,7 @@ onUnmounted(() => {
 
       />
 
-      <audio :src="url" controls v-if="url" style="margin: 20px 0; width: 100%;"/>
+      <video :src="url" controls style="max-width: 100%; margin-top: 16px;" v-if="url"></video>
 
       <section id="list" class="scroll-container" ref="scrollContainer">
         <div class="list-header" v-if="filteredDiaries.length > 0">
