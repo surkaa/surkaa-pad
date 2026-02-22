@@ -47,7 +47,7 @@ function getAttachmentInfo(attachments?: AttachmentMeta[]) {
       <div class="card-actions">
         <span
             class="attachment-badge"
-            v-if="diary?.attachments"
+            v-if="diary?.attachments.length"
             :title="`${diary?.attachments.length} 个附件`"
         >
           <span class="badge-icon">📎</span>
