@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onDeactivated, onMounted, ref} from "vue";
+import {computed, nextTick, onActivated, ref} from "vue";
 import {useRouter} from "vue-router";
 import DiaryListHeader from "./DiaryListHeader.vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
@@ -104,21 +104,12 @@ function openDiary(id?: string) {
   router.push({name: 'DiaryDetail', params: {id}});
 }
 
-onMounted(async () => {
-  console.log("DiaryList mounted");
-});
-
 onActivated(async () => {
-  console.log("DiaryList activated");
   // 等待 DOM 渲染完毕
   await nextTick();
   if (scrollContainer.value) {
     scrollContainer.value.scrollTop = savedScrollTop.value;
   }
-});
-
-onDeactivated(() => {
-  console.log("DiaryList deactivated");
 });
 </script>
 
