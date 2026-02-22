@@ -1,14 +1,12 @@
 <script setup lang="ts">
-import {computed, nextTick, onMounted, onUnmounted, ref, toRaw, watch, type WatchHandle} from "vue";
+import {computed, onMounted, onUnmounted, ref} from "vue";
 import {useAppStore} from "../../stores/app.ts";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
-import {showToast} from "../../utils";
-import {debounce} from "../../utils";
 import DiaryListHeader from "./DiaryListHeader.vue";
 import DiaryListActionBar from "./DiaryListActionBar.vue";
 import DiaryCard from "./DiaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
-import {commands, DiaryManifest} from "../../bindings.ts";
+import {DiaryManifest} from "../../bindings.ts";
 
 type OrderBy = 'created' | 'updated';
 
@@ -17,7 +15,7 @@ const appStore = useAppStore();
 const diaries = ref<DiaryManifest[]>([]);
 const matchIds = ref<Set<string>>(new Set());
 const isSyncing = ref(false); // 新增同步状态Loading
-const watcher = ref<WatchHandle | null>(null);
+// const watcher = ref<WatchHandle | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
 const filteredDiaries = computed<DiaryManifest[]>(() => {
   if (matchIds.value.size === 0 && appStore.keyword.trim() !== '') {
@@ -40,9 +38,9 @@ const filteredDiaries = computed<DiaryManifest[]>(() => {
 });
 const orderBy = ref<OrderBy>('created');
 // 防抖搜索函数
-const debouncedSearch = debounce((term: string) => {
-  performSearch(term);
-}, 300);
+// const debouncedSearch = debounce((term: string) => {
+//   performSearch(term);
+// }, 300);
 
 // 日记统计信息
 const diaryStats = computed(() => {
@@ -63,56 +61,56 @@ const diaryStats = computed(() => {
   };
 });
 
-async function performSearch(term: string) {
-  const matchIdArr = await appStore.searchWithKeyword(term);
-  matchIds.value = new Set(matchIdArr);
-  showToast('找到 ' + matchIdArr.length + ' 条相关日记', 'success', 1000, {
-    position: 'top-center',
-  });
-}
+// async function performSearch(term: string) {
+//   const matchIdArr = await appStore.searchWithKeyword(term);
+//   matchIds.value = new Set(matchIdArr);
+//   showToast('找到 ' + matchIdArr.length + ' 条相关日记', 'success', 1000, {
+//     position: 'top-center',
+//   });
+// }
 
-function loadLocalDiaries() {
-  commands.listLocalDiaries().then(res => {
-    if (res.status == "error") {
-      showToast('加载本地日记失败: ' + res.error, 'error');
-      return;
-    }
-    diaries.value = res.data;
-    // 恢复滚动位置
-    if (appStore.savedScrollPosition > 0 && scrollContainer.value) {
-      // 使用 nextTick 确保列表渲染完毕
-      nextTick(() => {
-        scrollContainer.value!.scrollTop = appStore.savedScrollPosition;
-        console.log('恢复列表滚动位置:', appStore.savedScrollPosition);
-        // 恢复后清零，防止在其他情况下（如手动刷新）错误地应用
-        appStore.savedScrollPosition = 0;
-      });
-    }
-  });
-}
+// function loadLocalDiaries() {
+//   commands.listLocalDiaries().then(res => {
+//     if (res.status == "error") {
+//       showToast('加载本地日记失败: ' + res.error, 'error');
+//       return;
+//     }
+//     diaries.value = res.data;
+//     // 恢复滚动位置
+//     if (appStore.savedScrollPosition > 0 && scrollContainer.value) {
+//       // 使用 nextTick 确保列表渲染完毕
+//       nextTick(() => {
+//         scrollContainer.value!.scrollTop = appStore.savedScrollPosition;
+//         console.log('恢复列表滚动位置:', appStore.savedScrollPosition);
+//         // 恢复后清零，防止在其他情况下（如手动刷新）错误地应用
+//         appStore.savedScrollPosition = 0;
+//       });
+//     }
+//   });
+// }
 
 // 绑定到同步按钮
-async function syncFromOss(uuid?: string): Promise<DiaryManifest | null> {
-  return new Promise(resolve => {
-    if (isSyncing.value) return resolve(null); // 防止重复点击
-    isSyncing.value = true;
-    commands.syncFromOss(uuid ? uuid : null).then(res => {
-      if (res.status == "error") {
-        showToast('同步失败: ' + res.error, 'error');
-        return resolve(null);
-      }
-      const diary = res.data;
-      // 同步完成后重新加载列表
-      loadLocalDiaries();
-      resolve(diary);
-    }).catch(e => {
-      console.error("同步失败：", e);
-      resolve(null);
-    }).finally(() => {
-      isSyncing.value = false;
-    });
-  })
-}
+// async function syncFromOss(uuid?: string): Promise<DiaryManifest | null> {
+//   return new Promise(resolve => {
+//     if (isSyncing.value) return resolve(null); // 防止重复点击
+//     isSyncing.value = true;
+//     commands.syncFromOss(uuid ? uuid : null).then(res => {
+//       if (res.status == "error") {
+//         showToast('同步失败: ' + res.error, 'error');
+//         return resolve(null);
+//       }
+//       const diary = res.data;
+//       // 同步完成后重新加载列表
+//       loadLocalDiaries();
+//       resolve(diary);
+//     }).catch(e => {
+//       console.error("同步失败：", e);
+//       resolve(null);
+//     }).finally(() => {
+//       isSyncing.value = false;
+//     });
+//   })
+// }
 
 // 绑定到列表项点击
 function openDiary(diary?: DiaryManifest) {
@@ -122,20 +120,20 @@ function openDiary(diary?: DiaryManifest) {
     return;
   }
   // 先同步单个日记的最新内容
-  syncFromOss(diary.id).then(newDiary => {
-    if (!newDiary) {
-      // 这有bug
-      showToast('无法打开日记', 'error');
-      return;
-    }
-    if (newDiary.updated != diary.updated) {
-      showToast('已同步改日记最新版', 'info', 1000);
-    }
-    router.push({
-      name: 'DiaryDetail',
-      state: {diary: toRaw(newDiary)}
-    });
-  }).then(() => watcher.value && watcher.value.pause());
+  // syncFromOss(diary.id).then(newDiary => {
+  //   if (!newDiary) {
+  //     // 这有bug
+  //     showToast('无法打开日记', 'error');
+  //     return;
+  //   }
+  //   if (newDiary.updated != diary.updated) {
+  //     showToast('已同步改日记最新版', 'info', 1000);
+  //   }
+  //   router.push({
+  //     name: 'DiaryDetail',
+  //     state: {diary: toRaw(newDiary)}
+  //   });
+  // }).then(() => watcher.value && watcher.value.pause());
 }
 
 onBeforeRouteLeave((to, _from, next) => {
@@ -149,32 +147,32 @@ onBeforeRouteLeave((to, _from, next) => {
 
 onMounted(() => {
   console.log("DiaryList mounted");
-  syncFromOss(); // 现在每次都会同步日记，下载量比较大，可能确实需要增加一个缓存，但是需要封装好
-  if (watcher.value) {
-    watcher.value.resume();
-    return;
-  }
-  watcher.value = watch(() => appStore.keyword, async (term) => {
-    // 立即清空搜索（不等待防抖）
-    if (!term.trim()) {
-      matchIds.value = new Set();
-      debouncedSearch.cancel(); // 取消待执行的搜索
-      return;
-    }
-
-    // 使用防抖搜索
-    debouncedSearch(term);
-  }, {
-    immediate: true
-  });
+  // syncFromOss(); // 现在每次都会同步日记，下载量比较大，可能确实需要增加一个缓存，但是需要封装好
+  // if (watcher.value) {
+  //   watcher.value.resume();
+  //   return;
+  // }
+  // watcher.value = watch(() => appStore.keyword, async (term) => {
+  //   // 立即清空搜索（不等待防抖）
+  //   if (!term.trim()) {
+  //     matchIds.value = new Set();
+  //     debouncedSearch.cancel(); // 取消待执行的搜索
+  //     return;
+  //   }
+  //
+  //   // 使用防抖搜索
+  //   debouncedSearch(term);
+  // }, {
+  //   immediate: true
+  // });
 });
 
 onUnmounted(() => {
   console.log('DiaryList unmounted');
-  if (watcher.value) {
-    watcher.value.stop();
-  }
-  debouncedSearch.cancel();
+  // if (watcher.value) {
+  //   watcher.value.stop();
+  // }
+  // debouncedSearch.cancel();
 });
 </script>
 
@@ -186,7 +184,7 @@ onUnmounted(() => {
       <DiaryListActionBar
           v-model:keyword="appStore.keyword"
           :is-syncing="isSyncing"
-          @sync="syncFromOss()"
+
       />
 
       <section id="list" class="scroll-container" ref="scrollContainer">

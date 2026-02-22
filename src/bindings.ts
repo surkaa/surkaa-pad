@@ -13,9 +13,9 @@ export const commands = {
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async unlock(masterPassword: string, salt: string) : Promise<Result<string, string>> {
+async cmdUnlock(masterPassword: string, salt: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("unlock", { masterPassword, salt }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_unlock", { masterPassword, salt }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -28,9 +28,9 @@ async unlock(masterPassword: string, salt: string) : Promise<Result<string, stri
  * # Returns
  * * `Result<(Vec<u8>, Vec<u8>), String>` - 成功时返回 (密文, nonce)，失败时返回错误信息
  */
-async encryptData(data: string) : Promise<Result<[number[], number[]], string>> {
+async cmdEncryptData(data: string) : Promise<Result<[number[], number[]], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("encrypt_data", { data }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_encrypt_data", { data }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -44,9 +44,24 @@ async encryptData(data: string) : Promise<Result<[number[], number[]], string>> 
  * # Returns
  * * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
  */
-async decryptData(ciphertext: number[], nonce: number[]) : Promise<Result<string, string>> {
+async cmdDecryptData(ciphertext: number[], nonce: number[]) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("decrypt_data", { ciphertext, nonce }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_decrypt_data", { ciphertext, nonce }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 生物解锁，传入dek解锁
+ * # Arguments
+ * * `dek` - 数据加密密钥
+ * # Returns
+ * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ */
+async cmdBiometricUnlock(dek: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_biometric_unlock", { dek }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -62,54 +77,9 @@ async decryptData(ciphertext: number[], nonce: number[]) : Promise<Result<string
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async initOssClient(akid: string, aks: string, bucket: string, endpoint: string) : Promise<Result<null, string>> {
+async cmdInitOssClient(akid: string, aks: string, bucket: string, endpoint: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("init_oss_client", { akid, aks, bucket, endpoint }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * 列出本地缓存的日记列表
- * # Arguments
- * 无需手动传参数
- * # Returns
- * * `Result<Vec<DiaryManifest>, String>` - 成功时返回日记列表，失败时返回错误信息
- */
-async listLocalDiaries() : Promise<Result<DiaryManifest[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_local_diaries") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * 从 OSS 同步日记到本地缓存
- * # Arguments
- * * `uuid` - 可选的日记 UUID，若提供则只同步该日记，否则同步所有日记
- * # Returns
- * * `Result<Option<DiaryManifest>, String>` - 如果传入了 UUID，成功时返回该日记的清单，否则返回 None；失败时返回错误信息
- */
-async syncFromOss(uuid: string | null) : Promise<Result<DiaryManifest | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("sync_from_oss", { uuid }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * 根据日记内容搜索日记
- * # Arguments
- * * `keyword` - 搜索关键词
- * # Returns
- * * `Result<Vec<DiaryManifest>, String>` - 成功时返回匹配的日记列表，失败时返回错误信息
- */
-async searchDiaries(keyword: string) : Promise<Result<string[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("search_diaries", { keyword }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_init_oss_client", { akid, aks, bucket, endpoint }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -120,11 +90,11 @@ async searchDiaries(keyword: string) : Promise<Result<string[], string>> {
  * # Arguments
  * * `content` - 日记内容
  * # Returns
- * * `Result<String, String>` - 成功时返回日记 UUID，失败时返回错误信息
+ * * `Result<String, String>` - 成功时返回日记ID，失败时返回错误信息
  */
-async saveDiary(content: string) : Promise<Result<DiaryManifest, string>> {
+async cmdSaveDiary(content: string) : Promise<Result<DiaryManifest, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_diary", { content }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_save_diary", { content }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -133,63 +103,123 @@ async saveDiary(content: string) : Promise<Result<DiaryManifest, string>> {
 /**
  * 更新日记的内容
  * # Arguments
- * * `uuid` - 日记 UUID
+ * * `id` - 日记ID
  * * `new_content` - 新的日记内容
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async updateDiaryContentOnly(uuid: string, newContent: string) : Promise<Result<DiaryManifest, string>> {
+async cmdUpdateDiaryContentOnly(id: string, newContent: string) : Promise<Result<DiaryManifest, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("update_diary_content_only", { uuid, newContent }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_update_diary_content_only", { id, newContent }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * 删除日记
+ * 删除日记及其所有附件
  * # Arguments
- * * `uuid` - 日记 UUID
+ * * `id` - 日记ID
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async deleteDiary(uuid: string) : Promise<Result<null, string>> {
+async cmdDeleteDiary(id: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_diary", { uuid }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_delete_diary", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * 添加附件
+ * 分页列出diary主键列表
  * # Arguments
- * * `uuid` - 日记 UUID
+ * * `next_token` - 分页的token
+ * # Returns
+ * * `Vec<String>` - diary主键列表
+ */
+async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], string | null], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_page_diary_ids", { nextToken }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 获取日记Summary
+ * # Arguments
+ * * `id` - 日记ID
+ * # Returns
+ * * `Result<DiarySummary, String>` - 成功时返回日记 Summary，失败时返回错误信息
+ */
+async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_summary", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 获取日记内容
+ * # Arguments
+ * * `id` - 日记ID
+ * # Returns
+ * * `Result<String, String>` - 成功时返回日记内容，失败时返回错误信息
+ */
+async cmdGetDiaryContent(id: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_content", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 搜索日记
+ * # Arguments
+ * * `keyword` - 搜索关键词，可通过空格分隔多个关键词
+ * # Returns
+ * * `Result<String, String>` - 成功时返回搜索任务token，可用于取消搜索任务，失败时返回错误信息
+ */
+async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string, or: boolean) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_search_diaries", { event, keyword, or }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 给日记添加附件
+ * # Arguments
+ * * `id` - 日记 ID
  * * `access_str` - 文件访问路径。
  * * `mimetype` - 附件 MIME 类型
+ * * `encrypted` - 是否需要加密
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async addAttachment(uuid: string, accessStr: string, mimetype: string) : Promise<Result<DiaryManifest, string>> {
+async cmdAddAttachment(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, accessStr: string, mimetype: string, encrypted: boolean) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("add_attachment", { uuid, accessStr, mimetype }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment", { event, id, accessStr, mimetype, encrypted }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * 下载附件
+ * 删除日记的附件
  * # Arguments
- * * `uuid` - 日记 UUID
+ * * `id` - 日记 ID
  * * `filename` - 附件 ID
- * * `nonce` - 解密iv
  * # Returns
- * * `Result<Vec<u8>, String>` - 成功时返回附件字节数据，失败时返回错误信息
+ * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async downloadAttachment(onEvent: TAURI_CHANNEL<DownloadAttachmentEvent>, uuid: string, filename: string, nonce: number[]) : Promise<Result<string, string>> {
+async cmdDeleteAttachment(id: string, filename: string) : Promise<Result<DiaryManifest, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("download_attachment", { onEvent, uuid, filename, nonce }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_delete_attachment", { id, filename }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -202,40 +232,9 @@ async downloadAttachment(onEvent: TAURI_CHANNEL<DownloadAttachmentEvent>, uuid: 
  * # Returns
  * * `Result<bool, String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cancelTask(cancelToken: string) : Promise<Result<boolean, string>> {
+async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cancel_task", { cancelToken }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * 删除附件
- * # Arguments
- * * `uuid` - 日记 UUID
- * * `filename` - 附件 ID
- * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
- */
-async deleteAttachment(uuid: string, filename: string) : Promise<Result<DiaryManifest, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_attachment", { uuid, filename }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * 生物解锁，传入dek解锁
- * # Arguments
- * * `dek` - 数据加密密钥
- * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
- */
-async biometricUnlock(dek: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("biometric_unlock", { dek }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_cancel_task", { cancelToken }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -253,9 +252,24 @@ async biometricUnlock(dek: string) : Promise<Result<null, string>> {
 
 /** user-defined types **/
 
-export type AttachmentMeta = { filename: string; mimetype: string; size: number; nonce: number[] }
-export type DiaryManifest = { id: string; algorithm: string; content: string; created: number; updated: number; attachments: AttachmentMeta[] }
-export type DownloadAttachmentEvent = { event: "started"; data: { totalSize: number } } | { event: "downloadProgress"; data: { downloaded: number } } | { event: "decrypting" } | { event: "decrypted"; data: { decryptedSize: number } } | { event: "completed"; data: { filePath: string } } | { event: "error"; data: { message: string } }
+export type AddAttachmentEvent = { event: "started" } | 
+/**
+ * 0-100 的上传进度百分比
+ */
+{ event: "progress"; data: number } | { event: "completed"; data: AttachmentMeta } | { event: "error"; data: string }
+export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted?: boolean; nonce: number[]; algorithm?: EncryptionAlgorithm }
+export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: string; created: number; updated: number; attachments: AttachmentMeta[] }
+export type DiarySummary = { id: string; created: number; updated: number; 
+/**
+ * 日记标题，取自正文的第一行
+ */
+title: string; 
+/**
+ * 附件Map，key：IMG、AUD、VID，value：AttachmentMeta
+ */
+attachmentMap: Partial<{ [key in string]: AttachmentMeta }> }
+export type EncryptionAlgorithm = "AES-256-GCM" | "AES-256-CTR"
+export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type TAURI_CHANNEL<TSend> = null
 
 /** tauri-specta globals **/

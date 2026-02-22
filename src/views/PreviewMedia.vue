@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {onMounted, onUnmounted, ref, watch} from "vue";
-import {readCacheFile2UrlByEid} from "../utils";
+// import {readCacheFile2UrlByEid} from "../utils";
 import {useRouter} from "vue-router";
 import {useEventListener} from "../utils/useEventListener.ts";
 import {showToast} from "../utils";
@@ -251,17 +251,17 @@ watch(scale, (newScale) => {
   }
 });
 
-onMounted(() => {
-  // 从state获取临时文件路径
-  const eid = history.state.eid;
-  if (eid) {
-    url.value = readCacheFile2UrlByEid(eid);
-    addEventListeners();
-  } else {
-    showToast('无法预览该媒体文件', 'error');
-    router.back();
-  }
-});
+// onMounted(() => {
+//   // 从state获取临时文件路径
+//   const eid = history.state.eid;
+//   if (eid) {
+//     url.value = readCacheFile2UrlByEid(eid);
+//     addEventListeners();
+//   } else {
+//     showToast('无法预览该媒体文件', 'error');
+//     router.back();
+//   }
+// });
 
 onUnmounted(() => {
   tipTimer && clearTimeout(tipTimer);
