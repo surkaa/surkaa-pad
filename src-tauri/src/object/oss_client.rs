@@ -251,7 +251,7 @@ impl OssClient {
         let mut next_token: Option<String> = None;
         let mut needs_deletion = Vec::new();
         loop {
-            let (objects, nt) = self.list(prefix, next_token).await?;
+            let (objects, nt) = self.list(prefix, None, next_token).await?;
             for obj in objects {
                 needs_deletion.push(obj.key().to_string());
             }
@@ -320,13 +320,11 @@ impl OssClient {
     pub async fn list(
         &self,
         prefix: &str,
+        count: Option<u32>,
         next_token: NextToken,
     ) -> Result<(Vec<ObjectMetadata>, NextToken), String> {
         // 构造基础查询参数
-        #[cfg(not(debug_assertions))]
-        let mut query_params = format!("list-type=2&prefix={}&max-keys=1000", prefix);
-        #[cfg(debug_assertions)] // 测试环境下单页为10个，方便测试分页逻辑
-        let mut query_params = format!("list-type=2&prefix={}&max-keys=10", prefix);
+        let mut query_params = format!("list-type=2&prefix={}&max-keys={}", prefix, count.unwrap_or(1000));
 
         // 处理签名路径
         // 注意：OSS 要求 continuation-token 必须出现在签名字符串的 CanonicalizedResource 中
@@ -444,7 +442,7 @@ mod tests {
 
     async fn assert_empty(client: &OssClient, msg: &str) {
         // 检查有没有遗留的测试文件
-        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list("", None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "{}", msg);
         if objects.len() != 0 {
             panic!("{}: 发现遗留对象 {:?}", msg, objects);
@@ -519,7 +517,7 @@ mod tests {
         assert!(metadata.last_modified >= now - chrono::Duration::seconds(10));
 
         // 列出对象
-        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list("", None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), 1, "应列出一个对象");
         assert_eq!(objects[0], metadata, "列出的元数据应匹配获取的元数据");
@@ -563,7 +561,7 @@ mod tests {
         }
 
         // 确认上传
-        let (objects, next_token) = client.list(prefix, None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list(prefix, None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), keys.len(), "应列出所有上传的对象");
         dbg!(&objects);
@@ -571,7 +569,7 @@ mod tests {
         // 批量删除 使用通配符会删除失败
         client.delete("id_*").await.expect("批量删除失败");
         // 确认删除失败
-        let (objects, next_token) = client.list(prefix, None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list(prefix, None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), keys.len(), "对象不应被删除");
 
@@ -595,7 +593,7 @@ mod tests {
         add_object(&client, "folder/subfolder/test3.txt", "Test file 3").await;
 
         // 列出对象
-        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list("", None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), 3, "应列出三个对象");
         let keys: Vec<String> = objects.iter().map(|obj| obj.key().to_string()).collect();

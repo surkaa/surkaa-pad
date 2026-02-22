@@ -1,7 +1,7 @@
 use crate::attachment::attachment::{add_attachment, delete_attachment};
 use crate::attachment::types::AddAttachmentEvent;
 use crate::crypto::Crypto;
-use crate::diary::{DiaryManifest, DiaryMemoryCache};
+use crate::diary::DiaryMemoryCache;
 use crate::object::OssState;
 use crate::task::TaskPool;
 use crate::utils::open_file_stream;
@@ -64,7 +64,7 @@ pub async fn cmd_delete_attachment(
     client: State<'_, OssState>,
     id: &str,
     filename: String,
-) -> Result<DiaryManifest, String> {
+) -> Result<(), String> {
     let client = client.get_client()?;
     delete_attachment(&cache, crypto.deref(), &client, id, filename).await
 }

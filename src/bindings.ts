@@ -134,13 +134,14 @@ async cmdDeleteDiary(id: string) : Promise<Result<null, string>> {
 /**
  * 分页列出diary主键列表
  * # Arguments
+ * * `count` - 每页的数量
  * * `next_token` - 分页的token
  * # Returns
  * * `Vec<String>` - diary主键列表
  */
-async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], string | null], string>> {
+async cmdPageDiaryIds(count: number, nextToken: string | null) : Promise<Result<[string[], string | null], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_page_diary_ids", { nextToken }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_page_diary_ids", { count, nextToken }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -217,7 +218,7 @@ async cmdAddAttachment(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, acc
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdDeleteAttachment(id: string, filename: string) : Promise<Result<DiaryManifest, string>> {
+async cmdDeleteAttachment(id: string, filename: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_delete_attachment", { id, filename }) };
 } catch (e) {

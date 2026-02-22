@@ -6,6 +6,8 @@ import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {commands, DiarySummary} from "../../bindings.ts";
 
+const PAGE_SIZE = 5;
+
 const router = useRouter();
 const diaryIds = ref<string[]>([]);
 const diarySummaries = ref<Record<string, DiarySummary | null>>({});
@@ -43,7 +45,7 @@ async function loadDiarySummer(id: string) {
 // 无限滚动的核心回调函数
 async function onLoad(index: number, done: (stop?: boolean) => void) {
   try {
-    const res = await commands.cmdPageDiaryIds(nextToken.value);
+    const res = await commands.cmdPageDiaryIds(PAGE_SIZE, nextToken.value);
     if (res.status == 'error') {
       console.error('加载日记ID失败:', res.error);
       done(true);

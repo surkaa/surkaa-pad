@@ -6,10 +6,11 @@ use crate::storage::diary_id_from_manifest_key;
 
 pub(super) async fn page_diary_ids(
     client: &OssClient,
+    count: u32,
     next_token: NextToken,
 ) -> Result<(Vec<String>, NextToken), String> {
     let (objects, nt) = client
-        .list("", next_token)
+        .list("", Some(count), next_token)
         .await
         .map_err(|e| format!("获取列表失败:{}", e))?;
     let mut ids: Vec<String> = Vec::with_capacity(objects.len());
@@ -56,7 +57,7 @@ mod tests {
         let cache = DiaryMemoryCache::new();
 
         // 确保是空的测试环境
-        let (ids, _) = page_diary_ids(&client, None)
+        let (ids, _) = page_diary_ids(&client, 10, None)
             .await
             .expect("无法获取日记列表");
         assert!(ids.is_empty(), "测试环境不干净，存在日记数据");
@@ -76,7 +77,7 @@ mod tests {
         let mut all_ids = Vec::new();
         let mut page_count = 0;
         loop {
-            let (ids, nt) = page_diary_ids(&client, next_token)
+            let (ids, nt) = page_diary_ids(&client, 10, next_token)
                 .await
                 .expect("无法获取日记列表");
             all_ids.extend(ids);

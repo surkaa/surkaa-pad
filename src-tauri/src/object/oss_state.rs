@@ -19,7 +19,7 @@ impl OssState {
         // 创建 OssClient
         let client = OssClient::new(endpoint, akid, sakey, bucket);
         // 测试 client 是否可用
-        let _ = client.list("", None).await?;
+        let _ = client.list("", Some(1), None).await?;
         // 存储 client
         self.0
             .set(client)
