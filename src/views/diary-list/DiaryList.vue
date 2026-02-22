@@ -182,7 +182,7 @@ onMounted(async () => {
     multiple: false,
     directory: false,
     filters: [
-      {name: 'Images', extensions: ['jpg']},
+      {name: 'Audio', extensions: ['mp3']},
     ]
   });
   if (!select || select.length === 0) {
@@ -211,7 +211,7 @@ onMounted(async () => {
       event,
       diary.id,
       select,
-      "image/jpeg",
+      "audio/mpeg",
       true,
   );
   if (attRes.status == 'error') {
@@ -240,7 +240,7 @@ onUnmounted(() => {
 
       />
 
-      <img :src="url" alt="">
+      <audio :src="url" controls v-if="url" style="margin: 20px 0; width: 100%;"/>
 
       <section id="list" class="scroll-container" ref="scrollContainer">
         <div class="list-header" v-if="filteredDiaries.length > 0">
