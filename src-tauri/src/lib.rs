@@ -30,7 +30,7 @@ fn run_setup(app: &mut App) {
     app.manage(DiaryMemoryCache::new());
 
     #[cfg(target_os = "android")]
-    let _ = app_handle.plugin(tauri_plugin_biometric::init());
+    let _ = app.handle().plugin(tauri_plugin_biometric::init());
 }
 
 fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
