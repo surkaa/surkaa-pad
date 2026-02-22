@@ -21,7 +21,7 @@ const routes: RouteRecordRaw[] = [{
     }
 }, {
     name: 'DiaryDetail',
-    path: '/diary-detail',
+    path: '/diary-detail/:id?',
     component: Diary,
     meta: {
         title: '日志详情'

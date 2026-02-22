@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import {onMounted, ref} from "vue";
+import {computed, onMounted, ref} from "vue";
 import {commands, DiarySummary} from "../../bindings.ts";
+import {useRoute} from "vue-router";
 
+const route = useRoute();
+
+const diaryId = ref<string>("");
 const diary = ref<DiarySummary>();
 const diaryContent = ref<string>("");
+
+const isNew = computed(() => diaryId.value.trim() === "");
 
 async function loadDiaryInfo(id: string) {
   // 获取日记摘要
@@ -24,14 +30,10 @@ async function loadDiaryInfo(id: string) {
 }
 
 onMounted(async () => {
-  // 获取 route 参数
-  const diaryId = history.state.diaryId;
-  if (!diaryId) {
-    console.error("未提供日记 ID");
-    return;
+  diaryId.value = route.params.id as string || "";
+  if (!isNew.value) {
+    await loadDiaryInfo(diaryId.value);
   }
-  console.log("Diary ID:", diaryId);
-  await loadDiaryInfo(diaryId);
 });
 </script>
 

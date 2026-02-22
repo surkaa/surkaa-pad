@@ -94,14 +94,14 @@ async function onLoad(index: number, done: (stop?: boolean) => void) {
 }
 
 // 绑定到列表项点击
-function openDiary(diaryId?: string) {
-  if (!diaryId) {
+function openDiary(id?: string) {
+  if (!id) {
     // 新建日记
     router.push({name: 'DiaryDetail'});
     return;
   }
   // 打开已有日记
-  router.push({name: 'DiaryDetail', state: {diaryId}});
+  router.push({name: 'DiaryDetail', params: {id}});
 }
 
 onMounted(async () => {
