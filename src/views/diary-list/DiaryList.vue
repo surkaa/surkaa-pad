@@ -3,121 +3,39 @@ import {computed, onMounted, ref} from "vue";
 import {useAppStore} from "../../stores/app.ts";
 import {onBeforeRouteLeave, useRouter} from "vue-router";
 import DiaryListHeader from "./DiaryListHeader.vue";
-import DiaryCard from "./DiaryCard.vue";
+import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
-import {DiaryManifest} from "../../bindings.ts";
-
-type OrderBy = 'created' | 'updated';
+import {DiarySummary} from "../../bindings.ts";
 
 const router = useRouter();
 const appStore = useAppStore();
-const diaries = ref<DiaryManifest[]>([]);
-const matchIds = ref<Set<string>>(new Set());
+const diaryIds = ref<string[]>([]);
+const diarySummaries = ref<Record<string, DiarySummary | null>>({});
 const isSyncing = ref(false); // 新增同步状态Loading
 const scrollContainer = ref<HTMLElement | null>(null);
-const filteredDiaries = computed<DiaryManifest[]>(() => {
-  if (matchIds.value.size === 0 && appStore.keyword.trim() !== '') {
-    // 有搜索词但无匹配，返回空列表
-    return [];
-  }
-  return diaries.value.filter(diary => {
-    // 如果有搜索词，则只显示匹配的日记
-    if (appStore.keyword.trim() !== '') {
-      return matchIds.value.has(diary.id);
-    }
-    return true; // 无搜索词，显示所有
-  }).sort((a, b) => {
-    if (orderBy.value === 'created') {
-      return b.created - a.created;
-    } else {
-      return b.updated - a.updated;
-    }
-  });
-});
-const orderBy = ref<OrderBy>('created');
 
 // 日记统计信息
 const diaryStats = computed(() => {
-  const total = diaries.value.length;
-  const filtered = filteredDiaries.value.length;
-  const withAttachments = diaries.value.filter(d => d.attachments?.length > 0).length;
-  const lastUpdated = diaries.value.length > 0
-      ? Math.max(...diaries.value.map(d => d.updated))
+  const total = diaryIds.value.length;
+  const withAttachments = diarySummaries.value
+      ? Object.values(diarySummaries.value).filter(s => s && s.attachments.length).length
       : 0;
 
   return {
     total,
-    filtered,
     withAttachments,
-    lastUpdated,
   };
 });
 
-// function loadLocalDiaries() {
-//   commands.listLocalDiaries().then(res => {
-//     if (res.status == "error") {
-//       showToast('加载本地日记失败: ' + res.error, 'error');
-//       return;
-//     }
-//     diaries.value = res.data;
-//     // 恢复滚动位置
-//     if (appStore.savedScrollPosition > 0 && scrollContainer.value) {
-//       // 使用 nextTick 确保列表渲染完毕
-//       nextTick(() => {
-//         scrollContainer.value!.scrollTop = appStore.savedScrollPosition;
-//         console.log('恢复列表滚动位置:', appStore.savedScrollPosition);
-//         // 恢复后清零，防止在其他情况下（如手动刷新）错误地应用
-//         appStore.savedScrollPosition = 0;
-//       });
-//     }
-//   });
-// }
-
-// 绑定到同步按钮
-// async function syncFromOss(uuid?: string): Promise<DiaryManifest | null> {
-//   return new Promise(resolve => {
-//     if (isSyncing.value) return resolve(null); // 防止重复点击
-//     isSyncing.value = true;
-//     commands.syncFromOss(uuid ? uuid : null).then(res => {
-//       if (res.status == "error") {
-//         showToast('同步失败: ' + res.error, 'error');
-//         return resolve(null);
-//       }
-//       const diary = res.data;
-//       // 同步完成后重新加载列表
-//       loadLocalDiaries();
-//       resolve(diary);
-//     }).catch(e => {
-//       console.error("同步失败：", e);
-//       resolve(null);
-//     }).finally(() => {
-//       isSyncing.value = false;
-//     });
-//   })
-// }
-
 // 绑定到列表项点击
-function openDiary(diary?: DiaryManifest) {
-  if (!diary) {
+function openDiary(id?: string) {
+  if (!id) {
     // 新建日记
     router.push({name: 'DiaryDetail'});
     return;
   }
-  // 先同步单个日记的最新内容
-  // syncFromOss(diary.id).then(newDiary => {
-  //   if (!newDiary) {
-  //     // 这有bug
-  //     showToast('无法打开日记', 'error');
-  //     return;
-  //   }
-  //   if (newDiary.updated != diary.updated) {
-  //     showToast('已同步改日记最新版', 'info', 1000);
-  //   }
-  //   router.push({
-  //     name: 'DiaryDetail',
-  //     state: {diary: toRaw(newDiary)}
-  //   });
-  // });
+  // 打开已有日记
+  router.push({name: 'DiaryDetail', params: {id}});
 }
 
 onBeforeRouteLeave((to, _from, next) => {
@@ -140,32 +58,16 @@ onMounted(async () => {
 
     <div class="main-content">
       <section id="list" class="scroll-container" ref="scrollContainer">
-        <div class="list-header" v-if="filteredDiaries.length > 0">
-          <div class="list-info">
-            <span class="info-text">
-              共 {{ filteredDiaries.length }} 篇日记
-            </span>
-            <svg viewBox="0 0 24 24" width="14" height="14" class="sort-icon" v-if="orderBy === 'created'">
-              <path
-                  d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z"/>
-            </svg>
-            <span class="sort-icon" v-else>🕚</span>
-            <span class="sort-indicator" @click="orderBy = (orderBy === 'created' ? 'updated' : 'created')">
-              按{{ orderBy === 'created' ? '创建' : '更新' }}时间倒排
-            </span>
-          </div>
-        </div>
-
         <transition-group name="list" tag="ul" class="diary-list">
-          <DiaryCard
-              v-for="diary in filteredDiaries"
-              :key="diary.id"
-              :diary="diary"
-              @click="openDiary(diary)"
+          <DiarySummaryCard
+              v-for="id in diaryIds"
+              :key="id"
+              :diary="diarySummaries[id]"
+              @click="openDiary(id)"
           />
         </transition-group>
 
-        <div v-if="filteredDiaries.length === 0">
+        <div v-if="diaryIds.length === 0">
           <DiaryListEmpty
               :is-syncing="isSyncing"
               @create="openDiary(undefined)"

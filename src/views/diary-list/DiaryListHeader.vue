@@ -6,9 +6,7 @@ import {getName} from "@tauri-apps/api/app";
 defineProps<{
   stats: {
     total: number;
-    filtered: number;
     withAttachments: number;
-    lastUpdated: number;
   }
 }>();
 
