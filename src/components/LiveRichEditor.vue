@@ -9,5 +9,8 @@
 </template>
 
 <style scoped lang="scss">
-
+.live-rich-editor {
+  width: 100%;
+  height: 100%;
+}
 </style>

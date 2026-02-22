@@ -42,11 +42,33 @@ onMounted(async () => {
 
 <template>
   <main>
-    <DiaryHeader/>
-    <LiveRichEditor/>
-    <EditToolbar/>
+    <DiaryHeader class="header"/>
+    <LiveRichEditor class="editor"/>
+    <EditToolbar class="toolbar"/>
   </main>
 </template>
 
 <style scoped lang="scss">
+main {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+
+  .header {
+    width: 100%;
+    flex-shrink: 0;
+  }
+
+  .editor {
+    width: 100%;
+    flex: 1;
+    overflow: auto;
+  }
+
+  .toolbar {
+    width: 100%;
+    flex-shrink: 0;
+  }
+}
 </style>

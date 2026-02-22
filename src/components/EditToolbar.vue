@@ -9,5 +9,8 @@
 </template>
 
 <style scoped lang="scss">
-
+.edit-toolbar {
+  width: 100%;
+  height: 50px;
+}
 </style>
