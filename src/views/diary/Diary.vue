@@ -59,7 +59,6 @@ function showDiaryDetail() {
       flat: true
     },
   });
-  showMenu.value = false;
 }
 
 onMounted(async () => {
@@ -76,6 +75,7 @@ onMounted(async () => {
         class="header"
         :title="diary?.title"
         @back="$router.back()"
+        @info="showDiaryDetail"
         @operate="operate"
     />
     <LiveRichEditor class="editor"/>
@@ -84,8 +84,11 @@ onMounted(async () => {
     <q-dialog v-model="showMenu" position="bottom">
       <q-card class="action-sheet-card">
         <q-list padding class="text-center">
-          <q-item clickable v-ripple @click="showDiaryDetail">
-            <q-item-section>详细信息</q-item-section>
+          <q-item clickable v-ripple @click="">
+            <q-item-section>操作1</q-item-section>
+          </q-item>
+          <q-item clickable v-ripple @click="">
+            <q-item-section>操作2</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="showMenu = false">
             <q-item-section>取消</q-item-section>
