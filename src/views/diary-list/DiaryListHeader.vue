@@ -57,7 +57,8 @@ onUnmounted(() => {
         </h1>
         <!--倒计时-->
         <div class="countdown-timer">
-          <small class="countdown-time" :style="{ color: remainingSeconds <= 300 ? 'var(--pad-danger-color)' : 'var(--pad-text-color-400)' }">
+          <small class="countdown-time"
+                 :style="{ color: remainingSeconds <= 300 ? 'var(--pad-danger-color)' : 'var(--pad-text-color-400)' }">
             {{ minutes }}:{{ seconds }}
           </small>
         </div>
@@ -193,15 +194,16 @@ onUnmounted(() => {
         gap: 8px;
 
         .stat-item {
+
+          .stat-icon {
+            width: 36px;
+            height: 36px;
+            font-size: 18px;
+          }
+
           .stat-values {
             flex-direction: row;
             gap: 2px;
-
-            .stat-icon {
-              width: 36px;
-              height: 36px;
-              font-size: 18px;
-            }
 
             .stat-value {
               font-size: 16px;

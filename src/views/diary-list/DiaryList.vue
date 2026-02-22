@@ -155,49 +155,6 @@ onMounted(async () => {
     overflow-y: auto;
     overflow-x: hidden;
     padding: 0 24px 100px 24px;
-
-    .list-header {
-      margin-bottom: 16px;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--pad-border-color-100);
-
-      .list-info {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-
-        .info-text {
-          font-size: 14px;
-          font-weight: 500;
-          color: var(--pad-text-color-200);
-        }
-
-        .sort-icon {
-          margin-left: auto;
-          margin-right: 4px;
-          display: inline-block;
-          vertical-align: middle;
-          font-size: 10px;
-        }
-
-        .sort-indicator {
-          font-size: 12px;
-          color: var(--pad-text-color-400);
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          cursor: pointer;
-          text-decoration: underline;
-        }
-      }
-    }
-
-    .diary-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      position: relative;
-    }
   }
 
   .fab {
@@ -238,29 +195,6 @@ onMounted(async () => {
       letter-spacing: 0.5px;
     }
   }
-}
-
-// 列表过渡动画
-.list-enter-active,
-.list-leave-active {
-  transition: all var(--pad-transition-base) cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.list-enter-from {
-  opacity: 0;
-  transform: translateY(20px) scale(0.95);
-}
-
-.list-leave-to {
-  opacity: 0;
-  transform: translateY(-20px) scale(0.95);
-}
-
-.list-leave-active {
-  position: absolute;
-  width: 100%;
-  box-sizing: border-box;
-  pointer-events: none;
 }
 
 // 响应式设计
