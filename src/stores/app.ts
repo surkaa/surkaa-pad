@@ -7,6 +7,7 @@ import {window} from "@tauri-apps/api";
 import {showToast} from "../utils";
 import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import {commands} from "../bindings.ts";
+import {useQuasar} from "quasar";
 
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
@@ -22,15 +23,26 @@ const AUTO_CLOSE_APP_WARNING_TIME = 60 * 1000;
 
 export const useAppStore = defineStore('app', () => {
     let store = ref<Store | null>(null);
+    let startTime: number = Date.now();
+
+    const $q = useQuasar();
     const keyword = ref<string>('');
     const savedScrollPosition = ref(0);
     const theme = ref<ThemeType>('system');
     const isBiometricEnabled = ref(false);
-    let startTime: number = Date.now();
 
     function setTheme(t: ThemeType, save = true) {
         theme.value = t;
         save && saveNormalConfig(THEME_KEY, t).then();
+        // 设置Quasar的主题
+        if (t === 'light') {
+            $q.dark.set(false);
+        } else if (t === 'dark') {
+            $q.dark.set(true);
+        } else {
+            // 跟随系统
+            $q.dark.set('auto');
+        }
     }
 
     async function initStore() {

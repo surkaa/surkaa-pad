@@ -8,13 +8,16 @@ import clickOutsideDirective from './directives/vClickOutside.ts';
 
 import '@quasar/extras/material-icons/material-icons.css'
 import 'quasar/src/css/index.sass'
-import { Quasar } from 'quasar'
+import {Dialog, Notify, Quasar} from 'quasar'
 
 const app = createApp(Root);
 app.use(createPinia());
 app.use(router);
 app.use(Quasar, {
-    plugins: {},
+    plugins: {
+        Notify,
+        Dialog
+    },
 });
 
 app.directive('click-outside', clickOutsideDirective);
