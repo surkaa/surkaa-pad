@@ -3,10 +3,17 @@ use crate::crypto::Crypto;
 use crate::diary::{diary_get, DiaryMemoryCache};
 use crate::object::OssState;
 use crate::storage::remote_attachments_key;
+use futures_util::StreamExt;
+use std::cmp::min;
+use tauri::http::header::{
+    ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
+};
 use tauri::http::{HeaderMap, Request, Response, StatusCode};
 use tauri::{Manager, UriSchemeContext, UriSchemeResponder, Wry};
-use futures_util::StreamExt;
 use tauri_plugin_log::log;
+
+/// 单次分段请求的最大字节数
+const MAX_CHUNK_SIZE: u64 = 1 * 1024 * 1024;
 
 pub fn attachment_protocol(
     context: UriSchemeContext<Wry>,
@@ -86,7 +93,8 @@ async fn attachment_protocol_inner(
                 responder.respond(bad_request_response());
                 return;
             }
-            (start, end)
+            // 强制单次请求不超过 MAX_CHUNK_SIZE
+            (start, min(end, start + MAX_CHUNK_SIZE - 1))
         }
         HttpRange::Invalid => {
             responder.respond(bad_request_response());
@@ -102,7 +110,7 @@ async fn attachment_protocol_inner(
             return;
         }
     };
-    let stream = match crypto.decrypt_streaming(stream, &attachment.nonce) {
+    let stream = match crypto.decrypt_streaming(stream, &attachment.nonce, range.0) {
         Ok(stream) => stream,
         Err(e) => {
             responder.respond(error_response(e));
@@ -126,31 +134,27 @@ async fn attachment_protocol_inner(
     }
 
     // 判断前端是否真的发起了 Range 请求
-    let is_range_request = request.headers().contains_key(tauri::http::header::RANGE);
-
+    let is_range_request = request.headers().contains_key(RANGE);
     // 构建通用的 Response Header
     let builder = Response::builder()
-        .header(tauri::http::header::CONTENT_TYPE, attachment.mimetype.clone())
-        .header(tauri::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*") // 防止跨域拦截
-        .header(tauri::http::header::ACCEPT_RANGES, "bytes");          // 告诉浏览器我们支持进度条拖动
+        .header(CONTENT_TYPE, attachment.mimetype.clone())
+        .header(ACCESS_CONTROL_ALLOW_ORIGIN, "*") // 防止跨域拦截
+        .header(ACCEPT_RANGES, "bytes"); // 告诉浏览器支持进度条拖动
 
     // 根据请求类型返回 206 或 200
-    let response = if is_range_request {
-        // range 变量此时是你上面解构出来的 (start, end)
+    let builder = if is_range_request {
         let (start, end) = range;
         let content_range = format!("bytes {}-{}/{}", start, end, attachment.size);
 
         builder
             .status(StatusCode::PARTIAL_CONTENT)
-            .header(tauri::http::header::CONTENT_RANGE, content_range)
-            .header(tauri::http::header::CONTENT_LENGTH, data.len().to_string())
-            .body(data)
+            .header(CONTENT_RANGE, content_range)
     } else {
-        builder
-            .status(StatusCode::OK)
-            .header(tauri::http::header::CONTENT_LENGTH, data.len().to_string())
-            .body(data)
+        builder.status(StatusCode::OK)
     };
+    let response = builder
+        .header(CONTENT_LENGTH, data.len().to_string())
+        .body(data);
 
     let response = match response {
         Ok(response) => response,
@@ -175,7 +179,7 @@ pub enum HttpRange {
 }
 
 pub fn parse_range_header(headers: &HeaderMap) -> HttpRange {
-    let Some(header_val) = headers.get(tauri::http::header::RANGE) else {
+    let Some(header_val) = headers.get(RANGE) else {
         return HttpRange::Full;
     };
 

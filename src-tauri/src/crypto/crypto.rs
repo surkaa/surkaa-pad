@@ -1,5 +1,5 @@
 use crate::object::ByteStream;
-use aes::cipher::{KeyIvInit, StreamCipher};
+use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::aes::cipher::crypto_common::rand_core::RngCore;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
@@ -111,6 +111,7 @@ impl Crypto {
         &self,
         stream: ByteStream,
         nonce: &[u8],
+        start_offset: u64,
     ) -> Result<ByteStream, String> {
         let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
 
@@ -118,7 +119,10 @@ impl Crypto {
             return Err("NONCE 长度错误".to_string());
         }
 
-        let cipher = Aes256Ctr::new(dek.as_ref().into(), nonce.into());
+        let mut cipher = Aes256Ctr::new(dek.as_ref().into(), nonce.into());
+
+        // 计算初始计数器值：start_offset / 16（块大小）
+        cipher.seek(start_offset);
 
         let mapped_stream = ctr_stream_cipher(stream, cipher);
 
@@ -415,7 +419,7 @@ mod tests {
 
         // 将刚才收集的密文再次变成 Stream 喂给解密器
         let encrypted_input_stream = create_mock_stream(encrypted_data, 64 * 1024);
-        let mut decrypted_stream = crypto.decrypt_streaming(encrypted_input_stream, &nonce).expect("流式解密失败");
+        let mut decrypted_stream = crypto.decrypt_streaming(encrypted_input_stream, &nonce, 0).expect("流式解密失败");
 
         let mut decrypted_data = Vec::new();
         while let Some(chunk_result) = decrypted_stream.next().await {
