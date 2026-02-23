@@ -63,7 +63,8 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     #[cfg(windows)]
     builder
         .export(
-            specta_typescript::Typescript::default(),
+            specta_typescript::Typescript::default()
+                .header("// @ts-nocheck\n/* eslint-disable */\n"),
             "../src/bindings.ts",
         )
         .expect("Failed to export typescript bindings");
