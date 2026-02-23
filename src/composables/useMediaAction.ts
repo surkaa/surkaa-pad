@@ -1,6 +1,6 @@
 import {Channel} from "@tauri-apps/api/core";
 import {AddAttachmentEvent, commands} from "../bindings.ts";
-import {ref} from "vue";
+import {onUnmounted, ref} from "vue";
 import {open} from "@tauri-apps/plugin-dialog"
 
 export function useMediaAction(diaryId: string) {
@@ -41,8 +41,18 @@ export function useMediaAction(diaryId: string) {
         cancelTokens.value.push(res.data);
     }
 
+    onUnmounted(async () => {
+        const results = await Promise.all(
+            cancelTokens.value.map(token => commands.cmdCancelTask(token))
+        );
+        for (const result of results) {
+            if (result.status === "error") {
+                console.error("取消上传任务失败", result.error);
+            }
+        }
+    });
+
     return {
-        cancelTokens,
         insertPhoto: async () => {
             const accessStrArr = await open({
                 multiple: true,
@@ -88,5 +98,4 @@ export function useMediaAction(diaryId: string) {
             }
         }
     };
-
 }
