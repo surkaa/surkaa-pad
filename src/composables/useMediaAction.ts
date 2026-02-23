@@ -90,6 +90,33 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
         audioRecording: () => {
             // TODO
         },
+        insertAudio: async () => {
+            const accessStrArr = await open({
+                multiple: true,
+                pickerMode: 'media',
+                filters: [{
+                    name: 'Audio',
+                    extensions: ['mp3', 'wav', 'ogg', 'flac', 'aac']
+                }]
+            });
+            if (!accessStrArr) return;
+            for (const accessStr of accessStrArr) {
+                await uploadAttachment(accessStr, "audio/*", true, (att) => {
+                    // 立即渲染
+                    const url = resolveMediaAttachmentUrl('video', diaryId, att.filename);
+                    console.log('插入音频，URL:', url);
+                    const audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.src = url;
+                    audio.dataset.id = att.filename;
+                    if (editorDomRef.value) {
+                        insertBlockNode(editorDomRef.value, audio);
+                    } else {
+                        $q.notify({type: 'negative', message: 'EditorDOM节点未找到'});
+                    }
+                });
+            }
+        },
         insertVideo: async () => {
             const accessStrArr = await open({
                 multiple: true,
@@ -104,7 +131,7 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
                 await uploadAttachment(accessStr, "video/*", true, (att) => {
                     // 立即渲染
                     const url = resolveMediaAttachmentUrl('video', diaryId, att.filename);
-                    console.log('插入图片，URL:', url);
+                    console.log('插入视频，URL:', url);
                     const video = document.createElement('video');
                     video.controls = true;
                     video.src = url;

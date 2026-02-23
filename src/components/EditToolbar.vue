@@ -12,17 +12,14 @@ const {
   redo: boolean,
 }>();
 
-const emit = defineEmits<{
-  (e: 'undo'): void;
-  (e: 'redo'): void;
-  (e: 'additionalAction'): void;
-  (e: 'insertPhoto'): void;
-  (e: 'takePhoto'): void;
-  (e: 'audioRecording'): void;
-  (e: 'insertVideo'): void;
-  (e: 'takeVideo'): void;
-  (e: 'insertFile'): void;
-}>();
+const emit = defineEmits([
+  'undo', 'redo',
+  'additionalAction',
+  'insertPhoto', 'takePhoto',
+  'insertAudio', 'audioRecording',
+  'insertVideo', 'takeVideo',
+  'insertFile'
+]);
 </script>
 
 <template>
@@ -58,6 +55,12 @@ const emit = defineEmits<{
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('takePhoto')">
                 <q-icon name="camera" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">拍摄</span>
+              </q-btn>
+            </div>
+            <div class="col-3 flex flex-center">
+              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertAudio')">
+                <q-icon name="audiotrack" size="28px" class="q-mb-xs"/>
+                <span class="text-caption">音频</span>
               </q-btn>
             </div>
             <div class="col-3 flex flex-center">
