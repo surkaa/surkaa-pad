@@ -67,7 +67,7 @@ onMounted(async () => {
         style="width: 100%; flex-shrink: 0"
     />
     <LiveRichEditor
-        v-if="diary"
+        v-if="isInitialLoaded"
         v-model="diaryContent"
         :diarySummary="diary"
         style="width: 100%; flex: 1"

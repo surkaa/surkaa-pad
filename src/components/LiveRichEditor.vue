@@ -7,7 +7,7 @@ import {ExtensionContext} from "./editor/extension.ts";
 
 const {modelValue, diarySummary} = defineProps<{
   modelValue: string;
-  diarySummary: DiarySummary;
+  diarySummary?: DiarySummary;
 }>();
 const emit = defineEmits(['update:modelValue']);
 
@@ -19,8 +19,9 @@ const extensions = [
 const styles = extensions.map(ext => ext.style || '').join("\n");
 
 const extensionCtx: ExtensionContext = {
-  getDiaryId: () => diarySummary.id,
+  getDiaryId: () => diarySummary?.id || '',
   getAttachment: (filename) => {
+    if (!diarySummary) return null;
     const attachment = diarySummary.attachments.find(att => att.filename === filename);
     return attachment || null;
   },
