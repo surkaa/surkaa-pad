@@ -50,10 +50,10 @@ onUnmounted(() => {
   <header class="app-header">
     <div class="header-content">
       <div class="logo-section">
-        <h1 class="app-title">
+        <span class="app-title">
           <img alt="app-logo" class="app-logo" src="/app-icon.png"/>
           {{ appName }}
-        </h1>
+        </span>
         <!--倒计时-->
         <div class="countdown-timer">
           <small class="countdown-time"
