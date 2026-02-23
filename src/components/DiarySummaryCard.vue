@@ -66,7 +66,7 @@ function getAttachmentInfo(attachments?: AttachmentMeta[]) {
       <div class="meta-info">
         <span class="meta-item diary-id" :title="diary?.id">
           <span class="meta-icon">🆔</span>
-          <span class="meta-text">{{ diary?.id.substring(0, 8) }}</span>
+          <span class="meta-text">{{ diary?.id }}</span>
         </span>
         <span class="meta-item" v-if="getAttachmentInfo(diary?.attachments)">
           <span class="meta-icon">📦</span>
