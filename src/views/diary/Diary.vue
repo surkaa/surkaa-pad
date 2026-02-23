@@ -103,7 +103,6 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         @takeVideo="mediaActions.takeVideo"
         @insertFile="mediaActions.insertFile"
         style="width: 100%; flex-shrink: 0"
-        :style="{maxHeight: BAR_MAX_HEIGHT + 'px'}"
     />
 
     <q-dialog v-model="showMenu" position="bottom">
