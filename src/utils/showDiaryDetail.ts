@@ -16,12 +16,14 @@ export function showDiaryDetail($q: QVueGlobals, diary?: DiarySummary) {
     message += '附件列表：<br>';
     message += '<table style="width: 100%; border-collapse: collapse;">';
     message += '<tr>';
+    message += '<th style="border: 1px solid #ccc; text-align: center;">文件名</th>';
     message += '<th style="border: 1px solid #ccc; text-align: center;">是否加密</th>';
     message += '<th style="border: 1px solid #ccc; text-align: center;">类型</th>';
     message += '<th style="border: 1px solid #ccc; text-align: center;">大小</th>';
     message += '</tr>';
     for (const att of attachments) {
         message += `<tr>`;
+        message += `<td style="border: 1px solid #ccc; text-align: center;">${att.filename}</td>`;
         message += `<td style="border: 1px solid #ccc; text-align: center;">${att.encrypted ? '是' : '否'}</td>`;
         message += `<td style="border: 1px solid #ccc; text-align: center;">${att.mimetype}</td>`;
         message += `<td style="border: 1px solid #ccc; text-align: center;">${formatBytes(att.size)}</td>`;
