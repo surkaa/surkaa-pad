@@ -104,6 +104,10 @@ function openDiary(id?: string) {
   router.push({name: 'DiaryDetail', params: {id}});
 }
 
+defineOptions({
+  name: 'DiaryList'
+});
+
 onActivated(async () => {
   // 等待 DOM 渲染完毕
   await nextTick();
