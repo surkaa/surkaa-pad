@@ -84,20 +84,10 @@ pub(super) async fn delete_diary(
     client: &OssClient,
     id: &str,
 ) -> Result<(), String> {
-    let (objects, _) = client
-        .list(&format!("{}/", id), None, None)
-        .await
-        .map_err(|e| format!("Failed to list diary objects: {}", e))?;
-
-    for object in objects {
-        client
-            .delete(&object.key())
-            .await
-            .map_err(|e| format!("Failed to delete object {}: {}", object.key(), e))?;
-    }
+    client.delete_with_prefix(id).await?;
 
     // 删除缓存
-    cache.remove(&id);
+    cache.remove(id);
 
     Ok(())
 }

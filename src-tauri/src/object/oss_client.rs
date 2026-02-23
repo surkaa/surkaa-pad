@@ -32,10 +32,6 @@ impl ObjectMetadata {
     pub fn etag(&self) -> &str {
         &self.etag
     }
-
-    pub fn last_modified(&self) -> chrono::DateTime<Utc> {
-        self.last_modified
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -282,7 +278,7 @@ impl OssClient {
             .map_err(|e| format!("请求失败:{}", e))?;
 
         if !resp.status().is_success() {
-            return Err(format!("获取失败 {}", resp.status()));
+            return Err(format!("获取元信息失败 status:{}, key:{}", resp.status(), &key));
         }
 
         let last_modified_str = resp
