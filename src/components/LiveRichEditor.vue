@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref, watch} from "vue";
 import {BaseExtension} from "./editor/baseExtension.ts";
+import {ImageExtension} from "./editor/imageExtension.ts";
 
 const {modelValue} = defineProps<{
   modelValue: string;
@@ -9,6 +10,7 @@ const emit = defineEmits(['update:modelValue']);
 
 const editor = ref<HTMLDivElement>();
 const extensions = [
+  ImageExtension,
   BaseExtension
 ];
 const styles = extensions.map(ext => ext.style || '').join("\n");

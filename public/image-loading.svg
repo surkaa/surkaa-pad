@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200" width="100%" height="100%">
+    <style>
+        .skeleton {
+        animation: pulse 1.5s infinite ease-in-out;
+        }
+        @keyframes pulse {
+        0% { opacity: 0.3; }
+        50% { opacity: 0.8; }
+        100% { opacity: 0.3; }
+        }
+    </style>
+
+    <rect width="100%" height="100%" fill="#f3f4f6" rx="8" ry="8"/>
+
+    <g class="skeleton">
+        <svg x="50%" y="45%" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" transform="translate(-24, -30)">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+        </svg>
+
+        <text x="50%" y="65%" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="500" fill="#9ca3af" text-anchor="middle">Loading...</text>
+    </g>
+</svg>
