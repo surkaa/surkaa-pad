@@ -44,9 +44,9 @@ function syncThemeWithSystem() {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const applyTheme = (e: MediaQueryListEvent | MediaQueryList) => {
       if (e.matches) {
-        document.documentElement.classList.add('dark');
+        document.body.classList.add('body--dark');
       } else {
-        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('body--dark');
       }
     };
     switch (t) {
@@ -55,11 +55,11 @@ function syncThemeWithSystem() {
         mediaQuery.addEventListener('change', applyTheme);
         break;
       case "dark":
-        document.documentElement.classList.add('dark');
+        document.body.classList.add('body--dark');
         mediaQuery.removeEventListener('change', applyTheme);
         break;
       case "light":
-        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('body--dark');
         mediaQuery.removeEventListener('change', applyTheme);
         break;
     }
@@ -79,5 +79,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <router-view/>
+  <router-view v-slot="{ Component }">
+    <keep-alive include="DiaryList">
+      <component :is="Component" :key="$route.fullPath"/>
+    </keep-alive>
+  </router-view>
 </template>

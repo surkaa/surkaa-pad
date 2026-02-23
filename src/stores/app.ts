@@ -7,6 +7,7 @@ import {window} from "@tauri-apps/api";
 import {showToast} from "../utils";
 import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import {commands} from "../bindings.ts";
+import {useQuasar} from "quasar";
 
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
@@ -22,15 +23,26 @@ const AUTO_CLOSE_APP_WARNING_TIME = 60 * 1000;
 
 export const useAppStore = defineStore('app', () => {
     let store = ref<Store | null>(null);
+    let startTime: number = Date.now();
+
+    const $q = useQuasar();
     const keyword = ref<string>('');
     const savedScrollPosition = ref(0);
     const theme = ref<ThemeType>('system');
     const isBiometricEnabled = ref(false);
-    let startTime: number = Date.now();
 
     function setTheme(t: ThemeType, save = true) {
         theme.value = t;
         save && saveNormalConfig(THEME_KEY, t).then();
+        // 设置Quasar的主题
+        if (t === 'light') {
+            $q.dark.set(false);
+        } else if (t === 'dark') {
+            $q.dark.set(true);
+        } else {
+            // 跟随系统
+            $q.dark.set('auto');
+        }
     }
 
     async function initStore() {
@@ -67,11 +79,11 @@ export const useAppStore = defineStore('app', () => {
         }
 
         // 解锁
-        await commands.unlock(masterPassword, SALE);
+        await commands.cmdUnlock(masterPassword, SALE);
 
         // 加密oss配置
         const configJson = JSON.stringify(ossConfig);
-        const res = await commands.encryptData(configJson);
+        const res = await commands.cmdEncryptData(configJson);
         if (res.status == 'error') {
             throw new Error(`加密配置失败: ${res.error}`);
         }
@@ -103,19 +115,19 @@ export const useAppStore = defineStore('app', () => {
     }
 
     async function unlock(masterPassword: string) {
-        await commands.unlock(masterPassword, SALE);
+        await commands.cmdUnlock(masterPassword, SALE);
     }
 
     async function initOss(encryptedConfig: number[]) {
         const nonce = encryptedConfig.slice(0, 12);
         const ciphertext = encryptedConfig.slice(12);
-        const res = await commands.decryptData(ciphertext, nonce);
+        const res = await commands.cmdDecryptData(ciphertext, nonce);
         if (res.status == 'error') {
             throw new Error(`解密配置失败: ${res.error}`);
         }
         const ossJsonStr = res.data;
         const ossConfig = JSON.parse(ossJsonStr) as OssConfigType;
-        const initRes = await commands.initOssClient(
+        const initRes = await commands.cmdInitOssClient(
             ossConfig.akid,
             ossConfig.aks,
             ossConfig.bucket,
@@ -156,16 +168,8 @@ export const useAppStore = defineStore('app', () => {
         await store.value.save();
     }
 
-    async function searchWithKeyword(keyword: string): Promise<string[]> {
-        const res = await commands.searchDiaries(keyword);
-        if (res.status == 'error') {
-            throw new Error(`搜索日记失败: ${res.error}`);
-        }
-        return res.data;
-    }
-
     async function enableBiometric(masterPassword: string) {
-        const res = await commands.unlock(masterPassword, SALE);
+        const res = await commands.cmdUnlock(masterPassword, SALE);
         if (res.status == 'error') {
             throw new Error(`解锁失败: ${res.error}`);
         }
@@ -190,7 +194,7 @@ export const useAppStore = defineStore('app', () => {
             dataToDecrypt: encryptedDek
         });
 
-        const res = await commands.biometricUnlock(data);
+        const res = await commands.cmdBiometricUnlock(data);
         if (res.status == 'error') {
             throw new Error(`生物识别解锁失败: ${res.error}`);
         }
@@ -215,7 +219,6 @@ export const useAppStore = defineStore('app', () => {
         initOss,
         saveConfigAndLogin,
         resetConfig,
-        searchWithKeyword,
         setTimeoutForCloseApp,
         setTheme,
         initStore,

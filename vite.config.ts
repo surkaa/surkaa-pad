@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import vue from "@vitejs/plugin-vue";
+import {quasar, transformAssetUrls} from "@quasar/vite-plugin";
 
 export default defineConfig(async ({mode}) => {
     const env = loadEnv(mode, process.cwd());
@@ -10,7 +11,12 @@ export default defineConfig(async ({mode}) => {
         port: 5174,
     } : undefined;
     return {
-        plugins: [vue()],
+        plugins: [
+            vue({template: { transformAssetUrls }}),
+            quasar({
+                sassVariables: '/src/quasar-variables.sass'
+            })
+        ],
         clearScreen: false,
         server: {
             port: 5173,

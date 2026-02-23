@@ -1,9 +1,4 @@
 <script setup lang="ts">
-defineProps<{
-  isSyncing: boolean;
-  hasSearch: boolean;
-}>();
-
 defineEmits(['create']);
 </script>
 
@@ -11,22 +6,15 @@ defineEmits(['create']);
   <div class="empty-state">
     <div class="empty-content">
       <div class="empty-icon">
-        <span class="rotating" v-if="isSyncing">⏳</span>
-        <span v-else-if="hasSearch">🔍</span>
-        <span v-else>📝</span>
+        📝
       </div>
       <h3 class="empty-title">
-        <span v-if="isSyncing">正在同步中...</span>
-        <span v-else-if="hasSearch">未找到相关日记</span>
-        <span v-else>还没有日记</span>
+        <span>还没有日记</span>
       </h3>
       <p class="empty-message">
-        <span v-if="isSyncing">请稍候，正在从云端同步您的日记...</span>
-        <span v-else-if="hasSearch">尝试使用其他关键词搜索</span>
-        <span v-else>点击右下角按钮开始写第一篇日记</span>
+        <span>点击右下角按钮开始写第一篇日记</span>
       </p>
       <button
-          v-if="!isSyncing && !hasSearch"
           class="empty-action"
           @click="$emit('create')"
       >

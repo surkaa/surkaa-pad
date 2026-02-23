@@ -1,4 +1,4 @@
-html {
+:root {
     width: 100%;
     height: 100%;
 
@@ -115,7 +115,7 @@ html {
 }
 
 /* ===== 深色模式 ===== */
-html.dark {
+.body--dark {
     /* 主色系 (木色调) */
     --pad-primary-color: #E2C7A8;        /* 亮木色/奶油色 */
     --pad-primary-light: #F2E4D1;        /* 浅木色 - 更浅 */

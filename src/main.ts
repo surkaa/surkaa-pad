@@ -6,10 +6,20 @@ import '/src/assets/toast.style.css';
 import router from "./router";
 import clickOutsideDirective from './directives/vClickOutside.ts';
 
+import '@quasar/extras/material-icons/material-icons.css'
+import 'quasar/src/css/index.sass'
+import {Dialog, Notify, Quasar} from 'quasar'
+
 const app = createApp(Root);
 app.use(createPinia());
 app.use(router);
+app.use(Quasar, {
+    plugins: {
+        Notify,
+        Dialog
+    },
+});
 
-app.directive('click-outside', clickOutsideDirective)
+app.directive('click-outside', clickOutsideDirective);
 
 app.mount("#app");

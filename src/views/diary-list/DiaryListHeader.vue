@@ -6,11 +6,7 @@ import {getName} from "@tauri-apps/api/app";
 defineProps<{
   stats: {
     total: number;
-    filtered: number;
     withAttachments: number;
-    lastUpdated: number;
-    hasSearch: boolean;
-    searchCount: number;
   }
 }>();
 
@@ -40,7 +36,6 @@ const updateCountdown = () => {
 onMounted(async () => {
   appName.value = await getName();
   futureTimestamp.value = appStore.getEndTime();
-  console.log('截止时间:', futureTimestamp.value);
   updateCountdown();
   timer && clearInterval(timer);
   timer = setInterval(updateCountdown, 1000);
@@ -55,19 +50,20 @@ onUnmounted(() => {
   <header class="app-header">
     <div class="header-content">
       <div class="logo-section">
-        <h1 class="app-title">
+        <span class="app-title">
           <img alt="app-logo" class="app-logo" src="/app-icon.png"/>
           {{ appName }}
-        </h1>
+        </span>
         <!--倒计时-->
         <div class="countdown-timer">
-          <small class="countdown-time" :style="{ color: remainingSeconds <= 300 ? 'var(--pad-danger-color)' : 'var(--pad-text-color-400)' }">
+          <small class="countdown-time"
+                 :style="{ color: remainingSeconds <= 300 ? 'var(--pad-danger-color)' : 'var(--pad-text-color-400)' }">
             {{ minutes }}:{{ seconds }}
           </small>
         </div>
       </div>
 
-      <div class="stats-section" v-if="!stats.hasSearch">
+      <div class="stats-section">
         <div class="stat-item">
           <span class="stat-icon">📚</span>
           <div class="stat-values">
@@ -80,15 +76,6 @@ onUnmounted(() => {
           <div class="stat-values">
             <span class="stat-value">{{ stats.withAttachments }}</span>
             <span class="stat-label">含附件</span>
-          </div>
-        </div>
-      </div>
-      <div class="stats-section" v-else>
-        <div class="stat-item search-stat">
-          <span class="stat-icon">🔍</span>
-          <div class="stat-values">
-            <span class="stat-value">{{ stats.searchCount }}</span>
-            <span class="stat-label">条结果</span>
           </div>
         </div>
       </div>
@@ -143,12 +130,6 @@ onUnmounted(() => {
         flex-direction: column;
         align-items: center;
         min-width: 60px;
-
-        &.search-stat {
-          .stat-icon {
-            background-color: var(--pad-success-color);
-          }
-        }
 
         .stat-icon {
           font-size: 20px;
@@ -212,15 +193,16 @@ onUnmounted(() => {
         gap: 8px;
 
         .stat-item {
+
+          .stat-icon {
+            width: 36px;
+            height: 36px;
+            font-size: 18px;
+          }
+
           .stat-values {
             flex-direction: row;
             gap: 2px;
-
-            .stat-icon {
-              width: 36px;
-              height: 36px;
-              font-size: 18px;
-            }
 
             .stat-value {
               font-size: 16px;

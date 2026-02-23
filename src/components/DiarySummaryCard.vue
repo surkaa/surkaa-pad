@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import {formatBytes, formatTimestamp, getCurEmoji} from "../../utils";
-import {AttachmentMeta, DiaryManifest} from "../../bindings.ts";
+import {formatBytes, formatTimestamp, getCurEmoji} from "../utils";
+import {AttachmentMeta, DiarySummary} from "../bindings.ts";
 
-defineProps<{
-  diary: DiaryManifest;
+const {diary} = defineProps<{
+  diary: DiarySummary | null;
 }>();
 
 // 格式化附件信息
-function getAttachmentInfo(attachments: AttachmentMeta[]) {
+function getAttachmentInfo(attachments?: AttachmentMeta[]) {
   if (!attachments || attachments.length === 0) return null;
 
   const totalSize = attachments.reduce((sum, att) => sum + (att.size || 0), 0);
@@ -24,7 +24,7 @@ function getAttachmentInfo(attachments: AttachmentMeta[]) {
 </script>
 
 <template>
-  <li class="diary-card">
+  <div class="diary-card">
     <div class="card-header">
       <div class="date-group">
         <span class="date-primary">
@@ -32,49 +32,49 @@ function getAttachmentInfo(attachments: AttachmentMeta[]) {
             <path
                 d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z"/>
           </svg>
-          {{ formatTimestamp(diary.created) }}
+          {{ formatTimestamp(diary?.created) }}
         </span>
         <span
             class="date-updated"
-            v-if="diary.updated > diary.created"
+            v-if="diary?.updated && diary?.created && (diary.updated > diary.created)"
             title="最后更新"
         >
-          <span class="update-icon">{{ getCurEmoji(diary.updated) }}</span>
-          {{ formatTimestamp(diary.updated) }}
+          <span class="update-icon">{{ getCurEmoji(diary?.updated) }}</span>
+          {{ formatTimestamp(diary?.updated) }}
         </span>
       </div>
 
       <div class="card-actions">
         <span
             class="attachment-badge"
-            v-if="diary.attachments?.length"
-            :title="`${diary.attachments.length} 个附件`"
+            v-if="diary?.attachments.length"
+            :title="`${diary?.attachments.length} 个附件`"
         >
           <span class="badge-icon">📎</span>
-          <span class="badge-count">{{ diary.attachments.length }}</span>
+          <span class="badge-count">{{ diary?.attachments.length }}</span>
         </span>
       </div>
     </div>
 
     <div class="card-content">
       <p class="preview-content">
-        {{ diary.content.replace(/<<[A-Z]{3}:[^>]+>>/g, '').trim().slice(0, 20) || '（无内容预览）' }}
+        {{ diary?.title || '（无内容预览）' }}
       </p>
     </div>
 
     <div class="card-footer">
       <div class="meta-info">
-        <span class="meta-item diary-id" :title="diary.id">
+        <span class="meta-item diary-id" :title="diary?.id">
           <span class="meta-icon">🆔</span>
-          <span class="meta-text">{{ diary.id.substring(0, 8) }}</span>
+          <span class="meta-text">{{ diary?.id }}</span>
         </span>
-        <span class="meta-item" v-if="getAttachmentInfo(diary.attachments)">
+        <span class="meta-item" v-if="getAttachmentInfo(diary?.attachments)">
           <span class="meta-icon">📦</span>
           <span class="meta-text">
-            {{ getAttachmentInfo(diary.attachments)!.count }} 个附件
-            <span class="meta-detail">{{ formatBytes(getAttachmentInfo(diary.attachments)?.totalSize) }}</span>
-            <span class="meta-detail" v-if="getAttachmentInfo(diary.attachments)!.imageCount > 0">
-              ( {{ getAttachmentInfo(diary.attachments)!.imageCount }} 张图片)
+            {{ getAttachmentInfo(diary?.attachments)!.count }} 个附件
+            <span class="meta-detail">{{ formatBytes(getAttachmentInfo(diary?.attachments)?.totalSize) }}</span>
+            <span class="meta-detail" v-if="getAttachmentInfo(diary?.attachments)!.imageCount > 0">
+              ( {{ getAttachmentInfo(diary?.attachments)!.imageCount }} 张图片)
             </span>
           </span>
         </span>
@@ -86,7 +86,7 @@ function getAttachmentInfo(attachments: AttachmentMeta[]) {
         </svg>
       </span>
     </div>
-  </li>
+  </div>
 </template>
 
 <style scoped lang="scss">
@@ -96,6 +96,7 @@ function getAttachmentInfo(attachments: AttachmentMeta[]) {
   border-radius: var(--pad-radius-lg);
   margin-bottom: 16px;
   padding: 20px;
+  margin-top: 2px;
   cursor: pointer;
   transition: all var(--pad-transition-base);
   box-shadow: var(--pad-shadow-md);

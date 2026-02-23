@@ -44,6 +44,7 @@ import LoginSection from "./LoginSection.vue";
 import ConfigSection from "./ConfigSection.vue";
 import ErrorState from "./ErrorState.vue";
 import {getName, getVersion} from "@tauri-apps/api/app";
+import { confirm } from '@tauri-apps/plugin-dialog';
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
@@ -137,9 +138,9 @@ function unlock() {
       .finally(() => loading.value = false);
 }
 
-function confirmReset() {
+async function confirmReset() {
   // 确认是否重置
-  if (confirm('确定要重置配置吗？这将删除所有本地配置。')) {
+  if (await confirm('确定要重置配置吗？这将删除所有本地配置。')) {
     appStore.resetConfig()
         .then(() => {
           pipeline.value = 'config';

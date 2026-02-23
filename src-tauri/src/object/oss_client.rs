@@ -1,55 +1,20 @@
-
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use bytes::Bytes;
 use chrono::Utc;
-use futures::Stream;
 use futures_util::TryStreamExt;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
-use std::sync::{Arc, OnceLock};
-use std::{io::Error, pin::Pin};
+use std::io::Error;
+use std::sync::Arc;
 
+use crate::object::types::ByteStream;
+use crate::object::NextToken;
 use tauri::http::header::{CONTENT_TYPE, DATE};
 use tauri::http::{HeaderMap, HeaderValue, Method};
 
 const STREAM_MINE_TYPE: &str = "application/octet-stream";
-
-pub struct OssState(OnceLock<Arc<OssClient>>);
-
-impl OssState {
-    pub fn new() -> Self {
-        Self(OnceLock::new())
-    }
-
-    pub async fn initialize(
-        &self,
-        akid: String,
-        sakey: String,
-        endpoint: String,
-        bucket: String,
-    ) -> Result<(), String> {
-        // 创建 OssClient
-        let client = OssClient::new(endpoint, akid, sakey, bucket);
-        // 测试 client 是否可用
-        let _ = client.list("", None).await?;
-        // 存储 client
-        self.0
-            .set(Arc::new(client))
-            .map_err(|_| String::from("OssClient 已初始化"))?;
-        Ok(())
-    }
-
-    pub fn get_client(&self) -> Result<Arc<OssClient>, String> {
-        self.0
-            .get()
-            .cloned()
-            .ok_or(String::from("OssClient 未初始化"))
-    }
-}
-
-pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>>;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ObjectMetadata {
@@ -66,6 +31,10 @@ impl ObjectMetadata {
 
     pub fn etag(&self) -> &str {
         &self.etag
+    }
+
+    pub fn last_modified(&self) -> chrono::DateTime<Utc> {
+        self.last_modified
     }
 }
 
@@ -117,6 +86,7 @@ pub struct OssClientInner {
     akid: String,
     sakey: String,
     bucket: String,
+    http_client: reqwest::Client,
 }
 
 #[derive(Clone)]
@@ -132,7 +102,8 @@ impl OssClient {
                 akid,
                 sakey,
                 bucket,
-            })
+                http_client: reqwest::Client::new(),
+            }),
         }
     }
 
@@ -199,16 +170,23 @@ impl OssClient {
         Ok(headers)
     }
 
-    pub async fn upload(&self, key: &str, len: u64, stream: ByteStream) -> Result<(), String> {
+    pub async fn upload(
+        &self,
+        key: &str,
+        len: u64,
+        stream: ByteStream,
+        mimetype: &str,
+    ) -> Result<(), String> {
         let url = self.get_url(key, "");
-        let mut headers = self.build_headers(&Method::PUT, key, STREAM_MINE_TYPE)?;
+        let mut headers = self.build_headers(&Method::PUT, key, mimetype)?;
         // 显式设置 Content-Length
         headers.insert(reqwest::header::CONTENT_LENGTH, len.into());
 
         let stream_reader = reqwest::Body::wrap_stream(stream);
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .inner
+            .http_client
             .put(url)
             .headers(headers)
             .body(stream_reader)
@@ -230,8 +208,9 @@ impl OssClient {
         let len = data.len();
         headers.insert(reqwest::header::CONTENT_LENGTH, len.into());
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .inner
+            .http_client
             .put(url)
             .headers(headers)
             .body(data.clone())
@@ -250,8 +229,9 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::DELETE, key, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .inner
+            .http_client
             .delete(url)
             .headers(headers)
             .send()
@@ -265,12 +245,13 @@ impl OssClient {
         }
     }
 
+    // TODO 未来真用上了可以考虑调用 https://help.aliyun.com/zh/oss/developer-reference/deletemultipleobjects 接口
     pub async fn delete_with_prefix(&self, prefix: &str) -> Result<u32, String> {
         // 列出所有匹配的对象
         let mut next_token: Option<String> = None;
         let mut needs_deletion = Vec::new();
         loop {
-            let (objects, nt) = self.list(prefix, next_token).await?;
+            let (objects, nt) = self.list(prefix, None, next_token).await?;
             for obj in objects {
                 needs_deletion.push(obj.key().to_string());
             }
@@ -291,8 +272,9 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::HEAD, key, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .inner
+            .http_client
             .head(url)
             .headers(headers)
             .send()
@@ -338,10 +320,11 @@ impl OssClient {
     pub async fn list(
         &self,
         prefix: &str,
-        next_token: Option<String>,
-    ) -> Result<(Vec<ObjectMetadata>, Option<String>), String> {
+        count: Option<u32>,
+        next_token: NextToken,
+    ) -> Result<(Vec<ObjectMetadata>, NextToken), String> {
         // 构造基础查询参数
-        let mut query_params = format!("list-type=2&prefix={}&max-keys=1000", prefix);
+        let mut query_params = format!("list-type=2&prefix={}&max-keys={}", prefix, count.unwrap_or(1000));
 
         // 处理签名路径
         // 注意：OSS 要求 continuation-token 必须出现在签名字符串的 CanonicalizedResource 中
@@ -357,8 +340,9 @@ impl OssClient {
 
         let headers = self.build_headers(&Method::GET, &sign_path, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .inner
+            .http_client
             .get(url)
             .headers(headers)
             .send()
@@ -381,12 +365,23 @@ impl OssClient {
         Ok((objects, next_token))
     }
 
-    pub async fn download(&self, key: &str) -> Result<(ByteStream, u64), String> {
+    pub async fn download(&self, key: &str, range: Option<(u64, u64)>) -> Result<(ByteStream, u64), String> {
         let url = self.get_url(key, "");
-        let headers = self.build_headers(&Method::GET, key, "")?;
+        let mut headers = self.build_headers(&Method::GET, key, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        // 1. 如果传入了 range，构建并插入标准的 HTTP Range 请求头
+        if let Some((start, end)) = range {
+            let range_val = format!("bytes={}-{}", start, end);
+            headers.insert(
+                reqwest::header::RANGE,
+                HeaderValue::from_str(&range_val)
+                    .map_err(|e| format!("未能创建Range头: {}", e))?,
+            );
+        }
+
+        let resp = self
+            .inner
+            .http_client
             .get(url)
             .headers(headers)
             .send()
@@ -415,8 +410,9 @@ impl OssClient {
         let url = self.get_url(key, "");
         let headers = self.build_headers(&Method::GET, key, "")?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .inner
+            .http_client
             .get(url)
             .headers(headers)
             .send()
@@ -441,15 +437,12 @@ impl OssClient {
 mod tests {
     use super::*;
     use futures_util::stream::iter;
-    use once_cell::sync::Lazy;
+    use serial_test::serial;
     use std::iter::once;
-    use std::sync::Mutex;
-
-    static SEQUENTIAL_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     async fn assert_empty(client: &OssClient, msg: &str) {
         // 检查有没有遗留的测试文件
-        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list("", None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "{}", msg);
         if objects.len() != 0 {
             panic!("{}: 发现遗留对象 {:?}", msg, objects);
@@ -460,12 +453,15 @@ mod tests {
         let len = content.len() as u64;
         let bytes = Bytes::from_static(content.as_bytes());
         let stream: ByteStream = Box::pin(iter(once(Ok::<_, Error>(bytes))));
-        client.upload(key, len, stream).await.expect("上传失败");
+        client
+            .upload(key, len, stream, STREAM_MINE_TYPE)
+            .await
+            .expect("上传失败");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_oss() {
-        let _guard = SEQUENTIAL_LOCK.lock().unwrap();
         let client = OssClient::from_env();
         let key = "test_upload.txt";
         let content = "This is a test line for OSS upload and download testing.";
@@ -507,7 +503,7 @@ mod tests {
         });
         let stream: ByteStream = Box::pin(stream);
         client
-            .upload(key, file_size, stream)
+            .upload(key, file_size, stream, STREAM_MINE_TYPE)
             .await
             .expect("上传失败");
 
@@ -521,13 +517,13 @@ mod tests {
         assert!(metadata.last_modified >= now - chrono::Duration::seconds(10));
 
         // 列出对象
-        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list("", None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), 1, "应列出一个对象");
         assert_eq!(objects[0], metadata, "列出的元数据应匹配获取的元数据");
 
         // 下载对象
-        let (mut download_stream, _) = client.download(key).await.expect("下载失败");
+        let (mut download_stream, _) = client.download(key, None).await.expect("下载失败");
         let mut downloaded_data = Vec::new();
         while let Some(chunk) = download_stream.try_next().await.expect("读取下载流失败") {
             downloaded_data.extend_from_slice(&chunk);
@@ -544,9 +540,9 @@ mod tests {
         assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_batch_delete() {
-        let _guard = SEQUENTIAL_LOCK.lock().unwrap();
         let client = OssClient::from_env();
         assert_empty(&client, "测试开始前对象存储应为空").await;
 
@@ -558,11 +554,14 @@ mod tests {
             let len = content.len() as u64;
             let bytes = Bytes::from_static(content.as_bytes());
             let stream: ByteStream = Box::pin(iter(once(Ok::<_, Error>(bytes))));
-            client.upload(key, len, stream).await.expect("上传失败");
+            client
+                .upload(key, len, stream, STREAM_MINE_TYPE)
+                .await
+                .expect("上传失败");
         }
 
         // 确认上传
-        let (objects, next_token) = client.list(prefix, None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list(prefix, None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), keys.len(), "应列出所有上传的对象");
         dbg!(&objects);
@@ -570,7 +569,7 @@ mod tests {
         // 批量删除 使用通配符会删除失败
         client.delete("id_*").await.expect("批量删除失败");
         // 确认删除失败
-        let (objects, next_token) = client.list(prefix, None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list(prefix, None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), keys.len(), "对象不应被删除");
 
@@ -584,9 +583,9 @@ mod tests {
         assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_list() {
-        let _guard = SEQUENTIAL_LOCK.lock().unwrap();
         let client = OssClient::from_env();
         assert_empty(&client, "测试开始前对象存储应为空").await;
         add_object(&client, "folder/test1.txt", "Test file 1").await;
@@ -594,7 +593,7 @@ mod tests {
         add_object(&client, "folder/subfolder/test3.txt", "Test file 3").await;
 
         // 列出对象
-        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
+        let (objects, next_token) = client.list("", None, None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), 3, "应列出三个对象");
         let keys: Vec<String> = objects.iter().map(|obj| obj.key().to_string()).collect();
@@ -607,6 +606,36 @@ mod tests {
             .delete_with_prefix("folder/")
             .await
             .expect("删除失败");
+        assert_empty(&client, "测试结束后对象存储应为空").await;
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_download_range() {
+        let client = OssClient::from_env();
+        assert_empty(&client, "测试开始前对象存储应为空").await;
+        let key = "test_range.txt";
+        let content = "This is a test file for range download.";
+        add_object(&client, key, content).await;
+
+        // 下载部分内容
+        let (mut download_stream, len) = client.download(key, Some((5, 15))).await.expect("下载失败");
+        let mut downloaded_data = Vec::new();
+        while let Some(chunk) = download_stream.try_next().await.expect("读取下载流失败") {
+            downloaded_data.extend_from_slice(&chunk);
+        }
+        let downloaded_str = String::from_utf8(downloaded_data).expect("下载数据不是有效的UTF-8");
+        assert_eq!(
+            len, 11,
+            "下载的内容长度应为请求的范围长度 (15 - 5 + 1)"
+        );
+        assert_eq!(
+            downloaded_str, &content[5..=15],
+            "下载的范围数据应与原内容匹配"
+        );
+
+        // 清理
+        client.delete(key).await.expect("删除失败");
         assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 }
