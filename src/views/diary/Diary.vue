@@ -22,7 +22,7 @@ const {
 const {
   showMenu, showToolbar, showToolbarPanel, mediaActions,
   setupToolbar,
-} = useEditorUI();
+} = useEditorUI(initialDiaryId);
 
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);

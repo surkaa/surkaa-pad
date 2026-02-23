@@ -1,4 +1,5 @@
 import {Extension} from "./extension.ts";
+import {resolveMediaAttachmentUrl} from "../../utils/resolveMediaAttachmentUrl.ts";
 
 export const ImageExtension: Extension = {
     name: "image",
@@ -26,8 +27,6 @@ export const ImageExtension: Extension = {
     toHtml: (source, ctx) => source.replace(/\[\[IMG:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, configStr) => {
         let sizeAttr = '';
 
-        console.log('Parsing image config:', filename, configStr);
-
         // 如果存在配置项(竖线后面的内容)，则使用 URLSearchParams 解析
         if (configStr) {
             const params = new URLSearchParams(configStr);
@@ -37,7 +36,17 @@ export const ImageExtension: Extension = {
             }
         }
 
-        return `<img src="/image-loading.svg" data-id="${filename}" ${sizeAttr} alt="image" />`;
+        const diaryId = ctx.getDiaryId();
+        const attachment = ctx.getAttachment(filename);
+
+        if (!attachment) {
+            console.error(`没有找到附件 ${filename}, 已自动移除`);
+            return '';
+        }
+
+        const src = resolveMediaAttachmentUrl(diaryId, attachment);
+
+        return `<img src="${src}" data-id="${filename}" ${sizeAttr} alt="image" />`;
     }),
 
     toSource: html => html.replace(/<img[^>]*data-id="([^"]*)"[^>]*>/gi, (match, filename) => {
