@@ -3,12 +3,12 @@ import {computed, onMounted, ref, watch} from "vue";
 import DiaryHeader from "./DiaryHeader.vue";
 import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
-import {formatBytes, formatTimestamp} from "../../utils";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
 import {useRoute} from "vue-router";
 import {useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
+import {showDiaryDetail} from "../../utils/showDiaryDetail.ts";
 
 const route = useRoute();
 const $q = useQuasar();
@@ -39,39 +39,6 @@ const editorPadding = computed(() => {
   else return '16px'
 });
 
-function showDiaryDetail() {
-  if (!diary.value) {
-    $q.notify({message: '日记信息未加载'});
-    return;
-  }
-  const {title, created, updated, attachments} = diary.value;
-  let message = '';
-  message += `创建时间：${formatTimestamp(created)}<br>`;
-  message += `更新时间：${formatTimestamp(updated)}<br>`;
-  message += `附件数量：${attachments.length}<br>`;
-  // 展示附件表格
-  message += '附件列表：<br>';
-  message += '<table style="width: 100%; border-collapse: collapse;">';
-  message += '<tr>';
-  message += '<th style="border: 1px solid #ccc; text-align: center;">是否加密</th>';
-  message += '<th style="border: 1px solid #ccc; text-align: center;">类型</th>';
-  message += '<th style="border: 1px solid #ccc; text-align: center;">大小</th>';
-  message += '</tr>';
-  for (const att of attachments) {
-    message += `<tr>`;
-    message += `<td style="border: 1px solid #ccc; text-align: center;">${att.encrypted ? '是' : '否'}</td>`;
-    message += `<td style="border: 1px solid #ccc; text-align: center;">${att.mimetype}</td>`;
-    message += `<td style="border: 1px solid #ccc; text-align: center;">${formatBytes(att.size)}</td>`;
-    message += `</tr>`;
-  }
-  $q.dialog({
-    title,
-    message,
-    html: true,
-    ok: {label: '关闭', color: 'primary', flat: true},
-  });
-}
-
 onMounted(async () => {
   if (!isNew.value) {
     await loadDiaryInfo();
@@ -95,7 +62,7 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         class="header"
         :title="diary?.title"
         @back="$router.back()"
-        @info="showDiaryDetail"
+        @info="showDiaryDetail($q, diary)"
         @operate="showMenu = true"
         style="width: 100%; flex-shrink: 0"
         :style="{height: BAR_MAX_HEIGHT + 'px'}"
