@@ -8,6 +8,7 @@ import {useDiaryCore} from "../../composables/useDiaryCore.ts";
 import {useRoute} from "vue-router";
 import {useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
+import {useMediaAction} from "../../composables/useMediaAction.ts";
 
 const route = useRoute();
 const $q = useQuasar();
@@ -20,9 +21,12 @@ const {
 
 // UI交互
 const {
-  showMenu, showToolbar, showToolbarPanel, mediaActions,
+  showMenu, showToolbar, showToolbarPanel,
   setupToolbar,
-} = useEditorUI(initialDiaryId);
+} = useEditorUI();
+
+// 媒体操作
+const mediaActions = useMediaAction(initialDiaryId);
 
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
