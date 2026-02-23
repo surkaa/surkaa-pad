@@ -33,6 +33,11 @@ const mediaActions = useMediaAction(initialDiaryId, editorDomRef);
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
 
+const BAR_MAX_HEIGHT = 56;
+const editorPadding = computed(() => {
+  if (showToolbar || showToolbarPanel) return `${BAR_MAX_HEIGHT + 16}px 16px`
+  else return '16px'
+});
 
 function showDiaryDetail() {
   if (!diary.value) {
@@ -74,6 +79,7 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         @info="showDiaryDetail"
         @operate="showMenu = true"
         style="width: 100%; flex-shrink: 0"
+        :style="{height: BAR_MAX_HEIGHT + 'px'}"
     />
     <LiveRichEditor
         ref="liveEditorRef"
@@ -81,6 +87,7 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         v-model="diaryContent"
         :diarySummary="diary"
         style="width: 100%; flex: 1"
+        :style="{padding: editorPadding}"
     />
     <EditToolbar
         :view="showToolbar || showToolbarPanel"
@@ -96,6 +103,7 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         @takeVideo="mediaActions.takeVideo"
         @insertFile="mediaActions.insertFile"
         style="width: 100%; flex-shrink: 0"
+        :style="{maxHeight: BAR_MAX_HEIGHT + 'px'}"
     />
 
     <q-dialog v-model="showMenu" position="bottom">

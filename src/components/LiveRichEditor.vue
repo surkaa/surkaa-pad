@@ -89,8 +89,6 @@ watch([() => modelValue, editor], ([newVal, _]) => {
 <style scoped lang="scss">
 .live-rich-editor {
   width: 100%;
-  height: 100%;
-  padding: 16px;
   box-sizing: border-box;
   outline: none;
   text-align: left;
