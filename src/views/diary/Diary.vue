@@ -9,6 +9,7 @@ import {useQuasar} from "quasar";
 import {formatTimestamp} from "../../utils";
 import {platform} from "@tauri-apps/plugin-os";
 import {useKeyboardShow} from "../../composables/useKeyboardShow.ts";
+import {eventBusEmit} from "../../utils/eventBus.ts";
 
 const $q = useQuasar();
 const route = useRoute();
@@ -79,9 +80,14 @@ function deleteDiary() {
         type: 'positive',
         message: '日记已删除'
       });
+      eventBusEmit('diary-changed', {
+        type: 'deleted',
+        id: diaryId.value
+      });
       router.back();
     }
   });
+  showMenu.value = false;
 }
 
 function showDiaryDetail() {

@@ -5,6 +5,7 @@ import DiaryListHeader from "./DiaryListHeader.vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {commands, DiarySummary} from "../../bindings.ts";
+import {eventBusOn} from "../../utils/eventBus.ts";
 
 const PAGE_SIZE = 10;
 
@@ -110,6 +111,25 @@ onActivated(async () => {
   if (scrollContainer.value) {
     scrollContainer.value.scrollTop = savedScrollTop.value;
   }
+  eventBusOn('diary-changed', async payload => {
+    switch (payload.type) {
+      case 'created':
+        diaryIds.value.unshift(payload.id);
+        diarySummaries.value[payload.id] = null; // 占位，等待加载
+        await loadDiarySummer(payload.id);
+        return;
+      case 'updated':
+        await loadDiarySummer(payload.id);
+        break;
+      case 'deleted':
+        const index = diaryIds.value.indexOf(payload.id);
+        if (index !== -1) {
+          diaryIds.value.splice(index, 1);
+          delete diarySummaries.value[payload.id];
+        }
+        break;
+    }
+  });
 });
 </script>
 
