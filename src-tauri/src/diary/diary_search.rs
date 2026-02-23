@@ -9,7 +9,7 @@ use std::sync::Arc;
 /// 单次搜索获取的日记 ID 数量
 const SEARCH_PAGE_SIZE: u32 = 10;
 
-pub(super) async fn search_diaries(
+pub async fn search_diaries(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,

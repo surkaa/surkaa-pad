@@ -50,7 +50,7 @@ impl TaskPool {
     }
 
     /// 取消任务
-    pub(super) fn cancel(&self, cancel_token: &str) -> Result<bool, String> {
+    pub fn cancel(&self, cancel_token: &str) -> Result<bool, String> {
         let mut guard = self.tasks.lock().map_err(|e| format!("锁中毒: {}", e))?;
 
         if let Some(handle) = guard.remove(cancel_token) {

@@ -219,6 +219,7 @@ mod tests {
     use super::*;
     use crate::crypto::types::EncryptionAlgorithm;
     use crate::diary::DiaryManifest;
+    use crate::object::create_mock_stream;
     use crate::utils::id_generate::generate_descending_id_with_timestamp;
 
     #[test]
@@ -487,16 +488,6 @@ mod tests {
         println!("解密大文件用时: {:?}", decrypt_duration);
 
         assert_eq!(random_data, decrypted_data);
-    }
-
-    fn create_mock_stream(data: Vec<u8>, chunk_size: usize) -> ByteStream {
-        use futures_util::stream;
-        let chunks: Vec<_> = data
-            .chunks(chunk_size)
-            .map(|chunk| Ok(Bytes::from(chunk.to_vec())))
-            .collect();
-
-        Box::pin(stream::iter(chunks))
     }
 
     #[tokio::test]

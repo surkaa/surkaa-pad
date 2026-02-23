@@ -4,7 +4,7 @@ use crate::diary::{diary_get, DiaryMemoryCache};
 use crate::object::{NextToken, OssClient};
 use crate::storage::diary_id_from_manifest_key;
 
-pub(super) async fn page_diary_ids(
+pub async fn page_diary_ids(
     client: &OssClient,
     count: u32,
     next_token: NextToken,
@@ -22,7 +22,7 @@ pub(super) async fn page_diary_ids(
     Ok((ids, nt))
 }
 
-pub(super) async fn get_diary_summary(
+pub async fn get_diary_summary(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
@@ -32,7 +32,7 @@ pub(super) async fn get_diary_summary(
     Ok(DiarySummary::from_manifest(diary))
 }
 
-pub(super) async fn get_diary_content(
+pub async fn get_diary_content(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,

@@ -11,7 +11,7 @@ use crate::diary::types::DiarySummary;
 use crate::utils::id_generate::generate_descending_id;
 
 // TODO 统一函数命名格式 以及diary和manifest
-pub(super) async fn save_diary(
+pub async fn save_diary(
     crypto: &Crypto,
     client: &OssClient,
     content: &str,
@@ -79,7 +79,7 @@ pub async fn diary_get(
     Ok(manifest)
 }
 
-pub(super) async fn delete_diary(
+pub async fn delete_diary(
     cache: &DiaryMemoryCache,
     client: &OssClient,
     id: &str,
@@ -122,7 +122,7 @@ async fn update_diary(
     Ok(())
 }
 
-pub(super) async fn update_diary_content_only(
+pub async fn update_diary_content_only(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
