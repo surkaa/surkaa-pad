@@ -53,7 +53,7 @@ async function loadDiarySummer(id: string) {
 }
 
 // 无限滚动的核心回调函数
-async function onLoad(index: number, done: (stop?: boolean) => void) {
+async function onLoad(_index: number, done: (stop?: boolean) => void) {
   try {
     const res = await commands.cmdPageDiaryIds(PAGE_SIZE, nextToken.value);
     if (res.status == 'error') {
@@ -62,7 +62,6 @@ async function onLoad(index: number, done: (stop?: boolean) => void) {
       return;
     }
     const [ids, nt] = res.data;
-    console.log(`Page ${index} loaded. IDs:`, ids, 'Next:', nt);
     if (!ids || ids.length === 0) {
       done(true);
       return;

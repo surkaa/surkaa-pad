@@ -36,7 +36,6 @@ const updateCountdown = () => {
 onMounted(async () => {
   appName.value = await getName();
   futureTimestamp.value = appStore.getEndTime();
-  console.log('截止时间:', futureTimestamp.value);
   updateCountdown();
   timer && clearInterval(timer);
   timer = setInterval(updateCountdown, 1000);
