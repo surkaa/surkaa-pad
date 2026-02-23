@@ -52,13 +52,14 @@ defineOptions({
   inheritAttrs: false
 });
 
-watch(() => modelValue, (newVal) => {
+watch([() => modelValue, editor], ([newVal, _]) => {
   if (!editor.value) return;
   // 获取当前编辑器内容反解析出来的 Source
   const currentSource = parseHtmlToSource(editor.value.innerHTML);
 
   // 将当前 Source 与外部传入的新 newVal 作对比
   if (currentSource !== newVal) {
+    console.log('modelValue is different from editor content, updating editor innerHTML');
     // 只有真正不一致时，才重写 innerHTML
     editor.value.innerHTML = parseSourceToHtml(newVal);
   }
