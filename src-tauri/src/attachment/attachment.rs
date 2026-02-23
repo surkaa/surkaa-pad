@@ -2,9 +2,7 @@ use crate::attachment::types::AddAttachmentEvent;
 use crate::attachment::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Ctr;
 use crate::crypto::Crypto;
-use crate::diary::{
-    delete_diary_attachment, update_diary_attachment, DiaryMemoryCache,
-};
+use crate::diary::{delete_diary_attachment, diary_get, update_diary_attachment, DiaryMemoryCache};
 use crate::object::tracker_stream::tracker_stream;
 use crate::object::{ByteStream, OssClient};
 use crate::storage::remote_attachments_key;
@@ -22,8 +20,6 @@ pub(super) async fn add_attachment(
     (size, stream): (u64, ByteStream),
 ) {
     let _ = event.send(AddAttachmentEvent::Started);
-    // 直接都使用CTR来加密
-    let filename = uuid::Uuid::new_v4().to_string();
     // 包装流 用来更新进度
     let ec = event.clone();
     let stream = tracker_stream(size, stream, move |progress| {
@@ -31,6 +27,20 @@ pub(super) async fn add_attachment(
     });
 
     let logic = async move {
+        let diary = diary_get(
+            &cache,
+            &crypto,
+            &client,
+            id,
+        ).await?;
+        // 获取最大的附件编号
+        let max_index = diary
+            .attachments
+            .iter()
+            .filter_map(|att| att.filename.parse::<u32>().ok())
+            .max()
+            .unwrap_or(0);
+        let filename = (max_index + 1).to_string();
         // 直接上传
         let key = remote_attachments_key(id, &filename);
         let attachment = if !encrypted {

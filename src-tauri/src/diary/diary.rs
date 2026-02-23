@@ -7,8 +7,8 @@ use crate::crypto::types::EncryptionAlgorithm::Gcm;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
 use chrono::Utc;
 use serde_json::from_slice;
-use uuid::Uuid;
 use crate::diary::types::DiarySummary;
+use crate::utils::id_generate::generate_descending_id;
 
 // TODO 统一函数命名格式 以及diary和manifest
 pub(super) async fn save_diary(
@@ -16,7 +16,7 @@ pub(super) async fn save_diary(
     client: &OssClient,
     content: &str,
 ) -> Result<(DiarySummary, String), String> {
-    let id = Uuid::new_v4().to_string();
+    let id = generate_descending_id();
     // 创建一个简单的 manifest
     let manifest = DiaryManifest {
         id: id.clone(),
@@ -82,10 +82,10 @@ pub async fn diary_get(
 pub(super) async fn delete_diary(
     cache: &DiaryMemoryCache,
     client: &OssClient,
-    uuid: &str,
+    id: &str,
 ) -> Result<(), String> {
     let (objects, _) = client
-        .list(&format!("{}/", uuid), None, None)
+        .list(&format!("{}/", id), None, None)
         .await
         .map_err(|e| format!("Failed to list diary objects: {}", e))?;
 
@@ -97,7 +97,7 @@ pub(super) async fn delete_diary(
     }
 
     // 删除缓存
-    cache.remove(&uuid);
+    cache.remove(&id);
 
     Ok(())
 }

@@ -1,9 +1,8 @@
-
+use crate::utils::id_generate::generate_descending_id;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use tauri::async_runtime::JoinHandle;
-use tauri::State;
 
 #[derive(Clone)]
 pub struct TaskPool {
@@ -23,7 +22,7 @@ impl TaskPool {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let cancel_token = uuid::Uuid::new_v4().to_string();
+        let cancel_token = generate_descending_id();
         let tasks_map = self.tasks.clone();
         let token_for_cleanup = cancel_token.clone();
         let token_for_return = cancel_token.clone();

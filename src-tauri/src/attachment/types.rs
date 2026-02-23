@@ -24,32 +24,7 @@ pub struct AttachmentMeta {
     pub mimetype: String,
     #[specta(type = f64)]
     pub size: u64,
-    #[serde(default)]
     pub encrypted: bool,
     pub nonce: Vec<u8>, // 用于加密该文件的独立 IV
-    #[serde(default)]
     pub algorithm: EncryptionAlgorithm,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::crypto::types::EncryptionAlgorithm::Gcm;
-    use serde_json::from_str;
-
-    // 测试AttachmentMeta的向下兼容能力
-    #[test]
-    fn test_attachment_meta_backward_compatibility() {
-        let old1 = r#"{
-            "filename": "example.txt",
-            "mimetype": "text/plain",
-            "size": 12345,
-            "nonce": [1, 2, 3, 4]
-        }"#;
-
-        let att1: AttachmentMeta = from_str(old1).expect("未能将旧的AttachmentMeta反序列化");
-        assert_eq!(att1.nonce, vec![1, 2, 3, 4]);
-        assert!(!att1.encrypted);
-        assert_eq!(att1.algorithm, Gcm);
-    }
 }

@@ -217,6 +217,9 @@ fn ctr_stream_cipher(stream: ByteStream, mut cipher: Aes256Ctr) -> ByteStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::types::EncryptionAlgorithm;
+    use crate::diary::DiaryManifest;
+    use crate::utils::id_generate::generate_descending_id_with_timestamp;
 
     #[test]
     fn test_derive_encrypt_decrypt() {
@@ -347,6 +350,120 @@ mod tests {
         }
     }
 
+    #[ignore]
+    #[tokio::test]
+    async fn migrate_diaries_to_v2() {
+        dotenvy::dotenv().ok();
+        let enc_dir = std::env::var("TEST_ENC_DIR").expect("TEST_ENC_DIR 未设置");
+        let output_dir = std::env::var("TEST_OUTPUT_DIR").expect("TEST_OUTPUT_DIR 未设置");
+        let crypto = Crypto::from_env();
+        let diary_filename = "manifest.enc";
+
+        let enc_path = std::path::Path::new(&enc_dir);
+
+        for diary_dir in std::fs::read_dir(enc_path).expect("无法读取目录") {
+            let diary_dir = diary_dir.expect("无法读取条目");
+            let diary_dir_path = diary_dir.path();
+            if diary_dir_path.is_file() {
+                println!("跳过非目录项: {}", diary_dir_path.display());
+                continue;
+            }
+
+            let manifest_path = diary_dir_path.join(diary_filename);
+            let encrypted_manifest =
+                std::fs::read(&manifest_path).expect("无法读取manifest.enc文件");
+            let decrypted_manifest = crypto
+                .decrypt_from_full_ciphertext(&encrypted_manifest)
+                .expect("无法解密manifest文件");
+            let mut manifest: DiaryManifest =
+                serde_json::from_slice(&decrypted_manifest).expect("无法解析DiaryManifest JSON");
+
+            println!("正在迁移日记: {:?}", manifest);
+
+            // 目标1：更改主键逻辑为倒序时间戳拼接原始ID以防哈希碰撞
+            let new_id = format!(
+                "{:013}",
+                generate_descending_id_with_timestamp(manifest.created)
+            );
+
+            let output_path = std::path::Path::new(&output_dir).join(&new_id);
+            std::fs::create_dir_all(&output_path).expect("无法创建输出目录");
+
+            let mut content = manifest.content.clone();
+            let mut new_attachments = Vec::with_capacity(manifest.attachments.len());
+
+            // 目标2 & 3：按次序重命名，采用流式 CTR 加密
+            for (index, attachment) in manifest.attachments.iter().enumerate() {
+                let encrypted_attachment_path = diary_dir_path.join(&attachment.filename);
+                let encrypted_data = std::fs::read(&encrypted_attachment_path)
+                    .unwrap_or_else(|_| panic!("无法读取附件文件: {}", attachment.filename));
+
+                // 解密原 GCM 附件
+                let decrypted_data = crypto
+                    .decrypt(&encrypted_data, &attachment.nonce)
+                    .unwrap_or_else(|_| panic!("无法解密附件: {}", attachment.filename));
+
+                // 推断后缀名并替换正文标记
+                let tags = ["IMG", "AUD", "VID"];
+                for prefix in tags.iter() {
+                    let old_tag = format!("<<{}:{}>>", prefix, attachment.filename);
+                    if content.contains(&old_tag) {
+                        let new_tag = format!("[[{}:{}]]", prefix, index + 1);
+                        content = content.replace(&old_tag, &new_tag);
+                        break;
+                    }
+                }
+                let new_filename = format!("{}", index + 1);
+
+                // 构建 ByteStream 并在内存中通过 CTR 重新加密
+                let boxed_stream = create_mock_stream(decrypted_data, 64 * 1024);
+
+                let (mut enc_stream, new_nonce) = crypto
+                    .encrypt_streaming(boxed_stream)
+                    .expect("CTR加密流创建失败");
+
+                let mut new_encrypted_data = Vec::new();
+                while let Some(chunk_result) = enc_stream.next().await {
+                    let chunk = chunk_result.expect("Stream流读取失败");
+                    new_encrypted_data.extend_from_slice(&chunk);
+                }
+
+                // 写入新的密文附件
+                let output_attachment_path = output_path.join(&new_filename);
+                std::fs::write(&output_attachment_path, new_encrypted_data)
+                    .unwrap_or_else(|_| panic!("无法写入新附件文件: {}", new_filename));
+
+                // 更新 AttachmentMeta 结构
+                let mut new_meta = attachment.clone();
+                new_meta.filename = new_filename;
+                new_meta.nonce = new_nonce;
+                new_meta.algorithm = EncryptionAlgorithm::Ctr;
+                new_meta.encrypted = true;
+                new_attachments.push(new_meta);
+            }
+
+            // 更新并重新保存 Manifest
+            manifest.id = new_id;
+            manifest.content = content;
+            manifest.attachments = new_attachments;
+            // 维持 Manifest 本身为 Gcm 算法（符合当前定义）
+            manifest.algorithm = EncryptionAlgorithm::Gcm;
+
+            let manifest_json = serde_json::to_vec(&manifest).expect("无法序列化新manifest");
+            let (manifest_ciphertext, manifest_nonce) =
+                crypto.encrypt(&manifest_json).expect("加密新manifest失败");
+
+            let mut final_encrypted_manifest = manifest_nonce;
+            final_encrypted_manifest.extend_from_slice(&manifest_ciphertext);
+
+            let new_manifest_path = output_path.join(diary_filename);
+            std::fs::write(&new_manifest_path, final_encrypted_manifest)
+                .expect("无法写入manifest.enc");
+
+            println!("数据迁移完成: {}", output_path.display());
+        }
+    }
+
     #[test]
     fn test_encrypt_and_decrypt_big_data() {
         let crypto = Crypto::from_env();
@@ -419,7 +536,9 @@ mod tests {
 
         // 将刚才收集的密文再次变成 Stream 喂给解密器
         let encrypted_input_stream = create_mock_stream(encrypted_data, 64 * 1024);
-        let mut decrypted_stream = crypto.decrypt_streaming(encrypted_input_stream, &nonce, 0).expect("流式解密失败");
+        let mut decrypted_stream = crypto
+            .decrypt_streaming(encrypted_input_stream, &nonce, 0)
+            .expect("流式解密失败");
 
         let mut decrypted_data = Vec::new();
         while let Some(chunk_result) = decrypted_stream.next().await {

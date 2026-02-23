@@ -258,7 +258,7 @@ export type AddAttachmentEvent = { event: "started" } |
  * 0-100 的上传进度百分比
  */
 { event: "progress"; data: number } | { event: "completed"; data: AttachmentMeta } | { event: "error"; data: string }
-export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted?: boolean; nonce: number[]; algorithm?: EncryptionAlgorithm }
+export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行
@@ -268,7 +268,7 @@ title: string;
  * 附件列表
  */
 attachments: AttachmentMeta[] }
-export type EncryptionAlgorithm = "AES-256-GCM" | "AES-256-CTR"
+export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type TAURI_CHANNEL<TSend> = null
 

@@ -30,7 +30,6 @@ serde_json = "1.0.145" # 用于 JSON 处理
 
 # 一个通用的 AEAD 接口
 chrono = "0.4.42" # 用于获取时间戳
-uuid = { version = "1.18.1", features = ["v4"] } # 用于生成唯一标识符
 
 # 异步
 tokio = { version = "1", features = ["full"] }
