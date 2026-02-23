@@ -3,6 +3,7 @@ import {onMounted, onUnmounted, ref, watch, type WatchHandle} from "vue";
 import {useAppStore} from "./stores/app.ts";
 import {useEventListener} from "./utils/useEventListener.ts";
 import {type Platform, platform} from "@tauri-apps/plugin-os";
+import {keepAliveIncludes} from "./composables/useKeepAlive.ts";
 
 const appStore = useAppStore();
 const watcher = ref<WatchHandle>();
@@ -80,7 +81,7 @@ onUnmounted(() => {
 
 <template>
   <router-view v-slot="{ Component }">
-    <keep-alive include="DiaryList">
+    <keep-alive :include="keepAliveIncludes">
       <component :is="Component" :key="$route.fullPath"/>
     </keep-alive>
   </router-view>

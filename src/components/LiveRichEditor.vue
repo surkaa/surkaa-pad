@@ -6,7 +6,9 @@ import {DiarySummary} from "../bindings.ts";
 import {ExtensionContext} from "./editor/extension.ts";
 import {AudioExtension} from "./editor/audioExtension.ts";
 import {VideoExtension} from "./editor/videoExtension.ts";
+import {useRouter} from "vue-router";
 
+const router = useRouter();
 const {modelValue, diarySummary} = defineProps<{
   modelValue: string;
   diarySummary?: DiarySummary;
@@ -31,6 +33,10 @@ const extensionCtx: ExtensionContext = {
     const attachment = diarySummary.attachments.find(att => att.filename === filename);
     return attachment || null;
   },
+  gotoPreview: (type, diaryId, filename) => router.push({
+    name: 'PreviewMedia',
+    params: {type, diaryId, filename}
+  }),
 }
 
 function parseSourceToHtml(source: string): string {

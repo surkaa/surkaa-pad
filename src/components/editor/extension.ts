@@ -1,4 +1,5 @@
 import {AttachmentMeta} from "../../bindings.ts";
+import {SupportType} from "../../utils/resolveMediaAttachmentUrl.ts";
 
 // 定义菜单按钮的数据结构
 export interface MenuButton {
@@ -10,6 +11,7 @@ export interface MenuButton {
 export interface ExtensionContext {
     getDiaryId(): string;
     getAttachment(filename: string): AttachmentMeta | null;
+    gotoPreview(type: SupportType, diaryId: string, filename: string): void;
 }
 
 export interface Extension {

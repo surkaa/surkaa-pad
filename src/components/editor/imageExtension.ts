@@ -87,7 +87,17 @@ export const ImageExtension: Extension = {
         console.log('已删除附件：', filename);
     },
 
-    onClick: (_e, node, _ctx) => {
-        console.log('点击了图片：', node);
+    onClick: (_e, node, ctx) => {
+        const filename = (node as HTMLImageElement).dataset.id;
+        if (!filename) {
+            console.error(`无法打开附件，因为没有找到 data-id 属性`);
+            return;
+        }
+        const attachment = ctx.getAttachment(filename);
+        if (!attachment) {
+            console.error(`没有找到附件 ${filename}`);
+            return;
+        }
+        ctx.gotoPreview('image', ctx.getDiaryId(), attachment.filename);
     }
 }
