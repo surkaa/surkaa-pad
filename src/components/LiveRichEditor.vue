@@ -4,6 +4,8 @@ import {BaseExtension} from "./editor/baseExtension.ts";
 import {ImageExtension} from "./editor/imageExtension.ts";
 import {DiarySummary} from "../bindings.ts";
 import {ExtensionContext} from "./editor/extension.ts";
+import {AudioExtension} from "./editor/audioExtension.ts";
+import {VideoExtension} from "./editor/videoExtension.ts";
 
 const {modelValue, diarySummary} = defineProps<{
   modelValue: string;
@@ -14,6 +16,8 @@ const emit = defineEmits(['update:modelValue']);
 const editor = ref<HTMLDivElement>();
 const extensions = [
   ImageExtension,
+  AudioExtension,
+  VideoExtension,
   BaseExtension
 ];
 const styles = extensions.map(ext => ext.style || '').join("\n");

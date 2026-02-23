@@ -22,7 +22,7 @@ export const VideoExtension: Extension = {
             console.error(`没有找到附件 ${filename}, 已自动移除`);
             return '';
         }
-        const src = resolveMediaAttachmentUrl(diaryId, attachment);
+        const src = resolveMediaAttachmentUrl('video', diaryId, attachment.filename);
         return `<video controls src="${src}" data-id="${filename}" />`;
     }),
 

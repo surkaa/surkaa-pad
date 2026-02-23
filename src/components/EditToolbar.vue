@@ -67,13 +67,13 @@ const emit = defineEmits<{
               </q-btn>
             </div>
             <div class="col-3 flex flex-center">
-              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
+              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertVideo')">
                 <q-icon name="video_library" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">视频</span>
               </q-btn>
             </div>
             <div class="col-3 flex flex-center">
-              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
+              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('takeVideo')">
                 <q-icon name="videocam" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">录像</span>
               </q-btn>

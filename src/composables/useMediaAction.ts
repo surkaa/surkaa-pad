@@ -101,7 +101,20 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
             });
             if (!accessStrArr) return;
             for (const accessStr of accessStrArr) {
-                await uploadAttachment(accessStr, "video/*", true);
+                await uploadAttachment(accessStr, "video/*", true, (att) => {
+                    // 立即渲染
+                    const url = resolveMediaAttachmentUrl('video', diaryId, att.filename);
+                    console.log('插入图片，URL:', url);
+                    const video = document.createElement('video');
+                    video.controls = true;
+                    video.src = url;
+                    video.dataset.id = att.filename;
+                    if (editorDomRef.value) {
+                        insertBlockNode(editorDomRef.value, video);
+                    } else {
+                        $q.notify({type: 'negative', message: 'EditorDOM节点未找到'});
+                    }
+                });
             }
         },
         takeVideo: () => {
