@@ -29,8 +29,4 @@ impl DiaryMemoryCache {
     pub fn remove(&self, id: &str) {
         self.diaries.remove(id);
     }
-
-    pub fn list(&self) -> Vec<DiaryManifest> {
-        self.diaries.iter().map(|v| v.as_ref().0.clone()).collect()
-    }
 }

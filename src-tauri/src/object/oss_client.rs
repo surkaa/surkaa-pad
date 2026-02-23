@@ -1,6 +1,5 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use bytes::Bytes;
 use chrono::Utc;
 use futures_util::TryStreamExt;
 use hmac::{Hmac, Mac};
@@ -278,7 +277,11 @@ impl OssClient {
             .map_err(|e| format!("请求失败:{}", e))?;
 
         if !resp.status().is_success() {
-            return Err(format!("获取元信息失败 status:{}, key:{}", resp.status(), &key));
+            return Err(format!(
+                "获取元信息失败 status:{}, key:{}",
+                resp.status(),
+                &key
+            ));
         }
 
         let last_modified_str = resp
@@ -320,7 +323,11 @@ impl OssClient {
         next_token: NextToken,
     ) -> Result<(Vec<ObjectMetadata>, NextToken), String> {
         // 构造基础查询参数
-        let mut query_params = format!("list-type=2&prefix={}&max-keys={}", prefix, count.unwrap_or(1000));
+        let mut query_params = format!(
+            "list-type=2&prefix={}&max-keys={}",
+            prefix,
+            count.unwrap_or(1000)
+        );
 
         // 处理签名路径
         // 注意：OSS 要求 continuation-token 必须出现在签名字符串的 CanonicalizedResource 中
@@ -361,7 +368,11 @@ impl OssClient {
         Ok((objects, next_token))
     }
 
-    pub async fn download(&self, key: &str, range: Option<(u64, u64)>) -> Result<(ByteStream, u64), String> {
+    pub async fn download(
+        &self,
+        key: &str,
+        range: Option<(u64, u64)>,
+    ) -> Result<(ByteStream, u64), String> {
         let url = self.get_url(key, "");
         let mut headers = self.build_headers(&Method::GET, key, "")?;
 
@@ -370,8 +381,7 @@ impl OssClient {
             let range_val = format!("bytes={}-{}", start, end);
             headers.insert(
                 reqwest::header::RANGE,
-                HeaderValue::from_str(&range_val)
-                    .map_err(|e| format!("未能创建Range头: {}", e))?,
+                HeaderValue::from_str(&range_val).map_err(|e| format!("未能创建Range头: {}", e))?,
             );
         }
 
@@ -432,6 +442,7 @@ impl OssClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
     use futures_util::stream::iter;
     use serial_test::serial;
     use std::iter::once;
@@ -615,18 +626,17 @@ mod tests {
         add_object(&client, key, content).await;
 
         // 下载部分内容
-        let (mut download_stream, len) = client.download(key, Some((5, 15))).await.expect("下载失败");
+        let (mut download_stream, len) =
+            client.download(key, Some((5, 15))).await.expect("下载失败");
         let mut downloaded_data = Vec::new();
         while let Some(chunk) = download_stream.try_next().await.expect("读取下载流失败") {
             downloaded_data.extend_from_slice(&chunk);
         }
         let downloaded_str = String::from_utf8(downloaded_data).expect("下载数据不是有效的UTF-8");
+        assert_eq!(len, 11, "下载的内容长度应为请求的范围长度 (15 - 5 + 1)");
         assert_eq!(
-            len, 11,
-            "下载的内容长度应为请求的范围长度 (15 - 5 + 1)"
-        );
-        assert_eq!(
-            downloaded_str, &content[5..=15],
+            downloaded_str,
+            &content[5..=15],
             "下载的范围数据应与原内容匹配"
         );
 

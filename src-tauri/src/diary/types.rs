@@ -2,7 +2,6 @@ use crate::attachment::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::collections::HashMap;
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
@@ -87,7 +86,7 @@ mod tests {
         let manifest = DiaryManifest {
             id: "1".to_string(),
             algorithm: EncryptionAlgorithm::Gcm,
-            content: "My first diary entry<<IMG:filename>>1<<IMG:filename>>\n This is the content.".to_string(),
+            content: "My first diary entry[[IMG:filename]]1[[IMG:filename]]\n This is the content.".to_string(),
             created: 0,
             updated: 0,
             attachments: vec![],
