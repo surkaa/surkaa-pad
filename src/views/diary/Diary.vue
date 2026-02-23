@@ -170,6 +170,24 @@ function setupToolbar() {
   }
 }
 
+function insertPhoto() {
+}
+
+function takePhoto() {
+}
+
+function audioRecording() {
+}
+
+function insertVideo() {
+}
+
+function takeVideo() {
+}
+
+function insertFile() {
+}
+
 watch(showMenu, (newVal) => {
   if (newVal) {
     // 打开菜单时隐藏工具栏
@@ -233,8 +251,14 @@ onDeactivated(() => {
         :panelOpen="showToolbarPanel"
         :undo="canUndo"
         :redo="canRedo"
-        @additionalAction="showToolbarPanel = !showToolbarPanel"
         v-click-outside="() => showToolbarPanel = false"
+        @additionalAction="showToolbarPanel = !showToolbarPanel"
+        @insertPhoto="insertPhoto"
+        @takePhoto="takePhoto"
+        @audioRecording="audioRecording"
+        @insertVideo="insertVideo"
+        @takeVideo="takeVideo"
+        @insertFile="insertFile"
         style="width: 100%; flex-shrink: 0"
     />
 

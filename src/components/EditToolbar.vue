@@ -19,6 +19,8 @@ const emit = defineEmits<{
   (e: 'insertPhoto'): void;
   (e: 'takePhoto'): void;
   (e: 'audioRecording'): void;
+  (e: 'insertVideo'): void;
+  (e: 'takeVideo'): void;
   (e: 'insertFile'): void;
 }>();
 </script>
@@ -62,6 +64,18 @@ const emit = defineEmits<{
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
                 <q-icon name="mic" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">录音</span>
+              </q-btn>
+            </div>
+            <div class="col-3 flex flex-center">
+              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
+                <q-icon name="video_library" size="28px" class="q-mb-xs"/>
+                <span class="text-caption">视频</span>
+              </q-btn>
+            </div>
+            <div class="col-3 flex flex-center">
+              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
+                <q-icon name="videocam" size="28px" class="q-mb-xs"/>
+                <span class="text-caption">录像</span>
               </q-btn>
             </div>
             <div class="col-3 flex flex-center">
