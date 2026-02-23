@@ -27,9 +27,6 @@ const {
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
 
-function operate() {
-  showMenu.value = true;
-}
 
 function showDiaryDetail() {
   if (!diary.value) {
@@ -63,7 +60,7 @@ onMounted(async () => {
         :title="diary?.title"
         @back="$router.back()"
         @info="showDiaryDetail"
-        @operate="operate"
+        @operate="showMenu = true"
         style="width: 100%; flex-shrink: 0"
     />
     <LiveRichEditor
