@@ -1,10 +1,10 @@
 import {Channel} from "@tauri-apps/api/core";
 import {AddAttachmentEvent, commands} from "../bindings.ts";
-import {onUnmounted, ref} from "vue";
+import {onUnmounted} from "vue";
 import {open} from "@tauri-apps/plugin-dialog"
 
 export function useMediaAction(diaryId: string) {
-    const cancelTokens = ref<string[]>([]);
+    const cancelTokens: string[] = [];
 
     const uploadAttachment = async (accessStr: string, mimetype: string, encrypted: boolean) => {
         const event = new Channel<AddAttachmentEvent>();
@@ -21,9 +21,9 @@ export function useMediaAction(diaryId: string) {
                     console.log("上传完成，附件Meta", msg.data);
                     if (cancelToken) {
                         // 去掉cancelToken
-                        const index = cancelTokens.value.indexOf(cancelToken);
+                        const index = cancelTokens.indexOf(cancelToken);
                         if (index !== -1) {
-                            cancelTokens.value.splice(index, 1);
+                            cancelTokens.splice(index, 1);
                         }
                     }
                     break;
@@ -38,12 +38,12 @@ export function useMediaAction(diaryId: string) {
             return;
         }
         cancelToken = res.data;
-        cancelTokens.value.push(res.data);
+        cancelTokens.push(res.data);
     }
 
     onUnmounted(async () => {
         const results = await Promise.all(
-            cancelTokens.value.map(token => commands.cmdCancelTask(token))
+            cancelTokens.map(token => commands.cmdCancelTask(token))
         );
         for (const result of results) {
             if (result.status === "error") {
