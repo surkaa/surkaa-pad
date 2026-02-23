@@ -2,9 +2,12 @@
 import {ref, watch} from "vue";
 import {BaseExtension} from "./editor/baseExtension.ts";
 import {ImageExtension} from "./editor/imageExtension.ts";
+import {DiarySummary} from "../bindings.ts";
+import {ExtensionContext} from "./editor/extension.ts";
 
-const {modelValue} = defineProps<{
+const {modelValue, diarySummary} = defineProps<{
   modelValue: string;
+  diarySummary: DiarySummary;
 }>();
 const emit = defineEmits(['update:modelValue']);
 
@@ -15,10 +18,18 @@ const extensions = [
 ];
 const styles = extensions.map(ext => ext.style || '').join("\n");
 
+const extensionCtx: ExtensionContext = {
+  getDiaryId: () => diarySummary.id,
+  getAttachment: (filename) => {
+    const attachment = diarySummary.attachments.find(att => att.filename === filename);
+    return attachment || null;
+  },
+}
+
 function parseSourceToHtml(source: string): string {
   let result = source;
   for (const ext of extensions) {
-    if (ext.toHtml) result = ext.toHtml(result);
+    if (ext.toHtml) result = ext.toHtml(result, extensionCtx);
   }
   return result;
 }

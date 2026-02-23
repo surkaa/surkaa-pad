@@ -67,7 +67,9 @@ onMounted(async () => {
         style="width: 100%; flex-shrink: 0"
     />
     <LiveRichEditor
+        v-if="diary"
         v-model="diaryContent"
+        :diarySummary="diary"
         style="width: 100%; flex: 1"
     />
     <EditToolbar

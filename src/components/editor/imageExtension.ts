@@ -23,7 +23,7 @@ export const ImageExtension: Extension = {
 
     match: (node) => node.nodeName === 'IMG',
 
-    toHtml: source => source.replace(/\[\[IMG:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, configStr) => {
+    toHtml: (source, ctx) => source.replace(/\[\[IMG:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, configStr) => {
         let sizeAttr = '';
 
         console.log('Parsing image config:', filename, configStr);
