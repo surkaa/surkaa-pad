@@ -65,6 +65,17 @@ function tryUpdateHtml(editorElement: HTMLDivElement, newVal: string) {
   }
 }
 
+// 处理点击 分发 onClick
+const handleEditorClick = (e: MouseEvent) => {
+  const target = e.target as HTMLElement;
+
+  // 遍历插件，寻找谁负责这个节点
+  const handler = extensions.find(ext => ext.match && ext.match(target));
+  if (handler && handler.onClick) {
+    handler.onClick(e, target, extensionCtx);
+  }
+};
+
 // 声明不自动继承属性
 defineOptions({
   inheritAttrs: false
@@ -112,6 +123,7 @@ watch(() => modelValue, (newVal) => {
       ref="editor"
       contenteditable="true"
       @input="handleInput"
+      @click="handleEditorClick"
   ></div>
 </template>
 

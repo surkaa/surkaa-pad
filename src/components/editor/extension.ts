@@ -30,6 +30,7 @@ export interface Extension {
     // 单击回调
     onClick?: (e: MouseEvent, node: HTMLElement, ctx: ExtensionContext) => void;
 
+    // TODO 解决 ctrl+z ctrl+y 删除又恢复时，附件可能会被删除但是无法恢复导致渲染失败
     // 删除回调
     onDeleted?: (node: Node, ctx: ExtensionContext) => void;
 

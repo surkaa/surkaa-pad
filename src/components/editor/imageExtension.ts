@@ -86,4 +86,8 @@ export const ImageExtension: Extension = {
         await commands.cmdDeleteAttachment(diaryId, filename);
         console.log('已删除附件：', filename);
     },
+
+    onClick: (e, node, ctx) => {
+        console.log('点击了图片：', node);
+    }
 }

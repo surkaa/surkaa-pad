@@ -10,6 +10,7 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
     const $q = useQuasar();
     const cancelTokens: string[] = [];
 
+    // TODO 优化多个附件上传时的界面，用弹窗显示多个进度，统一完成后才能关闭弹窗
     async function uploadAttachment(accessStr: string, mimetype: string, encrypted: boolean, completedCallback?: (meta: AttachmentMeta) => void) {
         const event = new Channel<AddAttachmentEvent>();
         let cancelToken = "";
