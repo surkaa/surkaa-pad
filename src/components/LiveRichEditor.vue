@@ -41,9 +41,13 @@ defineOptions({
 
 watch(() => modelValue, (newVal) => {
   if (!editor.value) return;
-  const newHtml = parseSourceToHtml(newVal);
-  if (editor.value.innerHTML !== newHtml) {
-    editor.value.innerHTML = newHtml;
+  // 获取当前编辑器内容反解析出来的 Source
+  const currentSource = parseHtmlToSource(editor.value.innerHTML);
+
+  // 将当前 Source 与外部传入的新 newVal 作对比
+  if (currentSource !== newVal) {
+    // 只有真正不一致时，才重写 innerHTML
+    editor.value.innerHTML = parseSourceToHtml(newVal);
   }
 });
 </script>
