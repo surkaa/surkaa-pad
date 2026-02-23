@@ -1,51 +1,64 @@
 /**
  * 在编辑器中安全插入一个块级元素
- * 替代 document.execCommand('insertHTML')
- * * 结构目标：
- * <当前块>...</当前块>
- * <wrapper>媒体元素</wrapper>  <-- 插入这里
- * <div><br></div>            <-- 插入这里 (光标位置)
  */
-export const insertBlockNode = (editor: HTMLElement, mediaNode: HTMLElement) => {
-    console.log('准备插入媒体元素:', mediaNode);
+export const insertBlockNode = (
+    editor: HTMLElement,
+    mediaNode: HTMLElement,
+    savedRange?: Range | null
+): Range => {
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-        console.warn("没有有效的光标位置，无法插入媒体元素");
-        return;
-    }
+    // 优先使用传入的固化选区
+    const range = savedRange || (selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null);
 
-    const range = selection.getRangeAt(0);
-
-    // 1. 寻找光标所在的顶级块元素 (直接在 editor 下一级的 div 或 p)
-    let currentBlock = range.commonAncestorContainer as HTMLElement;
-
-    // 向上查找直到找到 editor 的直接子节点
-    while (currentBlock && currentBlock.parentElement !== editor) {
-        currentBlock = currentBlock.parentElement as HTMLElement;
-    }
-
-    // 如果找不到（比如编辑器是空的），就创建一个新块
-    if (!currentBlock) {
-        // 编辑器可能是空的，直接追加
+    if (!range) {
         editor.appendChild(mediaNode);
-        // 追加光标占位符
         const p = createEmptyParagraph();
         editor.appendChild(p);
-        setCursorTo(p);
-        // 手动触发 input 事件
         editor.dispatchEvent(new Event('input', { bubbles: true }));
-        return;
+        return setCursorTo(p);
     }
 
-    // 2. 核心逻辑：把新元素插入到当前块的“后面”
-    // 这样保证了媒体元素永远不会被吞进上面的 div 里
-    if (currentBlock.nextSibling) {
-        editor.insertBefore(mediaNode, currentBlock.nextSibling);
-    } else {
+    let node: Node | null = range.commonAncestorContainer;
+
+    // 防御：光标跑到了编辑器外部
+    if (!editor.contains(node)) {
         editor.appendChild(mediaNode);
+        const p = createEmptyParagraph();
+        editor.appendChild(p);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        return setCursorTo(p);
     }
 
-    // 3. 插入光标落脚点 (一个新的空行)
+    let currentBlock: HTMLElement | null = null;
+
+    if (node === editor) {
+        // 修复：当光标刚好在两个块级元素之间时，利用 offset 精准定位
+        const targetNode = editor.childNodes[range.startOffset];
+        if (targetNode) {
+            editor.insertBefore(mediaNode, targetNode);
+        } else {
+            editor.appendChild(mediaNode);
+        }
+    } else {
+        // 向上查找直到找到 editor 的直接子节点
+        while (node && node.parentNode !== editor) {
+            node = node.parentNode;
+        }
+        currentBlock = node as HTMLElement;
+
+        if (!currentBlock) {
+            editor.appendChild(mediaNode);
+        } else {
+            // 插入到当前所在块的“后面”
+            if (currentBlock.nextSibling) {
+                editor.insertBefore(mediaNode, currentBlock.nextSibling);
+            } else {
+                editor.appendChild(mediaNode);
+            }
+        }
+    }
+
+    // 插入落脚点
     const nextBlock = createEmptyParagraph();
     if (mediaNode.nextSibling) {
         editor.insertBefore(nextBlock, mediaNode.nextSibling);
@@ -53,29 +66,26 @@ export const insertBlockNode = (editor: HTMLElement, mediaNode: HTMLElement) => 
         editor.appendChild(nextBlock);
     }
 
-    // 4. 将光标移动到新的空行里
-    setCursorTo(nextBlock);
-
-    // 5. 手动触发 input 事件
     editor.dispatchEvent(new Event('input', { bubbles: true }));
+    // 返回新的 Range，为连续多图插入提供上下文
+    return setCursorTo(nextBlock);
 };
 
-// 创建一个标准的空行 div
 const createEmptyParagraph = () => {
     const div = document.createElement('div');
-    div.innerHTML = '<br>'; // 必须有个 br，否则撑不开高度
+    div.innerHTML = '<br>';
     return div;
 };
 
-// 设置光标位置
-const setCursorTo = (node: Node) => {
+// 改造原有的 setCursorTo 使其返回 Range 对象
+const setCursorTo = (node: Node): Range => {
     const range = document.createRange();
     const selection = window.getSelection();
 
-    // 聚焦到内部
     range.selectNodeContents(node);
-    range.collapse(false); // 光标放到末尾
+    range.collapse(false);
 
     selection?.removeAllRanges();
     selection?.addRange(range);
+    return range;
 };

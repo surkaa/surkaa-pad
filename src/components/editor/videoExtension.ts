@@ -44,7 +44,7 @@ export const VideoExtension: Extension = {
         console.log('已删除附件：', filename);
     },
 
-    onClick: (e, node, ctx) => {
+    onClick: (_e, node, _ctx) => {
         console.log('点击了视频：', node);
     }
 }

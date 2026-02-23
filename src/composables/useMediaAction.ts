@@ -47,6 +47,12 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         cancelTokens.push(res.data);
     }
 
+    // 捕获光标
+    const captureRange = (): Range | null => {
+        const sel = window.getSelection();
+        return sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+    };
+
     function beforeClick() {
         if (showPanel.value) {
             showPanel.value = false;
@@ -69,6 +75,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
 
     return {
         insertPhoto: async () => {
+            let currentRange = captureRange();
             beforeClick();
             const accessStrArr = await open({
                 multiple: true,
@@ -88,7 +95,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                     img.src = url;
                     img.dataset.id = att.filename;
                     if (editorDomRef.value) {
-                        insertBlockNode(editorDomRef.value, img);
+                        insertBlockNode(editorDomRef.value, img, currentRange);
                     } else {
                         $q.notify({type: 'negative', message: 'EditorDOM节点未找到'});
                     }
@@ -102,6 +109,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             // TODO
         },
         insertAudio: async () => {
+            let currentRange = captureRange();
             beforeClick();
             const accessStrArr = await open({
                 multiple: true,
@@ -122,7 +130,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                     audio.src = url;
                     audio.dataset.id = att.filename;
                     if (editorDomRef.value) {
-                        insertBlockNode(editorDomRef.value, audio);
+                        insertBlockNode(editorDomRef.value, audio, currentRange);
                     } else {
                         $q.notify({type: 'negative', message: 'EditorDOM节点未找到'});
                     }
@@ -130,6 +138,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             }
         },
         insertVideo: async () => {
+            let currentRange = captureRange();
             beforeClick();
             const accessStrArr = await open({
                 multiple: true,
@@ -150,7 +159,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                     video.src = url;
                     video.dataset.id = att.filename;
                     if (editorDomRef.value) {
-                        insertBlockNode(editorDomRef.value, video);
+                        insertBlockNode(editorDomRef.value, video, currentRange);
                     } else {
                         $q.notify({type: 'negative', message: 'EditorDOM节点未找到'});
                     }
@@ -161,14 +170,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             // TODO
         },
         insertFile: async () => {
-            beforeClick();
-            const accessStrArr = await open({multiple: true, pickerMode: 'document'});
-            if (!accessStrArr) return;
-            for (const accessStr in accessStrArr) {
-                await uploadAttachment(accessStr, "document/*", true, (_att) => {
-                    // TODO
-                });
-            }
+            // TODO
         }
     };
 }

@@ -41,4 +41,8 @@ export const AudioExtension: Extension = {
         await commands.cmdDeleteAttachment(diaryId, filename);
         console.log('已删除附件：', filename);
     },
+
+    onClick: (_e, node, _ctx) => {
+        console.log('点击了音频：', node);
+    }
 }
