@@ -113,12 +113,14 @@ onActivated(async () => {
   eventBusOn('diary-changed', async payload => {
     switch (payload.type) {
       case 'created':
-        diaryIds.value.unshift(payload.id);
-        diarySummaries.value[payload.id] = null; // 占位，等待加载
-        await loadDiarySummer(payload.id);
-        return;
+        diaryIds.value.unshift(payload.summary.id);
+        diarySummaries.value[payload.summary.id] = payload.summary;
+        break;
       case 'updated':
-        await loadDiarySummer(payload.id);
+        const old = diarySummaries.value[payload.summary.id];
+        if (old && old !== payload.summary) {
+          diarySummaries.value[payload.summary.id] = payload.summary;
+        }
         break;
       case 'deleted':
         const index = diaryIds.value.indexOf(payload.id);

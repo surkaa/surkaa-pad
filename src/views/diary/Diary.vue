@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, ref, watch} from "vue";
+import {computed, onDeactivated, onMounted, ref, watch} from "vue";
 import {commands, DiarySummary} from "../../bindings.ts";
 import {useRoute, useRouter} from "vue-router";
 import DiaryHeader from "./DiaryHeader.vue";
@@ -26,6 +26,11 @@ const showToolbarAfterMenu = ref(false);
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
 
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+const AUTO_SAVE_DELAY = 1000;
+// 标记是否已经完成初次加载，避免将后端的初次赋值误认为用户的输入
+const isInitialLoaded = ref(false);
+
 const isNew = computed(() => diaryId.value.trim() === "");
 
 async function loadDiaryInfo(id: string) {
@@ -44,6 +49,50 @@ async function loadDiaryInfo(id: string) {
     return;
   }
   diaryContent.value = contentRes.data;
+
+  // 延迟标记加载完成，避免触发首次 watch
+  setTimeout(() => { isInitialLoaded.value = true; }, 50);
+}
+
+async function saveDiary() {
+  if (isNew.value) {
+    const res = await commands.cmdSaveDiary(diaryContent.value);
+    if (res.status === 'error') {
+      $q.notify({
+        type: 'negative',
+        message: `保存日记失败: ${res.error}`
+      });
+      return;
+    }
+    const [summary, content] = res.data;
+    diaryId.value = summary.id;
+    diary.value = summary;
+    diaryContent.value = content;
+    $q.notify({
+      type: 'positive',
+      message: '日记已自动创建'
+    });
+    eventBusEmit('diary-changed', {
+      type: 'created',
+      summary,
+    });
+    return;
+  }
+  // 已存在的日记，执行更新
+  const res = await commands.cmdUpdateDiaryContentOnly(diaryId.value, diaryContent.value);
+  if (res.status === 'error') {
+    $q.notify({
+      type: 'negative',
+      message: `保存日记失败: ${res.error}`
+    });
+    return;
+  }
+  const summary = res.data;
+  diary.value = summary;
+  eventBusEmit('diary-changed', {
+    type: 'updated',
+    summary,
+  });
 }
 
 function operate() {
@@ -133,12 +182,35 @@ watch(showMenu, (newVal) => {
   }
 });
 
+// 监听日记内容的变化
+watch(diaryContent, (newValue, oldValue) => {
+  // 如果还没加载完，或者值根本没变，则不触发保存
+  if (!isInitialLoaded.value || newValue === oldValue) return;
+
+  // 清除上一次的定时器（防抖）
+  if (saveTimeout) clearTimeout(saveTimeout);
+
+  // 开启新的定时器
+  saveTimeout = setTimeout(saveDiary, AUTO_SAVE_DELAY);
+});
+
 onMounted(async () => {
   diaryId.value = route.params.id as string || "";
   if (!isNew.value) {
     await loadDiaryInfo(diaryId.value);
+  } else {
+    // 新建日记，直接标记加载完成，允许保存
+    isInitialLoaded.value = true;
   }
   setupToolbar();
+});
+
+// 组件卸载时，如果还有没保存的，强制保存一次
+onDeactivated(() => {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveDiary();
+  }
 });
 </script>
 
