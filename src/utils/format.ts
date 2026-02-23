@@ -49,12 +49,20 @@ export function formatTimestamp(timestamp?: number): string {
             month: '2-digit',
             day: '2-digit',
             hour: '2-digit',
-            minute: '2-digit'
-        }).replace(/\//g, '-');
+            minute: '2-digit',
+            second: '2-digit'
+        });
     }
 
-    // 6. 超过一年（显示 年/月/日）
-    return date.toLocaleString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'}).replace(/\//g, '-');
+    // 6. 超过一年（显示 年-月-日 时:分:秒）
+    return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
 }
 
 /**

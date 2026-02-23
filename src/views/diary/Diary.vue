@@ -3,7 +3,7 @@ import {computed, onMounted, ref, watch} from "vue";
 import DiaryHeader from "./DiaryHeader.vue";
 import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
-import {formatTimestamp} from "../../utils";
+import {formatBytes, formatTimestamp} from "../../utils";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
 import {useRoute} from "vue-router";
 import {useQuasar} from "quasar";
@@ -45,9 +45,28 @@ function showDiaryDetail() {
     return;
   }
   const {title, created, updated, attachments} = diary.value;
+  let message = '';
+  message += `创建时间：${formatTimestamp(created)}<br>`;
+  message += `更新时间：${formatTimestamp(updated)}<br>`;
+  message += `附件数量：${attachments.length}<br>`;
+  // 展示附件表格
+  message += '附件列表：<br>';
+  message += '<table style="width: 100%; border-collapse: collapse;">';
+  message += '<tr>';
+  message += '<th style="border: 1px solid #ccc; text-align: center;">是否加密</th>';
+  message += '<th style="border: 1px solid #ccc; text-align: center;">类型</th>';
+  message += '<th style="border: 1px solid #ccc; text-align: center;">大小</th>';
+  message += '</tr>';
+  for (const att of attachments) {
+    message += `<tr>`;
+    message += `<td style="border: 1px solid #ccc; text-align: center;">${att.encrypted ? '是' : '否'}</td>`;
+    message += `<td style="border: 1px solid #ccc; text-align: center;">${att.mimetype}</td>`;
+    message += `<td style="border: 1px solid #ccc; text-align: center;">${formatBytes(att.size)}</td>`;
+    message += `</tr>`;
+  }
   $q.dialog({
     title,
-    message: `创建时间：${formatTimestamp(created)}<br>更新时间：${formatTimestamp(updated)}<br>附件数量：${attachments.length}`,
+    message,
     html: true,
     ok: {label: '关闭', color: 'primary', flat: true},
   });
