@@ -6,7 +6,7 @@ import {resolveMediaAttachmentUrl} from "../utils/resolveMediaAttachmentUrl.ts";
 import {insertBlockNode} from "../utils/domUtils.ts";
 import {useQuasar} from "quasar";
 
-export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | undefined>) {
+export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLElement | undefined>, showPanel: Ref<boolean>) {
     const $q = useQuasar();
     const cancelTokens: string[] = [];
 
@@ -38,13 +38,22 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
                     break;
             }
         };
-        const res = await commands.cmdAddAttachment(event, diaryId, accessStr, mimetype, encrypted);
+        const res = await commands.cmdAddAttachment(event, diaryId.value, accessStr, mimetype, encrypted);
         if (res.status == "error") {
             console.log("调用 Rust 后端失败", res.error);
             return;
         }
         cancelToken = res.data;
         cancelTokens.push(res.data);
+    }
+
+    function beforeClick() {
+        if (showPanel.value) {
+            showPanel.value = false;
+        }
+        if (editorDomRef.value) {
+            editorDomRef.value.focus();
+        }
     }
 
     onUnmounted(async () => {
@@ -60,6 +69,7 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
 
     return {
         insertPhoto: async () => {
+            beforeClick();
             const accessStrArr = await open({
                 multiple: true,
                 pickerMode: 'image',
@@ -72,7 +82,7 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
             for (const accessStr of accessStrArr) {
                 await uploadAttachment(accessStr, "image/*", true, (att) => {
                     // 立即渲染
-                    const url = resolveMediaAttachmentUrl('image', diaryId, att.filename);
+                    const url = resolveMediaAttachmentUrl('image', diaryId.value, att.filename);
                     console.log('插入图片，URL:', url);
                     const img = document.createElement('img');
                     img.src = url;
@@ -92,6 +102,7 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
             // TODO
         },
         insertAudio: async () => {
+            beforeClick();
             const accessStrArr = await open({
                 multiple: true,
                 pickerMode: 'media',
@@ -104,7 +115,7 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
             for (const accessStr of accessStrArr) {
                 await uploadAttachment(accessStr, "audio/*", true, (att) => {
                     // 立即渲染
-                    const url = resolveMediaAttachmentUrl('video', diaryId, att.filename);
+                    const url = resolveMediaAttachmentUrl('video', diaryId.value, att.filename);
                     console.log('插入音频，URL:', url);
                     const audio = document.createElement('audio');
                     audio.controls = true;
@@ -119,6 +130,7 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
             }
         },
         insertVideo: async () => {
+            beforeClick();
             const accessStrArr = await open({
                 multiple: true,
                 pickerMode: 'video',
@@ -131,7 +143,7 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
             for (const accessStr of accessStrArr) {
                 await uploadAttachment(accessStr, "video/*", true, (att) => {
                     // 立即渲染
-                    const url = resolveMediaAttachmentUrl('video', diaryId, att.filename);
+                    const url = resolveMediaAttachmentUrl('video', diaryId.value, att.filename);
                     console.log('插入视频，URL:', url);
                     const video = document.createElement('video');
                     video.controls = true;
@@ -149,10 +161,13 @@ export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | 
             // TODO
         },
         insertFile: async () => {
+            beforeClick();
             const accessStrArr = await open({multiple: true, pickerMode: 'document'});
             if (!accessStrArr) return;
             for (const accessStr in accessStrArr) {
-                await uploadAttachment(accessStr, "document/*", true);
+                await uploadAttachment(accessStr, "document/*", true, (_att) => {
+                    // TODO
+                });
             }
         }
     };

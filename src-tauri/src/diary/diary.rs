@@ -55,6 +55,9 @@ pub async fn diary_get(
     client: &OssClient,
     id: &str,
 ) -> Result<DiaryManifest, String> {
+    if id.len() == 0 {
+        return Err("ID不能为空".to_string());
+    }
     let object_key = remote_manifest_key(id);
     let metadata = client.get_metadata(&object_key).await?;
     if let Some((diary, etag)) = cache.get(id) {

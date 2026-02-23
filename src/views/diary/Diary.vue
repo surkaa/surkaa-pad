@@ -17,7 +17,7 @@ const editorDomRef = ref<HTMLElement>();
 
 const initialDiaryId = (route.params.id as string) || "";
 const {
-  diary, diaryContent, isNew, isInitialLoaded,
+  diaryId, diary, diaryContent, isNew, isInitialLoaded,
   loadDiaryInfo, deleteDiary
 } = useDiaryCore(initialDiaryId);
 
@@ -28,7 +28,7 @@ const {
 } = useEditorUI();
 
 // 媒体操作
-const mediaActions = useMediaAction(initialDiaryId, editorDomRef);
+const mediaActions = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
 
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
@@ -38,6 +38,13 @@ const editorPadding = computed(() => {
   if (showToolbar || showToolbarPanel) return `${BAR_MAX_HEIGHT + 16}px 16px`
   else return '16px'
 });
+
+function additionalAction() {
+  showToolbarPanel.value = !showToolbarPanel.value;
+  if (liveEditorRef.value?.editor) {
+    liveEditorRef.value?.editor.focus();
+  }
+}
 
 onMounted(async () => {
   if (!isNew.value) {
@@ -81,7 +88,7 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         :undo="canUndo"
         :redo="canRedo"
         v-click-outside="() => showToolbarPanel = false"
-        @additionalAction="showToolbarPanel = !showToolbarPanel"
+        @additionalAction="additionalAction"
         @insertPhoto="mediaActions.insertPhoto"
         @takePhoto="mediaActions.takePhoto"
         @audioRecording="mediaActions.audioRecording"

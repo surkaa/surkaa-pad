@@ -9,7 +9,10 @@
 export const insertBlockNode = (editor: HTMLElement, mediaNode: HTMLElement) => {
     console.log('准备插入媒体元素:', mediaNode);
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
+    if (!selection || selection.rangeCount === 0) {
+        console.warn("没有有效的光标位置，无法插入媒体元素");
+        return;
+    }
 
     const range = selection.getRangeAt(0);
 
