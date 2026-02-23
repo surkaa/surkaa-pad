@@ -91,6 +91,7 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         @additionalAction="additionalAction"
         @insertPhoto="mediaActions.insertPhoto"
         @takePhoto="mediaActions.takePhoto"
+        @insertAudio="mediaActions.insertAudio"
         @audioRecording="mediaActions.audioRecording"
         @insertVideo="mediaActions.insertVideo"
         @takeVideo="mediaActions.takeVideo"
