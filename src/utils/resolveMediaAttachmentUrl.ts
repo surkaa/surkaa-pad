@@ -1,5 +1,3 @@
-import {AttachmentMeta} from "../bindings.ts";
-
-export function resolveMediaAttachmentUrl(diaryId: string, attachment: AttachmentMeta): string {
-    return `http://attachment.localhost/image/${diaryId}/${attachment.filename}`;
+export function resolveMediaAttachmentUrl(type: 'image' | 'audio' | 'video', diaryId: string, filename: string): string {
+    return `http://attachment.localhost/${type}/${diaryId}/${filename}`;
 }

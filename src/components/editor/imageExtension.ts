@@ -44,7 +44,7 @@ export const ImageExtension: Extension = {
             return '';
         }
 
-        const src = resolveMediaAttachmentUrl(diaryId, attachment);
+        const src = resolveMediaAttachmentUrl('image', diaryId, attachment.filename);
 
         return `<img src="${src}" data-id="${filename}" ${sizeAttr} alt="image" />`;
     }),

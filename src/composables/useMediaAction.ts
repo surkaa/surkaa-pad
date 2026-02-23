@@ -1,12 +1,16 @@
 import {Channel} from "@tauri-apps/api/core";
-import {AddAttachmentEvent, commands} from "../bindings.ts";
-import {onUnmounted} from "vue";
+import {AddAttachmentEvent, AttachmentMeta, commands} from "../bindings.ts";
+import {onUnmounted, Ref} from "vue";
 import {open} from "@tauri-apps/plugin-dialog"
+import {resolveMediaAttachmentUrl} from "../utils/resolveMediaAttachmentUrl.ts";
+import {insertBlockNode} from "../utils/domUtils.ts";
+import {useQuasar} from "quasar";
 
-export function useMediaAction(diaryId: string) {
+export function useMediaAction(diaryId: string, editorDomRef: Ref<HTMLElement | undefined>) {
+    const $q = useQuasar();
     const cancelTokens: string[] = [];
 
-    const uploadAttachment = async (accessStr: string, mimetype: string, encrypted: boolean) => {
+    async function uploadAttachment(accessStr: string, mimetype: string, encrypted: boolean, completedCallback?: (meta: AttachmentMeta) => void) {
         const event = new Channel<AddAttachmentEvent>();
         let cancelToken = "";
         event.onmessage = (msg) => {
@@ -18,6 +22,7 @@ export function useMediaAction(diaryId: string) {
                     console.log("百分制整数进度", msg.data);
                     break;
                 case "completed":
+                    completedCallback && completedCallback(msg.data);
                     console.log("上传完成，附件Meta", msg.data);
                     if (cancelToken) {
                         // 去掉cancelToken
@@ -64,7 +69,19 @@ export function useMediaAction(diaryId: string) {
             });
             if (!accessStrArr) return;
             for (const accessStr of accessStrArr) {
-                await uploadAttachment(accessStr, "image/*", true);
+                await uploadAttachment(accessStr, "image/*", true, (att) => {
+                    // 立即渲染
+                    const url = resolveMediaAttachmentUrl('image', diaryId, att.filename);
+                    console.log('插入图片，URL:', url);
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.dataset.id = att.filename;
+                    if (editorDomRef.value) {
+                        insertBlockNode(editorDomRef.value, img);
+                    } else {
+                        $q.notify({type: 'negative', message: 'EditorDOM节点未找到'});
+                    }
+                });
             }
         },
         takePhoto: async () => {

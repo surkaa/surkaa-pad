@@ -53,6 +53,11 @@ defineOptions({
   inheritAttrs: false
 });
 
+// 暴露editor给父组件
+defineExpose({
+  editor
+});
+
 watch([() => modelValue, editor], ([newVal, _]) => {
   if (!editor.value) return;
   // 获取当前编辑器内容反解析出来的 Source

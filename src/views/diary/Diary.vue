@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted} from "vue";
+import {computed, onMounted, ref, watch} from "vue";
 import DiaryHeader from "./DiaryHeader.vue";
 import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
@@ -12,6 +12,8 @@ import {useMediaAction} from "../../composables/useMediaAction.ts";
 
 const route = useRoute();
 const $q = useQuasar();
+const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
+const editorDomRef = ref<HTMLElement>();
 
 const initialDiaryId = (route.params.id as string) || "";
 const {
@@ -26,7 +28,7 @@ const {
 } = useEditorUI();
 
 // 媒体操作
-const mediaActions = useMediaAction(initialDiaryId);
+const mediaActions = useMediaAction(initialDiaryId, editorDomRef);
 
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
@@ -55,6 +57,12 @@ onMounted(async () => {
   }
   setupToolbar();
 });
+
+watch(() => liveEditorRef.value?.editor, (newEditor) => {
+  if (newEditor) {
+    editorDomRef.value = newEditor;
+  }
+});
 </script>
 
 <template>
@@ -68,6 +76,7 @@ onMounted(async () => {
         style="width: 100%; flex-shrink: 0"
     />
     <LiveRichEditor
+        ref="liveEditorRef"
         v-if="isInitialLoaded"
         v-model="diaryContent"
         :diarySummary="diary"
