@@ -90,9 +90,9 @@ async cmdInitOssClient(akid: string, aks: string, bucket: string, endpoint: stri
  * # Arguments
  * * `content` - 日记内容
  * # Returns
- * * `Result<String, String>` - 成功时返回日记ID，失败时返回错误信息
+ * * `Result<(DiarySummary, String), String>` - 成功时返回日记 Summary 和日记 ID，失败时返回错误信息
  */
-async cmdSaveDiary(content: string) : Promise<Result<DiaryManifest, string>> {
+async cmdSaveDiary(content: string) : Promise<Result<[DiarySummary, string], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_save_diary", { content }) };
 } catch (e) {
@@ -108,7 +108,7 @@ async cmdSaveDiary(content: string) : Promise<Result<DiaryManifest, string>> {
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdUpdateDiaryContentOnly(id: string, newContent: string) : Promise<Result<DiaryManifest, string>> {
+async cmdUpdateDiaryContentOnly(id: string, newContent: string) : Promise<Result<DiarySummary, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_update_diary_content_only", { id, newContent }) };
 } catch (e) {
@@ -259,7 +259,6 @@ export type AddAttachmentEvent = { event: "started" } |
  */
 { event: "progress"; data: number } | { event: "completed"; data: AttachmentMeta } | { event: "error"; data: string }
 export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted?: boolean; nonce: number[]; algorithm?: EncryptionAlgorithm }
-export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: string; created: number; updated: number; attachments: AttachmentMeta[] }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行

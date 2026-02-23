@@ -6,7 +6,7 @@ use crate::object::{NextToken, OssState};
 use crate::diary::diary::{delete_diary, save_diary, update_diary_content_only};
 use crate::diary::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
 use crate::diary::types::{DiarySummary, SearchDiariesEvent};
-use crate::diary::{DiaryManifest, DiaryMemoryCache};
+use crate::diary::{DiaryMemoryCache};
 use tauri::State;
 use crate::diary::diary_search::search_diaries;
 use crate::task::TaskPool;
@@ -15,14 +15,14 @@ use crate::task::TaskPool;
 /// # Arguments
 /// * `content` - 日记内容
 /// # Returns
-/// * `Result<String, String>` - 成功时返回日记ID，失败时返回错误信息
+/// * `Result<(DiarySummary, String), String>` - 成功时返回日记 Summary 和日记 ID，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_save_diary(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     content: &str,
-) -> Result<DiaryManifest, String> {
+) -> Result<(DiarySummary, String), String> {
     let client = client.get_client()?;
     save_diary(&crypto, &client, content).await
 }
@@ -58,7 +58,7 @@ pub async fn cmd_update_diary_content_only(
     client: State<'_, OssState>,
     id: &str,
     new_content: &str,
-) -> Result<DiaryManifest, String> {
+) -> Result<DiarySummary, String> {
     let client = client.get_client()?;
     update_diary_content_only(&cache, &crypto, &client, id, new_content).await
 }
