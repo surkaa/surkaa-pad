@@ -41,14 +41,14 @@ impl DiarySummary {
     pub fn from_manifest(manifest: DiaryManifest) -> Self {
         let mut first_line = manifest.content.lines().next().unwrap_or("").to_string();
 
-        // 循环查找并移除 "<<...>>" 结构
-        while let Some(start) = first_line.find("<<") {
-            if let Some(end_offset) = first_line[start..].find(">>") {
-                // start 是 "<<" 的起始位置，end_offset 是 ">>" 相对 start 的偏移量
-                // +2 是为了包含 ">>" 本身的长度
+        // 循环查找并移除 "[[...]]" 结构
+        while let Some(start) = first_line.find("[[") {
+            if let Some(end_offset) = first_line[start..].find("]]") {
+                // start 是 "[[" 的起始位置，end_offset 是 "[[" 相对 start 的偏移量
+                // +2 是为了包含 "]]" 本身的长度
                 first_line.replace_range(start..start + end_offset + 2, "");
             } else {
-                break; // 如果没有成对的 ">>"，停止处理以防死循环
+                break; // 如果没有成对的 "]]"，停止处理以防死循环
             }
         }
 
