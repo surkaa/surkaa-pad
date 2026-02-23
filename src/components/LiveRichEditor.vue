@@ -14,6 +14,8 @@ const {modelValue, diarySummary} = defineProps<{
 const emit = defineEmits(['update:modelValue']);
 
 const editor = ref<HTMLDivElement>();
+let observer: MutationObserver | null = null;
+
 const extensions = [
   ImageExtension,
   AudioExtension,
@@ -52,6 +54,17 @@ function handleInput() {
   emit('update:modelValue', parseHtmlToSource(editor.value.innerHTML));
 }
 
+function tryUpdateHtml(editorElement: HTMLDivElement, newVal: string) {
+  // 获取当前编辑器内容反解析出来的 Source
+  const currentSource = parseHtmlToSource(editorElement.innerHTML);
+
+  // 将当前 Source 与外部传入的新 newVal 作对比
+  if (currentSource !== newVal) {
+    // 只有真正不一致时，才重写 innerHTML
+    editorElement.innerHTML = parseSourceToHtml(newVal);
+  }
+}
+
 // 声明不自动继承属性
 defineOptions({
   inheritAttrs: false
@@ -62,16 +75,32 @@ defineExpose({
   editor
 });
 
-watch([() => modelValue, editor], ([newVal, _]) => {
-  if (!editor.value) return;
-  // 获取当前编辑器内容反解析出来的 Source
-  const currentSource = parseHtmlToSource(editor.value.innerHTML);
+watch(editor, (newEditor) => {
+  if (!newEditor) return;
+  tryUpdateHtml(newEditor, modelValue);
+  observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      // 我们只关心节点被移除的情况
+      if (mutation.type === 'childList' && mutation.removedNodes.length > 0) {
+        mutation.removedNodes.forEach((node) => {
+          const handler = extensions.find(ext => ext.match && ext.match(node));
+          if (handler && handler.onDeleted) {
+            handler.onDeleted(node, extensionCtx);
+          }
+        });
+      }
+    });
+  });
+  // 监听 childList (子节点变化) 和 subtree (后代节点变化)
+  observer.observe(newEditor, {
+    childList: true,
+    subtree: true,
+  });
+});
 
-  // 将当前 Source 与外部传入的新 newVal 作对比
-  if (currentSource !== newVal) {
-    // 只有真正不一致时，才重写 innerHTML
-    editor.value.innerHTML = parseSourceToHtml(newVal);
-  }
+watch(() => modelValue, (newVal) => {
+  if (!editor.value) return;
+  tryUpdateHtml(editor.value, newVal);
 });
 </script>
 

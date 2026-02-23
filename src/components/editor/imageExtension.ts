@@ -1,5 +1,6 @@
 import {Extension} from "./extension.ts";
 import {resolveMediaAttachmentUrl} from "../../utils/resolveMediaAttachmentUrl.ts";
+import {commands} from "../../bindings.ts";
 
 export const ImageExtension: Extension = {
     name: "image",
@@ -37,6 +38,10 @@ export const ImageExtension: Extension = {
         }
 
         const diaryId = ctx.getDiaryId();
+        if (!diaryId.length) {
+            console.error(`无法解析图片 ${filename}，因为没有找到日记 ID`);
+            return '';
+        }
         const attachment = ctx.getAttachment(filename);
 
         if (!attachment) {
@@ -66,4 +71,19 @@ export const ImageExtension: Extension = {
             return `[[IMG:${filename}]]`;
         }
     }),
+
+    onDeleted: async (node, ctx) => {
+        const diaryId = ctx.getDiaryId();
+        if (!diaryId) {
+            console.error(`无法删除附件，因为没有找到日记 ID`);
+            return;
+        }
+        const filename = (node as HTMLImageElement).dataset.id;
+        if (!filename) {
+            console.error(`无法删除附件，因为没有找到 data-id 属性`);
+            return;
+        }
+        await commands.cmdDeleteAttachment(diaryId, filename);
+        console.log('已删除附件：', filename);
+    },
 }

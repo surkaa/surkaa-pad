@@ -31,7 +31,7 @@ export interface Extension {
     onClick?: (e: MouseEvent, node: HTMLElement, ctx: ExtensionContext) => void;
 
     // 删除回调
-    onDelete?: (node: Node, ctx: ExtensionContext) => void;
+    onDeleted?: (node: Node, ctx: ExtensionContext) => void;
 
     // 上下文菜单 (windows右键/android长按) -> 返回要显示的菜单按钮列表
     onContextmenu?: (e: MouseEvent, node: HTMLElement, ctx: ExtensionContext) => MenuButton[];

@@ -1,5 +1,6 @@
 import {Extension} from "./extension.ts";
 import {resolveMediaAttachmentUrl} from "../../utils/resolveMediaAttachmentUrl.ts";
+import {commands} from "../../bindings.ts";
 
 export const VideoExtension: Extension = {
     name: "video",
@@ -27,4 +28,19 @@ export const VideoExtension: Extension = {
     }),
 
     toSource: (html) => html.replace(/<video[^>]*data-id="([^"]*)"[^>]*>/gi, (_match, filename) => `[[VID:${filename}]]`),
+
+    onDeleted: async (node, ctx) => {
+        const diaryId = ctx.getDiaryId();
+        if (!diaryId) {
+            console.error(`无法删除附件，因为没有找到日记 ID`);
+            return;
+        }
+        const filename = (node as HTMLVideoElement).dataset.id;
+        if (!filename) {
+            console.error(`无法删除附件，因为没有找到 data-id 属性`);
+            return;
+        }
+        await commands.cmdDeleteAttachment(diaryId, filename);
+        console.log('已删除附件：', filename);
+    },
 }
