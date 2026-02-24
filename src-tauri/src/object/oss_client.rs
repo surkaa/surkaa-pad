@@ -240,7 +240,6 @@ impl OssClient {
         }
     }
 
-    // TODO 未来真用上了可以考虑调用 https://help.aliyun.com/zh/oss/developer-reference/deletemultipleobjects 接口
     pub async fn delete_with_prefix(&self, prefix: &str) -> Result<u32, String> {
         // 列出所有匹配的对象
         let mut next_token: Option<String> = None;

@@ -1,7 +1,7 @@
 use crate::crypto::Crypto;
 use crate::diary::diary_list::page_diary_ids;
 use crate::diary::types::{DiarySummary, SearchDiariesEvent};
-use crate::diary::{diary_get, DiaryMemoryCache};
+use crate::diary::{get_diary, DiaryMemoryCache};
 use crate::object::{NextToken, OssClient};
 use crate::utils::message_sender::MessageSender;
 use std::sync::Arc;
@@ -27,7 +27,7 @@ pub async fn search_diaries(
                 let ecc = event.clone();
                 let kc = keywords.clone();
                 async move {
-                    let diary = diary_get(cache, crypto, client, &id).await?;
+                    let diary = get_diary(cache, crypto, client, &id).await?;
 
                     let content = diary.content();
                     // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词

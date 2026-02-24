@@ -1,6 +1,6 @@
 use crate::crypto::types::EncryptionAlgorithm::Gcm;
 use crate::crypto::Crypto;
-use crate::diary::{diary_get, DiaryMemoryCache};
+use crate::diary::{get_diary, DiaryMemoryCache};
 use crate::object::OssState;
 use crate::storage::remote_attachments_key;
 use futures_util::StreamExt;
@@ -59,7 +59,7 @@ async fn attachment_protocol_inner(
     let id = segments[1];
     let filename = segments[2];
 
-    let diary = match diary_get(&cache, &crypto, &client, id).await {
+    let diary = match get_diary(&cache, &crypto, &client, id).await {
         Ok(diary) => diary,
         Err(e) => {
             log::error!("Failed to get diary {}: {}", id, e);

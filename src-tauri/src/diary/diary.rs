@@ -10,7 +10,6 @@ use serde_json::from_slice;
 use crate::diary::types::DiarySummary;
 use crate::utils::id_generate::generate_descending_id;
 
-// TODO 统一函数命名格式 以及diary和manifest
 pub async fn save_diary(
     crypto: &Crypto,
     client: &OssClient,
@@ -49,7 +48,7 @@ pub async fn save_diary(
 }
 
 /// 获取并解密指定 ID 的日记 manifest
-pub async fn diary_get(
+pub async fn get_diary(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
@@ -133,7 +132,7 @@ pub async fn update_diary_content_only(
     new_content: &str,
 ) -> Result<DiarySummary, String> {
     // 先获取现有的 manifest
-    let mut manifest = diary_get(cache, crypto, client, id).await?;
+    let mut manifest = get_diary(cache, crypto, client, id).await?;
 
     // 更新内容和更新时间
     manifest.content = new_content.to_string();
@@ -151,7 +150,7 @@ pub async fn update_diary_attachment(
     id: &str,
     new_attachment: &AttachmentMeta,
 ) -> Result<(), String> {
-    let mut diary = diary_get(&cache, &crypto, &client, id).await?;
+    let mut diary = get_diary(&cache, &crypto, &client, id).await?;
     diary.attachments.push(new_attachment.clone());
     diary.updated = Utc::now().timestamp_millis();
     update_diary(cache, crypto, client, &diary).await?;
@@ -165,7 +164,7 @@ pub async fn delete_diary_attachment(
     id: &str,
     filename: &str,
 ) -> Result<(), String> {
-    let mut diary = diary_get(&cache, &crypto, &client, id).await?;
+    let mut diary = get_diary(&cache, &crypto, &client, id).await?;
     diary.attachments.retain(|att| att.filename != filename);
     diary.updated = Utc::now().timestamp_millis();
     update_diary(cache, crypto, client, &diary).await?;
@@ -204,7 +203,7 @@ mod tests {
         let id = summary.id.clone();
 
         // 测试读取 - 验证远端拉取并写入缓存
-        let fetched_manifest = diary_get(&cache, &crypto, &client, &id)
+        let fetched_manifest = get_diary(&cache, &crypto, &client, &id)
             .await
             .expect("远程获取日记失败");
 
@@ -224,7 +223,7 @@ mod tests {
         assert!(updated_summary.updated > summary.updated);
 
         // 测试再次读取 - 验证缓存失效/更新机制
-        let refetched_manifest = diary_get(&cache, &crypto, &client, &id)
+        let refetched_manifest = get_diary(&cache, &crypto, &client, &id)
             .await
             .expect("未能重新获取更新的日记");
 
@@ -236,7 +235,7 @@ mod tests {
             .expect("删除日记失败");
 
         // 验证删除有效性
-        let not_found_result = diary_get(&cache, &crypto, &client, &id).await;
+        let not_found_result = get_diary(&cache, &crypto, &client, &id).await;
         assert!(not_found_result.is_err(), "删除后日记不应被检索");
     }
 }

@@ -2,7 +2,7 @@ use crate::attachment::types::AddAttachmentEvent;
 use crate::attachment::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Ctr;
 use crate::crypto::Crypto;
-use crate::diary::{delete_diary_attachment, diary_get, update_diary_attachment, DiaryMemoryCache};
+use crate::diary::{delete_diary_attachment, get_diary, update_diary_attachment, DiaryMemoryCache};
 use crate::object::tracker_stream::tracker_stream;
 use crate::object::{ByteStream, OssClient};
 use crate::storage::remote_attachments_key;
@@ -41,7 +41,7 @@ pub async fn add_attachment(
         // 加锁获取模拟状态并执行 MEX 算法
         let allocated_id = {
             let mut pending_ids = alloc_state.lock().await;
-            let diary = diary_get(&cache, &crypto, &client, id).await?;
+            let diary = get_diary(&cache, &crypto, &client, id).await?;
 
             // 提取已落盘的附件序号
             let existing_ids: HashSet<u32> = diary
@@ -214,7 +214,7 @@ mod test {
         let _ = join_all(add_tasks).await;
 
         // 3. 断言: 验证写一致性与防覆盖
-        let manifest = diary_get(&cache, &crypto, &client, &diary_id)
+        let manifest = get_diary(&cache, &crypto, &client, &diary_id)
             .await
             .expect("重新获取日记清单失败");
 
@@ -262,7 +262,7 @@ mod test {
         let _ = join_all(del_tasks).await;
 
         // 5. 断言: 验证并发删一致性
-        let final_manifest = diary_get(&cache, &crypto, &client, &diary_id)
+        let final_manifest = get_diary(&cache, &crypto, &client, &diary_id)
             .await
             .expect("最终获取日记清单失败");
 

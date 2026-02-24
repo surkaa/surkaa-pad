@@ -1,6 +1,6 @@
 use crate::crypto::Crypto;
 use crate::diary::types::DiarySummary;
-use crate::diary::{diary_get, DiaryMemoryCache};
+use crate::diary::{get_diary, DiaryMemoryCache};
 use crate::object::{NextToken, OssClient};
 use crate::storage::diary_id_from_manifest_key;
 
@@ -27,7 +27,7 @@ pub async fn get_diary_summary(
     client: &OssClient,
     id: &str,
 ) -> Result<DiarySummary, String> {
-    let diary = diary_get(cache, crypto, client, id).await?;
+    let diary = get_diary(cache, crypto, client, id).await?;
     Ok(DiarySummary::from_manifest(diary))
 }
 
@@ -37,7 +37,7 @@ pub async fn get_diary_content(
     client: &OssClient,
     id: &str,
 ) -> Result<String, String> {
-    let diary = diary_get(cache, crypto, client, id).await?;
+    let diary = get_diary(cache, crypto, client, id).await?;
     Ok(diary.content)
 }
 

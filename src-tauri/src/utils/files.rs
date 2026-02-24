@@ -86,9 +86,8 @@ fn open_file(uri_string: &str) -> io::Result<File> {
             format!("Cannot open URI: {}", uri_string),
         ));
     }
-    // TODO refactor unwraps
     let pfd = pfd_result
-        .unwrap()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
         .l()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
