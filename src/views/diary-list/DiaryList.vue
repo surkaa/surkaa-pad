@@ -60,14 +60,6 @@ async function onLoad(_index: number, done: (stop?: boolean) => void) {
       return;
     }
     const [ids, nt] = res.data;
-    if (!nt) {
-      // 以是否有 nextToken 来判断是否还有下一页，
-      // 后端的listObjectV2返回的是所有对象，
-      // 可能存在一整页都是非日记主文件的情况，
-      // 所以不能以返回的ID数量来判断
-      done(true);
-      return;
-    }
 
     for (const id of ids) {
       if (diarySummaries.value[id] === undefined) {
@@ -76,6 +68,15 @@ async function onLoad(_index: number, done: (stop?: boolean) => void) {
         // 加入渲染列表
         diaryIds.value.push(id);
       }
+    }
+
+    if (!nt) {
+      // 以是否有 nextToken 来判断是否还有下一页，
+      // 后端的listObjectV2返回的是所有对象，
+      // 可能存在一整页都是非日记主文件的情况，
+      // 所以不能以返回的ID数量来判断
+      done(true);
+      return;
     }
 
     nextToken.value = nt;
