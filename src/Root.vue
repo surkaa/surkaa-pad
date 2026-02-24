@@ -1,101 +1,57 @@
 <script setup lang="ts">
-import {onMounted, onUnmounted, ref, watch, type WatchHandle} from "vue";
+import {onMounted, watch} from "vue";
 import {useAppStore} from "./stores/app.ts";
 import {useEventListener} from "./utils/useEventListener.ts";
-import {type Platform, platform} from "@tauri-apps/plugin-os";
+import {platform} from "@tauri-apps/plugin-os";
 import {keepAliveIncludes} from "./composables/useKeepAlive.ts";
-import {commands} from "./bindings.ts";
-import {exportLogFile} from "./utils/exportLogFile.ts";
 
 const appStore = useAppStore();
-const watcher = ref<WatchHandle>();
 const p = platform();
 
-function isNotMobilePlatform(p: Platform): boolean {
-  return p !== 'android' && p !== 'ios';
-}
-
-function disableRefresh(p: Platform) {
-  if (isNotMobilePlatform(p)) {
-    useEventListener('keydown', (event: KeyboardEvent) => {
-      // 阻止 F5 键
-      if (event.key === 'F5') {
-        console.log('刷新已被禁用');
-        event.preventDefault();
-        return;
-      }
-
-      // 阻止 Ctrl+R (Windows/Linux) 或 Command+R (Mac)
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r') {
-        console.log('刷新已被禁用');
-        event.preventDefault();
-        return;
-      }
-    });
-
-    // 阻止右键菜单中的刷新选项
-    useEventListener('contextmenu', (event: MouseEvent) => {
-      console.log('右键菜单刷新已被禁用');
+if (p === 'windows') {
+  useEventListener('keydown', (event: KeyboardEvent) => {
+    // 阻止 F5 键
+    if (event.key === 'F5') {
+      console.log('刷新已被禁用');
       event.preventDefault();
-      return false;
-    });
-  }
-}
-
-function syncThemeWithSystem() {
-  // 监听系统主题变化
-  watcher.value = watch(() => appStore.theme, t => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const applyTheme = (e: MediaQueryListEvent | MediaQueryList) => {
-      if (e.matches) {
-        document.body.classList.add('body--dark');
-      } else {
-        document.body.classList.remove('body--dark');
-      }
-    };
-    switch (t) {
-      case "system":
-        applyTheme(mediaQuery);
-        mediaQuery.addEventListener('change', applyTheme);
-        break;
-      case "dark":
-        document.body.classList.add('body--dark');
-        mediaQuery.removeEventListener('change', applyTheme);
-        break;
-      case "light":
-        document.body.classList.remove('body--dark');
-        mediaQuery.removeEventListener('change', applyTheme);
-        break;
+      return;
     }
-  }, {immediate: true});
+
+    // 阻止 Ctrl+R (Windows/Linux) 或 Command+R (Mac)
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r') {
+      console.log('刷新已被禁用');
+      event.preventDefault();
+      return;
+    }
+  });
 }
 
-useEventListener(document, 'keydown', (e) => {
-  if (p != 'windows') return; // 仅在 Windows 平台启用
-  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "i") {
-    e.preventDefault();
-    commands.openDevtools()
-        .then(() => console.log('开发者工具已打开'))
-        .catch(err => console.error('打开开发者工具失败:', err));
-    return;
+watch(() => appStore.theme, t => {
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  const applyTheme = (e: MediaQueryListEvent | MediaQueryList) => {
+    if (e.matches) {
+      document.body.classList.add('body--dark');
+    } else {
+      document.body.classList.remove('body--dark');
+    }
+  };
+  switch (t) {
+    case "system":
+      applyTheme(mediaQuery);
+      mediaQuery.addEventListener('change', applyTheme);
+      break;
+    case "dark":
+      document.body.classList.add('body--dark');
+      mediaQuery.removeEventListener('change', applyTheme);
+      break;
+    case "light":
+      document.body.classList.remove('body--dark');
+      mediaQuery.removeEventListener('change', applyTheme);
+      break;
   }
-  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "l") {
-    e.preventDefault();
-    exportLogFile().then();
-    return;
-  }
-});
+}, {immediate: true});
 
-onMounted(async () => {
-  const p = platform();
-  await appStore.initStore();
-  disableRefresh(p);
-  syncThemeWithSystem();
-});
-
-onUnmounted(() => {
-  watcher.value && watcher.value.stop();
-});
+onMounted(appStore.initStore);
 </script>
 
 <template>
