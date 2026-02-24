@@ -8,7 +8,8 @@ import {useRoute} from "vue-router";
 import {useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
-import {formatBytes, formatTimestamp} from "../../utils";
+import {formatTimestamp} from "../../utils";
+import AttachmentCard from "../../components/AttachmentCard.vue";
 
 const route = useRoute();
 const $q = useQuasar();
@@ -166,24 +167,11 @@ onActivated(async () => {
 
           <div class="text-subtitle2 q-mb-sm">附件列表 ({{ diary?.attachments.length || 0 }})</div>
           <q-list bordered separator v-if="diary?.attachments.length">
-            <q-item v-for="att in diary.attachments" :key="att.filename">
-              <q-item-section>
-                <q-item-label class="text-weight-medium">{{ att.filename }}</q-item-label>
-                <q-item-label caption>
-                  {{ att.mimetype }} · {{ formatBytes(att.size) }}
-                </q-item-label>
-              </q-item-section>
-              <q-item-section side>
-                <q-chip
-                    :color="att.encrypted ? 'orange-2' : 'green-2'"
-                    :text-color="att.encrypted ? 'orange-9' : 'green-9'"
-                    size="sm"
-                    dense
-                >
-                  {{ att.encrypted ? '已加密' : '明文' }}
-                </q-chip>
-              </q-item-section>
-            </q-item>
+            <AttachmentCard
+                v-for="att in diary.attachments"
+                :key="att.filename"
+                :att="att"
+            />
           </q-list>
           <div v-else class="text-center text-grey q-pa-sm">暂无附件</div>
         </q-card-section>
