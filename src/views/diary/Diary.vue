@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, ref, watch} from "vue";
+import {computed, nextTick, onActivated, onMounted, ref, watch} from "vue";
 import DiaryHeader from "./DiaryHeader.vue";
 import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
@@ -15,6 +15,9 @@ const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
+
+// 用于记录滚动位置，保持在列表页和详情页切换时的滚动状态
+const savedScrollTop = ref(0);
 
 const initialDiaryId = (route.params.id as string) || "";
 const {
@@ -66,6 +69,8 @@ function additionalAction() {
   }
 }
 
+defineOptions({ name: 'DiaryDetail' });
+
 onMounted(async () => {
   if (!isNew.value) {
     await loadDiaryInfo();
@@ -79,6 +84,14 @@ onMounted(async () => {
 watch(() => liveEditorRef.value?.editor, (newEditor) => {
   if (newEditor) {
     editorDomRef.value = newEditor;
+  }
+});
+
+onActivated(async () => {
+  await nextTick();
+  // 恢复滚动位置
+  if (editorDomRef.value) {
+    editorDomRef.value.scrollTop = savedScrollTop.value;
   }
 });
 </script>

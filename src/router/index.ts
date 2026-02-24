@@ -20,7 +20,8 @@ const routes: RouteRecordRaw[] = [{
     component: DiaryList,
     meta: {
         title: '日志列表',
-        depth: 1
+        depth: 1,
+        keepAlive: true,
     }
 }, {
     name: 'DiaryDetail',
@@ -28,7 +29,8 @@ const routes: RouteRecordRaw[] = [{
     component: Diary,
     meta: {
         title: '日志详情',
-        depth: 2
+        depth: 2,
+        keepAlive: true,
     }
 }, {
     name: 'PreviewMedia',
