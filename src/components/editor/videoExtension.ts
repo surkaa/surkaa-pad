@@ -5,15 +5,6 @@ import {commands} from "../../bindings.ts";
 export const VideoExtension: Extension = {
     name: "video",
 
-    style: `
-        video[data-id] {
-            max-width: 100%;
-            border-radius: 8px;
-            margin: 10px 0;
-            background: #000;
-        }
-    `,
-
     match: (node) => node.nodeName === 'VIDEO',
 
     toHtml: (source, ctx) => source.replace(/\[\[VID:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, _configStr) => {

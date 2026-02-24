@@ -5,24 +5,6 @@ import {commands} from "../../bindings.ts";
 export const ImageExtension: Extension = {
     name: "image",
 
-    style: `
-        img[data-id] {
-          padding: 5px;
-          cursor: pointer;
-          min-height: 50px;
-          transition: width 0.3s ease;
-          width: auto;
-          max-width: 100%;
-        }
-        img[data-id]:hover {
-          box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.5);
-        }
-        img[data-size="small"] {
-          width: 33% !important;
-          display: inline-block;
-        }
-    `,
-
     match: (node) => node.nodeName === 'IMG',
 
     toHtml: (source, ctx) => source.replace(/\[\[IMG:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, configStr) => {

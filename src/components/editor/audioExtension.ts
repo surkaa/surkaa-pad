@@ -5,13 +5,6 @@ import {commands} from "../../bindings.ts";
 export const AudioExtension: Extension = {
     name: "audio",
 
-    style: `
-        audio[data-id] {
-            width: 100%;
-            margin: 10px 0;
-        }
-    `,
-
     match: (node) => node.nodeName === 'AUDIO',
 
     toHtml: (source, ctx) => source.replace(/\[\[AUD:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, _configStr) => {

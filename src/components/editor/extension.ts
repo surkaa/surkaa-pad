@@ -17,9 +17,6 @@ export interface ExtensionContext {
 export interface Extension {
     name: string;
 
-    // 样式类名，插件会自动添加到节点上
-    style?: string;
-
     // 转换规则：HTML -> Source
     toSource?: (html: string) => string;
 

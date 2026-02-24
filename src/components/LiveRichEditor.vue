@@ -24,7 +24,6 @@ const extensions = [
   VideoExtension,
   BaseExtension
 ];
-const styles = extensions.map(ext => ext.style || '').join("\n");
 
 const extensionCtx: ExtensionContext = {
   getDiaryId: () => diarySummary?.id || '',
@@ -82,11 +81,6 @@ const handleEditorClick = (e: MouseEvent) => {
   }
 };
 
-// 声明不自动继承属性
-defineOptions({
-  inheritAttrs: false
-});
-
 // 暴露editor给父组件
 defineExpose({
   editor
@@ -122,7 +116,6 @@ watch(() => modelValue, (newVal) => {
 </script>
 
 <template>
-  <component is="style">{{ styles }}</component>
   <div
       v-bind="$attrs"
       class="live-rich-editor"
@@ -139,5 +132,39 @@ watch(() => modelValue, (newVal) => {
   box-sizing: border-box;
   outline: none;
   text-align: left;
+}
+</style>
+
+<style lang="scss">
+.live-rich-editor {
+  img[data-id] {
+    padding: 5px;
+    cursor: pointer;
+    min-height: 50px;
+    transition: width 0.3s ease;
+    width: auto;
+    max-width: 100%;
+  }
+
+  img[data-id]:hover {
+    box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.5);
+  }
+
+  img[data-size="small"] {
+    width: 33% !important;
+    display: inline-block;
+  }
+
+  audio[data-id] {
+    width: 100%;
+    margin: 10px 0;
+  }
+
+  video[data-id] {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 10px 0;
+    background: #000;
+  }
 }
 </style>
