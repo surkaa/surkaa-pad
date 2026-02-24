@@ -7,8 +7,6 @@ import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {commands, DiarySummary} from "../../bindings.ts";
 import {eventBusOn} from "../../utils/eventBus.ts";
 
-const PAGE_SIZE = 10;
-
 const router = useRouter();
 const diaryIds = ref<string[]>([]);
 const diarySummaries = ref<Record<string, DiarySummary | null>>({});
@@ -55,33 +53,35 @@ async function loadDiarySummer(id: string) {
 // 无限滚动的核心回调函数
 async function onLoad(_index: number, done: (stop?: boolean) => void) {
   try {
-    const res = await commands.cmdPageDiaryIds(PAGE_SIZE, nextToken.value);
+    const res = await commands.cmdPageDiaryIds(nextToken.value);
     if (res.status == 'error') {
       console.error('加载日记ID失败:', res.error);
       done(true);
       return;
     }
     const [ids, nt] = res.data;
-    if (!ids || ids.length === 0) {
+    if (!nt) {
+      // 以是否有 nextToken 来判断是否还有下一页，
+      // 后端的listObjectV2返回的是所有对象，
+      // 可能存在一整页都是非日记主文件的情况，
+      // 所以不能以返回的ID数量来判断
       done(true);
       return;
     }
 
     for (const id of ids) {
-      if (!diarySummaries.value[id]) {
-        // 初始化占位
+      if (diarySummaries.value[id] === undefined) {
+        // 初始化占位，供骨架屏使用
         diarySummaries.value[id] = null;
         // 加入渲染列表
         diaryIds.value.push(id);
-        // 异步加载摘要
-        loadDiarySummer(id).then();
       }
     }
 
     nextToken.value = nt;
 
-    // 如果 nextToken 为空，说明没有下一页了，否则表示本次加载完成，可以准备下一次
-    done(nt === null);
+    // 本次加载完成，可以准备下一次
+    done(false);
   } catch (error) {
     console.error('加载失败:', error);
     done(true);
@@ -90,6 +90,14 @@ async function onLoad(_index: number, done: (stop?: boolean) => void) {
     if (!isFirstLoadFinished.value) {
       isFirstLoadFinished.value = true;
     }
+  }
+}
+
+// 供子组件触发的视口加载回调
+function handleCardVisible(id: string) {
+  // 只有当数据为 null (占位态) 时才发请求
+  if (diarySummaries.value[id] === null) {
+    loadDiarySummer(id).then();
   }
 }
 
@@ -155,6 +163,7 @@ onActivated(async () => {
               :key="id"
               :diary="diarySummaries[id]"
               @click="openDiary(id)"
+              @visible="handleCardVisible(id)"
           />
         </q-infinite-scroll>
 

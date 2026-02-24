@@ -141,9 +141,9 @@ async cmdDeleteDiary(id: string) : Promise<Result<null, string>> {
  * # Returns
  * * `Vec<String>` - diary主键列表
  */
-async cmdPageDiaryIds(count: number, nextToken: string | null) : Promise<Result<[string[], string | null], string>> {
+async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], string | null], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_page_diary_ids", { count, nextToken }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_page_diary_ids", { nextToken }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

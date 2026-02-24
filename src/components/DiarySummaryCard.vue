@@ -1,12 +1,42 @@
 <script setup lang="ts">
-import {formatBytes, formatTimestamp, getCurEmoji} from "../utils";
+import {onBeforeUnmount, onMounted, ref} from "vue";
+import {formatTimestamp, getCurEmoji} from "../utils";
 import {AttachmentMeta, DiarySummary} from "../bindings.ts";
 
 const {diary} = defineProps<{
   diary: DiarySummary | null;
 }>();
 
-// 格式化附件信息
+const emit = defineEmits<{
+  (e: 'visible'): void;
+}>();
+
+const cardRef = ref<HTMLElement | null>(null);
+let observer: IntersectionObserver | null = null;
+
+onMounted(() => {
+  // 建立视口交叉观察器
+  observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          emit('visible');
+          // 触发后立即解除观察，避免重复触发
+          observer?.disconnect();
+        }
+      },
+      // 提前 100px 触发加载
+      {rootMargin: "100px"}
+  );
+
+  if (cardRef.value) {
+    observer.observe(cardRef.value);
+  }
+});
+
+onBeforeUnmount(() => {
+  observer?.disconnect();
+});
+
 function getAttachmentInfo(attachments?: AttachmentMeta[]) {
   if (!attachments || attachments.length === 0) return null;
 
@@ -24,62 +54,52 @@ function getAttachmentInfo(attachments?: AttachmentMeta[]) {
 </script>
 
 <template>
-  <div class="diary-card">
+  <div class="diary-card" ref="cardRef" :class="{ 'skeleton-mode': !diary }">
     <div class="card-header">
       <div class="date-group">
-        <span class="date-primary">
-          <svg viewBox="0 0 24 24" width="14" height="14">
+        <div class="date-primary">
+          <svg viewBox="0 0 24 24" width="14" height="14" v-if="diary">
             <path
                 d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z"/>
           </svg>
-          {{ formatTimestamp(diary?.created) }}
-        </span>
-        <span
-            class="date-updated"
-            v-if="diary?.updated && diary?.created && (diary.updated > diary.created)"
-            title="最后更新"
-        >
-          <span class="update-icon">{{ getCurEmoji(diary?.updated) }}</span>
-          {{ formatTimestamp(diary?.updated) }}
+          <span v-if="diary">{{ formatTimestamp(diary.created) }}</span>
+          <div v-else class="skeleton-bar w-120"></div>
+        </div>
+        <span class="date-updated" v-if="diary?.updated && diary?.created && (diary.updated > diary.created)">
+          <span class="update-icon">{{ getCurEmoji(diary.updated) }}</span>
+          {{ formatTimestamp(diary.updated) }}
         </span>
       </div>
-
-      <div class="card-actions">
-        <span
-            class="attachment-badge"
-            v-if="diary?.attachments.length"
-            :title="`${diary?.attachments.length} 个附件`"
-        >
+      <div class="card-actions" v-if="diary?.attachments.length">
+        <span class="attachment-badge">
           <span class="badge-icon">📎</span>
-          <span class="badge-count">{{ diary?.attachments.length }}</span>
+          <span class="badge-count">{{ diary.attachments.length }}</span>
         </span>
       </div>
     </div>
 
     <div class="card-content">
-      <p class="preview-content">
-        {{ diary?.title || '（无内容预览）' }}
+      <p class="preview-content" v-if="diary">
+        {{ diary.title || '（无内容预览）' }}
       </p>
+      <div v-else class="skeleton-bar w-full h-20"></div>
     </div>
 
     <div class="card-footer">
       <div class="meta-info">
-        <span class="meta-item diary-id" :title="diary?.id">
+        <span class="meta-item diary-id" v-if="diary">
           <span class="meta-icon">🆔</span>
-          <span class="meta-text">{{ diary?.id }}</span>
+          <span class="meta-text">{{ diary.id }}</span>
         </span>
+        <div v-else class="skeleton-bar w-80"></div>
+
         <span class="meta-item" v-if="getAttachmentInfo(diary?.attachments)">
           <span class="meta-icon">📦</span>
           <span class="meta-text">
             {{ getAttachmentInfo(diary?.attachments)!.count }} 个附件
-            <span class="meta-detail">{{ formatBytes(getAttachmentInfo(diary?.attachments)?.totalSize) }}</span>
-            <span class="meta-detail" v-if="getAttachmentInfo(diary?.attachments)!.imageCount > 0">
-              ( {{ getAttachmentInfo(diary?.attachments)!.imageCount }} 张图片)
-            </span>
           </span>
         </span>
       </div>
-
       <span class="open-indicator">
         <svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16">
           <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
@@ -258,5 +278,28 @@ function getAttachmentInfo(attachments?: AttachmentMeta[]) {
       }
     }
   }
+}
+
+/* 骨架屏样式 */
+.skeleton-mode {
+  pointer-events: none; /* 加载中禁止点击 */
+
+  .skeleton-bar {
+    background: linear-gradient(90deg, var(--pad-bg-color-300) 25%, var(--pad-border-color-100) 50%, var(--pad-bg-color-300) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+    border-radius: 4px;
+    height: 16px;
+  }
+
+  .w-120 { width: 120px; }
+  .w-80 { width: 80px; }
+  .w-full { width: 100%; }
+  .h-20 { height: 20px; margin-top: 4px;}
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style>
