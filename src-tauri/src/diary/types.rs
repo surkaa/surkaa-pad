@@ -86,7 +86,8 @@ mod tests {
         let manifest = DiaryManifest {
             id: "1".to_string(),
             algorithm: EncryptionAlgorithm::Gcm,
-            content: "My first diary entry[[IMG:filename]]1[[IMG:filename]]\n This is the content.".to_string(),
+            content: "My first diary entry[[IMG:filename]]1[[IMG:filename]]\n This is the content."
+                .to_string(),
             created: 0,
             updated: 0,
             attachments: vec![],

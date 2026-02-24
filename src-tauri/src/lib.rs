@@ -79,6 +79,7 @@ pub fn run() {
     let builder = generate_specta_builder();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         // 注册 Store 插件
         .plugin(tauri_plugin_store::Builder::default().build())

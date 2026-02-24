@@ -28,6 +28,9 @@ impl OssState {
     }
 
     pub fn get_client(&self) -> Result<OssClient, String> {
-        self.0.get().cloned().ok_or(String::from("OssClient 未初始化"))
+        self.0
+            .get()
+            .cloned()
+            .ok_or(String::from("OssClient 未初始化"))
     }
 }

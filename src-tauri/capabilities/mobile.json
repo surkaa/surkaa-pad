@@ -10,6 +10,9 @@
   "permissions": [
     "biometric:allow-biometric-cipher",
     "biometric:allow-authenticate",
-    "biometric:allow-status"
+    "biometric:allow-status",
+    "process:default",
+    "opener:default",
+    "opener:allow-open-path"
   ]
 }

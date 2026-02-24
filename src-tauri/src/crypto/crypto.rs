@@ -505,7 +505,9 @@ mod tests {
         let input_stream = create_mock_stream(original_data.clone(), 64 * 1024);
 
         // 【注意】：这里假设你已经把名字改正确了，即 encrypt_streaming 是负责生成 nonce 的那个！
-        let (mut encrypted_stream, nonce) = crypto.encrypt_streaming(input_stream).expect("流式加密失败");
+        let (mut encrypted_stream, nonce) = crypto
+            .encrypt_streaming(input_stream)
+            .expect("流式加密失败");
 
         // 消费流，把加密后的块重新收集到 Vec 中
         let mut encrypted_data = Vec::new();

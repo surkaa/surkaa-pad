@@ -1,5 +1,5 @@
-use tauri::State;
 use crate::crypto::Crypto;
+use tauri::State;
 
 /// 解锁加密管理器
 /// # Arguments

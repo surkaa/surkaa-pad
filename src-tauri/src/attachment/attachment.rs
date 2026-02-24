@@ -121,10 +121,7 @@ pub async fn delete_attachment(
     id: &str,
     filename: String,
 ) -> Result<(), String> {
-    let delete_lock = DELETE_LOCKS
-        .entry(id.to_string())
-        .or_default()
-        .clone();
+    let delete_lock = DELETE_LOCKS.entry(id.to_string()).or_default().clone();
     let _guard = delete_lock.lock().await;
 
     delete_diary_attachment(cache, crypto, client, id, &filename).await?;

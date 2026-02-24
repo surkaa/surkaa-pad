@@ -1,15 +1,15 @@
-use std::sync::Arc;
-use tauri::ipc::Channel;
 use crate::crypto::Crypto;
 use crate::object::{NextToken, OssState};
+use std::sync::Arc;
+use tauri::ipc::Channel;
 
 use crate::diary::diary::{delete_diary, save_diary, update_diary_content_only};
 use crate::diary::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
-use crate::diary::types::{DiarySummary, SearchDiariesEvent};
-use crate::diary::{DiaryMemoryCache};
-use tauri::State;
 use crate::diary::diary_search::search_diaries;
+use crate::diary::types::{DiarySummary, SearchDiariesEvent};
+use crate::diary::DiaryMemoryCache;
 use crate::task::TaskPool;
+use tauri::State;
 
 /// 根据内容保存日记
 /// # Arguments
@@ -37,7 +37,7 @@ pub async fn cmd_save_diary(
 pub async fn cmd_delete_diary(
     cache: State<'_, DiaryMemoryCache>,
     client: State<'_, OssState>,
-    id: &str
+    id: &str,
 ) -> Result<(), String> {
     let cache = cache.inner().clone();
     let client = client.get_client()?;
@@ -134,13 +134,6 @@ pub fn cmd_search_diaries(
     let client = client.get_client()?;
     let event = event.clone();
     tp.spawn(async move {
-        search_diaries(
-            &cache,
-            &crypto,
-            &client,
-            Arc::new(event),
-            keyword,
-            or,
-        ).await;
+        search_diaries(&cache, &crypto, &client, Arc::new(event), keyword, or).await;
     })
 }

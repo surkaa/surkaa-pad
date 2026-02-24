@@ -175,7 +175,6 @@ onMounted(async () => {
     pipeline.value = 'login';
     encryptedConfig.value = ec;
     if (appStore.isBiometricEnabled) {
-      // TODO 重置配置之后应该关闭生物解锁
       await tryBiometricUnlock();
     }
   } else {

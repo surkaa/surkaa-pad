@@ -172,6 +172,7 @@
     "fs:read-files",
     "fs:read-meta",
     "fs:allow-open",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "process:default"
   ]
 }

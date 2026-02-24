@@ -1,7 +1,7 @@
-use std::io::Error;
-use std::pin::Pin;
 use bytes::Bytes;
 use futures::Stream;
+use std::io::Error;
+use std::pin::Pin;
 
 pub type NextToken = Option<String>;
 

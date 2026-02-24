@@ -101,6 +101,7 @@ import {showToast} from "../../utils";
 import {platform} from "@tauri-apps/plugin-os";
 import { confirm } from '@tauri-apps/plugin-dialog';
 import {exportLogFile} from "../../utils/exportLogFile.ts";
+import { relaunch } from '@tauri-apps/plugin-process';
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -143,10 +144,10 @@ function cancelBiometric() {
 }
 
 async function handleReset() {
-  if (await confirm('确定要重置所有配置吗？此操作不可撤销。')) {
+  if (await confirm('确定要重置所有配置吗？此操作不可撤销。重置后将自动重启应用')) {
     appStore.resetConfig().then(() => {
       showToast('配置已重置', 'success');
-      router.replace('/unlock');
+      setTimeout(relaunch, 1000);
     });
   }
 }

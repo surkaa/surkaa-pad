@@ -4,11 +4,11 @@ use crate::storage::remote_manifest_key;
 
 use crate::attachment::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Gcm;
+use crate::diary::types::DiarySummary;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};
+use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;
 use serde_json::from_slice;
-use crate::diary::types::DiarySummary;
-use crate::utils::id_generate::generate_descending_id;
 
 pub async fn save_diary(
     crypto: &Crypto,

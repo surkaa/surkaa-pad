@@ -87,7 +87,12 @@ async fn attachment_protocol_inner(
         HttpRange::Range(start, end) => {
             let end = end.unwrap_or(attachment.size - 1);
             if start >= attachment.size || end >= attachment.size || start > end {
-                log::error!("Invalid Range header: start={}, end={}, attachment size={}", start, end, attachment.size);
+                log::error!(
+                    "Invalid Range header: start={}, end={}, attachment size={}",
+                    start,
+                    end,
+                    attachment.size
+                );
                 responder.respond(bad_request_response());
                 return;
             }

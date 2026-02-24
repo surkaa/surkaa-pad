@@ -1,4 +1,3 @@
-// --- 常量 ---
 import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
 import {OssConfigType, ThemeType} from "../types";
@@ -9,6 +8,7 @@ import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import {commands} from "../bindings.ts";
 import {useQuasar} from "quasar";
 
+// --- 常量 ---
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
 const SALE = 'NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg';
