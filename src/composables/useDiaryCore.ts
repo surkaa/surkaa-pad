@@ -1,8 +1,9 @@
 import {computed, onDeactivated, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
-import {commands, DiarySummary} from "../bindings.ts";
+import {AttachmentMeta, commands, DiarySummary} from "../bindings.ts";
 import {eventBusEmit} from "../utils/eventBus.ts";
+import {EXTENSIONS} from "../components/editor/extension.ts";
 
 export function useDiaryCore(initialId: string) {
     const $q = useQuasar();
@@ -53,6 +54,25 @@ export function useDiaryCore(initialId: string) {
             $q.notify({type: 'positive', message: '日记已自动创建'});
             eventBusEmit('diary-changed', {type: 'created', summary});
             return;
+        }
+
+        // 寻找被删除的附件
+        const needDeleteAtt: AttachmentMeta[] = [];
+        for (const attachment of (diary.value?.attachments || [])) {
+            for (const ext of EXTENSIONS) {
+                if (!ext.getMark) continue;
+                const mark = ext.getMark(attachment.filename);
+                // 如果在内容里找不到这个标记，说明附件被删除了
+                if (!diaryContent.value.includes(mark)) {
+                    needDeleteAtt.push(attachment);
+                    break;
+                }
+            }
+        }
+        if (needDeleteAtt.length > 0) {
+            await Promise.all(needDeleteAtt.map(
+                att => commands.cmdDeleteAttachment(diaryId.value, att.filename)
+            ));
         }
 
         // 已存在的日记，执行更新

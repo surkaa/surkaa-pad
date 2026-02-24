@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import {nextTick, onMounted, ref, watch} from "vue";
-import {BaseExtension} from "./editor/baseExtension.ts";
-import {ImageExtension} from "./editor/imageExtension.ts";
 import {DiarySummary} from "../bindings.ts";
-import {ExtensionContext} from "./editor/extension.ts";
-import {AudioExtension} from "./editor/audioExtension.ts";
-import {VideoExtension} from "./editor/videoExtension.ts";
+import {ExtensionContext, EXTENSIONS} from "./editor/extension.ts";
 import {useRouter} from "vue-router";
 
 const router = useRouter();
@@ -19,14 +15,6 @@ const emit = defineEmits<{
 }>();
 
 const editor = ref<HTMLDivElement>();
-let observer: MutationObserver | null = null;
-
-const extensions = [
-  ImageExtension,
-  AudioExtension,
-  VideoExtension,
-  BaseExtension
-];
 
 const extensionCtx: ExtensionContext = {
   getDiaryId: () => diarySummary?.id || '',
@@ -47,7 +35,7 @@ const extensionCtx: ExtensionContext = {
 
 function parseSourceToHtml(source: string): string {
   let result = source;
-  for (const ext of extensions) {
+  for (const ext of EXTENSIONS) {
     if (ext.toHtml) result = ext.toHtml(result, extensionCtx);
   }
   return result;
@@ -55,7 +43,7 @@ function parseSourceToHtml(source: string): string {
 
 function parseHtmlToSource(html: string): string {
   let result = html;
-  for (const ext of extensions) {
+  for (const ext of EXTENSIONS) {
     if (ext.toSource) result = ext.toSource(result);
   }
   return result;
@@ -82,7 +70,7 @@ const handleEditorClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
 
   // 遍历插件，寻找谁负责这个节点
-  const handler = extensions.find(ext => ext.match && ext.match(target));
+  const handler = EXTENSIONS.find(ext => ext.match && ext.match(target));
   if (handler && handler.onClick) {
     handler.onClick(e, target, extensionCtx);
   }
@@ -102,24 +90,6 @@ onMounted(async () => {
     return;
   }
   tryUpdateHtml(editor.value, modelValue);
-  observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      // 我们只关心节点被移除的情况
-      if (mutation.type === 'childList' && mutation.removedNodes.length > 0) {
-        mutation.removedNodes.forEach((node) => {
-          const handler = extensions.find(ext => ext.match && ext.match(node));
-          if (handler && handler.onDeleted) {
-            handler.onDeleted(node, extensionCtx);
-          }
-        });
-      }
-    });
-  });
-  // 监听 childList (子节点变化) 和 subtree (后代节点变化)
-  observer.observe(editor.value, {
-    childList: true,
-    subtree: true,
-  });
 })
 
 watch(() => modelValue, (newVal) => {

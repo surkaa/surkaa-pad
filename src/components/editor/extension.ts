@@ -1,5 +1,9 @@
 import {AttachmentMeta} from "../../bindings.ts";
 import {SupportType} from "../../utils/resolveMediaAttachmentUrl.ts";
+import {ImageExtension} from "./imageExtension.ts";
+import {AudioExtension} from "./audioExtension.ts";
+import {VideoExtension} from "./videoExtension.ts";
+import {BaseExtension} from "./baseExtension.ts";
 
 // 定义菜单按钮的数据结构
 export interface MenuButton {
@@ -26,13 +30,19 @@ export interface Extension {
     // 交互钩子: 判断一个节点是否属于该插件
     match?: (node: Node) => boolean;
 
+    // 获取标记
+    getMark?: (filename: string) => string;
+
     // 单击回调
     onClick?: (e: MouseEvent, node: HTMLElement, ctx: ExtensionContext) => void;
-
-    // TODO 解决 ctrl+z ctrl+y 删除又恢复时，附件可能会被删除但是无法恢复导致渲染失败
-    // 删除回调
-    onDeleted?: (node: Node, ctx: ExtensionContext) => void;
 
     // 上下文菜单 (windows右键/android长按) -> 返回要显示的菜单按钮列表
     onContextmenu?: (e: MouseEvent, node: HTMLElement, ctx: ExtensionContext) => MenuButton[];
 }
+
+export const EXTENSIONS: Extension[] = [
+    ImageExtension,
+    AudioExtension,
+    VideoExtension,
+    BaseExtension
+] as const;

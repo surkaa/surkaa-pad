@@ -1,11 +1,12 @@
 import {Extension} from "./extension.ts";
 import {resolveMediaAttachmentUrl} from "../../utils/resolveMediaAttachmentUrl.ts";
-import {commands} from "../../bindings.ts";
 
 export const ImageExtension: Extension = {
     name: "image",
 
     match: (node) => node.nodeName === 'IMG',
+
+    getMark: (filename) => `[[IMG:${filename}]]`,
 
     toHtml: (source, ctx) => source.replace(/\[\[IMG:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, configStr) => {
         let sizeAttr = '';
@@ -53,21 +54,6 @@ export const ImageExtension: Extension = {
             return `[[IMG:${filename}]]`;
         }
     }),
-
-    onDeleted: async (node, ctx) => {
-        const diaryId = ctx.getDiaryId();
-        if (!diaryId) {
-            console.error(`无法删除附件，因为没有找到日记 ID`);
-            return;
-        }
-        const filename = (node as HTMLImageElement).dataset.id;
-        if (!filename) {
-            console.error(`无法删除附件，因为没有找到 data-id 属性`);
-            return;
-        }
-        await commands.cmdDeleteAttachment(diaryId, filename);
-        console.log('已删除附件：', filename);
-    },
 
     onClick: (_e, node, ctx) => {
         const filename = (node as HTMLImageElement).dataset.id;
