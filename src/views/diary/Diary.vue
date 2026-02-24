@@ -8,12 +8,13 @@ import {useRoute} from "vue-router";
 import {useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
-import {showDiaryDetail} from "../../utils/showDiaryDetail.ts";
+import {formatBytes, formatTimestamp} from "../../utils";
 
 const route = useRoute();
 const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
 const editorDomRef = ref<HTMLElement>();
+const showDetailDialog = ref(false);
 
 const initialDiaryId = (route.params.id as string) || "";
 const {
@@ -38,6 +39,14 @@ const editorPadding = computed(() => {
   if (showToolbar || showToolbarPanel) return `${BAR_MAX_HEIGHT + 16}px 16px`
   else return '16px'
 });
+
+function openDiaryDetail() {
+  if (!diary.value) {
+    $q.notify({type: 'negative', message: '无法获取日记详情'});
+    return;
+  }
+  showDetailDialog.value = true;
+}
 
 function additionalAction() {
   showToolbarPanel.value = !showToolbarPanel.value;
@@ -69,7 +78,7 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         class="header"
         :title="diary?.title"
         @back="$router.back()"
-        @info="showDiaryDetail($q, diary)"
+        @info="openDiaryDetail"
         @operate="showMenu = true"
         style="width: 100%; flex-shrink: 0"
         :style="{height: BAR_MAX_HEIGHT + 'px'}"
@@ -112,6 +121,51 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
             <q-item-section>取消</q-item-section>
           </q-item>
         </q-list>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="showDetailDialog">
+      <q-card style="min-width: 350px; max-width: 90vw;">
+        <q-card-section class="row items-center q-pb-none">
+          <div class="text-h6">{{ diary?.title }} - 详情</div>
+          <q-space/>
+          <q-btn icon="close" flat round dense v-close-popup/>
+        </q-card-section>
+
+        <q-card-section class="q-pa-md">
+          <div class="text-subtitle2 q-mb-xs">时间信息</div>
+          <div class="text-caption text-grey-8">创建时间：{{ formatTimestamp(diary?.created) }}</div>
+          <div class="text-caption text-grey-8">更新时间：{{ formatTimestamp(diary?.updated) }}</div>
+
+          <q-separator class="q-my-md"/>
+
+          <div class="text-subtitle2 q-mb-sm">附件列表 ({{ diary?.attachments.length || 0 }})</div>
+          <q-list bordered separator v-if="diary?.attachments.length">
+            <q-item v-for="att in diary.attachments" :key="att.filename">
+              <q-item-section>
+                <q-item-label class="text-weight-medium">{{ att.filename }}</q-item-label>
+                <q-item-label caption>
+                  {{ att.mimetype }} · {{ formatBytes(att.size) }}
+                </q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-chip
+                    :color="att.encrypted ? 'orange-2' : 'green-2'"
+                    :text-color="att.encrypted ? 'orange-9' : 'green-9'"
+                    size="sm"
+                    dense
+                >
+                  {{ att.encrypted ? '已加密' : '明文' }}
+                </q-chip>
+              </q-item-section>
+            </q-item>
+          </q-list>
+          <div v-else class="text-center text-grey q-pa-sm">暂无附件</div>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat label="关闭" color="primary" v-close-popup/>
+        </q-card-actions>
       </q-card>
     </q-dialog>
   </main>
