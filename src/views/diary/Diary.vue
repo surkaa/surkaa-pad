@@ -19,7 +19,7 @@ const showDetailDialog = ref(false);
 const initialDiaryId = (route.params.id as string) || "";
 const {
   diaryId, diary, diaryContent, isNew, isInitialLoaded,
-  loadDiaryInfo, deleteDiary
+  loadDiaryInfo, deleteDiary, attachmentNoFount
 } = useDiaryCore(initialDiaryId);
 
 // UI交互
@@ -99,6 +99,7 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         v-if="isInitialLoaded"
         v-model="diaryContent"
         :diarySummary="diary"
+        @attachmentNoFount="attachmentNoFount"
         style="width: 100%; flex: 1"
         :style="{padding: editorPadding}"
     />

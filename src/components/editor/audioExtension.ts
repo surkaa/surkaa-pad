@@ -9,7 +9,7 @@ export const AudioExtension: Extension = {
 
     toHtml: (source, ctx) => source.replace(/\[\[AUD:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, _configStr) => {
         const diaryId = ctx.getDiaryId();
-        const attachment = ctx.getAttachment(filename);
+        const attachment = ctx.getAttachment(filename, `[[AUD:${filename}]]`);
         if (!attachment) {
             console.error(`没有找到附件 ${filename}, 已自动移除`);
             return '';

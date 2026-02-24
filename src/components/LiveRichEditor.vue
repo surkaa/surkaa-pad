@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref, watch} from "vue";
+import {nextTick, onMounted, ref, watch} from "vue";
 import {BaseExtension} from "./editor/baseExtension.ts";
 import {ImageExtension} from "./editor/imageExtension.ts";
 import {DiarySummary} from "../bindings.ts";
@@ -13,7 +13,10 @@ const {modelValue, diarySummary} = defineProps<{
   modelValue: string;
   diarySummary?: DiarySummary;
 }>();
-const emit = defineEmits(['update:modelValue']);
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: string): void;
+  (e: 'attachmentNoFount', filename: string, mark: string): void;
+}>();
 
 const editor = ref<HTMLDivElement>();
 let observer: MutationObserver | null = null;
@@ -27,10 +30,14 @@ const extensions = [
 
 const extensionCtx: ExtensionContext = {
   getDiaryId: () => diarySummary?.id || '',
-  getAttachment: (filename) => {
+  getAttachment: (filename, mark) => {
     if (!diarySummary) return null;
     const attachment = diarySummary.attachments.find(att => att.filename === filename);
-    return attachment || null;
+    if (!attachment) {
+      emit('attachmentNoFount', filename, mark);
+      return null;
+    }
+    return attachment;
   },
   gotoPreview: (type, diaryId, filename) => router.push({
     name: 'PreviewMedia',
@@ -86,9 +93,15 @@ defineExpose({
   editor
 });
 
-watch(editor, (newEditor) => {
-  if (!newEditor) return;
-  tryUpdateHtml(newEditor, modelValue);
+onMounted(async () => {
+  if (!editor.value) {
+    await nextTick(); // 确保 DOM 已经更新
+  }
+  if (!editor.value) {
+    console.log('Editor element not found after nextTick');
+    return;
+  }
+  tryUpdateHtml(editor.value, modelValue);
   observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       // 我们只关心节点被移除的情况
@@ -103,11 +116,11 @@ watch(editor, (newEditor) => {
     });
   });
   // 监听 childList (子节点变化) 和 subtree (后代节点变化)
-  observer.observe(newEditor, {
+  observer.observe(editor.value, {
     childList: true,
     subtree: true,
   });
-});
+})
 
 watch(() => modelValue, (newVal) => {
   if (!editor.value) return;
