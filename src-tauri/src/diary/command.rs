@@ -73,11 +73,10 @@ pub async fn cmd_update_diary_content_only(
 #[specta::specta]
 pub async fn cmd_page_diary_ids(
     client: State<'_, OssState>,
-    count: u32,
     next_token: NextToken,
 ) -> Result<(Vec<String>, NextToken), String> {
     let client = client.get_client()?;
-    page_diary_ids(&client, count, next_token).await
+    page_diary_ids(&client, next_token).await
 }
 
 /// 获取日记Summary

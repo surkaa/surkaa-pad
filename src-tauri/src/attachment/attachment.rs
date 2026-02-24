@@ -165,7 +165,7 @@ mod test {
         let client = OssClient::from_env();
 
         // 0. 判断是是否为空
-        let (ids, _) = page_diary_ids(&client, 1, None)
+        let (ids, _) = page_diary_ids(&client, None)
             .await
             .expect("分页获取日记 ID 失败");
         assert!(

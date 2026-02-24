@@ -17,9 +17,6 @@ const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 
 /// 定义内存成本（KiB）
-#[cfg(debug_assertions)]
-const MEMORY_COST_KIB: u32 = 1024;
-#[cfg(not(debug_assertions))]
 const MEMORY_COST_KIB: u32 = 256 * 1024;
 
 // 定义 AES-256-CTR 类型 (128BE代表128位大端序计数器)

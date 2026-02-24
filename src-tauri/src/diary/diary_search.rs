@@ -6,9 +6,6 @@ use crate::object::{NextToken, OssClient};
 use crate::utils::message_sender::MessageSender;
 use std::sync::Arc;
 
-/// 单次搜索获取的日记 ID 数量
-const SEARCH_PAGE_SIZE: u32 = 10;
-
 pub async fn search_diaries(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
@@ -23,7 +20,7 @@ pub async fn search_diaries(
         let mut nt: NextToken = None;
         loop {
             let ec = event.clone();
-            let (ids, next_token) = page_diary_ids(client, SEARCH_PAGE_SIZE, nt.clone()).await?;
+            let (ids, next_token) = page_diary_ids(client, nt.clone()).await?;
 
             // 多线程搜索
             let fetches = ids.into_iter().map(|id| {
@@ -122,7 +119,7 @@ mod tests {
         let cache = DiaryMemoryCache::new();
 
         // 确保是空的测试环境
-        let (ids, _) = page_diary_ids(&client, SEARCH_PAGE_SIZE, None)
+        let (ids, _) = page_diary_ids(&client, None)
             .await
             .expect("无法获取日记列表");
         assert!(ids.is_empty(), "测试环境不干净，存在日记数据");
@@ -179,7 +176,7 @@ mod tests {
         );
 
         // 清理测试数据
-        let (ids, _) = page_diary_ids(&client, SEARCH_PAGE_SIZE, None)
+        let (ids, _) = page_diary_ids(&client, None)
             .await
             .expect("无法获取日记列表");
         for id in ids {

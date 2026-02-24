@@ -8,4 +8,6 @@ mod diary_search;
 pub use types::DiaryManifest;
 pub use memory_cache::DiaryMemoryCache;
 pub use diary::*;
+
+#[cfg(test)]
 pub use diary_list::*;

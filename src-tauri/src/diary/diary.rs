@@ -187,7 +187,7 @@ mod tests {
         let cache = DiaryMemoryCache::new();
 
         // 判断为空，确保测试环境干净
-        let (objects, _) = client.list("", None, None).await.expect("未能列出对象");
+        let (objects, _) = client.list("", None).await.expect("未能列出对象");
         assert!(
             objects.is_empty(),
             "测试环境不干净。请确保运行测试前OSS桶是空的。"
