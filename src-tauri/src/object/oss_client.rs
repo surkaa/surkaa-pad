@@ -394,7 +394,7 @@ impl OssClient {
             .map_err(|e| format!("请求失败:{}", e))?;
 
         if !resp.status().is_success() {
-            return Err(format!("下载失败 {}", resp.status()));
+            return Err(format!("下载失败 {}, key:{}", resp.status(), &key));
         }
 
         let len = resp
@@ -425,7 +425,7 @@ impl OssClient {
             .map_err(|e| format!("请求失败:{}", e))?;
 
         if !resp.status().is_success() {
-            return Err(format!("下载失败 {}", resp.status()));
+            return Err(format!("下载失败 {}, key:{}", resp.status(), &key));
         }
 
         let data = resp

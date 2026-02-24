@@ -41,6 +41,7 @@ async fn attachment_protocol_inner(
     let client = match oss_state.get_client() {
         Ok(client) => client,
         Err(_) => {
+            log::error!("OSS client is not ready");
             responder.respond(error_response("client is not ready".to_string()));
             return;
         }
@@ -49,6 +50,7 @@ async fn attachment_protocol_inner(
     let path = uri.path();
     let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
     if segments.len() != 3 {
+        log::error!("OSS URI path is not valid");
         responder.respond(bad_request_response());
         return;
     }
@@ -60,6 +62,7 @@ async fn attachment_protocol_inner(
     let diary = match diary_get(&cache, &crypto, &client, id).await {
         Ok(diary) => diary,
         Err(e) => {
+            log::error!("Failed to get diary {}: {}", id, e);
             responder.respond(error_response(e));
             return;
         }
@@ -71,13 +74,8 @@ async fn attachment_protocol_inner(
             return;
         }
     };
-    if !attachment.encrypted {
-        // 没有加密的应该直接访问云存储
-        responder.respond(forbidden_response("encryption is required"));
-        return;
-    }
     if attachment.algorithm == Gcm {
-        // GCM 应该直接使用旧的逻辑 TODO 或者可以在这里下载完整的，然后修改成CTR的方式
+        log::error!("Attachment has already been encrypted");
         responder.respond(forbidden_response("GCM encryption is not supported"));
         return;
     }
@@ -89,6 +87,7 @@ async fn attachment_protocol_inner(
         HttpRange::Range(start, end) => {
             let end = end.unwrap_or(attachment.size - 1);
             if start >= attachment.size || end >= attachment.size || start > end {
+                log::error!("Invalid Range header: start={}, end={}, attachment size={}", start, end, attachment.size);
                 responder.respond(bad_request_response());
                 return;
             }
@@ -96,6 +95,7 @@ async fn attachment_protocol_inner(
             (start, min(end, start + MAX_CHUNK_SIZE - 1))
         }
         HttpRange::Invalid => {
+            log::error!("Invalid Range header: invalid range");
             responder.respond(bad_request_response());
             return;
         }
@@ -105,15 +105,22 @@ async fn attachment_protocol_inner(
     let (stream, len) = match client.download(&key, Some(range)).await {
         Ok((stream, len)) => (stream, len),
         Err(e) => {
+            log::error!("Failed to download {}: {}", id, e);
             responder.respond(error_response(e));
             return;
         }
     };
-    let stream = match crypto.decrypt_streaming(stream, &attachment.nonce, range.0) {
-        Ok(stream) => stream,
-        Err(e) => {
-            responder.respond(error_response(e));
-            return;
+    let stream = if !attachment.encrypted {
+        // 未加密的直接返回阿里云的流
+        stream
+    } else {
+        match crypto.decrypt_streaming(stream, &attachment.nonce, range.0) {
+            Ok(stream) => stream,
+            Err(e) => {
+                log::error!("Failed to decrypt stream for {}: {}", id, e);
+                responder.respond(error_response(e));
+                return;
+            }
         }
     };
 
@@ -126,6 +133,7 @@ async fn attachment_protocol_inner(
         match chunk_result {
             Ok(bytes) => data.extend_from_slice(&bytes),
             Err(e) => {
+                log::error!("Error while reading stream for {}: {}", id, e);
                 responder.respond(error_response(e.to_string()));
                 return;
             }
@@ -158,6 +166,7 @@ async fn attachment_protocol_inner(
     let response = match response {
         Ok(response) => response,
         Err(e) => {
+            log::error!("Failed to build response for {}: {}", id, e);
             responder.respond(error_response(e.to_string()));
             return;
         }
