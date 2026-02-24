@@ -21,6 +21,7 @@ use crate::object::command::cmd_init_oss_client;
 use crate::object::OssState;
 use crate::task::command::cmd_cancel_task;
 use crate::task::TaskPool;
+use crate::utils::command::open_devtools;
 use tauri::{App, Manager};
 
 fn run_setup(app: &mut App) {
@@ -57,6 +58,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_delete_attachment,
             // 其他
             cmd_cancel_task,
+            open_devtools,
         ]);
 
     #[cfg(debug_assertions)]

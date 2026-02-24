@@ -242,6 +242,9 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async openDevtools() : Promise<void> {
+    await TAURI_INVOKE("open_devtools");
 }
 }
 

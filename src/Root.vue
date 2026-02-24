@@ -4,9 +4,11 @@ import {useAppStore} from "./stores/app.ts";
 import {useEventListener} from "./utils/useEventListener.ts";
 import {type Platform, platform} from "@tauri-apps/plugin-os";
 import {keepAliveIncludes} from "./composables/useKeepAlive.ts";
+import {commands} from "./bindings.ts";
 
 const appStore = useAppStore();
 const watcher = ref<WatchHandle>();
+const p = platform();
 
 function isNotMobilePlatform(p: Platform): boolean {
   return p !== 'android' && p !== 'ios';
@@ -66,6 +68,16 @@ function syncThemeWithSystem() {
     }
   }, {immediate: true});
 }
+
+useEventListener(document, 'keydown', (e) => {
+  if (p != 'windows') return; // 仅在 Windows 平台启用开发者工具
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "i") {
+    e.preventDefault();
+    commands.openDevtools()
+        .then(() => console.log('开发者工具已打开'))
+        .catch(err => console.error('打开开发者工具失败:', err));
+  }
+});
 
 onMounted(async () => {
   const p = platform();
