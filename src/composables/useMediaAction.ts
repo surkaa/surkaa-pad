@@ -1,28 +1,55 @@
 import {Channel} from "@tauri-apps/api/core";
 import {AddAttachmentEvent, AttachmentMeta, commands} from "../bindings.ts";
-import {onUnmounted, Ref} from "vue";
-import {open} from "@tauri-apps/plugin-dialog"
+import {computed, onUnmounted, Ref, ref} from "vue";
+import {open, PickerMode} from "@tauri-apps/plugin-dialog"
 import {resolveMediaAttachmentUrl} from "../utils/resolveMediaAttachmentUrl.ts";
 import {insertBlockNode} from "../utils/domUtils.ts";
 import {useQuasar} from "quasar";
+
+export interface UploadTask {
+    filename: string;
+    progress: number;
+    status: 'pending' | 'uploading' | 'completed' | 'error';
+}
 
 export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLElement | undefined>, showPanel: Ref<boolean>) {
     const $q = useQuasar();
     const cancelTokens: string[] = [];
 
-    // TODO 优化多个附件上传时的界面，用弹窗显示多个进度，统一完成后才能关闭弹窗
-    async function uploadAttachment(accessStr: string, mimetype: string, encrypted: boolean, completedCallback?: (meta: AttachmentMeta) => void) {
+    // 进度管理状态
+    const uploadTaskMap = ref<Record<string, UploadTask>>({});
+    const showUploadDialog = ref(false);
+    const uploadTasks = computed(() => Object.values(uploadTaskMap.value));
+    const isUploading = computed(() => {
+        if (uploadTasks.value.length === 0) return true;
+        return uploadTasks.value.every(task => task.status === 'completed' || task.status === 'error');
+    });
+
+    async function uploadAttachment(
+        accessStr: string,
+        mimetype: string,
+        encrypted: boolean,
+        completedCallback?: (meta: AttachmentMeta) => void
+    ) {
+        // 从路径提取文件名用于占位显示
+        const rawName = accessStr.split(/[\\/]/).pop() || "未知文件";
+        const key = crypto.randomUUID();
+        uploadTaskMap.value[key] = {filename: rawName, progress: 0, status: 'pending'};
+        showUploadDialog.value = true;
+
         const event = new Channel<AddAttachmentEvent>();
         let cancelToken = "";
         event.onmessage = (msg) => {
             switch (msg.event) {
                 case "started":
-                    console.log("开始上传");
+                    uploadTaskMap.value[key].status = 'uploading';
                     break;
                 case "progress":
-                    console.log("百分制整数进度", msg.data);
+                    uploadTaskMap.value[key].progress = msg.data / 100;
                     break;
                 case "completed":
+                    uploadTaskMap.value[key].status = 'completed';
+                    uploadTaskMap.value[key].progress = 1;
                     completedCallback && completedCallback(msg.data);
                     console.log("上传完成，附件Meta", msg.data);
                     if (cancelToken) {
@@ -34,13 +61,15 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                     }
                     break;
                 case "error":
-                    console.error("上传失败，错误信息", msg.data);
+                    uploadTaskMap.value[key].status = 'error';
+                    $q.notify({type: 'negative', message: `${uploadTaskMap.value[key].filename} 上传失败: ${msg.data}`});
                     break;
             }
         };
         const res = await commands.cmdAddAttachment(event, diaryId.value, accessStr, mimetype, encrypted);
         if (res.status == "error") {
-            console.log("调用 Rust 后端失败", res.error);
+            uploadTaskMap.value[key].status = 'error';
+            console.error("调用 Rust 后端失败", res.error);
             return;
         }
         cancelToken = res.data;
@@ -62,6 +91,35 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         }
     }
 
+    const genericBatchUpload = async (pickerMode: PickerMode, extensions: string[], mimetype: string, nodeType: 'img' | 'video' | 'audio') => {
+        let currentRange = captureRange();
+        beforeClick();
+        const accessStrArr = await open({
+            multiple: true,
+            pickerMode: pickerMode,
+            filters: [{name: pickerMode, extensions}]
+        });
+        if (!accessStrArr) return;
+
+        // 重置上传列表
+        uploadTaskMap.value = {};
+
+        const uploads = accessStrArr.map(accessStr =>
+            uploadAttachment(accessStr, mimetype, true, (att) => {
+                const url = resolveMediaAttachmentUrl(nodeType === 'img' ? 'image' : 'video', diaryId.value, att.filename);
+                const el = document.createElement(nodeType);
+                if (nodeType !== 'img') (el as HTMLMediaElement).controls = true;
+                (el as any).src = url;
+                el.dataset.id = att.filename;
+
+                if (editorDomRef.value) {
+                    insertBlockNode(editorDomRef.value, el, currentRange);
+                }
+            })
+        );
+        await Promise.allSettled(uploads);
+    };
+
     onUnmounted(async () => {
         const results = await Promise.all(
             cancelTokens.map(token => commands.cmdCancelTask(token))
@@ -74,98 +132,18 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
     });
 
     return {
-        insertPhoto: async () => {
-            let currentRange = captureRange();
-            beforeClick();
-            const accessStrArr = await open({
-                multiple: true,
-                pickerMode: 'image',
-                filters: [{
-                    name: 'Images',
-                    extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']
-                }]
-            });
-            if (!accessStrArr) return;
-            for (const accessStr of accessStrArr) {
-                await uploadAttachment(accessStr, "image/*", true, (att) => {
-                    // 立即渲染
-                    const url = resolveMediaAttachmentUrl('image', diaryId.value, att.filename);
-                    console.log('插入图片，URL:', url);
-                    const img = document.createElement('img');
-                    img.src = url;
-                    img.dataset.id = att.filename;
-                    if (editorDomRef.value) {
-                        insertBlockNode(editorDomRef.value, img, currentRange);
-                    } else {
-                        $q.notify({type: 'negative', message: 'EditorDOM节点未找到'});
-                    }
-                });
-            }
-        },
+        uploadTasks,
+        showUploadDialog,
+        isUploading,
+        insertPhoto: () => genericBatchUpload('image', ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], "image/*", 'img'),
         takePhoto: async () => {
             // TODO
         },
         audioRecording: () => {
             // TODO
         },
-        insertAudio: async () => {
-            let currentRange = captureRange();
-            beforeClick();
-            const accessStrArr = await open({
-                multiple: true,
-                pickerMode: 'media',
-                filters: [{
-                    name: 'Audio',
-                    extensions: ['mp3', 'wav', 'ogg', 'flac', 'aac']
-                }]
-            });
-            if (!accessStrArr) return;
-            for (const accessStr of accessStrArr) {
-                await uploadAttachment(accessStr, "audio/*", true, (att) => {
-                    // 立即渲染
-                    const url = resolveMediaAttachmentUrl('video', diaryId.value, att.filename);
-                    console.log('插入音频，URL:', url);
-                    const audio = document.createElement('audio');
-                    audio.controls = true;
-                    audio.src = url;
-                    audio.dataset.id = att.filename;
-                    if (editorDomRef.value) {
-                        insertBlockNode(editorDomRef.value, audio, currentRange);
-                    } else {
-                        $q.notify({type: 'negative', message: 'EditorDOM节点未找到'});
-                    }
-                });
-            }
-        },
-        insertVideo: async () => {
-            let currentRange = captureRange();
-            beforeClick();
-            const accessStrArr = await open({
-                multiple: true,
-                pickerMode: 'video',
-                filters: [{
-                    name: 'Videos',
-                    extensions: ['mp4', 'avi', 'mov', 'mkv', 'webm']
-                }]
-            });
-            if (!accessStrArr) return;
-            for (const accessStr of accessStrArr) {
-                await uploadAttachment(accessStr, "video/*", true, (att) => {
-                    // 立即渲染
-                    const url = resolveMediaAttachmentUrl('video', diaryId.value, att.filename);
-                    console.log('插入视频，URL:', url);
-                    const video = document.createElement('video');
-                    video.controls = true;
-                    video.src = url;
-                    video.dataset.id = att.filename;
-                    if (editorDomRef.value) {
-                        insertBlockNode(editorDomRef.value, video, currentRange);
-                    } else {
-                        $q.notify({type: 'negative', message: 'EditorDOM节点未找到'});
-                    }
-                });
-            }
-        },
+        insertAudio: () => genericBatchUpload('media', ['mp3', 'wav', 'ogg', 'flac', 'aac'], "audio/*", 'audio'),
+        insertVideo: () => genericBatchUpload('video', ['mp4', 'avi', 'mov', 'mkv', 'webm'], "video/*", 'video'),
         takeVideo: () => {
             // TODO
         },

@@ -29,7 +29,18 @@ const {
 } = useEditorUI();
 
 // 媒体操作
-const mediaActions = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
+const {
+  uploadTasks,
+  showUploadDialog,
+  isUploading,
+  insertPhoto,
+  takePhoto,
+  insertAudio,
+  audioRecording,
+  insertVideo,
+  takeVideo,
+  insertFile,
+} = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
 
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
@@ -98,13 +109,13 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
         :redo="canRedo"
         v-click-outside="() => showToolbarPanel = false"
         @additionalAction="additionalAction"
-        @insertPhoto="mediaActions.insertPhoto"
-        @takePhoto="mediaActions.takePhoto"
-        @insertAudio="mediaActions.insertAudio"
-        @audioRecording="mediaActions.audioRecording"
-        @insertVideo="mediaActions.insertVideo"
-        @takeVideo="mediaActions.takeVideo"
-        @insertFile="mediaActions.insertFile"
+        @insertPhoto="insertPhoto"
+        @takePhoto="takePhoto"
+        @insertAudio="insertAudio"
+        @audioRecording="audioRecording"
+        @insertVideo="insertVideo"
+        @takeVideo="takeVideo"
+        @insertFile="insertFile"
         style="width: 100%; flex-shrink: 0"
     />
 
@@ -165,6 +176,46 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
 
         <q-card-actions align="right">
           <q-btn flat label="关闭" color="primary" v-close-popup/>
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="showUploadDialog" persistent>
+      <q-card style="min-width: 300px; max-width: 500px">
+        <q-card-section class="row items-center q-pb-none">
+          <div class="text-h6">文件上传中</div>
+        </q-card-section>
+
+        <q-card-section class="q-pt-md">
+          <q-list dense>
+            <q-item v-for="task in uploadTasks" :key="task.filename" class="q-px-none">
+              <q-item-section>
+                <q-item-label class="text-caption ellipsis">{{ task.filename }}</q-item-label>
+                <q-linear-progress
+                    :value="task.progress"
+                    :color="task.status === 'error' ? 'negative' : 'primary'"
+                    class="q-mt-sm"
+                    :animation-speed="200"
+                />
+              </q-item-section>
+              <q-item-section side>
+                <q-icon
+                    :name="task.status === 'completed' ? 'check_circle' : (task.status === 'error' ? 'error' : 'cloud_upload')"
+                    :color="task.status === 'completed' ? 'positive' : (task.status === 'error' ? 'negative' : 'grey')"
+                />
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn
+              flat
+              label="完成"
+              color="primary"
+              v-close-popup
+              :disable="!isUploading"
+          />
         </q-card-actions>
       </q-card>
     </q-dialog>
