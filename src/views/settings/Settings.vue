@@ -52,6 +52,10 @@
       <section class="settings-group">
         <h2 class="group-title">数据管理</h2>
         <div class="settings-card">
+          <button class="setting-item" @click="exportLogFile">
+            <span class="label">导出日志文件</span>
+            <span class="icon">›</span>
+          </button>
           <button class="setting-item danger" @click="handleReset">
             <span class="label">重置应用配置</span>
             <span class="icon">›</span>
@@ -95,6 +99,7 @@ import {useAppStore} from "../../stores/app.ts";
 import {showToast} from "../../utils";
 import {platform} from "@tauri-apps/plugin-os";
 import { confirm } from '@tauri-apps/plugin-dialog';
+import {exportLogFile} from "../../utils/exportLogFile.ts";
 
 const router = useRouter();
 const appStore = useAppStore();

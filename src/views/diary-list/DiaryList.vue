@@ -148,7 +148,10 @@ onActivated(async () => {
 
 <template>
   <main id="diary-list">
-    <DiaryListHeader :stats="diaryStats"/>
+    <DiaryListHeader
+        :stats="diaryStats"
+        @settings="$router.push({ name: 'Settings' })"
+    />
 
     <div class="main-content">
       <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">

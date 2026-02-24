@@ -5,6 +5,7 @@ import {useEventListener} from "./utils/useEventListener.ts";
 import {type Platform, platform} from "@tauri-apps/plugin-os";
 import {keepAliveIncludes} from "./composables/useKeepAlive.ts";
 import {commands} from "./bindings.ts";
+import {exportLogFile} from "./utils/exportLogFile.ts";
 
 const appStore = useAppStore();
 const watcher = ref<WatchHandle>();
@@ -70,12 +71,18 @@ function syncThemeWithSystem() {
 }
 
 useEventListener(document, 'keydown', (e) => {
-  if (p != 'windows') return; // 仅在 Windows 平台启用开发者工具
+  if (p != 'windows') return; // 仅在 Windows 平台启用
   if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "i") {
     e.preventDefault();
     commands.openDevtools()
         .then(() => console.log('开发者工具已打开'))
         .catch(err => console.error('打开开发者工具失败:', err));
+    return;
+  }
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "l") {
+    e.preventDefault();
+    exportLogFile().then();
+    return;
   }
 });
 

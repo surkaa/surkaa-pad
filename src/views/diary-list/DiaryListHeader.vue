@@ -10,6 +10,8 @@ defineProps<{
   }
 }>();
 
+const emit = defineEmits(['settings']);
+
 const appStore = useAppStore();
 const futureTimestamp = ref(Date.now());
 const appName = ref('App Name');
@@ -63,21 +65,25 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="stats-section">
-        <div class="stat-item">
-          <span class="stat-icon">📚</span>
-          <div class="stat-values">
-            <span class="stat-value">{{ stats.total }}</span>
-            <span class="stat-label">篇日记</span>
+      <div class="right-action-section">
+        <div class="stats-section">
+          <div class="stat-item">
+            <span class="stat-icon">📚</span>
+            <div class="stat-values">
+              <span class="stat-value">{{ stats.total }}</span>
+              <span class="stat-label">篇日记</span>
+            </div>
+          </div>
+          <div class="stat-item" v-if="stats.withAttachments > 0">
+            <span class="stat-icon">📎</span>
+            <div class="stat-values">
+              <span class="stat-value">{{ stats.withAttachments }}</span>
+              <span class="stat-label">含附件</span>
+            </div>
           </div>
         </div>
-        <div class="stat-item" v-if="stats.withAttachments > 0">
-          <span class="stat-icon">📎</span>
-          <div class="stat-values">
-            <span class="stat-value">{{ stats.withAttachments }}</span>
-            <span class="stat-label">含附件</span>
-          </div>
-        </div>
+
+        <q-icon name="settings" class="settings-icon" @click="emit('settings')" title="系统设置"/>
       </div>
     </div>
   </header>
@@ -121,46 +127,56 @@ onUnmounted(() => {
       }
     }
 
-    .stats-section {
+    .right-action-section {
       display: flex;
+      align-items: center;
       gap: 16px;
 
-      .stat-item {
+      .stats-section {
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-width: 60px;
+        gap: 16px;
 
-        .stat-icon {
-          font-size: 20px;
-          width: 40px;
-          height: 30px;
+        .stat-item {
           display: flex;
+          flex-direction: column;
           align-items: center;
-          justify-content: center;
-          background-color: var(--pad-primary-color-light);
-          border-radius: var(--pad-radius-full);
-          color: var(--pad-text-color-light);
-        }
+          min-width: 60px;
 
-        .stat-values {
-          display: flex;
-          flex-direction: row;
-          align-items: end;
-          justify-content: center;
-          gap: 2px;
-
-          .stat-value {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--pad-text-color-200);
+          .stat-icon {
+            font-size: 20px;
+            width: 40px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--pad-primary-color-light);
+            border-radius: var(--pad-radius-full);
+            color: var(--pad-text-color-light);
           }
 
-          .stat-label {
-            font-size: 10px;
-            color: var(--pad-text-color-400);
+          .stat-values {
+            display: flex;
+            flex-direction: row;
+            align-items: end;
+            justify-content: center;
+            gap: 2px;
+
+            .stat-value {
+              font-size: 16px;
+              font-weight: 600;
+              color: var(--pad-text-color-200);
+            }
+
+            .stat-label {
+              font-size: 10px;
+              color: var(--pad-text-color-400);
+            }
           }
         }
+      }
+
+      .settings-icon {
+        font-size: 24px;
       }
     }
   }
