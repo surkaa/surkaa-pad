@@ -42,10 +42,39 @@ function parseSourceToHtml(source: string): string {
 }
 
 function parseHtmlToSource(html: string): string {
-  let result = html;
+  // 利用原生 DOMParser 建立沙箱，自动修复未闭合标签 抵御脏 HTML
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+
+  // 深度优先遍历，安全拦截并替换媒体节点为 Source 文本
+  const walkAndReplace = (node: Node) => {
+    // 转换成数组防止操作子节点时引发迭代器异常
+    const children = Array.from(node.childNodes);
+    for (const child of children) {
+      walkAndReplace(child); // 向下递归
+
+      const ext = EXTENSIONS.find(e => e.match && e.match(child));
+      if (ext && ext.serialize) {
+        // 调用插件生成 [[IMG:xxx]] 等标记
+        const sourceText = ext.serialize(child as HTMLElement);
+        // 原地替换：将复杂的 <img>/<audio> 节点替换为纯文本节点
+        node.replaceChild(document.createTextNode(sourceText), child);
+      }
+    }
+  };
+
+  walkAndReplace(doc.body);
+
+  // 提取脱水后的 HTML 此时已剥离所有多媒体元素
+  let result = doc.body.innerHTML;
+
+  // 让 BaseExtension 处理剩下的基础标签 如 br, div 转换为 \n
   for (const ext of EXTENSIONS) {
-    if (ext.toSource) result = ext.toSource(result);
+    if (ext.toSource && !ext.serialize) {
+      result = ext.toSource(result);
+    }
   }
+
   return result;
 }
 

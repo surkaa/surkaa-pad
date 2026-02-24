@@ -19,7 +19,10 @@ export const VideoExtension: Extension = {
         return `<video controls src="${src}" data-id="${filename}" />`;
     }),
 
-    toSource: (html) => html.replace(/<video[^>]*data-id="([^"]*)"[^>]*>/gi, (_match, filename) => `[[VID:${filename}]]`),
+    serialize: (node: HTMLElement) => {
+        const filename = node.dataset.id;
+        return filename ? `[[VID:${filename}]]` : '';
+    },
 
     onClick: (_e, node, _ctx) => {
         console.log('点击了视频：', node);

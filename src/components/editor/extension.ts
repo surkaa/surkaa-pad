@@ -24,6 +24,9 @@ export interface Extension {
     // 转换规则：HTML -> Source
     toSource?: (html: string) => string;
 
+    // 安全 DOM 节点级反解析
+    serialize?: (node: HTMLElement) => string;
+
     // 转换规则：Source -> HTML
     toHtml?: (md: string, ctx: ExtensionContext) => string;
 

@@ -37,23 +37,18 @@ export const ImageExtension: Extension = {
         return `<img src="${src}" data-id="${filename}" ${sizeAttr} alt="image" />`;
     }),
 
-    toSource: html => html.replace(/<img[^>]*data-id="([^"]*)"[^>]*>/gi, (match, filename) => {
-        const params = new URLSearchParams();
+    serialize: (node: HTMLElement) => {
+        const filename = node.dataset.id;
+        if (!filename) return '';
 
-        // 检查 HTML 字符串中是否包含状态属性
-        if (match.includes('data-size="small"')) {
+        const params = new URLSearchParams();
+        if (node.dataset.size === 'small') {
             params.append('size', 'small');
         }
 
         const configStr = params.toString();
-
-        // 如果有配置项，就拼接竖线；如果没有，就返回最纯净的格式
-        if (configStr) {
-            return `[[IMG:${filename}|${configStr}]]`;
-        } else {
-            return `[[IMG:${filename}]]`;
-        }
-    }),
+        return configStr ? `[[IMG:${filename}|${configStr}]]` : `[[IMG:${filename}]]`;
+    },
 
     onClick: (_e, node, ctx) => {
         const filename = (node as HTMLImageElement).dataset.id;

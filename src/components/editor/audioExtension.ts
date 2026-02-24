@@ -19,7 +19,10 @@ export const AudioExtension: Extension = {
         return `<audio controls src="${src}" data-id="${filename}"></audio>`;
     }),
 
-    toSource: (html) => html.replace(/<video[^>]*data-id="([^"]*)"[^>]*><\/video>/gi, (_match, filename) => `[[AUD:${filename}]]`),
+    serialize: (node: HTMLElement) => {
+        const filename = node.dataset.id;
+        return filename ? `[[AUD:${filename}]]` : '';
+    },
 
     onClick: (_e, node, _ctx) => {
         console.log('点击了音频：', node);
