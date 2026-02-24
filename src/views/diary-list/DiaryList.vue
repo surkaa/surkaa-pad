@@ -124,6 +124,9 @@ onActivated(async () => {
   eventBusOn('diary-changed', async payload => {
     switch (payload.type) {
       case 'created':
+        if (diaryIds.value.includes(payload.summary.id)) {
+          return;
+        }
         diaryIds.value.unshift(payload.summary.id);
         diarySummaries.value[payload.summary.id] = payload.summary;
         break;
