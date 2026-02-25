@@ -83,7 +83,6 @@ onBeforeRouteLeave((_to, _from, next) => {
   $q.dialog({
     title: '未使用的附件',
     message: `有 ${orphans.length} 个未使用的附件，是否删除？`,
-    cancel: true,
     persistent: true,
     ok: {label: '删除', color: 'negative'},
     cancel: {label: '保留', color: 'primary'},
