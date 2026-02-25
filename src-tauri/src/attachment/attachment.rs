@@ -51,9 +51,11 @@ pub async fn add_attachment(
                 .collect();
 
             // MEX 算法：寻找最小且不重复的正整数序号
-            let new_id = (1..)
-                .find(|i| !existing_ids.contains(i) && !pending_ids.contains(i))
-                .expect("无法分配新的附件序号");
+            let new_id = (1..).find(|i| !existing_ids.contains(i) && !pending_ids.contains(i));
+            let new_id = match new_id {
+                Some(id) => id,
+                None => return Err("无法分配新的附件 ID".to_string()),
+            };
 
             // 登记到模拟状态中，防止其他并发任务抢占
             pending_ids.insert(new_id);
