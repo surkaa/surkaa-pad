@@ -3,6 +3,7 @@ import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
 import {commands, DiarySummary} from "../bindings.ts";
 import {eventBusEmit} from "../utils/eventBus.ts";
+import {EXTENSIONS} from "../components/editor/extension.ts";
 
 export function useDiaryCore(initialId: string) {
     const $q = useQuasar();
@@ -20,7 +21,29 @@ export function useDiaryCore(initialId: string) {
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
     const AUTO_SAVE_DELAY = 1000;
 
-    const loadDiaryInfo = async () => {
+    const unusedAttachments = computed(() => {
+        if (!diary.value) return [];
+
+        return diary.value.attachments.filter(attachment => {
+            let isReferenced = false;
+            for (const ext of EXTENSIONS) {
+                // 使用之前修复的正则校验
+                if (ext.hasMark && ext.hasMark(diaryContent.value, attachment.filename)) {
+                    isReferenced = true;
+                    break;
+                } else if (ext.getMark) {
+                    const mark = ext.getMark(attachment.filename);
+                    if (diaryContent.value.includes(mark)) {
+                        isReferenced = true;
+                        break;
+                    }
+                }
+            }
+            return !isReferenced;
+        });
+    });
+
+    async function loadDiaryInfo() {
         const [summaryRes, contentRes] = await Promise.all([
             commands.cmdGetDiarySummary(diaryId.value),
             commands.cmdGetDiaryContent(diaryId.value)
@@ -36,9 +59,9 @@ export function useDiaryCore(initialId: string) {
         // 延迟标记加载完成，避免触发首次 watch
         await nextTick();
         isInitialLoaded.value = true;
-    };
+    }
 
-    const saveDiary = async () => {
+    async function saveDiary() {
         if (isNew.value) {
             const res = await commands.cmdSaveDiary(diaryContent.value);
             if (res.status === 'error') {
@@ -62,9 +85,9 @@ export function useDiaryCore(initialId: string) {
         }
         diary.value = res.data;
         eventBusEmit('diary-changed', {type: 'updated', summary: res.data});
-    };
+    }
 
-    const deleteDiary = () => {
+    function deleteDiary() {
         if (!diaryId.value) return;
         $q.dialog({
             title: '确认删除',
@@ -81,7 +104,7 @@ export function useDiaryCore(initialId: string) {
             eventBusEmit('diary-changed', {type: 'deleted', id: diaryId.value});
             router.back();
         });
-    };
+    }
 
     function attachmentNoFount(filename: string, mark: string) {
         $q.dialog({
@@ -118,8 +141,8 @@ export function useDiaryCore(initialId: string) {
         diaryContent,
         isInitialLoaded,
         isNew,
+        unusedAttachments,
         loadDiaryInfo,
-        saveDiary,
         deleteDiary,
         attachmentNoFount
     };

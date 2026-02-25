@@ -4,12 +4,13 @@ import DiaryHeader from "./DiaryHeader.vue";
 import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
-import {useRoute} from "vue-router";
+import {onBeforeRouteLeave, useRoute} from "vue-router";
 import {useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
 import {formatTimestamp} from "../../utils";
 import AttachmentCard from "../../components/AttachmentCard.vue";
+import {commands} from "../../bindings.ts";
 
 const route = useRoute();
 const $q = useQuasar();
@@ -22,7 +23,7 @@ const savedScrollTop = ref(0);
 
 const initialDiaryId = (route.params.id as string) || "";
 const {
-  diaryId, diary, diaryContent, isNew, isInitialLoaded,
+  diaryId, diary, diaryContent, isNew, isInitialLoaded, unusedAttachments,
   loadDiaryInfo, deleteDiary, attachmentNoFount
 } = useDiaryCore(initialDiaryId);
 
@@ -70,7 +71,33 @@ function additionalAction() {
   }
 }
 
-defineOptions({ name: 'DiaryDetail' });
+defineOptions({name: 'DiaryDetail'});
+
+onBeforeRouteLeave((_to, _from, next) => {
+  const orphans = unusedAttachments.value;
+  if (!orphans.length) {
+    next();
+    return;
+  }
+  // 先询问用户是否要删除这些未使用的附件
+  $q.dialog({
+    title: '未使用的附件',
+    message: `有 ${orphans.length} 个未使用的附件，是否删除？`,
+    cancel: true,
+    persistent: true,
+    ok: {label: '删除', color: 'negative'},
+    cancel: {label: '保留', color: 'primary'},
+  }).onOk(() => {
+    console.log('删除附件:', orphans);
+    Promise
+        .all(orphans.map(att => commands.cmdDeleteAttachment(diaryId.value, att.filename)))
+        .then(next)
+        .catch(e => {
+          console.error('删除附件失败:', e);
+          $q.notify({type: 'negative', message: `删除附件失败 ${e.message || e.error || e}`});
+        });
+  }).onCancel(next);
+});
 
 onMounted(async () => {
   if (!isNew.value) {
