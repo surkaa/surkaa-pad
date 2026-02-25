@@ -71,6 +71,16 @@ function additionalAction() {
   }
 }
 
+function showDiarySource() {
+  $q.dialog({
+    title: '日记内容 - 源码',
+    message: diaryContent.value.replace('\n', '\\n'),
+    persistent: true,
+    ok: {label: '关闭', color: 'primary'},
+  });
+  showMenu.value = false;
+}
+
 defineOptions({name: 'DiaryDetail'});
 
 onBeforeRouteLeave((_to, _from, next) => {
@@ -162,8 +172,8 @@ onActivated(async () => {
     <q-dialog v-model="showMenu" position="bottom">
       <q-card class="action-sheet-card">
         <q-list padding class="text-center">
-          <q-item clickable v-ripple @click="">
-            <q-item-section>操作1</q-item-section>
+          <q-item clickable v-ripple @click="showDiarySource">
+            <q-item-section>展示源码</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="() => {deleteDiary(); showMenu = false}">
             <q-item-section>删除</q-item-section>
