@@ -7,7 +7,7 @@ mod task;
 mod utils;
 
 use crate::attachment::attachment_protocol;
-use crate::attachment::command::{cmd_add_attachment, cmd_delete_attachment};
+use crate::attachment::command::{cmd_add_attachment, cmd_add_attachment_memory, cmd_delete_attachment};
 use crate::crypto::command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
 };
@@ -55,6 +55,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_search_diaries,
             // 附件相关操作
             cmd_add_attachment,
+            cmd_add_attachment_memory,
             cmd_delete_attachment,
             // 其他
             cmd_cancel_task,

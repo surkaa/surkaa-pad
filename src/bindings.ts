@@ -213,6 +213,24 @@ async cmdAddAttachment(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, acc
 }
 },
 /**
+ * 直接传字节数据给日记添加附件
+ * # Arguments
+ * * `id` - 日记 ID
+ * * `data` - 文件字节数据
+ * * `mimetype` - 附件 MIME 类型
+ * * `encrypted` - 是否需要加密
+ * # Returns
+ * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ */
+async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, data: number[], mimetype: string, encrypted: boolean) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment_memory", { event, id, data, mimetype, encrypted }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 删除日记的附件
  * # Arguments
  * * `id` - 日记 ID

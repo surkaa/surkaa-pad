@@ -7,7 +7,6 @@ pub type NextToken = Option<String>;
 
 pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>>;
 
-#[cfg(test)]
 pub fn create_mock_stream(data: Vec<u8>, chunk_size: usize) -> ByteStream {
     use futures_util::stream;
     let chunks: Vec<_> = data
