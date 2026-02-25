@@ -3,6 +3,8 @@ import {nextTick, onMounted, ref, watch} from "vue";
 import {DiarySummary} from "../bindings.ts";
 import {ExtensionContext, EXTENSIONS} from "./editor/extension.ts";
 import {useRouter} from "vue-router";
+import {useContextMenu} from "./editor/useContextMenu.ts";
+import {useEventListener} from "@vueuse/core";
 
 const router = useRouter();
 const {modelValue, diarySummary} = defineProps<{
@@ -32,6 +34,13 @@ const extensionCtx: ExtensionContext = {
     params: {type, diaryId, filename}
   }),
 }
+
+const {
+  contextMenuState,
+  handleEditorContextMenu,
+  executeMenuAction,
+  closeContextMenu
+} = useContextMenu(extensionCtx, handleInput);
 
 function parseSourceToHtml(source: string): string {
   let result = source;
@@ -105,6 +114,11 @@ function handleEditorClick(e: MouseEvent) {
   }
 }
 
+useEventListener(document, 'scroll', closeContextMenu, {
+  capture: true,
+  passive: true,
+});
+
 // 暴露editor给父组件
 defineExpose({
   editor
@@ -119,7 +133,7 @@ onMounted(async () => {
     return;
   }
   tryUpdateHtml(editor.value, modelValue);
-})
+});
 
 watch(() => modelValue, (newVal) => {
   if (!editor.value) return;
@@ -135,7 +149,28 @@ watch(() => modelValue, (newVal) => {
       contenteditable="true"
       @input="handleInput"
       @click="handleEditorClick"
+      @contextmenu="handleEditorContextMenu"
   ></div>
+
+  <Teleport to="body">
+    <div
+        v-if="contextMenuState.visible"
+        v-click-outside="closeContextMenu"
+        class="editor-context-menu"
+        :style="{ left: contextMenuState.x + 'px', top: contextMenuState.y + 'px' }"
+        @contextmenu.prevent
+    >
+      <div
+          v-for="(btn, index) in contextMenuState.buttons"
+          :key="index"
+          class="menu-item"
+          @click.stop="executeMenuAction(btn)"
+      >
+        <q-icon v-if="btn.icon" :name="btn.icon" class="q-mr-sm" />
+        {{ btn.label }}
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped lang="scss">
@@ -144,6 +179,32 @@ watch(() => modelValue, (newVal) => {
   box-sizing: border-box;
   outline: none;
   text-align: left;
+}
+
+.editor-context-menu {
+  position: fixed;
+  z-index: 9;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  min-width: 120px;
+  overflow: hidden;
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+
+    &:hover {
+      background-color: #f0f0f0;
+    }
+  }
 }
 </style>
 
