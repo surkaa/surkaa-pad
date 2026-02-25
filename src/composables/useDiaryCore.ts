@@ -1,4 +1,4 @@
-import {computed, onDeactivated, ref, watch} from 'vue';
+import {computed, nextTick, onDeactivated, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
 import {AttachmentMeta, commands, DiarySummary} from "../bindings.ts";
@@ -12,6 +12,9 @@ export function useDiaryCore(initialId: string) {
     const diaryId = ref<string>(initialId);
     const diary = ref<DiarySummary>();
     const diaryContent = ref<string>("");
+
+    // 脏数据标记
+    const isDirty = ref(false);
 
     // 标记是否已经完成初次加载，避免将后端的初次赋值误认为用户的输入
     const isInitialLoaded = ref(false);
@@ -35,9 +38,9 @@ export function useDiaryCore(initialId: string) {
         diary.value = summaryRes.data;
         diaryContent.value = contentRes.data;
         // 延迟标记加载完成，避免触发首次 watch
-        setTimeout(() => {
-            isInitialLoaded.value = true;
-        }, 50);
+        await nextTick();
+        isInitialLoaded.value = true;
+        isDirty.value = false;
     };
 
     const saveDiary = async () => {
@@ -57,22 +60,26 @@ export function useDiaryCore(initialId: string) {
         }
 
         // 寻找被删除的附件
-        const needDeleteAtt: AttachmentMeta[] = [];
-        for (const attachment of (diary.value?.attachments || [])) {
-            for (const ext of EXTENSIONS) {
-                if (!ext.getMark) continue;
-                const mark = ext.getMark(attachment.filename);
-                // 如果在内容里找不到这个标记，说明附件被删除了
-                if (!diaryContent.value.includes(mark)) {
-                    needDeleteAtt.push(attachment);
-                    break;
+        if (!diaryContent.value && diary.value?.attachments?.length) {
+            console.warn('内容状态异常为空，已拦截附件自动清理机制');
+        } else {
+            const needDeleteAtt: AttachmentMeta[] = [];
+            for (const attachment of (diary.value?.attachments || [])) {
+                for (const ext of EXTENSIONS) {
+                    if (!ext.getMark) continue;
+                    const mark = ext.getMark(attachment.filename);
+                    // 如果在内容里找不到这个标记，说明附件被删除了
+                    if (!diaryContent.value.includes(mark)) {
+                        needDeleteAtt.push(attachment);
+                        break;
+                    }
                 }
             }
-        }
-        if (needDeleteAtt.length > 0) {
-            await Promise.all(needDeleteAtt.map(
-                att => commands.cmdDeleteAttachment(diaryId.value, att.filename)
-            ));
+            if (needDeleteAtt.length > 0) {
+                await Promise.all(needDeleteAtt.map(
+                    att => commands.cmdDeleteAttachment(diaryId.value, att.filename)
+                ));
+            }
         }
 
         // 已存在的日记，执行更新
@@ -82,6 +89,7 @@ export function useDiaryCore(initialId: string) {
             return;
         }
         diary.value = res.data;
+        isDirty.value = false; // 保存成功，重置脏状态
         eventBusEmit('diary-changed', {type: 'updated', summary: res.data});
     };
 
@@ -119,6 +127,7 @@ export function useDiaryCore(initialId: string) {
     watch(diaryContent, (newValue, oldValue) => {
         // 如果还没加载完，或者值根本没变，则不触发保存
         if (!isInitialLoaded.value || newValue === oldValue) return;
+        isDirty.value = true;
         // 清除上一次的定时器（防抖）
         if (saveTimeout) clearTimeout(saveTimeout);
         // 开启新的定时器
@@ -129,7 +138,10 @@ export function useDiaryCore(initialId: string) {
     onDeactivated(async () => {
         if (saveTimeout) {
             clearTimeout(saveTimeout);
-            await saveDiary();
+            // 仅当确实存在未保存的修改时才执行
+            if (isDirty.value) {
+                await saveDiary();
+            }
         }
     });
 

@@ -1,4 +1,4 @@
-import {Extension} from "./extension.ts";
+import {Extension, MenuButton} from "./extension.ts";
 import {resolveMediaAttachmentUrl} from "../../utils/resolveMediaAttachmentUrl.ts";
 
 export const ImageExtension: Extension = {
@@ -9,24 +9,8 @@ export const ImageExtension: Extension = {
     getMark: (filename) => `[[IMG:${filename}]]`,
 
     toHtml: (source, ctx) => source.replace(/\[\[IMG:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, configStr) => {
-        let sizeAttr = '';
-
-        // 如果存在配置项(竖线后面的内容)，则使用 URLSearchParams 解析
-        if (configStr) {
-            const params = new URLSearchParams(configStr);
-            const size = params.get('size');
-            if (size === 'small') {
-                sizeAttr += 'data-size="small"';
-            }
-        }
-
         const diaryId = ctx.getDiaryId();
-        if (!diaryId.length) {
-            console.error(`无法解析图片 ${filename}，因为没有找到日记 ID`);
-            return '';
-        }
         const attachment = ctx.getAttachment(filename, `[[IMG:${filename}]]`);
-
         if (!attachment) {
             console.error(`没有找到附件 ${filename}, 已自动移除`);
             return '';
@@ -34,10 +18,15 @@ export const ImageExtension: Extension = {
 
         const src = resolveMediaAttachmentUrl('image', diaryId, attachment.filename);
 
-        return `<img src="${src}" data-id="${filename}" ${sizeAttr} alt="image" />`;
+        // 解析配置项
+        const params = new URLSearchParams(configStr || '');
+        const isSmall = params.get('size') === 'small';
+
+        return `<img src="${src}" data-id="${filename}" alt="图片-${filename}" ${isSmall ? 'data-size="small"' : ''}>`;
     }),
 
-    serialize: (node: HTMLElement) => {
+    serialize: (n: HTMLElement) => {
+        const node = n as HTMLImageElement;
         const filename = node.dataset.id;
         if (!filename) return '';
 
@@ -62,5 +51,23 @@ export const ImageExtension: Extension = {
             return;
         }
         ctx.gotoPreview('image', ctx.getDiaryId(), attachment.filename);
+    },
+
+    // 右键菜单实现
+    onContextmenu: (_e, node, _ctx): MenuButton[] => {
+        const imgNode = node as HTMLImageElement;
+        const isSmall = imgNode.dataset.size === 'small';
+
+        return [{
+            label: isSmall ? '大图模式' : '小图模式',
+            action: (targetEl) => {
+                const target = targetEl as HTMLImageElement;
+                if (isSmall) {
+                    delete target.dataset.size; // 移除属性，恢复默认
+                } else {
+                    target.dataset.size = 'small'; // 设置属性
+                }
+            }
+        }];
     }
 }

@@ -115,7 +115,7 @@ async fn attachment_protocol_inner(
             return;
         }
     };
-    let stream = if !attachment.encrypted {
+    let mut stream = if !attachment.encrypted {
         // 未加密的直接返回阿里云的流
         stream
     } else {
@@ -132,9 +132,8 @@ async fn attachment_protocol_inner(
     // 消费 Stream，将其收集到内存中的 Vec<u8>
     // 因为这只是整个文件中的一个 Range Chunk（切片），所以放进内存是安全的
     let mut data = Vec::with_capacity(len as usize);
-    let mut pinned_stream = stream;
 
-    while let Some(chunk_result) = pinned_stream.next().await {
+    while let Some(chunk_result) = stream.next().await {
         match chunk_result {
             Ok(bytes) => data.extend_from_slice(&bytes),
             Err(e) => {

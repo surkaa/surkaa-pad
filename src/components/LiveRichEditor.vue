@@ -95,7 +95,7 @@ function tryUpdateHtml(editorElement: HTMLDivElement, newVal: string) {
 }
 
 // 处理点击 分发 onClick
-const handleEditorClick = (e: MouseEvent) => {
+function handleEditorClick(e: MouseEvent) {
   const target = e.target as HTMLElement;
 
   // 遍历插件，寻找谁负责这个节点
@@ -103,7 +103,7 @@ const handleEditorClick = (e: MouseEvent) => {
   if (handler && handler.onClick) {
     handler.onClick(e, target, extensionCtx);
   }
-};
+}
 
 // 暴露editor给父组件
 defineExpose({
@@ -163,7 +163,9 @@ watch(() => modelValue, (newVal) => {
   }
 
   img[data-size="small"] {
-    width: 33% !important;
+    width: 32% !important;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
     display: inline-block;
   }
 
