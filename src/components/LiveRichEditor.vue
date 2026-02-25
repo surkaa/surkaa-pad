@@ -179,5 +179,13 @@ watch(() => modelValue, (newVal) => {
     margin: 10px 0;
     background: #000;
   }
+
+  /* 针对所有扩展节点（如图片、视频）屏蔽系统长按功能 */
+  img, video, audio {
+    -webkit-touch-callout: none; /* 禁用 iOS/Android 默认长按菜单 */
+    user-select: none;           /* 禁用文本/元素选区 */
+    -webkit-user-select: none;
+    -webkit-user-drag: none;     /* 禁用原生拖拽 */
+  }
 }
 </style>
