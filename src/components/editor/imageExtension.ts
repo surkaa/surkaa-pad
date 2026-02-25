@@ -46,7 +46,7 @@ export const ImageExtension: Extension = {
             console.error(`无法打开附件，因为没有找到 data-id 属性`);
             return;
         }
-        const attachment = ctx.getAttachment(filename, `[[IMG:${filename}]]`);
+        const attachment = ctx.getAttachment(filename);
         if (!attachment) {
             console.error(`没有找到附件 ${filename}`);
             return;

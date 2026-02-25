@@ -24,7 +24,7 @@ const savedScrollTop = ref(0);
 const initialDiaryId = (route.params.id as string) || "";
 const {
   diaryId, diary, diaryContent, isNew, isInitialLoaded, unusedAttachments,
-  loadDiaryInfo, deleteDiary, attachmentNoFount
+  loadDiaryInfo, deleteDiary
 } = useDiaryCore(initialDiaryId);
 
 // UI交互
@@ -140,7 +140,6 @@ onActivated(async () => {
         v-if="isInitialLoaded"
         v-model="diaryContent"
         :diarySummary="diary"
-        @attachmentNoFount="attachmentNoFount"
         style="width: 100%; flex: 1"
         :style="{padding: editorPadding}"
     />

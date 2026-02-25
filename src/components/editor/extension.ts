@@ -14,7 +14,7 @@ export interface MenuButton {
 
 export interface ExtensionContext {
     getDiaryId(): string;
-    getAttachment(filename: string, mark: string): AttachmentMeta | null;
+    getAttachment(filename: string): AttachmentMeta | null;
     gotoPreview(type: SupportType, diaryId: string, filename: string): void;
 }
 

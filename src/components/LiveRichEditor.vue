@@ -13,21 +13,16 @@ const {modelValue, diarySummary} = defineProps<{
 }>();
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
-  (e: 'attachmentNoFount', filename: string, mark: string): void;
 }>();
 
 const editor = ref<HTMLDivElement>();
 
 const extensionCtx: ExtensionContext = {
   getDiaryId: () => diarySummary?.id || '',
-  getAttachment: (filename, mark) => {
+  getAttachment: (filename) => {
     if (!diarySummary) return null;
-    const attachment = diarySummary.attachments.find(att => att.filename === filename);
-    if (!attachment) {
-      emit('attachmentNoFount', filename, mark);
-      return null;
-    }
-    return attachment;
+    // 纯函数查询，不要在这里做任何 emit 或副作用
+    return diarySummary.attachments.find(att => att.filename === filename) || null;
   },
   gotoPreview: (type, diaryId, filename) => router.push({
     name: 'PreviewMedia',

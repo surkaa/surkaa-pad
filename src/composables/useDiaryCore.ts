@@ -106,17 +106,6 @@ export function useDiaryCore(initialId: string) {
         });
     }
 
-    function attachmentNoFount(filename: string, mark: string) {
-        $q.dialog({
-            title: `附件${filename}未找到`,
-            message: '是否需要删除该标记?',
-            ok: {label: '删除标记', color: 'negative', flat: true},
-            cancel: {label: '保留标记', color: 'primary', flat: true}
-        }).onOk(() => {
-            diaryContent.value = diaryContent.value.replace(mark, '');
-        });
-    }
-
     // 监听日记内容的变化
     watch(diaryContent, (newValue, oldValue) => {
         // 如果还没加载完，或者值根本没变，则不触发保存
@@ -143,7 +132,6 @@ export function useDiaryCore(initialId: string) {
         isNew,
         unusedAttachments,
         loadDiaryInfo,
-        deleteDiary,
-        attachmentNoFount
+        deleteDiary
     };
 }
