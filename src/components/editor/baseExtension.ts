@@ -3,9 +3,15 @@ import {Extension} from "./extension.ts";
 export const BaseExtension: Extension = {
     name: "base",
     toSource: html => html
-        .replace(/<div><br><\/div>/g, '\n') // 处理空行
-        .replace(/<div>/g, '\n') // 将<div>转换为换行符
-        .replace(/<\/div>/g, '') // 移除</div>标签
-        .replace(/<br\s*\/?>/g, '\n').replace(/&nbsp;/g, ' '), // 将<br>转换为换行符，并将&nbsp;转换为空格
+        // 空段落应映射为双换行符，补偿 Inline 和 Block 混排时的视觉间隔
+        .replace(/<div><br\s*\/?>.*?<\/div>/gi, '\n\n')
+        // 正常块级元素起手计为一个换行
+        .replace(/<div>/gi, '\n')
+        .replace(/<\/div>/gi, '')
+        // 独立的行内换行
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/&nbsp;/g, ' ')
+        // 剔除由于正则替换可能导致的首部冗余换行
+        .replace(/^\n+/, ''),
     toHtml: source => source.replace(/\n/g, '<br/>') // 将换行符转换为<br/>
 }
