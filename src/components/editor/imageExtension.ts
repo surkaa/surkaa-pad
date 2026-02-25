@@ -8,21 +8,22 @@ export const ImageExtension: Extension = {
 
     getMark: (filename) => `[[IMG:${filename}]]`,
 
-    toHtml: (source, ctx) => source.replace(/\[\[IMG:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, configStr) => {
-        const diaryId = ctx.getDiaryId();
-        const attachment = ctx.getAttachment(filename, `[[IMG:${filename}]]`);
-        if (!attachment) {
-            console.error(`没有找到附件 ${filename}, 已自动移除`);
-            return '';
+    hasMark: (source, filename) => new RegExp(`\\[\\[IMG:${filename}(?:\\|[^\\]]*)?\]\\]`).test(source),
+
+    toHtml: (source, ctx) => source.replace(/\[\[IMG:([^\]|]+)(?:\|([^\]]+))?]]/g, (_, filename, configStr) => {
+        const url = resolveMediaAttachmentUrl('image', ctx.getDiaryId(), filename);
+        const img = document.createElement('img');
+        img.src = url;
+        img.dataset.id = filename;
+        // 解析配置项
+        if (configStr) {
+            const params = new URLSearchParams(configStr);
+            if (params.get('size') === 'small') {
+                img.dataset.size = 'small'; // 使用 data-size 属性标记小图模式
+            }
         }
 
-        const src = resolveMediaAttachmentUrl('image', diaryId, attachment.filename);
-
-        // 解析配置项
-        const params = new URLSearchParams(configStr || '');
-        const isSmall = params.get('size') === 'small';
-
-        return `<img src="${src}" data-id="${filename}" alt="图片-${filename}" ${isSmall ? 'data-size="small"' : ''}>`;
+        return img.outerHTML;
     }),
 
     serialize: (n: HTMLElement) => {

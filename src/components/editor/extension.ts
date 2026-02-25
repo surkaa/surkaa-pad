@@ -36,6 +36,9 @@ export interface Extension {
     // 获取标记
     getMark?: (filename: string) => string;
 
+    // 用于带配置项标记的安全校验
+    hasMark?: (source: string, filename: string) => boolean;
+
     // 单击回调
     onClick?: (e: MouseEvent, node: HTMLElement, ctx: ExtensionContext) => void;
 

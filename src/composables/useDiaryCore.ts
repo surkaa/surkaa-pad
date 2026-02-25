@@ -65,14 +65,22 @@ export function useDiaryCore(initialId: string) {
         } else {
             const needDeleteAtt: AttachmentMeta[] = [];
             for (const attachment of (diary.value?.attachments || [])) {
+                let isExist = false;
                 for (const ext of EXTENSIONS) {
-                    if (!ext.getMark) continue;
-                    const mark = ext.getMark(attachment.filename);
-                    // 如果在内容里找不到这个标记，说明附件被删除了
-                    if (!diaryContent.value.includes(mark)) {
-                        needDeleteAtt.push(attachment);
+                    // 优先使用正则校验，降级使用严格文本校验
+                    if (ext.hasMark && ext.hasMark(diaryContent.value, attachment.filename)) {
+                        isExist = true;
                         break;
+                    } else if (ext.getMark) {
+                        const mark = ext.getMark(attachment.filename);
+                        if (diaryContent.value.includes(mark)) {
+                            isExist = true;
+                            break;
+                        }
                     }
+                }
+                if (!isExist) {
+                    needDeleteAtt.push(attachment);
                 }
             }
             if (needDeleteAtt.length > 0) {
