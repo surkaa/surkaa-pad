@@ -24,6 +24,10 @@ if (p === 'windows') {
       return;
     }
   });
+
+  useEventListener('contextmenu', (e) => {
+    e.preventDefault();
+  });
 }
 
 watch(() => appStore.theme, t => {
