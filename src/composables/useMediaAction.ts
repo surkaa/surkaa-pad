@@ -1,9 +1,9 @@
 import {Channel} from "@tauri-apps/api/core";
 import {AddAttachmentEvent, AttachmentMeta, commands} from "../bindings.ts";
 import {computed, onUnmounted, Ref, ref} from "vue";
-import {open, PickerMode} from "@tauri-apps/plugin-dialog"
+import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {resolveMediaAttachmentUrl} from "../utils/resolveMediaAttachmentUrl.ts";
-import {insertBlockNode} from "../utils/domUtils.ts";
+import {insertMediaNode, MediaType} from "../utils/domUtils.ts";
 import {useQuasar} from "quasar";
 
 export interface UploadTask {
@@ -14,16 +14,54 @@ export interface UploadTask {
 
 export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLElement | undefined>, showPanel: Ref<boolean>) {
     const $q = useQuasar();
-    const cancelTokens: string[] = [];
+    const cancelTokens = new Set<string>();
 
     // 进度管理状态
     const uploadTaskMap = ref<Record<string, UploadTask>>({});
     const showUploadDialog = ref(false);
+    const showAudioDrawer = ref(false);
+
     const uploadTasks = computed(() => Object.values(uploadTaskMap.value));
     const isUploading = computed(() => {
         if (uploadTasks.value.length === 0) return true;
         return uploadTasks.value.every(task => task.status === 'completed' || task.status === 'error');
     });
+
+    function createUploadChannel(key: string, onSuccess?: (meta: AttachmentMeta) => void) {
+        const event = new Channel<AddAttachmentEvent>();
+        event.onmessage = (msg) => {
+            const task = uploadTaskMap.value[key];
+            if (!task) return;
+
+            switch (msg.event) {
+                case "started":
+                    task.status = 'uploading';
+                    break;
+                case "progress":
+                    task.progress = msg.data / 100;
+                    break;
+                case "completed":
+                    task.status = 'completed';
+                    task.progress = 1;
+                    onSuccess?.(msg.data);
+                    break;
+                case "error":
+                    task.status = 'error';
+                    $q.notify({type: 'negative', message: `${task.filename} 上传失败: ${msg.data}`});
+                    break;
+            }
+        };
+        return event;
+    }
+
+    function handleCommandResult(key: string, res: { status: "ok" | "error", data?: string, error?: string }) {
+        if (res.status === "error") {
+            uploadTaskMap.value[key].status = 'error';
+            console.error("调用 Rust 后端失败:", res.error);
+            return;
+        }
+        if (res.data) cancelTokens.add(res.data);
+    }
 
     async function uploadAttachment(
         accessStr: string,
@@ -31,69 +69,51 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         encrypted: boolean,
         completedCallback?: (meta: AttachmentMeta) => void
     ) {
-        // 从路径提取文件名用于占位显示
         const rawName = accessStr.split(/[\\/]/).pop() || "未知文件";
         const key = crypto.randomUUID();
         uploadTaskMap.value[key] = {filename: rawName, progress: 0, status: 'pending'};
         showUploadDialog.value = true;
 
-        const event = new Channel<AddAttachmentEvent>();
-        let cancelToken = "";
-        event.onmessage = (msg) => {
-            switch (msg.event) {
-                case "started":
-                    uploadTaskMap.value[key].status = 'uploading';
-                    break;
-                case "progress":
-                    uploadTaskMap.value[key].progress = msg.data / 100;
-                    break;
-                case "completed":
-                    uploadTaskMap.value[key].status = 'completed';
-                    uploadTaskMap.value[key].progress = 1;
-                    completedCallback && completedCallback(msg.data);
-                    console.log("上传完成，附件Meta", msg.data);
-                    if (cancelToken) {
-                        // 去掉cancelToken
-                        const index = cancelTokens.indexOf(cancelToken);
-                        if (index !== -1) {
-                            cancelTokens.splice(index, 1);
-                        }
-                    }
-                    break;
-                case "error":
-                    uploadTaskMap.value[key].status = 'error';
-                    $q.notify({type: 'negative', message: `${uploadTaskMap.value[key].filename} 上传失败: ${msg.data}`});
-                    break;
-            }
-        };
+        const event = createUploadChannel(key, completedCallback);
+
         const res = await commands.cmdAddAttachment(event, diaryId.value, accessStr, mimetype, encrypted);
-        if (res.status == "error") {
-            uploadTaskMap.value[key].status = 'error';
-            console.error("调用 Rust 后端失败", res.error);
-            return;
-        }
-        cancelToken = res.data;
-        cancelTokens.push(res.data);
+        handleCommandResult(key, res);
     }
 
-    // 捕获光标
+    async function uploadMemoryAttachment(
+        filename: string,
+        bytes: Uint8Array,
+        mimetype: string,
+        encrypted: boolean,
+        completedCallback?: (meta: AttachmentMeta) => void
+    ) {
+        const key = crypto.randomUUID();
+        uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
+        showUploadDialog.value = true;
+
+        const event = createUploadChannel(key, completedCallback);
+        // @ts-ignore
+        const res = await commands.cmdAddAttachmentMemory(event, diaryId.value, bytes, mimetype, encrypted);
+        handleCommandResult(key, res);
+    }
+
     const captureRange = (): Range | null => {
         const sel = window.getSelection();
         return sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
     };
 
     function beforeClick() {
-        if (showPanel.value) {
-            showPanel.value = false;
+        if (!diaryId.value) {
+            $q.notify({type: 'warning', message: '请先创建日记才能使用录音功能'});
+            return true;
         }
-        if (editorDomRef.value) {
-            editorDomRef.value.focus();
-        }
+        if (showPanel.value) showPanel.value = false;
+        editorDomRef.value?.focus();
     }
 
-    const genericBatchUpload = async (pickerMode: PickerMode, extensions: string[], mimetype: string, nodeType: 'img' | 'video' | 'audio') => {
-        let currentRange = captureRange();
-        beforeClick();
+    const genericBatchUpload = async (pickerMode: PickerMode, extensions: string[], mimetype: string, nodeType: MediaType) => {
+        const currentRange = captureRange();
+        if (beforeClick()) return;
         const accessStrArr = await open({
             multiple: true,
             pickerMode: pickerMode,
@@ -101,46 +121,57 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         });
         if (!accessStrArr) return;
 
-        // 重置上传列表
-        uploadTaskMap.value = {};
-
         const uploads = accessStrArr.map(accessStr =>
             uploadAttachment(accessStr, mimetype, true, (att) => {
-                const url = resolveMediaAttachmentUrl(nodeType === 'img' ? 'image' : 'video', diaryId.value, att.filename);
-                const el = document.createElement(nodeType);
-                if (nodeType !== 'img') (el as HTMLMediaElement).controls = true;
-                (el as any).src = url;
-                el.dataset.id = att.filename;
-
-                if (editorDomRef.value) {
-                    insertBlockNode(editorDomRef.value, el, currentRange);
-                }
+                // 原代码中图片视为 'image'，音视频可能共用 'video'，这里保持原有逻辑或按需修正
+                const resolveType = nodeType === 'img' ? 'image' : 'video';
+                const url = resolveMediaAttachmentUrl(resolveType, diaryId.value, att.filename);
+                insertMediaNode(editorDomRef.value, nodeType, url, att.filename, currentRange);
             })
         );
         await Promise.allSettled(uploads);
     };
 
     onUnmounted(async () => {
-        const results = await Promise.all(
-            cancelTokens.map(token => commands.cmdCancelTask(token))
-        );
+        if (cancelTokens.size === 0) return;
+
+        const cancelPromises = Array.from(cancelTokens).map(token => commands.cmdCancelTask(token));
+        const results = await Promise.allSettled(cancelPromises);
+
         for (const result of results) {
-            if (result.status === "error") {
-                console.error("取消上传任务失败", result.error);
+            if (result.status === "rejected" || (result.status === "fulfilled" && (result.value as any)?.status === "error")) {
+                console.error("取消上传任务失败:", result);
             }
         }
+        cancelTokens.clear();
     });
 
     return {
         uploadTasks,
         showUploadDialog,
         isUploading,
+        showAudioDrawer,
+        handleAudioRecorded: async (mimetype: string, stream: ReadableStream<Uint8Array>) => {
+            showAudioDrawer.value = false;
+            const currentRange = captureRange();
+            if (beforeClick()) return;
+
+            const arrayBuffer = await new Response(stream).arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+            const virtualName = `Audio_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+
+            await uploadMemoryAttachment(virtualName, uint8Array, mimetype, true, (att) => {
+                const url = resolveMediaAttachmentUrl('video', diaryId.value, att.filename);
+                insertMediaNode(editorDomRef.value, 'audio', url, att.filename, currentRange);
+            });
+        },
         insertPhoto: () => genericBatchUpload('image', ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], "image/*", 'img'),
         takePhoto: async () => {
             // TODO
         },
         audioRecording: () => {
-            // TODO
+            if (beforeClick()) return;
+            showAudioDrawer.value = true;
         },
         insertAudio: () => genericBatchUpload('media', ['mp3', 'wav', 'ogg', 'flac', 'aac'], "audio/*", 'audio'),
         insertVideo: () => genericBatchUpload('video', ['mp4', 'avi', 'mov', 'mkv', 'webm'], "video/*", 'video'),

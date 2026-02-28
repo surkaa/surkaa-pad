@@ -1,7 +1,26 @@
+export type MediaType = 'img' | 'video' | 'audio';
+
+/**
+ * DOM 节点插入器
+ */
+export const insertMediaNode = (editor: HTMLElement | undefined, nodeType: MediaType, url: string, filename: string, range: Range | null) => {
+    if (!editor) return;
+
+    const el = document.createElement(nodeType);
+    el.src = url;
+    el.dataset.id = filename;
+
+    if (nodeType !== 'img') {
+        (el as HTMLMediaElement).controls = true;
+    }
+
+    insertBlockNode(editor, el, range);
+};
+
 /**
  * 在编辑器中安全插入一个块级元素
  */
-export const insertBlockNode = (
+const insertBlockNode = (
     editor: HTMLElement,
     mediaNode: HTMLElement,
     savedRange?: Range | null
@@ -14,7 +33,7 @@ export const insertBlockNode = (
         editor.appendChild(mediaNode);
         const p = createEmptyParagraph();
         editor.appendChild(p);
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        editor.dispatchEvent(new Event('input', {bubbles: true}));
         return setCursorTo(p);
     }
 
@@ -25,7 +44,7 @@ export const insertBlockNode = (
         editor.appendChild(mediaNode);
         const p = createEmptyParagraph();
         editor.appendChild(p);
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        editor.dispatchEvent(new Event('input', {bubbles: true}));
         return setCursorTo(p);
     }
 
@@ -66,7 +85,7 @@ export const insertBlockNode = (
         editor.appendChild(nextBlock);
     }
 
-    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    editor.dispatchEvent(new Event('input', {bubbles: true}));
     // 返回新的 Range，为连续多图插入提供上下文
     return setCursorTo(nextBlock);
 };

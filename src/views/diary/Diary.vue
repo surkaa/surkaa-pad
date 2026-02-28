@@ -11,6 +11,7 @@ import {useMediaAction} from "../../composables/useMediaAction.ts";
 import {formatTimestamp} from "../../utils";
 import AttachmentCard from "../../components/AttachmentCard.vue";
 import {commands} from "../../bindings.ts";
+import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 
 const route = useRoute();
 const $q = useQuasar();
@@ -38,6 +39,8 @@ const {
   uploadTasks,
   showUploadDialog,
   isUploading,
+  showAudioDrawer,
+  handleAudioRecorded,
   insertPhoto,
   takePhoto,
   insertAudio,
@@ -167,6 +170,12 @@ onActivated(async () => {
         @takeVideo="takeVideo"
         @insertFile="insertFile"
         style="width: 100%; flex-shrink: 0"
+    />
+
+    <CaptureAudioDrawer
+        :visible="showAudioDrawer"
+        @close="showAudioDrawer = false"
+        @recorded="handleAudioRecorded"
     />
 
     <q-dialog v-model="showMenu" position="bottom">
