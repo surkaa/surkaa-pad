@@ -24,7 +24,7 @@ const savedScrollTop = ref(0);
 
 const initialDiaryId = (route.params.id as string) || "";
 const {
-  diaryId, diary, diaryContent, isNew, isInitialLoaded, unusedAttachments,
+  diaryId, diary, diaryContent, isNew, isInitialLoaded, unusedAttachments, isDelBack,
   loadDiaryInfo, deleteDiary
 } = useDiaryCore(initialDiaryId);
 
@@ -88,7 +88,8 @@ defineOptions({name: 'DiaryDetail'});
 
 onBeforeRouteLeave((_to, _from, next) => {
   const orphans = unusedAttachments.value;
-  if (!orphans.length) {
+  if (!orphans.length || isDelBack.value) {
+    // 删除日记后的退出不用咨询
     next();
     return;
   }

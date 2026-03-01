@@ -13,6 +13,8 @@ export function useDiaryCore(initialId: string) {
     const diary = ref<DiarySummary>();
     const diaryContent = ref<string>("");
 
+    const isDelBack = ref(false);
+
     // 标记是否已经完成初次加载，避免将后端的初次赋值误认为用户的输入
     const isInitialLoaded = ref(false);
 
@@ -102,6 +104,7 @@ export function useDiaryCore(initialId: string) {
             }
             $q.notify({type: 'positive', message: '日记已删除'});
             eventBusEmit('diary-changed', {type: 'deleted', id: diaryId.value});
+            isDelBack.value = true;
             router.back();
         });
     }
@@ -131,6 +134,7 @@ export function useDiaryCore(initialId: string) {
         isInitialLoaded,
         isNew,
         unusedAttachments,
+        isDelBack,
         loadDiaryInfo,
         deleteDiary
     };
