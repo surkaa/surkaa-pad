@@ -7,7 +7,6 @@ let stream: MediaStream | null = null;
 let flushInterval: number | null = null;
 let audioChunks: Blob[] = [];
 const PERIODIC_FLUSH_MS = 100;
-const MINE_TYPE = 'audio/webm';
 const recording = ref(false);
 const recordingDuration = ref(0); // 录音时长（秒）
 let startTime: number = 0; // 录音开始时间戳
@@ -30,6 +29,22 @@ const formattedDuration = computed(() => {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 });
 
+const SUPPORTED_MIME_TYPES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+  'audio/mp4',
+];
+
+function getSupportedMimeType() {
+  for (const type of SUPPORTED_MIME_TYPES) {
+    if (MediaRecorder.isTypeSupported(type)) {
+      return type;
+    }
+  }
+  return '';
+}
+
 async function startRecording() {
   if (recording.value) {
     console.warn('录音已在进行中');
@@ -37,7 +52,8 @@ async function startRecording() {
   }
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream, { mimeType: MINE_TYPE });
+    const mimeType = getSupportedMimeType();
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
     mediaRecorder.ondataavailable = (event: BlobEvent) => {
       if (event.data.size > 0) {
         audioChunks.push(event.data);
@@ -99,15 +115,15 @@ async function stopRecording() {
   }
   mediaRecorder.stop();
 
-  let audioBlob = new Blob(audioChunks, { type: MINE_TYPE });
+  let audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
   const newWebmBuffer = setWebmDuration(await audioBlob.arrayBuffer(), Date.now() - startTime);
-  audioBlob = new Blob([newWebmBuffer], { type: MINE_TYPE });
+  audioBlob = new Blob([newWebmBuffer], { type: mediaRecorder.mimeType });
 
   // 重置音频数据
   audioChunks = [];
 
   emit('close');
-  emit('recorded', MINE_TYPE, audioBlob.stream());
+  emit('recorded', mediaRecorder.mimeType, audioBlob.stream());
   console.log("录音停止...");
   stopInterval();
 }
