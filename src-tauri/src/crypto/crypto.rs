@@ -218,7 +218,7 @@ fn ctr_stream_cipher(stream: ByteStream, mut cipher: Aes256Ctr) -> ByteStream {
 mod tests {
     use super::*;
     use crate::crypto::types::EncryptionAlgorithm;
-    use crate::diary::DiaryManifest;
+    use crate::diaries::DiaryManifest;
     use crate::object::create_mock_stream;
     use crate::utils::id_generate::generate_descending_id_with_timestamp;
 
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     #[ignore]
     fn convert_enc2normal() {
-        use crate::diary::DiaryManifest;
+        use crate::diaries::DiaryManifest;
         dotenvy::dotenv().ok();
         let enc_dir = std::env::var("TEST_ENC_DIR").expect("TEST_ENC_DIR 未设置");
         let output_dir = std::env::var("TEST_OUTPUT_DIR").expect("TEST_OUTPUT_DIR 未设置");

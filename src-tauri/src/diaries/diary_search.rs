@@ -1,7 +1,7 @@
 use crate::crypto::Crypto;
-use crate::diary::diary_list::page_diary_ids;
-use crate::diary::types::{DiarySummary, SearchDiariesEvent};
-use crate::diary::{get_diary, DiaryMemoryCache};
+use crate::diaries::diary_list::page_diary_ids;
+use crate::diaries::types::{DiarySummary, SearchDiariesEvent};
+use crate::diaries::{get_diary, DiaryMemoryCache};
 use crate::object::{NextToken, OssClient};
 use crate::utils::message_sender::MessageSender;
 use std::sync::Arc;
@@ -69,7 +69,7 @@ pub async fn search_diaries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diary::diary::{delete_diary, save_diary};
+    use crate::diaries::diary::{delete_diary, save_diary};
     use serial_test::serial;
 
     async fn test_search(

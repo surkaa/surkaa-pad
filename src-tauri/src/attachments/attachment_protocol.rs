@@ -1,6 +1,6 @@
 use crate::crypto::types::EncryptionAlgorithm::Gcm;
 use crate::crypto::Crypto;
-use crate::diary::{get_diary, DiaryMemoryCache};
+use crate::diaries::{get_diary, DiaryMemoryCache};
 use crate::object::OssState;
 use crate::storage::remote_attachments_key;
 use futures_util::StreamExt;

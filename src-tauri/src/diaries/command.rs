@@ -3,11 +3,11 @@ use crate::object::{NextToken, OssState};
 use std::sync::Arc;
 use tauri::ipc::Channel;
 
-use crate::diary::diary::{delete_diary, save_diary, update_diary_content_only};
-use crate::diary::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
-use crate::diary::diary_search::search_diaries;
-use crate::diary::types::{DiarySummary, SearchDiariesEvent};
-use crate::diary::DiaryMemoryCache;
+use crate::diaries::diary::{delete_diary, save_diary, update_diary_content_only};
+use crate::diaries::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
+use crate::diaries::diary_search::search_diaries;
+use crate::diaries::types::{DiarySummary, SearchDiariesEvent};
+use crate::diaries::DiaryMemoryCache;
 use crate::task::TaskPool;
 use tauri::State;
 

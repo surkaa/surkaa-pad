@@ -1,6 +1,6 @@
 use crate::crypto::Crypto;
-use crate::diary::types::DiarySummary;
-use crate::diary::{get_diary, DiaryMemoryCache};
+use crate::diaries::types::DiarySummary;
+use crate::diaries::{get_diary, DiaryMemoryCache};
 use crate::object::{NextToken, OssClient};
 use crate::storage::diary_id_from_manifest_key;
 
@@ -44,7 +44,7 @@ pub async fn get_diary_content(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diary::diary::{delete_diary, save_diary};
+    use crate::diaries::diary::{delete_diary, save_diary};
     use serial_test::serial;
 
     #[serial]

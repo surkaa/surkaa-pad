@@ -1,4 +1,4 @@
-use crate::diary::types::DiaryManifest;
+use crate::diaries::types::DiaryManifest;
 use dashmap::DashMap;
 use std::sync::Arc;
 

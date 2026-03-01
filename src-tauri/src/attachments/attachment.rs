@@ -2,7 +2,7 @@ use crate::attachments::types::AddAttachmentEvent;
 use crate::attachments::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Ctr;
 use crate::crypto::Crypto;
-use crate::diary::{delete_diary_attachment, get_diary, update_diary_attachment, DiaryMemoryCache};
+use crate::diaries::{delete_diary_attachment, get_diary, update_diary_attachment, DiaryMemoryCache};
 use crate::object::tracker_stream::tracker_stream;
 use crate::object::{ByteStream, OssClient};
 use crate::storage::remote_attachments_key;
@@ -142,7 +142,7 @@ pub async fn delete_attachment(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::diary::{delete_diary, page_diary_ids, save_diary};
+    use crate::diaries::{delete_diary, page_diary_ids, save_diary};
     use crate::object::create_mock_stream;
     use futures::future::join_all;
     use serial_test::serial;

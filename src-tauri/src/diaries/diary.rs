@@ -4,8 +4,8 @@ use crate::storage::remote_manifest_key;
 
 use crate::attachments::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Gcm;
-use crate::diary::types::DiarySummary;
-use crate::diary::{DiaryManifest, DiaryMemoryCache};
+use crate::diaries::types::DiarySummary;
+use crate::diaries::{DiaryManifest, DiaryMemoryCache};
 use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;
 use serde_json::from_slice;
