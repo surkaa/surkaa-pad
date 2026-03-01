@@ -1,4 +1,4 @@
-mod attachment;
+mod attachments;
 mod crypto;
 mod diary;
 mod object;
@@ -6,8 +6,8 @@ mod storage;
 mod task;
 mod utils;
 
-use crate::attachment::attachment_protocol;
-use crate::attachment::command::{cmd_add_attachment, cmd_add_attachment_memory, cmd_delete_attachment};
+use crate::attachments::attachment_protocol;
+use crate::attachments::command::{cmd_add_attachment, cmd_add_attachment_memory, cmd_delete_attachment};
 use crate::crypto::command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
 };

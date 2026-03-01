@@ -1,5 +1,5 @@
-use crate::attachment::types::AddAttachmentEvent;
-use crate::attachment::AttachmentMeta;
+use crate::attachments::types::AddAttachmentEvent;
+use crate::attachments::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Ctr;
 use crate::crypto::Crypto;
 use crate::diary::{delete_diary_attachment, get_diary, update_diary_attachment, DiaryMemoryCache};

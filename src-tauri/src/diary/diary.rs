@@ -2,7 +2,7 @@ use crate::crypto::Crypto;
 use crate::object::OssClient;
 use crate::storage::remote_manifest_key;
 
-use crate::attachment::AttachmentMeta;
+use crate::attachments::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Gcm;
 use crate::diary::types::DiarySummary;
 use crate::diary::{DiaryManifest, DiaryMemoryCache};

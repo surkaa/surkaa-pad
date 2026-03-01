@@ -1,5 +1,5 @@
-use crate::attachment::attachment::{add_attachment, delete_attachment};
-use crate::attachment::types::AddAttachmentEvent;
+use crate::attachments::attachment::{add_attachment, delete_attachment};
+use crate::attachments::types::AddAttachmentEvent;
 use crate::crypto::Crypto;
 use crate::diary::DiaryMemoryCache;
 use crate::object::{create_mock_stream, OssState};
