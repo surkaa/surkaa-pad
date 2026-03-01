@@ -1,6 +1,6 @@
 use crate::crypto::Crypto;
 use crate::object::OssClient;
-use crate::storage::remote_manifest_key;
+use crate::storages::remote_manifest_key;
 
 use crate::attachments::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Gcm;

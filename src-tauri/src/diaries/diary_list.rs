@@ -2,7 +2,7 @@ use crate::crypto::Crypto;
 use crate::diaries::types::DiarySummary;
 use crate::diaries::{get_diary, DiaryMemoryCache};
 use crate::object::{NextToken, OssClient};
-use crate::storage::diary_id_from_manifest_key;
+use crate::storages::diary_id_from_manifest_key;
 
 pub async fn page_diary_ids(
     client: &OssClient,

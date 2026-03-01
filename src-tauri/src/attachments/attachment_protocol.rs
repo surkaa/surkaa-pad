@@ -2,7 +2,7 @@ use crate::crypto::types::EncryptionAlgorithm::Gcm;
 use crate::crypto::Crypto;
 use crate::diaries::{get_diary, DiaryMemoryCache};
 use crate::object::OssState;
-use crate::storage::remote_attachments_key;
+use crate::storages::remote_attachments_key;
 use futures_util::StreamExt;
 use http_range_header::parse_range_header;
 use std::cmp::min;

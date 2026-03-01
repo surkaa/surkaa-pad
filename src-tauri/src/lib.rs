@@ -2,7 +2,7 @@ mod attachments;
 mod crypto;
 mod diaries;
 mod object;
-mod storage;
+mod storages;
 mod task;
 mod utils;
 

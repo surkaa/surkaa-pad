@@ -5,7 +5,7 @@ use crate::crypto::Crypto;
 use crate::diaries::{delete_diary_attachment, get_diary, update_diary_attachment, DiaryMemoryCache};
 use crate::object::tracker_stream::tracker_stream;
 use crate::object::{ByteStream, OssClient};
-use crate::storage::remote_attachments_key;
+use crate::storages::remote_attachments_key;
 use crate::utils::message_sender::MessageSender;
 use dashmap::DashMap;
 use std::collections::HashSet;
