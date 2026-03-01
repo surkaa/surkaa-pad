@@ -1,17 +1,30 @@
 use crate::object::ByteStream;
 use std::fs::File;
 use std::io;
+use std::io::{Read, Seek};
 use tokio_util::io::ReaderStream;
 
-pub fn open_file_stream(access_str: &str) -> Result<(u64, ByteStream), String> {
-    let file = open_file(access_str).map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
+pub fn open_file_stream(access_str: String) -> Result<(u64, String, ByteStream), String> {
+    let mut file = open_file(&access_str).map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
     let metadata = file
         .metadata()
         .map_err(|e| format!("无法获取文件元数据: {}", e))?;
     let file_size = metadata.len();
+    let mut buffer = [0; 128];
+    let n = file.read(&mut buffer).map_err(|e| format!("无法读取文件内容: {}", e))?;
+    if n == 0 {
+        return Err("文件为空".to_string());
+    }
+    let mimetype = infer::get(&buffer[..n])
+        .map(|t| t.mime_type().to_string())
+        .ok_or_else(|| "无法判断文件类型".to_string())?;
+
+    // 重置文件指针到开头
+    file.seek(io::SeekFrom::Start(0)).map_err(|e| format!("无法重置文件指针: {}", e))?;
+
     let tokio_file = tokio::fs::File::from_std(file);
     let stream = ReaderStream::new(tokio_file);
-    Ok((file_size, Box::pin(stream)))
+    Ok((file_size, mimetype, Box::pin(stream)))
 }
 
 /// 在 Windows 上直接打开路径

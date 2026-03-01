@@ -14,7 +14,6 @@ use tauri::State;
 /// # Arguments
 /// * `id` - 日记 ID
 /// * `access_str` - 文件访问路径。
-/// * `mimetype` - 附件 MIME 类型
 /// * `encrypted` - 是否需要加密
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
@@ -27,14 +26,13 @@ pub fn cmd_add_attachment(
     tp: State<'_, TaskPool>,
     event: Channel<AddAttachmentEvent>,
     id: String,
-    access_str: &str,
-    mimetype: String,
+    access_str: String,
     encrypted: bool,
 ) -> Result<String, String> {
     let cache = cache.inner().clone();
     let crypto = crypto.inner().clone();
     let client = client.get_client()?;
-    let file = open_file_stream(access_str)?;
+    let (file, mimetype, stream) = open_file_stream(access_str)?;
     tp.spawn(async move {
         add_attachment(
             cache,
@@ -42,9 +40,10 @@ pub fn cmd_add_attachment(
             client,
             Arc::new(event),
             &id,
-            &mimetype,
             encrypted,
             file,
+            mimetype,
+            stream
         )
         .await;
     })
@@ -83,9 +82,10 @@ pub fn cmd_add_attachment_memory(
             client,
             Arc::new(event),
             &id,
-            &mimetype,
             encrypted,
-            (len as u64, stream),
+            len as u64,
+            mimetype,
+            stream,
         )
         .await;
     })

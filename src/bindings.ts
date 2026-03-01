@@ -199,14 +199,13 @@ async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string
  * # Arguments
  * * `id` - 日记 ID
  * * `access_str` - 文件访问路径。
- * * `mimetype` - 附件 MIME 类型
  * * `encrypted` - 是否需要加密
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdAddAttachment(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, accessStr: string, mimetype: string, encrypted: boolean) : Promise<Result<string, string>> {
+async cmdAddAttachment(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, accessStr: string, encrypted: boolean) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment", { event, id, accessStr, mimetype, encrypted }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment", { event, id, accessStr, encrypted }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -25,9 +25,10 @@ pub async fn add_attachment(
     client: OssClient,
     event: Arc<dyn MessageSender<AddAttachmentEvent>>,
     id: &str,
-    mimetype: &str,
     encrypted: bool,
-    (size, stream): (u64, ByteStream),
+    size: u64,
+    mimetype: String,
+    stream: ByteStream,
 ) {
     let _ = event.send(AddAttachmentEvent::Started);
     // 包装流 用来更新进度
@@ -67,10 +68,10 @@ pub async fn add_attachment(
         let key = remote_attachments_key(id, &filename);
         let upload_task = async {
             if !encrypted {
-                client.upload(&key, size, stream, mimetype).await?;
+                client.upload(&key, size, stream, &mimetype).await?;
                 Ok(AttachmentMeta {
-                    filename: filename.clone(),
-                    mimetype: mimetype.to_string(),
+                    filename,
+                    mimetype,
                     size,
                     nonce: vec![], // 不加密时 nonce 为空
                     encrypted: false,
@@ -78,10 +79,10 @@ pub async fn add_attachment(
                 })
             } else {
                 let (stream, nonce) = crypto.encrypt_streaming(stream)?;
-                client.upload(&key, size, stream, mimetype).await?;
+                client.upload(&key, size, stream, &mimetype).await?;
                 Ok(AttachmentMeta {
-                    filename: filename.clone(),
-                    mimetype: mimetype.to_string(),
+                    filename,
+                    mimetype,
                     size,
                     nonce,
                     encrypted: true,
@@ -201,9 +202,10 @@ mod test {
                     client_clone,
                     event,
                     &id_clone,
-                    "text/plain",
                     false,
-                    (size, stream),
+                    size,
+                    "text/plain".to_string(),
+                    stream,
                 )
                 .await
             }));

@@ -65,7 +65,6 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
 
     async function uploadAttachment(
         accessStr: string,
-        mimetype: string,
         encrypted: boolean,
         completedCallback?: (meta: AttachmentMeta) => void
     ) {
@@ -76,7 +75,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
 
         const event = createUploadChannel(key, completedCallback);
 
-        const res = await commands.cmdAddAttachment(event, diaryId.value, accessStr, mimetype, encrypted);
+        const res = await commands.cmdAddAttachment(event, diaryId.value, accessStr, encrypted);
         handleCommandResult(key, res);
     }
 
@@ -108,10 +107,12 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             return true;
         }
         if (showPanel.value) showPanel.value = false;
+        // 清除旧任务
+        uploadTaskMap.value = {};
         editorDomRef.value?.focus();
     }
 
-    const genericBatchUpload = async (pickerMode: PickerMode, extensions: string[], mimetype: string, nodeType: MediaType) => {
+    const genericBatchUpload = async (pickerMode: PickerMode, extensions: string[], nodeType: MediaType) => {
         const currentRange = captureRange();
         if (beforeClick()) return;
         const accessStrArr = await open({
@@ -122,7 +123,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         if (!accessStrArr) return;
 
         const uploads = accessStrArr.map(accessStr =>
-            uploadAttachment(accessStr, mimetype, true, (att) => {
+            uploadAttachment(accessStr, true, (att) => {
                 // 原代码中图片视为 'image'，音视频可能共用 'video'，这里保持原有逻辑或按需修正
                 const resolveType = nodeType === 'img' ? 'image' : 'video';
                 const url = resolveMediaAttachmentUrl(resolveType, diaryId.value, att.filename);
@@ -165,7 +166,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                 insertMediaNode(editorDomRef.value, 'audio', url, att.filename, currentRange);
             });
         },
-        insertPhoto: () => genericBatchUpload('image', ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], "image/*", 'img'),
+        insertPhoto: () => genericBatchUpload('image', ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], 'img'),
         takePhoto: async () => {
             // TODO
         },
@@ -173,8 +174,8 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             if (beforeClick()) return;
             showAudioDrawer.value = true;
         },
-        insertAudio: () => genericBatchUpload('media', ['mp3', 'wav', 'ogg', 'flac', 'aac'], "audio/*", 'audio'),
-        insertVideo: () => genericBatchUpload('video', ['mp4', 'avi', 'mov', 'mkv', 'webm'], "video/*", 'video'),
+        insertAudio: () => genericBatchUpload('media', ['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
+        insertVideo: () => genericBatchUpload('video', ['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video'),
         takeVideo: () => {
             // TODO
         },
