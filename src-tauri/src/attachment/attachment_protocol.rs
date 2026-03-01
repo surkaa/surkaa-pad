@@ -4,11 +4,12 @@ use crate::diary::{get_diary, DiaryMemoryCache};
 use crate::object::OssState;
 use crate::storage::remote_attachments_key;
 use futures_util::StreamExt;
+use http_range_header::parse_range_header;
 use std::cmp::min;
 use tauri::http::header::{
     ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
 };
-use tauri::http::{HeaderMap, Request, Response, StatusCode};
+use tauri::http::{Request, Response, StatusCode};
 use tauri::{Manager, UriSchemeContext, UriSchemeResponder, Wry};
 use tauri_plugin_log::log;
 
@@ -20,6 +21,8 @@ enum ProtocolError {
     BadRequest(&'static str),
     Forbidden(&'static str),
     NotFound(&'static str),
+    /// 处理 416 错误
+    RangeNotSatisfiable(u64),
     Internal(String),
 }
 
@@ -29,6 +32,13 @@ impl ProtocolError {
             Self::BadRequest(m) => (StatusCode::BAD_REQUEST, m.to_string()),
             Self::Forbidden(m) => (StatusCode::FORBIDDEN, m.to_string()),
             Self::NotFound(m) => (StatusCode::NOT_FOUND, format!("{} not found", m)),
+            Self::RangeNotSatisfiable(size) => {
+                return Response::builder()
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(CONTENT_RANGE, format!("bytes */{}", size))
+                    .body(vec![])
+                    .unwrap_or_default();
+            }
             Self::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
         };
         Response::builder()
@@ -88,22 +98,33 @@ async fn process_attachment(
         .ok_or(ProtocolError::NotFound("attachment"))?;
 
     if attachment.algorithm == Gcm {
-        return Err(ProtocolError::Forbidden(
-            "GCM decryption is not supported",
-        ));
+        return Err(ProtocolError::Forbidden("GCM decryption is not supported"));
     }
 
-    let range_header = parse_range_header(request.headers());
-    let (start, end) = match range_header {
-        HttpRange::Full => (0, attachment.size.saturating_sub(1)),
-        HttpRange::Range(s, e) => {
-            let e = e.unwrap_or_else(|| attachment.size.saturating_sub(1));
-            if s >= attachment.size || e >= attachment.size || s > e {
-                return Err(ProtocolError::BadRequest("Invalid Range headers"));
-            }
-            (s, min(e, s + MAX_CHUNK_SIZE - 1))
+    // 使用 http-range-header 解析 Range 请求头
+    let file_size = attachment.size;
+    let range_header_val = request.headers().get(RANGE).and_then(|v| v.to_str().ok());
+
+    let (start, end, is_range) = match range_header_val {
+        Some(raw_range) => {
+            let ranges = parse_range_header(raw_range)
+                .map_err(|e| {
+                    log::error!("Parse range header error: {:?}", e);
+                    ProtocolError::BadRequest("Invalid Range format")
+                })?;
+            let valid_ranges = ranges
+                .validate(file_size)
+                .map_err(|e| {
+                    log::error!("Parse range header error: {:?}", e);
+                    ProtocolError::RangeNotSatisfiable(file_size)
+                })?;
+            let r = &valid_ranges[0];
+            let s = *r.start();
+            // 应用 MAX_CHUNK_SIZE 限制，防止内存溢出
+            let e = min(*r.end(), s + MAX_CHUNK_SIZE - 1);
+            (s, e, true)
         }
-        HttpRange::Invalid => return Err(ProtocolError::BadRequest("Invalid Range format")),
+        None => (0, file_size.saturating_sub(1), false),
     };
 
     let key = remote_attachments_key(id, filename);
@@ -128,7 +149,6 @@ async fn process_attachment(
         data.extend_from_slice(&bytes);
     }
 
-    let is_range = request.headers().contains_key(RANGE);
     let status = if is_range {
         StatusCode::PARTIAL_CONTENT
     } else {
@@ -137,59 +157,19 @@ async fn process_attachment(
 
     let mut builder = Response::builder()
         .status(status)
-        .header(CONTENT_TYPE, attachment.mimetype.clone())
+        .header(CONTENT_TYPE, &attachment.mimetype)
         .header(ACCESS_CONTROL_ALLOW_ORIGIN, "*")
         .header(ACCEPT_RANGES, "bytes")
-        .header(CONTENT_LENGTH, data.len().to_string());
+        .header(CONTENT_LENGTH, data.len());
 
     if is_range {
         builder = builder.header(
             CONTENT_RANGE,
-            format!("bytes {}-{}/{}", start, end, attachment.size),
+            format!("bytes {}-{}/{}", start, end, file_size),
         );
     }
 
     builder
         .body(data)
         .map_err(|e| ProtocolError::Internal(e.to_string()))
-}
-
-pub enum HttpRange {
-    /// 没有 Range 头（比如图片），返回全量数据 200 OK
-    Full,
-    /// 包含合法的 Range 头，返回 206 Partial Content
-    /// (起始字节, 结束字节: 若浏览器未指定则为 None)
-    Range(u64, Option<u64>),
-    /// Range 头格式错误，应返回 416 Range Not Satisfiable 或兜底返回 Full
-    Invalid,
-}
-
-pub fn parse_range_header(headers: &HeaderMap) -> HttpRange {
-    let Some(range_str) = headers
-        .get(RANGE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("bytes="))
-    else {
-        return HttpRange::Full; // 无效头兜底为 Full
-    };
-
-    let mut parts = range_str.splitn(2, '-');
-    let start_str = parts.next().unwrap_or("");
-    let end_str = parts.next().unwrap_or("");
-
-    if start_str.is_empty() {
-        return HttpRange::Invalid;
-    }
-
-    let Ok(start) = start_str.parse::<u64>() else {
-        return HttpRange::Invalid;
-    };
-
-    if end_str.is_empty() {
-        HttpRange::Range(start, None)
-    } else if let Ok(end) = end_str.parse::<u64>() {
-        HttpRange::Range(start, Some(end))
-    } else {
-        HttpRange::Invalid
-    }
 }
