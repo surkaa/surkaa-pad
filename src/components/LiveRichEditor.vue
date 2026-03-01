@@ -149,12 +149,10 @@ watch(() => modelValue, (newVal) => {
 <style lang="scss">
 .live-rich-editor {
   img[data-id] {
-    padding: 5px;
     cursor: pointer;
     min-height: 50px;
     transition: width 0.3s ease;
     width: auto;
-    max-width: 100%;
   }
 
   img[data-id]:hover {
@@ -169,19 +167,20 @@ watch(() => modelValue, (newVal) => {
   }
 
   audio[data-id] {
-    width: 100%;
-    margin: 10px 0;
+    width: 90%;
+    margin: 10px auto;
   }
 
   video[data-id] {
-    max-width: 100%;
     border-radius: 8px;
     margin: 10px 0;
     background: #000;
   }
 
-  /* 针对所有扩展节点（如图片、视频）屏蔽系统长按功能 */
   img, video, audio {
+    padding: 5px;
+    // 给右侧编辑区留足点击空间用来删除媒体
+    max-width: calc(100% - 10px);
     -webkit-touch-callout: none; /* 禁用 iOS/Android 默认长按菜单 */
     user-select: none;           /* 禁用文本/元素选区 */
     -webkit-user-select: none;
