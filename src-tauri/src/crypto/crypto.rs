@@ -174,7 +174,7 @@ impl Crypto {
             {
                 // 将派生的密钥打印到调试控制台
                 use base64::Engine;
-                let dek_b64 = base64::engine::general_purpose::STANDARD.encode(&dek_array);
+                let dek_b64 = base64::engine::general_purpose::STANDARD.encode(dek_array);
                 println!("派生的 DEK (Base64): {}", dek_b64);
             }
             let derived_key = DerivedKey(dek_array);

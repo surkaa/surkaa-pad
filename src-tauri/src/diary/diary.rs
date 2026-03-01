@@ -54,7 +54,7 @@ pub async fn get_diary(
     client: &OssClient,
     id: &str,
 ) -> Result<DiaryManifest, String> {
-    if id.len() == 0 {
+    if id.is_empty() {
         return Err("ID不能为空".to_string());
     }
     let object_key = remote_manifest_key(id);
@@ -150,7 +150,7 @@ pub async fn update_diary_attachment(
     id: &str,
     new_attachment: &AttachmentMeta,
 ) -> Result<(), String> {
-    let mut diary = get_diary(&cache, &crypto, &client, id).await?;
+    let mut diary = get_diary(cache, crypto, client, id).await?;
     diary.attachments.push(new_attachment.clone());
     diary.updated = Utc::now().timestamp_millis();
     update_diary(cache, crypto, client, &diary).await?;
@@ -164,7 +164,7 @@ pub async fn delete_diary_attachment(
     id: &str,
     filename: &str,
 ) -> Result<(), String> {
-    let mut diary = get_diary(&cache, &crypto, &client, id).await?;
+    let mut diary = get_diary(cache, crypto, client, id).await?;
     diary.attachments.retain(|att| att.filename != filename);
     diary.updated = Utc::now().timestamp_millis();
     update_diary(cache, crypto, client, &diary).await?;

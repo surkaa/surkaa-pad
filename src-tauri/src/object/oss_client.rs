@@ -48,7 +48,7 @@ struct AliyunListObjectsResult {
 
 impl AliyunListObjectsResult {
     pub fn from_xml(xml: String) -> Result<Self, quick_xml::DeError> {
-        Ok(quick_xml::de::from_str(&xml)?)
+        quick_xml::de::from_str(&xml)
     }
 }
 
@@ -405,7 +405,7 @@ impl OssClient {
 
         let stream = resp
             .bytes_stream()
-            .map_err(|e| Error::new(std::io::ErrorKind::Other, e));
+            .map_err(|e| Error::other(e));
 
         Ok((Box::pin(stream), len))
     }

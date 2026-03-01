@@ -16,10 +16,7 @@ impl DiaryMemoryCache {
     }
 
     pub fn get(&self, id: &str) -> Option<(DiaryManifest, String)> {
-        match self.diaries.get(id) {
-            Some(diary) => Some(diary.as_ref().clone()),
-            None => None,
-        }
+        self.diaries.get(id).map(|diary| diary.as_ref().clone())
     }
 
     pub fn insert(&self, id: &str, diary: DiaryManifest, etag: String) {

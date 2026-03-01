@@ -39,7 +39,7 @@ pub async fn cmd_encrypt_data(
     crypto: State<'_, Crypto>,
     data: String,
 ) -> Result<(Vec<u8>, Vec<u8>), String> {
-    crypto.encrypt(&data.as_bytes())
+    crypto.encrypt(data.as_bytes())
 }
 
 /// 解密数据
