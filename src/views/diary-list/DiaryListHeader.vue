@@ -13,7 +13,6 @@ defineProps<{
 const emit = defineEmits(['settings']);
 
 const appStore = useAppStore();
-const futureTimestamp = ref(Date.now());
 const appName = ref('App Name');
 let timer: number | null = null;
 
@@ -31,13 +30,12 @@ const seconds = computed(() =>
 // 更新剩余时间
 const updateCountdown = () => {
   const now = Math.floor(Date.now() / 1000); // 当前时间戳（秒）
-  const future = Math.floor(futureTimestamp.value / 1000); // 未来时间戳（秒）
+  const future = Math.floor(appStore.getEndTime / 1000); // 未来时间戳（秒）
   remainingSeconds.value = Math.max(0, future - now);
 }
 
 onMounted(async () => {
   appName.value = await getName();
-  futureTimestamp.value = appStore.getEndTime();
   updateCountdown();
   timer && clearInterval(timer);
   timer = setInterval(updateCountdown, 1000);

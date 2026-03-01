@@ -1,17 +1,16 @@
 import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
 import {OssConfigType, ThemeType} from "../types";
-import {markRaw, ref} from "vue";
-import {window} from "@tauri-apps/api";
-import {showToast} from "../utils";
+import {computed, markRaw, ref} from "vue";
 import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import {commands} from "../bindings.ts";
 import {useQuasar} from "quasar";
+import {exit} from "@tauri-apps/plugin-process";
 
 // --- 常量 ---
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
-const SALE = 'NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg';
+const SALT = 'NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg';
 const THEME_KEY = 'app-theme';
 const DEFAULT_THEME: ThemeType = 'system';
 const BIOMETRIC_ENABLED_KEY = "biometric_enabled";
@@ -23,13 +22,19 @@ const AUTO_CLOSE_APP_WARNING_TIME = 60 * 1000;
 
 export const useAppStore = defineStore('app', () => {
     let store = ref<Store | null>(null);
-    let startTime: number = Date.now();
+
+    let closeTimer: ReturnType<typeof setTimeout> | null = null;
+    let startTime = ref(Date.now());
 
     const $q = useQuasar();
     const keyword = ref<string>('');
     const savedScrollPosition = ref(0);
     const theme = ref<ThemeType>('system');
     const isBiometricEnabled = ref(false);
+
+    const getEndTime = computed(() => {
+        return startTime.value + AUTO_CLOSE_APP_TIMEOUT;
+    });
 
     function setTheme(t: ThemeType, save = true) {
         theme.value = t;
@@ -79,7 +84,7 @@ export const useAppStore = defineStore('app', () => {
         }
 
         // 解锁
-        await commands.cmdUnlock(masterPassword, SALE);
+        await commands.cmdUnlock(masterPassword, SALT);
 
         // 加密oss配置
         const configJson = JSON.stringify(ossConfig);
@@ -115,7 +120,7 @@ export const useAppStore = defineStore('app', () => {
     }
 
     async function unlock(masterPassword: string) {
-        await commands.cmdUnlock(masterPassword, SALE);
+        await commands.cmdUnlock(masterPassword, SALT);
     }
 
     async function initOss(encryptedConfig: number[]) {
@@ -139,25 +144,27 @@ export const useAppStore = defineStore('app', () => {
     }
 
     function setTimeoutForCloseApp() {
+        if (closeTimer) clearTimeout(closeTimer);
         console.log('设置自动关闭应用定时器');
-        setTimeout(() => {
+        startTime.value = Date.now();
+        closeTimer = setTimeout(() => {
             console.log('即将自动关闭应用');
             // 60s后退出
-            showToast('一分钟后将自动关闭应用以保护数据安全', 'warning', AUTO_CLOSE_APP_WARNING_TIME)
+            $q.dialog({
+                title: '安全提示',
+                message: '为了保护您的数据安全，应用将于一分钟后自动关闭。请保存您的工作。'
+            });
             setTimeout(
-                async () => await window.getCurrentWindow().close(),
+                () => exit(0),
                 AUTO_CLOSE_APP_WARNING_TIME
             );
             setTimeout(() => {
-                showToast('即将关闭应用以保护数据安全', 'error', AUTO_CLOSE_APP_WARNING_TIME / 2);
+                $q.dialog({
+                    title: '安全提示',
+                    message: '应用即将自动关闭以保护您的数据安全，请保存您的工作。'
+                });
             }, AUTO_CLOSE_APP_WARNING_TIME / 2);
         }, AUTO_CLOSE_APP_TIMEOUT);
-        startTime = Date.now();
-    }
-
-    function getEndTime() {
-        // TODO 返回这个StartTime可能不是最新的
-        return startTime + AUTO_CLOSE_APP_TIMEOUT;
     }
 
     async function resetConfig() {
@@ -169,7 +176,7 @@ export const useAppStore = defineStore('app', () => {
     }
 
     async function enableBiometric(masterPassword: string) {
-        const res = await commands.cmdUnlock(masterPassword, SALE);
+        const res = await commands.cmdUnlock(masterPassword, SALT);
         if (res.status == 'error') {
             throw new Error(`解锁失败: ${res.error}`);
         }
