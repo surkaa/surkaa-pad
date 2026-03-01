@@ -28,7 +28,6 @@ export const useAppStore = defineStore('app', () => {
 
     const $q = useQuasar();
     const keyword = ref<string>('');
-    const savedScrollPosition = ref(0);
     const theme = ref<ThemeType>('system');
     const isBiometricEnabled = ref(false);
 
@@ -219,7 +218,7 @@ export const useAppStore = defineStore('app', () => {
 
     return {
         // 数据
-        keyword, savedScrollPosition, theme,
+        keyword, theme,
         // 方法
         getEncryptedConfig,
         unlock,
