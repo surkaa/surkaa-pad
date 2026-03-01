@@ -8,7 +8,7 @@ use crate::diaries::diary_list::{get_diary_content, get_diary_summary, page_diar
 use crate::diaries::diary_search::search_diaries;
 use crate::diaries::types::{DiarySummary, SearchDiariesEvent};
 use crate::diaries::DiaryMemoryCache;
-use crate::task::TaskPool;
+use crate::tasks::TaskPool;
 use tauri::State;
 
 /// 根据内容保存日记

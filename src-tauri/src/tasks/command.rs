@@ -1,4 +1,4 @@
-use crate::task::TaskPool;
+use crate::tasks::TaskPool;
 use tauri::State;
 
 /// 取消任务

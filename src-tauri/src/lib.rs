@@ -3,7 +3,7 @@ mod crypto;
 mod diaries;
 mod object;
 mod storages;
-mod task;
+mod tasks;
 mod utils;
 
 use crate::attachments::attachment_protocol;
@@ -19,8 +19,8 @@ use crate::diaries::command::{
 use crate::diaries::DiaryMemoryCache;
 use crate::object::command::cmd_init_oss_client;
 use crate::object::OssState;
-use crate::task::command::cmd_cancel_task;
-use crate::task::TaskPool;
+use crate::tasks::command::cmd_cancel_task;
+use crate::tasks::TaskPool;
 use crate::utils::command::open_devtools;
 use tauri::{App, Manager};
 
