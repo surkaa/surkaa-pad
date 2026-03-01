@@ -405,7 +405,7 @@ impl OssClient {
 
         let stream = resp
             .bytes_stream()
-            .map_err(|e| Error::other(e));
+            .map_err(Error::other);
 
         Ok((Box::pin(stream), len))
     }
