@@ -3,7 +3,6 @@ import {onMounted, watch} from "vue";
 import {useAppStore} from "./stores/app.ts";
 import {useEventListener} from "./utils/useEventListener.ts";
 import {platform} from "@tauri-apps/plugin-os";
-import {keepAliveIncludes} from "./composables/useKeepAlive.ts";
 
 const appStore = useAppStore();
 const p = platform();
@@ -60,8 +59,6 @@ onMounted(appStore.initStore);
 
 <template>
   <router-view v-slot="{ Component }">
-    <keep-alive :include="keepAliveIncludes">
-      <component :is="Component" :key="$route.fullPath"/>
-    </keep-alive>
+    <component :is="Component"/>
   </router-view>
 </template>

@@ -2,6 +2,7 @@
 import {useRoute, useRouter} from "vue-router";
 import {computed} from "vue";
 import {useLayoutStore} from "../stores/layout.ts";
+import { keepAliveIncludes } from "../composables/useKeepAlive.ts";
 
 const route = useRoute();
 const router = useRouter();
@@ -28,7 +29,11 @@ function back() {
     </header>
 
     <main class="app-content">
-      <router-view/>
+      <router-view v-slot="{ Component }">
+        <keep-alive :include="keepAliveIncludes">
+          <component :is="Component" :key="route.fullPath" />
+        </keep-alive>
+      </router-view>
     </main>
 
     <footer class="app-footer">

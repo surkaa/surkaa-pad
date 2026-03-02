@@ -144,6 +144,8 @@ async function handleReset() {
     });
   }
 }
+
+defineOptions({name: 'Settings'});
 </script>
 
 <style scoped lang="scss">
