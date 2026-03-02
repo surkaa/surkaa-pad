@@ -1,5 +1,7 @@
 <script setup lang="ts">
 
+import {platform} from "@tauri-apps/plugin-os";
+
 const {
   view,
   panelOpen,
@@ -11,6 +13,8 @@ const {
   undo: boolean,
   redo: boolean,
 }>();
+
+const isAndroid = platform() === 'android';
 
 const emit = defineEmits([
   'undo', 'redo',
@@ -51,7 +55,7 @@ const emit = defineEmits([
                 <span class="text-caption">照片</span>
               </q-btn>
             </div>
-            <div class="col-3 flex flex-center">
+            <div class="col-3 flex flex-center" v-if="isAndroid">
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('takePhoto')">
                 <q-icon name="camera" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">拍摄</span>
@@ -63,7 +67,7 @@ const emit = defineEmits([
                 <span class="text-caption">音频</span>
               </q-btn>
             </div>
-            <div class="col-3 flex flex-center">
+            <div class="col-3 flex flex-center" v-if="isAndroid">
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
                 <q-icon name="mic" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">录音</span>
@@ -75,7 +79,7 @@ const emit = defineEmits([
                 <span class="text-caption">视频</span>
               </q-btn>
             </div>
-            <div class="col-3 flex flex-center">
+            <div class="col-3 flex flex-center" v-if="isAndroid">
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('takeVideo')">
                 <q-icon name="videocam" size="28px" class="q-mb-xs"/>
                 <span class="text-caption">录像</span>
