@@ -109,3 +109,59 @@ pub async fn cmd_delete_attachment(
     let client = client.get_client()?;
     delete_attachment(&cache, crypto.deref(), &client, id, filename).await
 }
+
+/// 拍摄图片来添加
+/// # Arguments
+/// * `id` - 日记 ID
+/// * `encrypted` - 是否需要加密
+/// # Returns
+/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_add_image_attachment_from_camera(
+    app: tauri::AppHandle,
+    cache: State<'_, DiaryMemoryCache>,
+    crypto: State<'_, Crypto>,
+    client: State<'_, OssState>,
+    tp: State<'_, TaskPool>,
+    event: Channel<AddAttachmentEvent>,
+    id: String,
+    encrypted: bool,
+) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri_plugin_native_camera::NativeCameraExt;
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
+        const MIMETYPE: &str = "image/jpeg";
+
+        let result = app.native_camera().take_picture()
+            .map_err(|e| e.to_string())?;
+        let base64_data = result.image_data;
+        let binary_data = STANDARD.decode(base64_data)
+            .map_err(|e| e.to_string())?;
+        let len = binary_data.len();
+        let stream = create_mock_stream(binary_data, len);
+        let cache = cache.inner().clone();
+        let crypto = crypto.inner().clone();
+        let client = client.get_client()?;
+        tp.spawn(async move {
+            add_attachment(
+                cache,
+                crypto,
+                client,
+                Arc::new(event),
+                &id,
+                encrypted,
+                len as u64,
+                MIMETYPE.to_string(),
+                stream,
+            )
+                .await;
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Err("拍照功能仅在 Android 上可用".to_string())
+    }
+}

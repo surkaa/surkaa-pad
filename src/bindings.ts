@@ -201,7 +201,7 @@ async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string
  * * `access_str` - 文件访问路径。
  * * `encrypted` - 是否需要加密
  * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
 async cmdAddAttachment(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, accessStr: string, encrypted: boolean) : Promise<Result<string, string>> {
     try {
@@ -219,7 +219,7 @@ async cmdAddAttachment(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, acc
  * * `mimetype` - 附件 MIME 类型
  * * `encrypted` - 是否需要加密
  * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
 async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, data: number[], mimetype: string, encrypted: boolean) : Promise<Result<string, string>> {
     try {
@@ -240,6 +240,22 @@ async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AddAttachmentEvent>, id: strin
 async cmdDeleteAttachment(id: string, filename: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_delete_attachment", { id, filename }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 拍摄图片来添加
+ * # Arguments
+ * * `id` - 日记 ID
+ * * `encrypted` - 是否需要加密
+ * # Returns
+ * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ */
+async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, encrypted: boolean) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_add_image_attachment_from_camera", { event, id, encrypted }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

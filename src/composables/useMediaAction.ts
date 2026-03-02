@@ -172,7 +172,16 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         },
         insertPhoto: () => genericBatchUpload(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], 'img', "image"),
         takePhoto: async () => {
-            // TODO
+            const currentRange = captureRange();
+            if (beforeClick()) return;
+            const key = crypto.randomUUID();
+            uploadTaskMap.value[key] = {filename: 'take photo', progress: 0, status: 'pending'};
+            const event = createUploadChannel(key, (meta) => {
+                const url = resolveMediaAttachmentUrl('image', diaryId.value, meta.filename);
+                insertMediaNode(editorDomRef.value, 'img', url, meta.filename, currentRange);
+            });
+            const res = await commands.cmdAddImageAttachmentFromCamera(event, diaryId.value, true);
+            handleCommandResult(key, res);
         },
         audioRecording: () => {
             if (beforeClick()) return;
