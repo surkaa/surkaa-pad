@@ -4,6 +4,7 @@ import {DiarySummary} from "../bindings.ts";
 import {ExtensionContext, EXTENSIONS} from "./editor/extension.ts";
 import {useRouter} from "vue-router";
 import {useContextMenu} from "./editor/useContextMenu.ts";
+import {useScroll, useStorage} from "@vueuse/core";
 
 const router = useRouter();
 const {modelValue, diarySummary} = defineProps<{
@@ -15,6 +16,14 @@ const emit = defineEmits<{
 }>();
 
 const editor = ref<HTMLDivElement>();
+
+const storageY = useStorage(`scroll-y-${diarySummary?.id}`, 0, sessionStorage);
+const { y } = useScroll(editor, {
+  behavior: 'smooth',
+  onScroll() {
+    storageY.value = y.value;
+  }
+});
 
 const extensionCtx: ExtensionContext = {
   getDiaryId: () => diarySummary?.id || '',
@@ -122,6 +131,10 @@ onMounted(async () => {
     return;
   }
   tryUpdateHtml(editor.value, modelValue);
+  await nextTick();
+  if (storageY.value > 0) {
+    editor.value.scrollTop = storageY.value;
+  }
 });
 
 watch(() => modelValue, (newVal) => {

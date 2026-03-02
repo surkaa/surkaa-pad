@@ -18,9 +18,6 @@ const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
 
-// 用于记录滚动位置，保持在列表页和详情页切换时的滚动状态
-const savedScrollTop = ref(0);
-
 const initialDiaryId = (route.params.id as string) || "";
 const {
   diaryId, diary, diaryContent, isNew, isInitialLoaded, unusedAttachments, isDelBack,
@@ -123,10 +120,6 @@ watch(() => liveEditorRef.value?.editor, (newEditor) => {
 
 onActivated(async () => {
   await nextTick();
-  // 恢复滚动位置
-  if (editorDomRef.value) {
-    editorDomRef.value.scrollTop = savedScrollTop.value;
-  }
 });
 </script>
 

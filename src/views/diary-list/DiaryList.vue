@@ -6,7 +6,7 @@ import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {commands, DiarySummary} from "../../bindings.ts";
 import {eventBusOn} from "../../utils/eventBus.ts";
 import {useAppStore} from "../../stores/app.ts";
-import {useTimestamp} from "@vueuse/core";
+import {useScroll, useTimestamp} from "@vueuse/core";
 
 const {getEndTime} = useAppStore();
 const router = useRouter();
@@ -16,9 +16,8 @@ const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
 
-// 用于记录滚动位置，保持在列表页和详情页切换时的滚动状态
-const savedScrollTop = ref(0);
 const scrollContainer = ref<HTMLElement | null>(null);
+const { y } = useScroll(scrollContainer, {behavior: 'smooth'})
 
 // 倒计时
 const now = useTimestamp({ offset: 0, interval: 1000 })
@@ -47,11 +46,6 @@ const diaryStats = computed(() => {
 
 // 激活状态
 const isActivating = ref(true);
-
-function handleScroll(e: Event) {
-  const target = e.target as HTMLElement;
-  savedScrollTop.value = target.scrollTop;
-}
 
 // 获取单个日记的摘要
 async function loadDiarySummer(id: string) {
@@ -137,7 +131,7 @@ onActivated(async () => {
   // 等待 DOM 渲染完毕
   await nextTick();
   if (scrollContainer.value) {
-    scrollContainer.value.scrollTop = savedScrollTop.value;
+    scrollContainer.value.scrollTop = y.value;
   }
   eventBusOn('diary-changed', async payload => {
     switch (payload.type) {
@@ -173,7 +167,7 @@ onDeactivated(() => {
 <template>
   <div id="diary-list">
     <div class="main-content">
-      <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">
+      <section id="list" class="scroll-container" ref="scrollContainer">
         <q-infinite-scroll
             scroll-target="#list"
             v-show="diaryIds.length > 0 || !isFirstLoadFinished"
