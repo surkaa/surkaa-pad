@@ -191,14 +191,17 @@ onDeactivated(() => {
       </section>
     </div>
 
-    <button
-        class="fab"
-        @click="openDiary()"
-        title="新建日记"
-    >
-      <span class="fab-icon">+</span>
-      <span class="fab-text">新建</span>
-    </button>
+    <q-page-sticky position="bottom-right" :offset="[24, 38]" class="z-fab">
+      <q-btn
+          fab
+          icon="add"
+          label="新建"
+          color="primary"
+          padding="16px 20px"
+          class="pad-fab-gradient"
+          @click="openDiary()"
+      />
+    </q-page-sticky>
 
     <Teleport v-if="isActivating" defer to="#header-actions">
       <q-btn @click="$router.push({ name: 'DiarySearch' })">搜索</q-btn>
@@ -236,41 +239,20 @@ onDeactivated(() => {
     padding: 24px 24px 100px 24px;
   }
 
-  .fab {
-    position: fixed;
-    bottom: 38px;
-    right: 24px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 16px 20px;
-    background: var(--pad-primary-gradient);
+  .pad-fab-gradient {
+    background: var(--pad-primary-gradient) !important;
     color: var(--pad-text-color-light);
-    border: none;
     border-radius: var(--pad-radius-xl);
-    font-size: 15px;
     font-weight: 600;
-    cursor: pointer;
     box-shadow: var(--pad-shadow-lg);
     transition: all var(--pad-transition-base);
-    z-index: 100;
-    min-width: 100px;
 
     &:hover {
       transform: translateY(-3px);
       box-shadow: var(--pad-shadow-xl);
     }
 
-    &:active {
-      transform: translateY(-1px);
-    }
-
-    .fab-icon {
-      font-size: 20px;
-      font-weight: 400;
-    }
-
-    .fab-text {
+    :deep(.q-btn__content) {
       letter-spacing: 0.5px;
     }
   }
@@ -278,16 +260,13 @@ onDeactivated(() => {
 
 // 响应式设计
 @media (max-width: 512px) {
-  #diary-list {
-    .fab {
-      bottom: 16px;
-      right: 16px;
-      padding: 12px 16px;
-      min-width: auto;
-
-      .fab-text {
-        display: none;
-      }
+  .pad-fab-gradient {
+    :deep(.q-btn__content .q-anchor--skip) {
+      display: none;
+    }
+    :deep(.q-page-sticky) {
+      right: 16px !important;
+      bottom: 16px !important;
     }
   }
 }

@@ -93,7 +93,7 @@ onUnmounted(() => {
     <Teleport v-if="isActivating" defer to="#header-actions">
       <q-input dense v-model="keyword" placeholder="输入关键词搜索" @keyup.enter="searchHandle">
         <template #append>
-          <q-btn icon="search" @click="searchHandle"/>
+          <q-btn flat icon="search" @click="searchHandle"/>
           <q-toggle v-model="or"/>
         </template>
       </q-input>
