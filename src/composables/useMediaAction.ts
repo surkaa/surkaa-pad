@@ -189,9 +189,6 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         },
         insertAudio: () => genericBatchUpload(['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
         insertVideo: () => genericBatchUpload(['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video', "video"),
-        takeVideo: () => {
-            // TODO
-        },
         insertFile: async () => genericBatchUpload(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar'])
     };
 }

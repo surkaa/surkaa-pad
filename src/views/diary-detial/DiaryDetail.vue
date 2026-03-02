@@ -42,7 +42,6 @@ const {
   insertAudio,
   audioRecording,
   insertVideo,
-  takeVideo,
   insertFile,
 } = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
 
@@ -164,7 +163,6 @@ onActivated(async () => {
         @insertAudio="insertAudio"
         @audioRecording="audioRecording"
         @insertVideo="insertVideo"
-        @takeVideo="takeVideo"
         @insertFile="insertFile"
         style="width: 100%; flex-shrink: 0"
     />

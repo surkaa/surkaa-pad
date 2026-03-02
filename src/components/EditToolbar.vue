@@ -79,12 +79,6 @@ const emit = defineEmits([
                 <span class="text-caption">视频</span>
               </q-btn>
             </div>
-            <div class="col-3 flex flex-center" v-if="isAndroid">
-              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('takeVideo')">
-                <q-icon name="videocam" size="28px" class="q-mb-xs"/>
-                <span class="text-caption">录像</span>
-              </q-btn>
-            </div>
             <div class="col-3 flex flex-center">
               <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertFile')">
                 <q-icon name="attach_file" size="28px" class="q-mb-xs"/>
