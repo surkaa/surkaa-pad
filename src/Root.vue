@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import {onMounted, watch} from "vue";
 import {useAppStore} from "./stores/app.ts";
-import {useEventListener} from "./utils/useEventListener.ts";
 import {platform} from "@tauri-apps/plugin-os";
+import {useEventListener} from "@vueuse/core";
 
 const appStore = useAppStore();
 const p = platform();

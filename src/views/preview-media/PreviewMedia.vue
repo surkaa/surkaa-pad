@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {onMounted, onUnmounted, ref, watch} from "vue";
 import {useRoute, useRouter} from "vue-router";
-import {useEventListener} from "../../utils/useEventListener.ts";
+import {useEventListener} from "@vueuse/core";
 import {resolveMediaAttachmentUrl} from "../../utils/resolveMediaAttachmentUrl.ts";
 
 const route = useRoute();
