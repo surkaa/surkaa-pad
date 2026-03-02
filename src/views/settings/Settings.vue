@@ -1,10 +1,5 @@
 <template>
-  <main id="settings-page">
-    <q-toolbar class="settings-header">
-      <q-btn flat round dense icon="arrow_back" class="text-primary" @click="router.back()" />
-      <q-toolbar-title class="text-center text-subtitle1 text-weight-bold title-text">设置</q-toolbar-title>
-      <div style="width: 40px"></div> </q-toolbar>
-
+  <div id="settings-page">
     <div class="settings-content q-pa-md">
       <div class="q-mb-lg">
         <div class="group-title q-mb-sm">外观界面</div>
@@ -90,12 +85,11 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
-  </main>
+  </div>
 </template>
 
 <script setup lang="ts">
 import {ref} from 'vue';
-import {useRouter} from 'vue-router';
 import {useAppStore} from "../../stores/app.ts";
 import {showToast} from "../../utils";
 import {platform} from "@tauri-apps/plugin-os";
@@ -103,7 +97,6 @@ import { confirm } from '@tauri-apps/plugin-dialog';
 import {exportLogFile} from "../../utils/exportLogFile.ts";
 import { relaunch } from '@tauri-apps/plugin-process';
 
-const router = useRouter();
 const appStore = useAppStore();
 
 const showPasswordVerify = ref(false);
@@ -160,12 +153,6 @@ async function handleReset() {
   background-color: var(--pad-bg-color-100);
   display: flex;
   flex-direction: column;
-
-  .settings-header {
-    background-color: var(--pad-bg-color-100);
-    border-bottom: 1px solid var(--pad-border-color-100);
-    padding: 0 8px;
-  }
 
   .settings-content {
     flex: 1;
