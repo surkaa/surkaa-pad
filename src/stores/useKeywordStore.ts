@@ -1,16 +1,9 @@
-import {computed, ref} from "vue";
+import {ref} from "vue";
 
 export function useKeywordStore() {
-    const keywordInner = ref<string>('');
-
-    const keyword = computed(() => keywordInner.value);
-
-    function setKeyword(k: string) {
-        keywordInner.value = k;
-    }
+    const keyword = ref<string>('');
 
     return {
-        keyword,
-        setKeyword
+        keyword
     }
 }

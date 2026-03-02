@@ -205,7 +205,7 @@ onDeactivated(() => {
     </button>
 
     <Teleport v-if="isActivating" defer to="#header-actions">
-      <q-btn>搜索</q-btn>
+      <q-btn @click="$router.push({ name: 'DiarySearch' })">搜索</q-btn>
       <q-btn @click="$router.push({ name: 'Settings' })">设置</q-btn>
     </Teleport>
     <Teleport v-if="isActivating" defer to="#footer-content">

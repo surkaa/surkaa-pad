@@ -7,6 +7,7 @@ import Settings from "../views/settings/Settings.vue";
 import {addCache, removeCache} from "../composables/useKeepAlive.ts";
 import Layout from "../layout/Layout.vue";
 import {useLayoutStore} from "../stores/layout.ts";
+import DiarySearch from "../views/diary-search/DiarySearch.vue";
 
 const routes: RouteRecordRaw[] = [
     {
@@ -46,9 +47,20 @@ const routes: RouteRecordRaw[] = [
                 component: DiaryDetail,
                 meta: {
                     title: '日记详情',
-                    depth: 2,
+                    // 可以从日记列表或者日记搜索进入，所以深度设置为 3
+                    depth: 3,
                     keepAlive: true,
                     hideFooter: true
+                }
+            },
+            {
+                name: 'DiarySearch',
+                path: 'diary-search',
+                component: DiarySearch,
+                meta: {
+                    title: '搜索',
+                    depth: 2,
+                    keepAlive: true
                 }
             },
             {
