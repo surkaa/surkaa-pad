@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, nextTick, onActivated, ref} from "vue";
+import {computed, nextTick, onActivated, onDeactivated, ref} from "vue";
 import {useRouter} from "vue-router";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
@@ -44,6 +44,9 @@ const diaryStats = computed(() => {
     withAttachments,
   };
 });
+
+// 激活状态
+const isActivating = ref(true);
 
 function handleScroll(e: Event) {
   const target = e.target as HTMLElement;
@@ -130,6 +133,7 @@ function openDiary(id?: string) {
 defineOptions({name: 'DiaryList'});
 
 onActivated(async () => {
+  isActivating.value = true;
   // 等待 DOM 渲染完毕
   await nextTick();
   if (scrollContainer.value) {
@@ -159,6 +163,10 @@ onActivated(async () => {
         break;
     }
   });
+});
+
+onDeactivated(() => {
+  isActivating.value = false;
 });
 </script>
 
@@ -196,11 +204,11 @@ onActivated(async () => {
       <span class="fab-text">新建</span>
     </button>
 
-    <teleport defer to="#header-actions">
+    <Teleport v-if="isActivating" defer to="#header-actions">
       <q-btn>搜索</q-btn>
       <q-btn @click="$router.push({ name: 'Settings' })">设置</q-btn>
-    </teleport>
-    <Teleport defer to="#footer-content">
+    </Teleport>
+    <Teleport v-if="isActivating" defer to="#footer-content">
       <span>总计：{{ diaryStats.total }} 个 Pad, 其中 {{ diaryStats.withAttachments }} 个含附件</span>
       <span>剩余时间: {{ remainingStr }}</span>
     </Teleport>
