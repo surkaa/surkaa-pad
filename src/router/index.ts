@@ -35,7 +35,7 @@ const routes: RouteRecordRaw[] = [
                 path: 'diary-list',
                 component: DiaryList,
                 meta: {
-                    title: '日志列表',
+                    title: '日记列表',
                     depth: 1,
                     keepAlive: true,
                 }
@@ -45,7 +45,7 @@ const routes: RouteRecordRaw[] = [
                 path: 'diary-detail/:id?',
                 component: DiaryDetail,
                 meta: {
-                    title: '日志详情',
+                    title: '日记详情',
                     depth: 2,
                     keepAlive: true,
                     hideFooter: true
