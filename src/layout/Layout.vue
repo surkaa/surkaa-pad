@@ -67,7 +67,6 @@ function back() {
     .header-left {
       display: flex;
       align-items: center;
-      gap: 8px;
 
       .header-global {
         font-weight: bold;
@@ -78,7 +77,6 @@ function back() {
     #header-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
     }
   }
 
@@ -99,6 +97,14 @@ function back() {
       padding: 0 1rem;
       display: flex;
       justify-content: space-between;
+    }
+  }
+}
+
+@media (max-width: 512px) {
+  .app-layout {
+    .app-header {
+      padding: 0 8px;
     }
   }
 }

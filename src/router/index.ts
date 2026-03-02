@@ -58,7 +58,7 @@ const routes: RouteRecordRaw[] = [
                 path: 'diary-search',
                 component: DiarySearch,
                 meta: {
-                    title: '搜索',
+                    title: '🔍',
                     depth: 2,
                     keepAlive: true
                 }

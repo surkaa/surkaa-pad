@@ -203,8 +203,8 @@ onDeactivated(() => {
       <q-btn @click="$router.push({ name: 'Settings' })">设置</q-btn>
     </Teleport>
     <Teleport v-if="isActivating" defer to="#footer-content">
-      <span>总计：{{ diaryStats.total }} 个 Pad, 其中 {{ diaryStats.withAttachments }} 个含附件</span>
-      <span>剩余时间: {{ remainingStr }}</span>
+      <span>Total: {{ diaryStats.total }}</span>
+      <span>Time: {{ remainingStr }}</span>
     </Teleport>
   </div>
 </template>

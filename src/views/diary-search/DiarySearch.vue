@@ -26,6 +26,9 @@ async function searchHandle() {
   }
   // 清空
   diarySummaries.value = [];
+  if (!keyword.value || !keyword.value.trim()) {
+    return;
+  }
 
   const event = new Channel<SearchDiariesEvent>();
   event.onmessage = msg => {
@@ -90,10 +93,10 @@ onUnmounted(() => {
     <Teleport v-if="isActivating" defer to="#header-actions">
       <q-input dense v-model="keyword" placeholder="输入关键词搜索" @keyup.enter="searchHandle">
         <template #append>
-          <q-btn flat icon="search" @click="searchHandle"/>
+          <q-btn icon="search" @click="searchHandle"/>
+          <q-toggle v-model="or"/>
         </template>
       </q-input>
-      <q-toggle v-model="or" label="Or" class="q-ml-md"/>
     </Teleport>
 
     <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">
