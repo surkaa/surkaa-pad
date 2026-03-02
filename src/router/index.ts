@@ -2,7 +2,7 @@ import {createRouter, createWebHashHistory, type RouteRecordRaw} from "vue-route
 import Unlock from "../views/unlock/Unlock.vue";
 import DiaryList from "../views/diary-list/DiaryList.vue";
 import Diary from "../views/diary/Diary.vue";
-import PreviewMedia from "../views/PreviewMedia.vue";
+import PreviewMedia from "../views/preview-media/PreviewMedia.vue";
 import Settings from "../views/settings/Settings.vue";
 import {addCache, removeCache} from "../composables/useKeepAlive.ts";
 import Layout from "../layout/Layout.vue";
