@@ -104,12 +104,12 @@ onBeforeRouteLeave((_to, _from, next) => {
     console.log('删除附件:', orphans);
     Promise
         .all(orphans.map(att => commands.cmdDeleteAttachment(diaryId.value, att.filename)))
-        .then(next)
+        .then(() => next())
         .catch(e => {
           console.error('删除附件失败:', e);
           $q.notify({type: 'negative', message: `删除附件失败 ${e.message || e.error || e}`});
         });
-  }).onCancel(next);
+  }).onCancel(() => next());
 });
 
 onMounted(async () => {
