@@ -27,7 +27,6 @@ export const useAppStore = defineStore('app', () => {
     let startTime = ref(Date.now());
 
     const $q = useQuasar();
-    const keyword = ref<string>('');
     const theme = ref<ThemeType>('system');
     const isBiometricEnabled = ref(false);
 
@@ -218,7 +217,7 @@ export const useAppStore = defineStore('app', () => {
 
     return {
         // 数据
-        keyword, theme,
+        theme,
         // 方法
         getEncryptedConfig,
         unlock,
