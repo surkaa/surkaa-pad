@@ -3,8 +3,9 @@ import {AddAttachmentEvent, AttachmentMeta, commands} from "../bindings.ts";
 import {computed, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {resolveMediaAttachmentUrl} from "../utils/resolveMediaAttachmentUrl.ts";
-import {insertMediaNode, MediaType} from "../utils/domUtils.ts";
+import {insertFileNode, insertMediaNode, MediaType} from "../utils/domUtils.ts";
 import {useQuasar} from "quasar";
+import {formatBytes} from "../utils";
 
 export interface UploadTask {
     filename: string;
@@ -124,7 +125,10 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
 
         const uploads = accessStrArr.map(accessStr =>
             uploadAttachment(accessStr, true, (att) => {
-                // 原代码中图片视为 'image'，音视频可能共用 'video'，这里保持原有逻辑或按需修正
+                if (!nodeType) {
+                    insertFileNode(editorDomRef.value, att.filename, formatBytes(att.size), currentRange);
+                    return;
+                }
                 const resolveType = nodeType === 'img' ? 'image' : 'video';
                 const url = resolveMediaAttachmentUrl(resolveType, diaryId.value, att.filename);
                 insertMediaNode(editorDomRef.value, nodeType, url, att.filename, currentRange);
@@ -179,8 +183,6 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         takeVideo: () => {
             // TODO
         },
-        insertFile: async () => {
-            // TODO
-        }
+        insertFile: async () => genericBatchUpload(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar'])
     };
 }

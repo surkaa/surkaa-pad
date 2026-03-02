@@ -1,6 +1,22 @@
 export type MediaType = 'img' | 'video' | 'audio';
 
 /**
+ * 插入通用文件节点 (原子节点)
+ */
+export const insertFileNode = (editor: HTMLElement | undefined, filename: string, filesizeText: string, range: Range | null) => {
+    if (!editor) return;
+
+    const el = document.createElement('div');
+    el.className = 'editor-file-attachment';
+    el.dataset.id = filename;
+    el.contentEditable = 'false';
+
+    el.innerHTML = `<div class="file-title"><span class="file-icon">📎</span><span class="file-name">${filename}</span></div><span class="file-size">${filesizeText}</span>`;
+
+    insertBlockNode(editor, el, range);
+};
+
+/**
  * DOM 节点插入器
  */
 export const insertMediaNode = (editor: HTMLElement | undefined, nodeType: MediaType, url: string, filename: string, range: Range | null) => {

@@ -95,11 +95,16 @@ function tryUpdateHtml(editorElement: HTMLDivElement, newVal: string) {
 // 处理点击 分发 onClick
 function handleEditorClick(e: MouseEvent) {
   const target = e.target as HTMLElement;
+  if (!editor.value) return;
 
-  // 遍历插件，寻找谁负责这个节点
-  const handler = EXTENSIONS.find(ext => ext.match && ext.match(target));
-  if (handler && handler.onClick) {
-    handler.onClick(e, target, extensionCtx);
+  let current: HTMLElement | null = target;
+  while (current && current !== editor.value) {
+    const handler = EXTENSIONS.find(ext => ext.match && ext.match(current!));
+    if (handler && handler.onClick) {
+      handler.onClick(e, current, extensionCtx);
+      return;
+    }
+    current = current.parentElement;
   }
 }
 
@@ -185,6 +190,50 @@ watch(() => modelValue, (newVal) => {
     user-select: none;           /* 禁用文本/元素选区 */
     -webkit-user-select: none;
     -webkit-user-drag: none;     /* 禁用原生拖拽 */
+  }
+
+  // 通用文件卡片样式
+  // <div class="file-title"><span class="file-icon">📎</span><span class="file-name">${filename}</span></div><span class="file-size">${filesizeText}</span>
+  .editor-file-attachment {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    margin: 8px 5px;
+    background-color: var(--pad-bg-color);
+    border: 1px solid var(--pad-border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    -webkit-user-select: none;
+    transition: all 0.2s ease;
+    width: 100%;
+
+    &:hover {
+      background-color: var(--pad-bg-color-300);
+      border-color: var(--pad-border-color-300);
+      color: var(--pad-text-color-300);
+    }
+
+    .file-title {
+      display: flex;
+      align-items: center;
+
+      .file-icon {
+        font-size: 1.2em;
+        margin-right: 8px;
+      }
+
+      .file-name {
+        font-size: 14px;
+        color: var(--pad-text-color);
+        word-break: break-all;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+    }
   }
 }
 </style>

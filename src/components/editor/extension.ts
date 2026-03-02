@@ -4,6 +4,7 @@ import {ImageExtension} from "./imageExtension.ts";
 import {AudioExtension} from "./audioExtension.ts";
 import {VideoExtension} from "./videoExtension.ts";
 import {BaseExtension} from "./baseExtension.ts";
+import {FileExtension} from "./fileExtension.ts";
 
 // 定义菜单按钮的数据结构
 export interface MenuButton {
@@ -50,5 +51,6 @@ export const EXTENSIONS: Extension[] = [
     ImageExtension,
     AudioExtension,
     VideoExtension,
+    FileExtension,
     BaseExtension
 ] as const;
