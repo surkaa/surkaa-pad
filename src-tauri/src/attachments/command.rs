@@ -16,7 +16,7 @@ use tauri::State;
 /// * `access_str` - 文件访问路径。
 /// * `encrypted` - 是否需要加密
 /// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_add_attachment(
@@ -56,7 +56,7 @@ pub fn cmd_add_attachment(
 /// * `mimetype` - 附件 MIME 类型
 /// * `encrypted` - 是否需要加密
 /// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_add_attachment_memory(
