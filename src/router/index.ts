@@ -1,7 +1,7 @@
 import {createRouter, createWebHashHistory, type RouteRecordRaw} from "vue-router";
 import Unlock from "../views/unlock/Unlock.vue";
 import DiaryList from "../views/diary-list/DiaryList.vue";
-import Diary from "../views/diary/Diary.vue";
+import DiaryDetail from "../views/diary-detial/DiaryDetail.vue";
 import PreviewMedia from "../views/preview-media/PreviewMedia.vue";
 import Settings from "../views/settings/Settings.vue";
 import {addCache, removeCache} from "../composables/useKeepAlive.ts";
@@ -43,7 +43,7 @@ const routes: RouteRecordRaw[] = [
             {
                 name: 'DiaryDetail',
                 path: 'diary-detail/:id?',
-                component: Diary,
+                component: DiaryDetail,
                 meta: {
                     title: '日志详情',
                     depth: 2,
