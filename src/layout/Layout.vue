@@ -22,7 +22,12 @@ function back() {
   <div class="app-layout">
     <header class="app-header">
       <div class="header-left">
-        <div class="header-back" v-if="canBack" @click="back"><</div>
+        <button class="icon-btn" v-if="canBack" @click="back" aria-label="返回">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m15 18-6-6 6-6"/>
+          </svg>
+        </button>
         <div class="header-global">{{ layoutStore.customTitle || route.meta.title || 'SurKaa Pad' }}</div>
       </div>
       <div id="header-actions"></div>
@@ -62,18 +67,18 @@ function back() {
     .header-left {
       display: flex;
       align-items: center;
-
-      .header-back {
-        cursor: pointer;
-        margin-right: 16px;
-        font-size: 20px;
-        user-select: none;
-      }
+      gap: 8px;
 
       .header-global {
         font-weight: bold;
         font-size: 18px;
       }
+    }
+
+    #header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
   }
 

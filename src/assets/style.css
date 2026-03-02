@@ -287,3 +287,33 @@ button:disabled {
         transform: rotate(360deg);
     }
 }
+
+
+
+.icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--pad-text-color-100);
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+        background-color: var(--pad-bg-color-400);
+        color: var(--pad-text-color);
+    }
+
+    &:active {
+        transform: scale(0.92);
+        background-color: var(--pad-bg-color-500);
+    }
+
+    svg {
+        display: block;
+    }
+}
