@@ -112,13 +112,13 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         editorDomRef.value?.focus();
     }
 
-    const genericBatchUpload = async (pickerMode: PickerMode, extensions: string[], nodeType: MediaType) => {
+    const genericBatchUpload = async (extensions: string[], nodeType?: MediaType, pickerMode?: PickerMode) => {
         const currentRange = captureRange();
         if (beforeClick()) return;
         const accessStrArr = await open({
             multiple: true,
             pickerMode: pickerMode,
-            filters: [{name: pickerMode, extensions}]
+            filters: [{name: pickerMode || 'filter file', extensions}]
         });
         if (!accessStrArr) return;
 
@@ -166,7 +166,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                 insertMediaNode(editorDomRef.value, 'audio', url, att.filename, currentRange);
             });
         },
-        insertPhoto: () => genericBatchUpload('image', ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], 'img'),
+        insertPhoto: () => genericBatchUpload(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], 'img', "image"),
         takePhoto: async () => {
             // TODO
         },
@@ -174,8 +174,8 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             if (beforeClick()) return;
             showAudioDrawer.value = true;
         },
-        insertAudio: () => genericBatchUpload('media', ['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
-        insertVideo: () => genericBatchUpload('video', ['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video'),
+        insertAudio: () => genericBatchUpload(['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
+        insertVideo: () => genericBatchUpload(['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video', "video"),
         takeVideo: () => {
             // TODO
         },
