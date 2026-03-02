@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import {onActivated, onDeactivated, ref} from "vue";
+import {onActivated, onDeactivated, onUnmounted, ref} from "vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import {commands, DiarySummary, SearchDiariesEvent} from "../../bindings.ts";
 import {Channel} from "@tauri-apps/api/core";
-import {useKeywordStore} from "../../stores/useKeywordStore.ts";
 import {useQuasar} from "quasar";
 
 const $q = useQuasar();
-const {keyword} = useKeywordStore();
+const keyword = ref('');
 
 const diarySummaries = ref<DiarySummary[]>([]);
 const or = ref(false);
@@ -76,6 +75,14 @@ onDeactivated(() => {
     savedScrollTop.value = scrollContainer.value.scrollTop;
   }
 });
+
+onUnmounted(() => {
+  // 组件销毁时取消搜索任务
+  if (cancelToken.value) {
+    commands.cmdCancelTask(cancelToken.value);
+  }
+  keyword.value = '';
+})
 </script>
 
 <template>
