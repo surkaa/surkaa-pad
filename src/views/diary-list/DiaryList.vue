@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import {computed, nextTick, onActivated, ref} from "vue";
 import {useRouter} from "vue-router";
-import DiaryListHeader from "./DiaryListHeader.vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {commands, DiarySummary} from "../../bindings.ts";
 import {eventBusOn} from "../../utils/eventBus.ts";
+import {useAppStore} from "../../stores/app.ts";
+import {useTimestamp} from "@vueuse/core";
 
+const {getEndTime} = useAppStore();
 const router = useRouter();
 const diaryIds = ref<string[]>([]);
 const diarySummaries = ref<Record<string, DiarySummary | null>>({});
@@ -17,6 +19,18 @@ const isFirstLoadFinished = ref(false);
 // 用于记录滚动位置，保持在列表页和详情页切换时的滚动状态
 const savedScrollTop = ref(0);
 const scrollContainer = ref<HTMLElement | null>(null);
+
+// 倒计时
+const now = useTimestamp({ offset: 0, interval: 1000 })
+
+// 计算剩余时间字符串，格式为 MM:SS
+const remainingStr = computed(() => {
+  const diff = new Date(getEndTime).getTime() - now.value
+  const ms = Math.max(0, diff);
+  const seconds = Math.floor(ms / 1000) % 60;
+  const minutes = Math.floor(ms / (1000 * 60)) % 60;
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+});
 
 // 日记统计信息
 const diaryStats = computed(() => {
@@ -113,7 +127,7 @@ function openDiary(id?: string) {
   router.push({name: 'DiaryDetail', params: {id}});
 }
 
-defineOptions({ name: 'DiaryList' });
+defineOptions({name: 'DiaryList'});
 
 onActivated(async () => {
   // 等待 DOM 渲染完毕
@@ -149,12 +163,7 @@ onActivated(async () => {
 </script>
 
 <template>
-  <main id="diary-list">
-    <DiaryListHeader
-        :stats="diaryStats"
-        @settings="$router.push({ name: 'Settings' })"
-    />
-
+  <div id="diary-list">
     <div class="main-content">
       <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">
         <q-infinite-scroll
@@ -186,7 +195,16 @@ onActivated(async () => {
       <span class="fab-icon">+</span>
       <span class="fab-text">新建</span>
     </button>
-  </main>
+
+    <teleport defer to="#header-actions">
+      <q-btn>搜索</q-btn>
+      <q-btn @click="$router.push({ name: 'Settings' })">设置</q-btn>
+    </teleport>
+    <Teleport defer to="#footer-content">
+      <span>总计：{{ diaryStats.total }} 个 Pad, 其中 {{ diaryStats.withAttachments }} 个含附件</span>
+      <span>剩余时间: {{ remainingStr }}</span>
+    </Teleport>
+  </div>
 </template>
 
 <style scoped lang="scss">
@@ -211,12 +229,12 @@ onActivated(async () => {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 0 24px 100px 24px;
+    padding: 24px 24px 100px 24px;
   }
 
   .fab {
     position: fixed;
-    bottom: 24px;
+    bottom: 38px;
     right: 24px;
     display: flex;
     align-items: center;
@@ -266,14 +284,6 @@ onActivated(async () => {
       .fab-text {
         display: none;
       }
-    }
-  }
-}
-
-@media (min-width: 513px) and (max-width: 768px) {
-  #diary-list {
-    .main-content {
-      padding: 0 20px;
     }
   }
 }

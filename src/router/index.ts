@@ -5,50 +5,63 @@ import Diary from "../views/diary/Diary.vue";
 import PreviewMedia from "../views/PreviewMedia.vue";
 import Settings from "../views/settings/Settings.vue";
 import {addCache, removeCache} from "../composables/useKeepAlive.ts";
+import Layout from "../layout/Layout.vue";
+import {useLayoutStore} from "../stores/layout.ts";
 
-const routes: RouteRecordRaw[] = [{
-    name: 'Unlock',
-    path: '/',
-    component: Unlock,
-    meta: {
-        title: '解锁屏幕'
+const routes: RouteRecordRaw[] = [
+    {
+        name: 'Unlock',
+        path: '/',
+        component: Unlock,
+        meta: {
+            title: '解锁屏幕'
+        }
+    },
+    {
+        name: 'PreviewMedia',
+        path: '/preview-media/:type/:diaryId/:filename',
+        component: PreviewMedia,
+        meta: {
+            title: '媒体预览',
+            depth: 3
+        }
+    },
+    {
+        path: '/',
+        component: Layout,
+        children: [
+            {
+                name: 'DiaryList',
+                path: 'diary-list',
+                component: DiaryList,
+                meta: {
+                    title: '日志列表',
+                    depth: 1,
+                    keepAlive: true,
+                }
+            },
+            {
+                name: 'DiaryDetail',
+                path: 'diary-detail/:id?',
+                component: Diary,
+                meta: {
+                    title: '日志详情',
+                    depth: 2,
+                    keepAlive: true,
+                }
+            },
+            {
+                name: 'Settings',
+                path: 'settings',
+                component: Settings,
+                meta: {
+                    title: '设置',
+                    depth: 2
+                }
+            }
+        ]
     }
-    // TODO 统一下面三个页面的 Header
-}, {
-    name: 'DiaryList',
-    path: '/diary-list',
-    component: DiaryList,
-    meta: {
-        title: '日志列表',
-        depth: 1,
-        keepAlive: true,
-    }
-}, {
-    name: 'DiaryDetail',
-    path: '/diary-detail/:id?',
-    component: Diary,
-    meta: {
-        title: '日志详情',
-        depth: 2,
-        keepAlive: true,
-    }
-}, {
-    name: 'PreviewMedia',
-    path: '/preview-media/:type/:diaryId/:filename',
-    component: PreviewMedia,
-    meta: {
-        title: '媒体预览',
-        depth: 3
-    }
-}, {
-    name: 'Settings',
-    path: '/settings',
-    component: Settings,
-    meta: {
-        title: '设置',
-        depth: 2
-    }
-}];
+];
 
 const router = createRouter({
     history: createWebHashHistory(),
@@ -71,6 +84,12 @@ router.beforeEach((to, from) => {
             removeCache(from.name as string);
         }
     }
+});
+
+router.afterEach(() => {
+    // 重置标题避免污染其他页面
+    const layoutStore = useLayoutStore();
+    layoutStore.resetTitle();
 });
 
 export default router;
