@@ -16,7 +16,7 @@ export const VideoExtension: Extension = {
             return '';
         }
         const src = resolveMediaAttachmentUrl('video', diaryId, attachment.filename);
-        return `<video controls src="${src}" data-id="${filename}" />`;
+        return `<video controls src="${src}" data-id="${filename}"></video>`;
     }),
 
     serialize: (node: HTMLElement) => {
