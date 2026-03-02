@@ -97,10 +97,6 @@ const emit = defineEmits([
 <style scoped lang="scss">
 .edit-toolbar {
   width: 100%;
-  position: fixed;
-  bottom: 0;
-  left: 0;
-
   background-color: var(--pad-bg-color-300);
   border-top: 1px solid var(--pad-border-color);
   box-shadow: 0 -2px 10px var(--pad-shadow-color-200);
