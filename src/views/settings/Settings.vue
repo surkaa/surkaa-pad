@@ -93,7 +93,7 @@ import {ref} from 'vue';
 import {useAppStore} from "../../stores/app.ts";
 import {platform} from "@tauri-apps/plugin-os";
 import {confirm} from '@tauri-apps/plugin-dialog';
-import {exportLogFile} from "../../utils/exportLogFile.ts";
+import {exportLogFile} from "../../utils";
 import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from "quasar";
 
