@@ -48,6 +48,7 @@ const routes: RouteRecordRaw[] = [
                     title: '日志详情',
                     depth: 2,
                     keepAlive: true,
+                    hideFooter: true
                 }
             },
             {
@@ -56,7 +57,8 @@ const routes: RouteRecordRaw[] = [
                 component: Settings,
                 meta: {
                     title: '设置',
-                    depth: 2
+                    depth: 2,
+                    hideFooter: true
                 }
             }
         ]

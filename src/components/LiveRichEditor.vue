@@ -148,6 +148,9 @@ watch(() => modelValue, (newVal) => {
   box-sizing: border-box;
   outline: none;
   text-align: left;
+  flex: 1;
+  overflow-y: auto;
+  height: 0;
 }
 </style>
 

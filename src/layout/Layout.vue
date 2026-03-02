@@ -33,7 +33,7 @@ function back() {
       <div id="header-actions"></div>
     </header>
 
-    <main class="app-content">
+    <main class="app-content" :style="{maxHeight: `calc(100vh - ${route.meta.hideFooter ? 60 : 95}px)`}">
       <router-view v-slot="{ Component }">
         <keep-alive :include="keepAliveIncludes">
           <component :is="Component" :key="route.fullPath" />
@@ -41,7 +41,7 @@ function back() {
       </router-view>
     </main>
 
-    <footer class="app-footer">
+    <footer class="app-footer" v-if="!route.meta.hideFooter">
       <div id="footer-content">
       </div>
     </footer>
@@ -84,7 +84,7 @@ function back() {
 
   .app-content {
     flex: 1;
-    max-height: calc(100% - 60px - 35px);
+    overflow: hidden;
   }
 
   .app-footer {

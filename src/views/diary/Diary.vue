@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {computed, nextTick, onActivated, onMounted, ref, watch} from "vue";
-import DiaryHeader from "./DiaryHeader.vue";
 import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
@@ -52,12 +51,6 @@ const {
 
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
-
-const BAR_MAX_HEIGHT = 56;
-const editorPadding = computed(() => {
-  if (showToolbar || showToolbarPanel) return `${BAR_MAX_HEIGHT + 16}px 16px`
-  else return '16px'
-});
 
 function openDiaryDetail() {
   if (!diary.value) {
@@ -138,24 +131,34 @@ onActivated(async () => {
 </script>
 
 <template>
-  <main>
-    <DiaryHeader
-        class="header"
-        :title="diary?.title"
-        @back="$router.back()"
-        @info="openDiaryDetail"
-        @operate="showMenu = true"
-        style="width: 100%; flex-shrink: 0"
-        :style="{height: BAR_MAX_HEIGHT + 'px'}"
-    />
+  <div id="diary-detail">
+    <Teleport defer to="#header-actions">
+      <button class="icon-btn" @click="openDiaryDetail" aria-label="详细信息">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 16v-4"/>
+          <path d="M12 8h.01"/>
+        </svg>
+      </button>
+      <button class="icon-btn" @click="showMenu = true" aria-label="操作">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="1"/>
+          <circle cx="19" cy="12" r="1"/>
+          <circle cx="5" cy="12" r="1"/>
+        </svg>
+      </button>
+    </Teleport>
+
     <LiveRichEditor
         ref="liveEditorRef"
         v-if="isInitialLoaded"
         v-model="diaryContent"
         :diarySummary="diary"
-        style="width: 100%; flex: 1"
-        :style="{padding: editorPadding}"
+        style="width: 100%; flex: 1; padding: 16px"
     />
+
     <EditToolbar
         :view="showToolbar || showToolbarPanel"
         :panelOpen="showToolbarPanel"
@@ -266,11 +269,11 @@ onActivated(async () => {
         </q-card-actions>
       </q-card>
     </q-dialog>
-  </main>
+  </div>
 </template>
 
 <style scoped lang="scss">
-main {
+#diary-detail {
   display: flex;
   flex-direction: column;
   width: 100%;
