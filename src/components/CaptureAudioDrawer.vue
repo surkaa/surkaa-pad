@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import {setWebmDuration, showToast} from "../utils";
-import { onUnmounted, ref, computed } from "vue";
+import {setWebmDuration} from "../utils";
+import {computed, onUnmounted, ref} from "vue";
+import {useQuasar} from "quasar";
 
 let mediaRecorder: MediaRecorder | null = null;
 let stream: MediaStream | null = null;
@@ -10,6 +11,8 @@ const PERIODIC_FLUSH_MS = 100;
 const recording = ref(false);
 const recordingDuration = ref(0); // 录音时长（秒）
 let startTime: number = 0; // 录音开始时间戳
+
+const $q = useQuasar();
 
 const {
   visible
@@ -87,18 +90,18 @@ async function startRecording() {
     stopInterval();
     if (err instanceof DOMException) {
       if (err.name === 'NotFoundError') {
-        showToast('未找到麦克风设备', 'error');
+        $q.notify('未找到麦克风设备');
         return;
       } else if (err.name === 'NotAllowedError') {
-        showToast(`请允许访问麦克风 ${err.message}`, 'error');
+        $q.notify(`请允许访问麦克风 ${err.message}`);
         return;
       } else {
-        showToast(`无法访问麦克风 ${err.name}`, 'error');
+        $q.notify(`无法访问麦克风 ${err.name}`);
         console.log('获取麦克风失败: ', err.name, err.stack);
         return;
       }
     }
-    showToast(`无法访问麦克风: ${err}`, 'error');
+    $q.notify(`无法访问麦克风: ${err}`);
     console.error('获取麦克风失败: ', err);
   }
 }

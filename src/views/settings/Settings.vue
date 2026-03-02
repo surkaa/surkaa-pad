@@ -91,12 +91,13 @@
 <script setup lang="ts">
 import {ref} from 'vue';
 import {useAppStore} from "../../stores/app.ts";
-import {showToast} from "../../utils";
 import {platform} from "@tauri-apps/plugin-os";
-import { confirm } from '@tauri-apps/plugin-dialog';
+import {confirm} from '@tauri-apps/plugin-dialog';
 import {exportLogFile} from "../../utils/exportLogFile.ts";
-import { relaunch } from '@tauri-apps/plugin-process';
+import {relaunch} from '@tauri-apps/plugin-process';
+import {useQuasar} from "quasar";
 
+const $q = useQuasar();
 const appStore = useAppStore();
 
 const showPasswordVerify = ref(false);
@@ -112,7 +113,7 @@ async function handleBiometricToggle(newValue: boolean) {
   } else {
     if (await confirm('确定要关闭生物识别解锁吗？')) {
       await appStore.disableBiometric();
-      showToast('生物识别已禁用', 'info');
+      $q.notify('生物识别已禁用');
     }
   }
 }
@@ -122,10 +123,10 @@ async function confirmEnableBiometric() {
   loading.value = true;
   try {
     await appStore.enableBiometric(verifyPassword.value);
-    showToast('生物识别已成功开启', 'success');
+    $q.notify('生物识别已成功开启');
     showPasswordVerify.value = false;
   } catch (err: any) {
-    showToast(`验证失败: ${err.message || err}`, 'error');
+    $q.notify(`验证失败: ${err.message || err}`);
   } finally {
     loading.value = false;
   }
@@ -139,7 +140,7 @@ function cancelBiometric() {
 async function handleReset() {
   if (await confirm('确定要重置所有配置吗？此操作不可撤销。重置后将自动重启应用')) {
     appStore.resetConfig().then(() => {
-      showToast('配置已重置', 'success');
+      $q.notify('配置已重置');
       setTimeout(relaunch, 1000);
     });
   }

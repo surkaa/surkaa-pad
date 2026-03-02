@@ -37,14 +37,14 @@ import {onMounted, ref} from "vue";
 import {useAppStore} from "../../stores/app.ts";
 import {OssConfigType} from "../../types";
 import {useRouter} from "vue-router";
-import {showToast} from "../../utils";
 import UnlockHeader from "./UnlockHeader.vue";
 import LoadingState from "./LoadingState.vue";
 import LoginSection from "./LoginSection.vue";
 import ConfigSection from "./ConfigSection.vue";
 import ErrorState from "./ErrorState.vue";
 import {getName, getVersion} from "@tauri-apps/api/app";
-import { confirm } from '@tauri-apps/plugin-dialog';
+import {confirm} from '@tauri-apps/plugin-dialog';
+import {useQuasar} from "quasar";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
@@ -61,6 +61,7 @@ const loading = ref<boolean>(false);
 const version = ref('0.0.0');
 const appName = ref('App Name');
 
+const $q = useQuasar();
 const appStore = useAppStore();
 const router = useRouter();
 
@@ -71,7 +72,7 @@ function saveConfigAndLogin() {
   // 如果快速配置不为空 则解析快速配置
   if (quickConfig.value.trim() !== '') {
     if (masterPassword.value.trim() == '') {
-      showToast("使用快速配置时，主密码不能为空。", 'error');
+      $q.notify("使用快速配置时，主密码不能为空。");
       loading.value = false;
       return;
     }
@@ -108,7 +109,7 @@ function saveConfigAndLogin() {
       .then((ec) => {
         if (!ec) throw new Error('无法获取加密配置');
         encryptedConfig.value = ec;
-        showToast("保存成功，请登录以验证主密码。", 'success');
+        $q.notify("保存成功，请登录以验证主密码。");
         masterPassword.value = '';
         ossConfig.value = {
           akid: '',
@@ -118,7 +119,7 @@ function saveConfigAndLogin() {
         };
         pipeline.value = 'login';
       })
-      .catch(err => showToast(`保存配置失败：${err.message || err}`, 'error'))
+      .catch(err => $q.notify(`保存配置失败：${err.message || err}`))
       .finally(() => loading.value = false);
 }
 
@@ -133,7 +134,7 @@ function unlock() {
       })
       .catch(err => {
         console.log("解锁失败：", err.message);
-        showToast(`解锁失败：${err.message || err}`, 'error');
+        $q.notify(`解锁失败：${err.message || err}`);
       })
       .finally(() => loading.value = false);
 }
@@ -146,7 +147,7 @@ async function confirmReset() {
           pipeline.value = 'config';
           masterPassword.value = '';
         })
-        .catch(err => showToast(`重置配置失败：${err.message || err}`, 'error'));
+        .catch(err => $q.notify(`重置配置失败：${err.message || err}`));
   }
 }
 
@@ -156,7 +157,7 @@ async function tryBiometricUnlock() {
     await appStore.unlockWithBiometric();
     await appStore.initOss(encryptedConfig.value);
 
-    showToast("生物识别解锁成功", "success");
+    $q.notify("生物识别解锁成功");
     appStore.setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
   } catch (e: any) {
