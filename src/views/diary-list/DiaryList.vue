@@ -4,9 +4,9 @@ import {useRouter} from "vue-router";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {commands, DiarySummary} from "../../bindings.ts";
-import {eventBusOn} from "../../utils/eventBus.ts";
 import {useAppStore} from "../../stores/app.ts";
-import {useScroll, useTimestamp} from "@vueuse/core";
+import {useEventBus, useScroll, useTimestamp} from "@vueuse/core";
+import {DiaryChangedEvent} from "../../types";
 
 const {getEndTime} = useAppStore();
 const router = useRouter();
@@ -18,6 +18,7 @@ const isFirstLoadFinished = ref(false);
 
 const scrollContainer = ref<HTMLElement | null>(null);
 const { y } = useScroll(scrollContainer, {behavior: 'smooth'})
+const bus = useEventBus<DiaryChangedEvent>('diary-changed');
 
 // 倒计时
 const now = useTimestamp({ offset: 0, interval: 1000 })
@@ -126,6 +127,31 @@ function openDiary(id?: string) {
 
 defineOptions({name: 'DiaryList'});
 
+bus.on((payload) => {
+  switch (payload.type) {
+    case 'created':
+      if (diaryIds.value.includes(payload.summary.id)) {
+        return;
+      }
+      diaryIds.value.unshift(payload.summary.id);
+      diarySummaries.value[payload.summary.id] = payload.summary;
+      break;
+    case 'updated':
+      const old = diarySummaries.value[payload.summary.id];
+      if (old && old !== payload.summary) {
+        diarySummaries.value[payload.summary.id] = payload.summary;
+      }
+      break;
+    case 'deleted':
+      const index = diaryIds.value.indexOf(payload.id);
+      if (index !== -1) {
+        diaryIds.value.splice(index, 1);
+        delete diarySummaries.value[payload.id];
+      }
+      break;
+  }
+});
+
 onActivated(async () => {
   isActivating.value = true;
   // 等待 DOM 渲染完毕
@@ -133,30 +159,6 @@ onActivated(async () => {
   if (scrollContainer.value) {
     scrollContainer.value.scrollTop = y.value;
   }
-  eventBusOn('diary-changed', async payload => {
-    switch (payload.type) {
-      case 'created':
-        if (diaryIds.value.includes(payload.summary.id)) {
-          return;
-        }
-        diaryIds.value.unshift(payload.summary.id);
-        diarySummaries.value[payload.summary.id] = payload.summary;
-        break;
-      case 'updated':
-        const old = diarySummaries.value[payload.summary.id];
-        if (old && old !== payload.summary) {
-          diarySummaries.value[payload.summary.id] = payload.summary;
-        }
-        break;
-      case 'deleted':
-        const index = diaryIds.value.indexOf(payload.id);
-        if (index !== -1) {
-          diaryIds.value.splice(index, 1);
-          delete diarySummaries.value[payload.id];
-        }
-        break;
-    }
-  });
 });
 
 onDeactivated(() => {

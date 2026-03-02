@@ -11,6 +11,8 @@ import {formatTimestamp} from "../../utils";
 import AttachmentCard from "../../components/AttachmentCard.vue";
 import {commands} from "../../bindings.ts";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
+import {useEventBus} from "@vueuse/core";
+import {DiaryChangedEvent} from "../../types";
 
 const route = useRoute();
 const $q = useQuasar();
@@ -45,6 +47,7 @@ const {
   insertFile,
 } = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
 
+const bus = useEventBus<DiaryChangedEvent>('diary-changed');
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
 
@@ -93,7 +96,19 @@ onBeforeRouteLeave((_to, _from, next) => {
     console.log('删除附件:', orphans);
     Promise
         .all(orphans.map(att => commands.cmdDeleteAttachment(diaryId.value, att.filename)))
-        .then(() => next())
+        .then(() => {
+          bus.emit({
+            type: "updated",
+            summary: {
+              id: diaryId.value,
+              title: diary.value?.title || '',
+              created: diary.value?.created || 0,
+              updated: diary.value?.updated || 0,
+              attachments: diary.value?.attachments.filter(att => !orphans.some(o => o.filename === att.filename)) || [],
+            }
+          })
+          next();
+        })
         .catch(e => {
           console.error('删除附件失败:', e);
           $q.notify({type: 'negative', message: `删除附件失败 ${e.message || e.error || e}`});

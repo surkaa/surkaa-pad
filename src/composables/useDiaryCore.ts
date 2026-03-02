@@ -2,13 +2,15 @@ import {computed, nextTick, onDeactivated, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
 import {commands, DiarySummary} from "../bindings.ts";
-import {eventBusEmit} from "../utils/eventBus.ts";
 import {EXTENSIONS} from "../components/editor/extension.ts";
+import {DiaryChangedEvent} from "../types";
+import {useEventBus} from "@vueuse/core";
 
 export function useDiaryCore(initialId: string) {
     const $q = useQuasar();
     const router = useRouter();
 
+    const bus = useEventBus<DiaryChangedEvent>('diary-changed');
     const diaryId = ref<string>(initialId);
     const diary = ref<DiarySummary>();
     const diaryContent = ref<string>("");
@@ -75,7 +77,7 @@ export function useDiaryCore(initialId: string) {
             diary.value = summary;
             diaryContent.value = content;
             $q.notify({type: 'positive', message: '日记已自动创建'});
-            eventBusEmit('diary-changed', {type: 'created', summary});
+            bus.emit({type: 'created', summary});
             return;
         }
 
@@ -86,7 +88,7 @@ export function useDiaryCore(initialId: string) {
             return;
         }
         diary.value = res.data;
-        eventBusEmit('diary-changed', {type: 'updated', summary: res.data});
+        bus.emit({type: 'updated', summary: res.data});
     }
 
     function deleteDiary() {
@@ -103,7 +105,7 @@ export function useDiaryCore(initialId: string) {
                 return;
             }
             $q.notify({type: 'positive', message: '日记已删除'});
-            eventBusEmit('diary-changed', {type: 'deleted', id: diaryId.value});
+            bus.emit({type: 'deleted', id: diaryId.value});
             isDelBack.value = true;
             router.back();
         });
