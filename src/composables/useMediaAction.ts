@@ -6,6 +6,7 @@ import {resolveMediaAttachmentUrl} from "../utils";
 import {insertFileNode, insertMediaNode, MediaType} from "../utils";
 import {useQuasar} from "quasar";
 import {formatBytes} from "../utils";
+import {v4 as uuidv4} from "uuid";
 
 export interface UploadTask {
     filename: string;
@@ -70,7 +71,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         completedCallback?: (meta: AttachmentMeta) => void
     ) {
         const rawName = accessStr.split(/[\\/]/).pop() || "未知文件";
-        const key = crypto.randomUUID();
+        const key = uuidv4();
         uploadTaskMap.value[key] = {filename: rawName, progress: 0, status: 'pending'};
         showUploadDialog.value = true;
 
@@ -87,7 +88,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         encrypted: boolean,
         completedCallback?: (meta: AttachmentMeta) => void
     ) {
-        const key = crypto.randomUUID();
+        const key = uuidv4();
         uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
         showUploadDialog.value = true;
 
@@ -122,6 +123,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             pickerMode: pickerMode,
             filters: [{name: pickerMode || 'filter file', extensions}]
         });
+        console.log('选中文件:', accessStrArr);
         if (!accessStrArr) return;
 
         const uploads = accessStrArr.map(accessStr =>
@@ -175,7 +177,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         takePhoto: async () => {
             const currentRange = captureRange();
             if (beforeClick()) return;
-            const key = crypto.randomUUID();
+            const key = uuidv4();
             uploadTaskMap.value[key] = {filename: 'take photo', progress: 0, status: 'pending'};
             const event = createUploadChannel(key, (meta) => {
                 const url = resolveMediaAttachmentUrl('image', diaryId.value, meta.filename);
