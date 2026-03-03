@@ -140,22 +140,8 @@ onActivated(async () => {
 <template>
   <div id="diary-detail">
     <Teleport defer to="#header-actions">
-      <button class="icon-btn" @click="openDiaryDetail" aria-label="详细信息">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M12 16v-4"/>
-          <path d="M12 8h.01"/>
-        </svg>
-      </button>
-      <button class="icon-btn" @click="showMenu = true" aria-label="操作">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="1"/>
-          <circle cx="19" cy="12" r="1"/>
-          <circle cx="5" cy="12" r="1"/>
-        </svg>
-      </button>
+      <q-btn flat round dense icon="info" @click="openDiaryDetail" aria-label="详细信息"/>
+      <q-btn flat round dense icon="more_horiz" @click="showMenu = true" aria-label="操作"/>
     </Teleport>
 
     <LiveRichEditor
@@ -214,8 +200,8 @@ onActivated(async () => {
 
         <q-card-section class="q-pa-md">
           <div class="text-subtitle2 q-mb-xs">时间信息</div>
-          <div class="text-caption text-grey-8">创建时间：{{ formatTimestamp(diary?.created) }}</div>
-          <div class="text-caption text-grey-8">更新时间：{{ formatTimestamp(diary?.updated) }}</div>
+          <div class="text-caption">创建时间：{{ formatTimestamp(diary?.created) }}</div>
+          <div class="text-caption">更新时间：{{ formatTimestamp(diary?.updated) }}</div>
 
           <q-separator class="q-my-md"/>
 
@@ -227,7 +213,7 @@ onActivated(async () => {
                 :att="att"
             />
           </q-list>
-          <div v-else class="text-center text-grey q-pa-sm">暂无附件</div>
+          <div v-else class="text-center q-pa-sm">暂无附件</div>
         </q-card-section>
 
         <q-card-actions align="right">

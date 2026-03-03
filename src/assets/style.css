@@ -145,6 +145,23 @@
     --pad-shadow-color-300: rgba(0, 0, 0, 0.3);
     --pad-shadow-color-400: rgba(0, 0, 0, 0.35);
     --pad-shadow-color-500: rgba(0, 0, 0, 0.4);
+
+    .q-card, .q-dialog__inner > div {
+        background-color: var(--pad-bg-color-200) !important;
+        color: var(--pad-text-color) !important;
+    }
+
+    .q-list--bordered {
+        border-color: var(--pad-border-color);
+    }
+
+    .q-item {
+        color: var(--pad-text-color-200);
+    }
+
+    .text-grey-8 {
+        color: var(--pad-text-color-300) !important;
+    }
 }
 
 body {
