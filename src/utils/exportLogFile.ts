@@ -3,6 +3,7 @@ import {save} from "@tauri-apps/plugin-dialog";
 import {copyFile} from "@tauri-apps/plugin-fs";
 import {getName} from "@tauri-apps/api/app";
 
+// TODO 导出的文件可能是空文件
 export async function exportLogFile() {
     try {
         const logDir = await appLogDir();

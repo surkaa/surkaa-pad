@@ -113,7 +113,8 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         editorDomRef.value?.focus();
     }
 
-    const genericBatchUpload = async (extensions: string[], nodeType?: MediaType, pickerMode?: PickerMode) => {
+    // TODO 添加转成明文或者转成密文的选项
+    const genericBatchUpload = async (encrypted: boolean, extensions: string[], nodeType?: MediaType, pickerMode?: PickerMode) => {
         const currentRange = captureRange();
         if (beforeClick()) return;
         const accessStrArr = await open({
@@ -124,7 +125,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         if (!accessStrArr) return;
 
         const uploads = accessStrArr.map(accessStr =>
-            uploadAttachment(accessStr, true, (att) => {
+            uploadAttachment(accessStr, encrypted, (att) => {
                 if (!nodeType) {
                     insertFileNode(editorDomRef.value, att.filename, formatBytes(att.size), currentRange);
                     return;
@@ -170,7 +171,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                 insertMediaNode(editorDomRef.value, 'audio', url, att.filename, currentRange);
             });
         },
-        insertPhoto: () => genericBatchUpload(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], 'img', "image"),
+        insertPhoto: () => genericBatchUpload(true, ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], 'img', "image"),
         takePhoto: async () => {
             const currentRange = captureRange();
             if (beforeClick()) return;
@@ -187,8 +188,8 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             if (beforeClick()) return;
             showAudioDrawer.value = true;
         },
-        insertAudio: () => genericBatchUpload(['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
-        insertVideo: () => genericBatchUpload(['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video', "video"),
-        insertFile: async () => genericBatchUpload(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar'])
+        insertAudio: () => genericBatchUpload(false, ['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
+        insertVideo: () => genericBatchUpload(false, ['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video', "video"),
+        insertFile: async () => genericBatchUpload(true, ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar'])
     };
 }
