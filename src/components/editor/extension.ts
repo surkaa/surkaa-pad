@@ -1,5 +1,5 @@
 import {AttachmentMeta} from "../../bindings.ts";
-import {SupportType} from "../../utils/resolveMediaAttachmentUrl.ts";
+import {SupportType} from "../../utils";
 import {ImageExtension} from "./imageExtension.ts";
 import {AudioExtension} from "./audioExtension.ts";
 import {VideoExtension} from "./videoExtension.ts";

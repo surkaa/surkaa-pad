@@ -1,5 +1,5 @@
 import {Extension, MenuButton} from "./extension.ts";
-import {resolveMediaAttachmentUrl} from "../../utils/resolveMediaAttachmentUrl.ts";
+import {resolveMediaAttachmentUrl} from "../../utils";
 
 export const ImageExtension: Extension = {
     name: "image",

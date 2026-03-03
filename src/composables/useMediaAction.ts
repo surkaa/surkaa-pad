@@ -2,8 +2,8 @@ import {Channel} from "@tauri-apps/api/core";
 import {AddAttachmentEvent, AttachmentMeta, commands} from "../bindings.ts";
 import {computed, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
-import {resolveMediaAttachmentUrl} from "../utils/resolveMediaAttachmentUrl.ts";
-import {insertFileNode, insertMediaNode, MediaType} from "../utils/domUtils.ts";
+import {resolveMediaAttachmentUrl} from "../utils";
+import {insertFileNode, insertMediaNode, MediaType} from "../utils";
 import {useQuasar} from "quasar";
 import {formatBytes} from "../utils";
 

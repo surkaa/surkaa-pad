@@ -1,5 +1,5 @@
 import {Extension} from "./extension.ts";
-import {resolveMediaAttachmentUrl} from "../../utils/resolveMediaAttachmentUrl.ts";
+import {resolveMediaAttachmentUrl} from "../../utils";
 
 export const VideoExtension: Extension = {
     name: "video",
