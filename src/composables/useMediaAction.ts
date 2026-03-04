@@ -1,5 +1,5 @@
 import {Channel} from "@tauri-apps/api/core";
-import {AddAttachmentEvent, AttachmentMeta, commands} from "../bindings.ts";
+import {AddAttachmentEvent, AttachmentMeta, commands, ToggleAttachmentEncryptionEvent} from "../bindings.ts";
 import {computed, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {resolveMediaAttachmentUrl} from "../utils";
@@ -73,7 +73,6 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         const rawName = accessStr.split(/[\\/]/).pop() || "未知文件";
         const key = uuidv4();
         uploadTaskMap.value[key] = {filename: rawName, progress: 0, status: 'pending'};
-        showUploadDialog.value = true;
 
         const event = createUploadChannel(key, completedCallback);
 
@@ -114,7 +113,6 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         editorDomRef.value?.focus();
     }
 
-    // TODO 添加转成明文或者转成密文的选项
     const genericBatchUpload = async (encrypted: boolean, extensions: string[], nodeType?: MediaType, pickerMode?: PickerMode) => {
         const currentRange = captureRange();
         if (beforeClick()) return;
@@ -137,8 +135,72 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                 insertMediaNode(editorDomRef.value, nodeType, url, att.filename, currentRange);
             })
         );
+        showUploadDialog.value = true;
         await Promise.allSettled(uploads);
     };
+
+    async function toggleAttachmentEncryption(filename: string, encrypted: boolean) {
+        return new Promise<void>((resolve, reject) => {
+            if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
+                console.log(`无法获取日记ID或文件名，无法执行转换。diaryId: ${diaryId.value}, filename: ${filename}`);
+                $q.notify({type: 'negative', message: '无法获取日记ID或文件名，无法执行转换'});
+                reject(new Error('Invalid diary ID or filename'));
+                return;
+            }
+            uploadTaskMap.value = {};
+            editorDomRef.value?.focus();
+
+            const key = uuidv4();
+            uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
+
+            const event = new Channel<ToggleAttachmentEncryptionEvent>();
+            event.onmessage = msg => {
+                const task = uploadTaskMap.value[key];
+                if (!task) {
+                    reject(new Error('无法找到对应的转换任务'));
+                    return;
+                }
+
+                switch (msg.event) {
+                    case "started":
+                        task.status = 'uploading';
+                        console.log('转换附件命令已开始执行:', filename, encrypted);
+                        break;
+                    case "progress":
+                        task.progress = msg.data / 100;
+                        console.log('转换进度:', task.progress);
+                        break;
+                    case "completed":
+                        task.status = 'completed';
+                        task.progress = 1;
+                        console.log('转换完成:', filename);
+                        resolve(); // TODO 让后端返回新的附件元信息并使用事件推送更新页面
+                        break;
+                    case "error":
+                        task.status = 'error';
+                        $q.notify({type: 'negative', message: `${task.filename}转换失败: ${msg.data}`});
+                        reject(new Error(msg.data));
+                        break;
+                }
+            }
+            commands.cmdToggleAttachmentEncryption(
+                event,
+                diaryId.value,
+                filename,
+                encrypted
+            ).then(cancelRes => {
+                if (cancelRes.status === "error") {
+                    $q.notify({type: 'negative', message: cancelRes.error});
+                    reject(new Error(cancelRes.error));
+                    return;
+                } else {
+                    showUploadDialog.value = true;
+                    console.log('转换附件命令已发送，取消令牌:', cancelRes.data);
+                }
+            });
+            console.log('发送转换附件命令，等待结果...');
+        });
+    }
 
     onUnmounted(async () => {
         if (cancelTokens.size === 0) return;
@@ -192,6 +254,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         },
         insertAudio: () => genericBatchUpload(false, ['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
         insertVideo: () => genericBatchUpload(false, ['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video', "video"),
-        insertFile: async () => genericBatchUpload(true, ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar'])
+        insertFile: async () => genericBatchUpload(true, ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar']),
+        toggleAttachmentEncryption,
     };
 }

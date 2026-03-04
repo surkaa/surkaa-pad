@@ -45,6 +45,7 @@ const {
   audioRecording,
   insertVideo,
   insertFile,
+  toggleAttachmentEncryption,
 } = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
 
 const bus = useEventBus<DiaryChangedEvent>('diary-changed');
@@ -150,6 +151,7 @@ onActivated(async () => {
         v-model="diaryContent"
         :diarySummary="diary"
         :attachmentMap="attachmentMap"
+        @toggleAttachmentEncryption="toggleAttachmentEncryption"
         style="width: 100%; flex: 1; padding: 16px"
     />
 
@@ -226,7 +228,7 @@ onActivated(async () => {
     <q-dialog v-model="showUploadDialog" persistent>
       <q-card style="min-width: 300px; max-width: 500px">
         <q-card-section class="row items-center q-pb-none">
-          <div class="text-h6">文件上传中</div>
+          <div class="text-h6">文件处理中</div>
         </q-card-section>
 
         <q-card-section class="q-pt-md">

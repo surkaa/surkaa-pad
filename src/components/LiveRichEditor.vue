@@ -14,12 +14,13 @@ const {modelValue, diarySummary, attachmentMap} = defineProps<{
 }>();
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
+  (e: 'toggleAttachmentEncryption', filename: string, encrypted: boolean): Promise<void>;
 }>();
 
 const editor = ref<HTMLDivElement>();
 
 const storageY = useStorage(`scroll-y-${diarySummary?.id}`, 0, sessionStorage);
-const { y } = useScroll(editor, {
+const {y} = useScroll(editor, {
   behavior: 'smooth',
   onScroll() {
     storageY.value = y.value;
@@ -45,7 +46,11 @@ const extensionCtx: ExtensionContext = {
   }),
 }
 
-const {handleEditorContextMenu} = useContextMenu(extensionCtx, handleInput);
+const {handleEditorContextMenu} = useContextMenu(
+    extensionCtx,
+    handleInput,
+    (filename, encrypted) => emit('toggleAttachmentEncryption', filename, encrypted)
+);
 
 function parseSourceToHtml(source: string): string {
   let result = source;
@@ -210,9 +215,9 @@ watch(() => modelValue, (newVal) => {
     // 给右侧编辑区留足点击空间用来删除媒体
     max-width: calc(100% - 10px);
     -webkit-touch-callout: none; /* 禁用 iOS/Android 默认长按菜单 */
-    user-select: none;           /* 禁用文本/元素选区 */
+    user-select: none; /* 禁用文本/元素选区 */
     -webkit-user-select: none;
-    -webkit-user-drag: none;     /* 禁用原生拖拽 */
+    -webkit-user-drag: none; /* 禁用原生拖拽 */
   }
 
   // 通用文件卡片样式
