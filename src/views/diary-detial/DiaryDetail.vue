@@ -22,7 +22,7 @@ const showDetailDialog = ref(false);
 
 const initialDiaryId = (route.params.id as string) || "";
 const {
-  diaryId, diary, diaryContent, isNew, isInitialLoaded, unusedAttachments, isDelBack,
+  diaryId, diary, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
   loadDiaryInfo, deleteDiary
 } = useDiaryCore(initialDiaryId);
 
@@ -149,6 +149,7 @@ onActivated(async () => {
         v-if="isInitialLoaded"
         v-model="diaryContent"
         :diarySummary="diary"
+        :attachmentMap="attachmentMap"
         style="width: 100%; flex: 1; padding: 16px"
     />
 

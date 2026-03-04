@@ -2,7 +2,8 @@ use crate::crypto::Crypto;
 use crate::diaries::types::DiarySummary;
 use crate::diaries::{get_diary, DiaryMemoryCache};
 use crate::object::{NextToken, OssClient};
-use crate::storages::diary_id_from_manifest_key;
+use crate::storages::{diary_id_from_manifest_key, remote_attachments_key};
+use std::collections::HashMap;
 
 pub async fn page_diary_ids(
     client: &OssClient,
@@ -36,9 +37,21 @@ pub async fn get_diary_content(
     crypto: &Crypto,
     client: &OssClient,
     id: &str,
-) -> Result<String, String> {
+) -> Result<(String, HashMap<String, String>), String> {
+    const ATTACHMENT_URL_EXPIRATION_SECONDS: u64 = 3600; // 附件URL过期时间，单位秒
     let diary = get_diary(cache, crypto, client, id).await?;
-    Ok(diary.content)
+    let mut map = HashMap::new();
+    for attachment in diary.attachments {
+        if attachment.encrypted {
+            continue;
+        }
+        let key = remote_attachments_key(id, &attachment.filename);
+        let url = client
+            .direct_url(&key, ATTACHMENT_URL_EXPIRATION_SECONDS)
+            .map_err(|e| format!("生成附件URL失败:{}", e))?;
+        map.insert(attachment.filename, url);
+    }
+    Ok((diary.content, map))
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ export const ImageExtension: Extension = {
     hasMark: (source, filename) => new RegExp(`\\[\\[IMG:${filename}(?:\\|[^\\]]*)?\]\\]`).test(source),
 
     toHtml: (source, ctx) => source.replace(/\[\[IMG:([^\]|]+)(?:\|([^\]]+))?]]/g, (_, filename, configStr) => {
-        const url = resolveMediaAttachmentUrl('image', ctx.getDiaryId(), filename);
+        const url = ctx.getAttachmentUrl(filename) || resolveMediaAttachmentUrl('image', ctx.getDiaryId(), filename);
         const img = document.createElement('img');
         img.src = url;
         img.dataset.id = filename;

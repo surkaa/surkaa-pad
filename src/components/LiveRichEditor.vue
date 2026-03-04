@@ -7,9 +7,10 @@ import {useContextMenu} from "./editor/useContextMenu.ts";
 import {useScroll, useStorage} from "@vueuse/core";
 
 const router = useRouter();
-const {modelValue, diarySummary} = defineProps<{
+const {modelValue, diarySummary, attachmentMap} = defineProps<{
   modelValue: string;
   diarySummary?: DiarySummary;
+  attachmentMap: Record<string, string>;
 }>();
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
@@ -31,6 +32,12 @@ const extensionCtx: ExtensionContext = {
     if (!diarySummary) return null;
     // 纯函数查询，不要在这里做任何 emit 或副作用
     return diarySummary.attachments.find(att => att.filename === filename) || null;
+  },
+  getAttachmentUrl: (filename) => {
+    if (!diarySummary) return null;
+    const att = diarySummary.attachments.find(att => att.filename === filename);
+    if (!att || !attachmentMap[att.filename]) return null;
+    return attachmentMap[att.filename];
   },
   gotoPreview: (type, diaryId, filename) => router.push({
     name: 'PreviewMedia',

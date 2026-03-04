@@ -15,7 +15,7 @@ export const AudioExtension: Extension = {
             console.error(`没有找到附件 ${filename}, 已自动移除`);
             return '';
         }
-        const src = resolveMediaAttachmentUrl('audio', diaryId, attachment.filename);
+        const src = ctx.getAttachmentUrl(filename) || resolveMediaAttachmentUrl('audio', diaryId, attachment.filename);
         return `<audio controls src="${src}" data-id="${filename}"></audio>`;
     }),
 

@@ -169,9 +169,9 @@ async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, string>> {
  * # Arguments
  * * `id` - 日记ID
  * # Returns
- * * `Result<String, String>` - 成功时返回日记内容，失败时返回错误信息
+ * * `Result<(String, HashMap<String, String>), String>` - 成功时返回日记内容和附件filename->src Map，失败时返回错误信息
  */
-async cmdGetDiaryContent(id: string) : Promise<Result<string, string>> {
+async cmdGetDiaryContent(id: string) : Promise<Result<[string, Partial<{ [key in string]: string }>], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_content", { id }) };
 } catch (e) {

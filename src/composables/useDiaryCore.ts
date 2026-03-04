@@ -14,6 +14,7 @@ export function useDiaryCore(initialId: string) {
     const diaryId = ref<string>(initialId);
     const diary = ref<DiarySummary>();
     const diaryContent = ref<string>("");
+    const attachmentMap = ref<Record<string, string>>({});
 
     const isDelBack = ref(false);
 
@@ -59,7 +60,9 @@ export function useDiaryCore(initialId: string) {
         }
 
         diary.value = summaryRes.data;
-        diaryContent.value = contentRes.data;
+        const [content, map] = contentRes.data;
+        diaryContent.value = content;
+        attachmentMap.value = map as Record<string, string>;
         // 延迟标记加载完成，避免触发首次 watch
         await nextTick();
         isInitialLoaded.value = true;
@@ -133,6 +136,7 @@ export function useDiaryCore(initialId: string) {
         diaryId,
         diary,
         diaryContent,
+        attachmentMap,
         isInitialLoaded,
         isNew,
         unusedAttachments,

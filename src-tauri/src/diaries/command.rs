@@ -1,5 +1,6 @@
 use crate::crypto::Crypto;
 use crate::object::{NextToken, OssState};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 
@@ -100,7 +101,7 @@ pub async fn cmd_get_diary_summary(
 /// # Arguments
 /// * `id` - 日记ID
 /// # Returns
-/// * `Result<String, String>` - 成功时返回日记内容，失败时返回错误信息
+/// * `Result<(String, HashMap<String, String>), String>` - 成功时返回日记内容和附件filename->src Map，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_get_diary_content(
@@ -108,7 +109,7 @@ pub async fn cmd_get_diary_content(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     id: &str,
-) -> Result<String, String> {
+) -> Result<(String, HashMap<String, String>), String> {
     let client = client.get_client()?;
     get_diary_content(&cache, &crypto, &client, id).await
 }
