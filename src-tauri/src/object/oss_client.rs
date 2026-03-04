@@ -435,6 +435,49 @@ impl OssClient {
 
         Ok(data)
     }
+
+    /// 生成预签名 URL（Direct URL），允许外部直接访问私有对象
+    pub fn direct_url(&self, key: &str, expire_secs: u64) -> Result<String, String> {
+        // 计算过期时间（当前时间 + 有效秒数）
+        let expires = Utc::now().timestamp() + expire_secs as i64;
+
+        // 构造签名字符串 (CanonicalizedResource)
+        // 格式：VERB + \n + Content-MD5 + \n + Content-Type + \n + Expires + \n + CanonicalizedResource
+        // 对于 URL 签名，Content-MD5 和 Content-Type 通常为空
+        let canonicalized_resource = format!("/{}/{}", self.inner.bucket, key);
+        let string_to_sign = format!(
+            "{}\n\n\n{}\n{}",
+            Method::GET.as_str(),
+            expires,
+            canonicalized_resource
+        );
+
+        // HMAC-SHA1 签名
+        type HmacSha1 = Hmac<Sha1>;
+        let mut mac = HmacSha1::new_from_slice(self.inner.sakey.as_bytes())
+            .map_err(|e| format!("Key 长度非法: {}", e))?;
+        mac.update(string_to_sign.as_bytes());
+
+        let signature = STANDARD.encode(mac.finalize().into_bytes());
+
+        // 对签名进行 URL 编码（防止特殊字符破坏 URL 结构）
+        // 注意：这里需要对 signature 进行 url encode，虽然 base64 只有 + / =，但仍建议处理
+        let encoded_signature = urlencoding::encode(&signature);
+
+        // 拼接最终 URL
+        // 格式：https://<bucket>.<endpoint>/<key>?OSSAccessKeyId=<ak>&Expires=<expires>&Signature=<sig>
+        let url = format!(
+            "https://{}.{}/{}?OSSAccessKeyId={}&Expires={}&Signature={}",
+            self.inner.bucket,
+            self.inner.endpoint,
+            key,
+            self.inner.akid,
+            expires,
+            encoded_signature
+        );
+
+        Ok(url)
+    }
 }
 
 #[cfg(test)]
@@ -641,5 +684,66 @@ mod tests {
         // 清理
         client.delete(key).await.expect("删除失败");
         assert_empty(&client, "测试结束后对象存储应为空").await;
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_oss_direct_url() {
+        // 1. 初始化客户端 (依赖环境变量)
+        let client = OssClient::from_env();
+        let test_key = "test_direct_url.txt";
+        let test_content = b"Hello OSS Direct URL Test";
+        assert_empty(&client, "测试开始前对象存储应为空").await;
+
+        // 2. 先上传一个文件，确保它存在
+        client.upload_bytes(test_key, &test_content.to_vec())
+            .await
+            .expect("上传测试文件失败");
+
+        // 3. 生成一个有效期为 60 秒的签名 URL
+        let signed_url = client.direct_url(test_key, 60)
+            .await
+            .expect("生成签名URL失败");
+
+        println!("生成的签名URL: {}", signed_url);
+
+        // 4. 使用普通的 reqwest 客户端（不带任何 OSS Header）去请求这个 URL
+        let http_client = reqwest::Client::new();
+        let resp = http_client.get(&signed_url)
+            .send()
+            .await
+            .expect("访问签名URL失败");
+
+        // 5. 验证结果
+        let status = resp.status();
+        let body = resp.bytes().await.expect("读取响应体失败");
+
+        // 清理测试文件
+        let _ = client.delete(test_key).await;
+
+        assert!(status.is_success(), "签名URL应该可以正常访问，当前状态码: {}", status);
+        assert_eq!(body.as_ref(), test_content, "下载的内容与上传的不一致");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_oss_expired_url() {
+        let client = OssClient::from_env();
+        let test_key = "test_expired.txt";
+        assert_empty(&client, "测试开始前对象存储应为空").await;
+
+        // 生成一个已经过期的 URL (过期时间设为负数)
+        // 注意：在实际 direct_url 实现中，expires = now + expire_secs
+        // 我们传入 0 或者非常小的秒数，或者手动构造一个过期的 timestamp
+        let expired_url = client.direct_url(test_key, 1).await.unwrap();
+
+        // 等待 2 秒确保过期
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let http_client = reqwest::Client::new();
+        let resp = http_client.get(&expired_url).send().await.unwrap();
+
+        // 过期后 OSS 应该返回 403 Forbidden
+        assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN);
     }
 }
