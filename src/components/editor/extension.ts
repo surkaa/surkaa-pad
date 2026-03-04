@@ -49,6 +49,9 @@ export interface Extension {
 
     // 是否是加密了的附件
     isEncrypted?: (node: HTMLElement, ctx: ExtensionContext) => boolean;
+
+    // 获取附件的文件名
+    getFilename?: (node: HTMLElement) => string | undefined;
 }
 
 export const EXTENSIONS: Extension[] = [

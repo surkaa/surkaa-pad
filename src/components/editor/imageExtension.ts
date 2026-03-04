@@ -77,5 +77,7 @@ export const ImageExtension: Extension = {
         if (!filename) return false;
         const attachment = ctx.getAttachment(filename);
         return attachment ? attachment.encrypted : false;
-    }
+    },
+
+    getFilename: (node) => (node as HTMLImageElement).dataset.id
 }

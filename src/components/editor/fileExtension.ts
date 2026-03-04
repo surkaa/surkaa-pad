@@ -45,5 +45,7 @@ export const FileExtension: Extension = {
         }
         const att = ctx.getAttachment(filename);
         console.log(`Attachment: ${att?.filename}`);
-    }
+    },
+
+    getFilename: (node) => (node as HTMLDivElement).dataset.id
 }
