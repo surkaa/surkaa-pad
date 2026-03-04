@@ -149,14 +149,6 @@ mod test {
     use std::sync::Arc;
     use tokio::task::JoinHandle;
 
-    // 模拟 MessageSender 以便在测试中捕获或忽略事件
-    struct MockEventSender;
-    impl MessageSender<AddAttachmentEvent> for MockEventSender {
-        fn send(&self, _msg: AddAttachmentEvent) -> Result<(), String> {
-            Ok(())
-        }
-    }
-
     #[serial]
     #[tokio::test]
     async fn test_thread_add_and_delete_attachment() {
@@ -188,7 +180,7 @@ mod test {
             let crypto_clone = crypto.clone();
             let client_clone = client.clone();
             let id_clone = diary_id.clone();
-            let event: Arc<dyn MessageSender<AddAttachmentEvent>> = Arc::new(MockEventSender);
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AddAttachmentEvent>();
 
             // 构造 Mock 数据流 (需替换为项目实际的 ByteStream 构造方式)
             let dummy_content = format!("attachment_data_{}", i).into_bytes();
@@ -200,7 +192,7 @@ mod test {
                     cache_clone,
                     crypto_clone,
                     client_clone,
-                    event,
+                    Arc::new(tx),
                     &id_clone,
                     false,
                     size,
