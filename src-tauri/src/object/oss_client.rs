@@ -702,7 +702,6 @@ mod tests {
 
         // 3. 生成一个有效期为 60 秒的签名 URL
         let signed_url = client.direct_url(test_key, 60)
-            .await
             .expect("生成签名URL失败");
 
         println!("生成的签名URL: {}", signed_url);
@@ -735,7 +734,7 @@ mod tests {
         // 生成一个已经过期的 URL (过期时间设为负数)
         // 注意：在实际 direct_url 实现中，expires = now + expire_secs
         // 我们传入 0 或者非常小的秒数，或者手动构造一个过期的 timestamp
-        let expired_url = client.direct_url(test_key, 1).await.unwrap();
+        let expired_url = client.direct_url(test_key, 1).unwrap();
 
         // 等待 2 秒确保过期
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;

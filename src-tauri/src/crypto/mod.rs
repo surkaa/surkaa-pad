@@ -11,7 +11,7 @@ use argon2::{Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
 use bytes::Bytes;
 use futures_util::StreamExt;
 use std::sync::{Arc, OnceLock};
-use zeroize::{Zeroize};
+use zeroize::Zeroize;
 impl std::ops::Deref for types::DerivedKey {
     type Target = [u8; types::KEY_LEN];
     fn deref(&self) -> &Self::Target {
