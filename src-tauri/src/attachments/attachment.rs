@@ -103,7 +103,7 @@ pub async fn add_attachment(
 
         // 此时仍然持有 pending_ids 的锁，顺便当做排他锁更新 Manifest
         // 避免了并发上传完成后，同时回写 Manifest 导致的互相覆盖问题
-        update_diary_attachment(&cache, &crypto, &client, id, &attachment).await?;
+        update_diary_attachment(&cache, &crypto, &client, id, attachment.clone()).await?;
         Ok::<AttachmentMeta, String>(attachment)
     };
 

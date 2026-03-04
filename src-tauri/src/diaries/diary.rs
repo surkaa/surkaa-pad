@@ -148,10 +148,19 @@ pub async fn update_diary_attachment(
     crypto: &Crypto,
     client: &OssClient,
     id: &str,
-    new_attachment: &AttachmentMeta,
+    new_attachment: AttachmentMeta,
 ) -> Result<(), String> {
     let mut diary = get_diary(cache, crypto, client, id).await?;
-    diary.attachments.push(new_attachment.clone());
+    // 判断是否已存在同名附件，若存在则替换，否则添加
+    if let Some(existing) = diary
+        .attachments
+        .iter_mut()
+        .find(|att| att.filename == new_attachment.filename)
+    {
+        *existing = new_attachment;
+    } else {
+        diary.attachments.push(new_attachment);
+    }
     diary.updated = Utc::now().timestamp_millis();
     update_diary(cache, crypto, client, &diary).await?;
     Ok(())
