@@ -48,43 +48,31 @@ const emit = defineEmits([
 
       <transition name="panel-expand">
         <div v-show="panelOpen" class="more-panel">
-          <div class="row q-col-gutter-md">
-            <div class="col-3 flex flex-center">
-              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertPhoto')">
-                <q-icon name="image" size="28px" class="q-mb-xs"/>
-                <span class="text-caption">照片</span>
-              </q-btn>
-            </div>
-            <div class="col-3 flex flex-center" v-if="isAndroid">
-              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('takePhoto')">
-                <q-icon name="camera" size="28px" class="q-mb-xs"/>
-                <span class="text-caption">拍摄</span>
-              </q-btn>
-            </div>
-            <div class="col-3 flex flex-center">
-              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertAudio')">
-                <q-icon name="audiotrack" size="28px" class="q-mb-xs"/>
-                <span class="text-caption">音频</span>
-              </q-btn>
-            </div>
-            <div class="col-3 flex flex-center" v-if="isAndroid">
-              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
-                <q-icon name="mic" size="28px" class="q-mb-xs"/>
-                <span class="text-caption">录音</span>
-              </q-btn>
-            </div>
-            <div class="col-3 flex flex-center">
-              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertVideo')">
-                <q-icon name="video_library" size="28px" class="q-mb-xs"/>
-                <span class="text-caption">视频</span>
-              </q-btn>
-            </div>
-            <div class="col-3 flex flex-center">
-              <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertFile')">
-                <q-icon name="attach_file" size="28px" class="q-mb-xs"/>
-                <span class="text-caption">文件</span>
-              </q-btn>
-            </div>
+          <div>
+            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertPhoto')">
+              <q-icon name="image" size="28px" class="q-mb-xs"/>
+              <span class="text-caption">照片</span>
+            </q-btn>
+            <q-btn v-if="isAndroid" flat stack color="grey-8" class="panel-item-btn" @click="emit('takePhoto')">
+              <q-icon name="camera" size="28px" class="q-mb-xs"/>
+              <span class="text-caption">拍摄</span>
+            </q-btn>
+            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertAudio')">
+              <q-icon name="audiotrack" size="28px" class="q-mb-xs"/>
+              <span class="text-caption">音频</span>
+            </q-btn>
+            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
+              <q-icon name="mic" size="28px" class="q-mb-xs"/>
+              <span class="text-caption">录音</span>
+            </q-btn>
+            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertVideo')">
+              <q-icon name="video_library" size="28px" class="q-mb-xs"/>
+              <span class="text-caption">视频</span>
+            </q-btn>
+            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertFile')">
+              <q-icon name="attach_file" size="28px" class="q-mb-xs"/>
+              <span class="text-caption">文件</span>
+            </q-btn>
           </div>
         </div>
       </transition>
@@ -189,8 +177,6 @@ const emit = defineEmits([
     overflow: hidden;
 
     .panel-item-btn {
-      width: 100%;
-
       :deep(.q-icon) {
         color: var(--pad-text-color);
       }
