@@ -46,6 +46,9 @@ export interface Extension {
 
     // 上下文菜单 (windows右键/android长按) -> 返回要显示的菜单按钮列表
     onContextmenu?: (e: MouseEvent, node: HTMLElement, ctx: ExtensionContext) => MenuButton[];
+
+    // 是否是加密了的附件
+    isEncrypted?: (node: HTMLElement, ctx: ExtensionContext) => boolean;
 }
 
 export const EXTENSIONS: Extension[] = [

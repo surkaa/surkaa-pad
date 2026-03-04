@@ -1,7 +1,7 @@
 import {Menu, MenuItem} from '@tauri-apps/api/menu';
 import {platform} from '@tauri-apps/plugin-os';
 import {useQuasar} from 'quasar';
-import {ExtensionContext, EXTENSIONS} from "./extension.ts";
+import {ExtensionContext, EXTENSIONS, MenuButton} from "./extension.ts";
 
 export function useContextMenu(extensionCtx: ExtensionContext, handleInput: () => void) {
     const $q = useQuasar();
@@ -12,7 +12,16 @@ export function useContextMenu(extensionCtx: ExtensionContext, handleInput: () =
         const handler = EXTENSIONS.find(ext => ext.match && ext.match(target));
 
         if (handler && handler.onContextmenu) {
-            const buttons = handler.onContextmenu(e, target, extensionCtx);
+            const buttons: MenuButton[] = [];
+            const encrypted = handler.isEncrypted? handler.isEncrypted(target, extensionCtx) : false;
+            buttons.push({
+                label: `转成${encrypted ? '普通' : '加密'}附件`,
+                action: t => {
+                    // TODO 在后端编写转换逻辑
+                    console.log('点击了转换附件按钮，目标元素：', t);
+                }
+            });
+            buttons.push(...handler.onContextmenu(e, target, extensionCtx));
 
             if (!(buttons && buttons.length > 0)) {
                 return;

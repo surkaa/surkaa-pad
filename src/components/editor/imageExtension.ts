@@ -70,5 +70,12 @@ export const ImageExtension: Extension = {
                 }
             }
         }];
+    },
+
+    isEncrypted: (node, ctx) => {
+        const filename = (node as HTMLImageElement).dataset.id;
+        if (!filename) return false;
+        const attachment = ctx.getAttachment(filename);
+        return attachment ? attachment.encrypted : false;
     }
 }
