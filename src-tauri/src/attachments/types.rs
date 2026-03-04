@@ -13,6 +13,7 @@ pub enum AddAttachmentEvent {
     Started,
     /// 0-100 的上传进度百分比
     Progress(u8),
+    /// TODO 如果添加的是未加密的同样要返回url 或者干脆不在前端处理url了，后端统一返回在AttachmentMeta吧
     Completed(AttachmentMeta),
     Error(String),
 }

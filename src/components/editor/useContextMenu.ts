@@ -35,7 +35,6 @@ export function useContextMenu(
                     console.error('转换附件失败:', e);
                     return;
                 }
-                handleInput(); // 强制触发数据同步，更新界面状态
             }
         }];
         handler.onContextmenu && buttons.push(...handler.onContextmenu(e, target, extensionCtx));
