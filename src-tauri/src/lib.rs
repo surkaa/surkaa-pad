@@ -9,7 +9,7 @@ mod utils;
 use crate::attachments::attachment_protocol;
 use crate::attachments::command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_delete_attachment,
-    cmd_add_image_attachment_from_camera
+    cmd_add_image_attachment_from_camera, cmd_toggle_attachment_encryption
 };
 use crate::crypto::command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
@@ -64,6 +64,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_add_attachment_memory,
             cmd_delete_attachment,
             cmd_add_image_attachment_from_camera,
+            cmd_toggle_attachment_encryption,
             // 其他
             cmd_cancel_task,
             open_devtools,

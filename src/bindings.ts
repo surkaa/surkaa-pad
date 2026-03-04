@@ -262,6 +262,23 @@ async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AddAttachmentEvent>, 
 }
 },
 /**
+ * 将加密的附件转成未加密的、将未加密的附件转成加密的
+ * # Arguments
+ * * `id` - 日记 ID
+ * * `filename` - 附件 ID
+ * * `encrypted` - 是否需要加密
+ * # Returns
+ * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ */
+async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<ToggleAttachmentEncryptionEvent>, id: string, filename: string, encrypted: boolean) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_toggle_attachment_encryption", { event, id, filename, encrypted }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 取消任务
  * # Arguments
  * * `cancel_token` - 任务取消令牌
@@ -309,6 +326,15 @@ attachments: AttachmentMeta[] }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type TAURI_CHANNEL<TSend> = null
+export type ToggleAttachmentEncryptionEvent = { event: "started" } | 
+/**
+ * 0-100 的上传进度百分比
+ */
+{ event: "progress"; data: number } | 
+/**
+ * 转换完成后的加密状态
+ */
+{ event: "completed"; data: boolean } | { event: "error"; data: string }
 
 /** tauri-specta globals **/
 
