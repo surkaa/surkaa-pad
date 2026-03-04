@@ -2,11 +2,11 @@ import {Channel} from "@tauri-apps/api/core";
 import {AddAttachmentEvent, AttachmentMeta, commands, ToggleAttachmentEncryptionEvent} from "../bindings.ts";
 import {computed, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
-import {resolveMediaAttachmentUrl} from "../utils";
-import {insertFileNode, insertMediaNode, MediaType} from "../utils";
+import {formatBytes, insertFileNode, insertMediaNode, MediaType, resolveMediaAttachmentUrl} from "../utils";
 import {useQuasar} from "quasar";
-import {formatBytes} from "../utils";
 import {v4 as uuidv4} from "uuid";
+import {useEventBus} from "@vueuse/core";
+import {AttachmentEncryptionChangeEvent, DiaryChangedEvent} from "../types";
 
 export interface UploadTask {
     filename: string;
@@ -16,6 +16,10 @@ export interface UploadTask {
 
 export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLElement | undefined>, showPanel: Ref<boolean>) {
     const $q = useQuasar();
+    // TODO 把日记Summary放到store中应该就不需要这个事件了
+    const diaryChangeBus = useEventBus<DiaryChangedEvent>('diary-changed');
+    const attachmentUrlChangeBus = useEventBus<AttachmentEncryptionChangeEvent>('attachment-url-changed');
+
     const cancelTokens = new Set<string>();
 
     // 进度管理状态
@@ -173,8 +177,20 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                     case "completed":
                         task.status = 'completed';
                         task.progress = 1;
-                        console.log('转换完成:', filename);
-                        resolve(); // TODO 让后端返回新的附件元信息并使用事件推送更新页面
+                        const [encryptedRes, unencryptedUrl] = msg.data;
+                        console.log('转换完成:', filename, encryptedRes, unencryptedUrl);
+                        diaryChangeBus.emit({
+                            type: 'updated-attachment-encryption',
+                            filename,
+                            encrypted: encryptedRes
+                        });
+                        attachmentUrlChangeBus.emit({
+                            diaryId: diaryId.value,
+                            filename,
+                            newUrl: unencryptedUrl,
+                            encrypted: encryptedRes
+                        });
+                        resolve();
                         break;
                     case "error":
                         task.status = 'error';

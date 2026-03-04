@@ -7,18 +7,19 @@ import {onBeforeRouteLeave, useRoute} from "vue-router";
 import {useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
-import {formatTimestamp} from "../../utils";
+import {formatTimestamp, resolveMediaAttachmentUrl} from "../../utils";
 import AttachmentCard from "../../components/AttachmentCard.vue";
 import {commands} from "../../bindings.ts";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useEventBus} from "@vueuse/core";
-import {DiaryChangedEvent} from "../../types";
+import {AttachmentEncryptionChangeEvent, DiaryChangedEvent} from "../../types";
 
 const route = useRoute();
 const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
+const attachmentUrlChangeBus = useEventBus<AttachmentEncryptionChangeEvent>('attachment-url-changed');
 
 const initialDiaryId = (route.params.id as string) || "";
 const {
@@ -34,18 +35,9 @@ const {
 
 // 媒体操作
 const {
-  uploadTasks,
-  showUploadDialog,
-  isUploading,
-  showAudioDrawer,
-  handleAudioRecorded,
-  insertPhoto,
-  takePhoto,
-  insertAudio,
-  audioRecording,
-  insertVideo,
-  insertFile,
-  toggleAttachmentEncryption,
+  uploadTasks, showUploadDialog, isUploading, showAudioDrawer,
+  handleAudioRecorded, insertPhoto, takePhoto, insertAudio,
+  audioRecording, insertVideo, insertFile, toggleAttachmentEncryption,
 } = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
 
 const bus = useEventBus<DiaryChangedEvent>('diary-changed');
@@ -76,6 +68,32 @@ function showDiarySource() {
   });
   showMenu.value = false;
 }
+
+attachmentUrlChangeBus.on((event) => {
+  if (!(event.diaryId === diaryId.value && diary.value)) return;
+  const attIndex = diary.value.attachments.findIndex(att => att.filename === event.filename);
+  if (attIndex === -1) return;
+  diary.value.attachments[attIndex].encrypted = event.encrypted;
+  const el = editorDomRef.value?.querySelector(`[data-id="${event.filename}"]`);
+  if (!el) return;
+  // if (el instanceof HTMLMediaElement || el instanceof HTMLImageElement) {
+  //   if (!event.newUrl) {
+  //     // 针对转成加密
+  //     el.src = resolveMediaAttachmentUrl()
+  //     return;
+  //   }
+  //   el.src = event.newUrl;
+  // }
+  if (el instanceof HTMLImageElement) {
+    el.src = event.newUrl || resolveMediaAttachmentUrl('image', diaryId.value, event.filename);
+  } else if (el instanceof HTMLVideoElement) {
+    el.src = event.newUrl || resolveMediaAttachmentUrl('video', diaryId.value, event.filename);
+  } else if (el instanceof HTMLAudioElement) {
+    el.src = event.newUrl || resolveMediaAttachmentUrl('audio', diaryId.value, event.filename);
+  } else {
+    console.warn('无法更新附件URL，未知元素类型:', el);
+  }
+});
 
 defineOptions({name: 'DiaryDetail'});
 

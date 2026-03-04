@@ -28,8 +28,8 @@ pub enum ToggleAttachmentEncryptionEvent {
     Started,
     /// 0-100 的上传进度百分比
     Progress(u8),
-    /// 转换完成后的加密状态
-    Completed(bool),
+    /// 转换完成后返回加密状态和未加密才会存在的src
+    Completed(bool, Option<String>),
     Error(String),
 }
 

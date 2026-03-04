@@ -161,14 +161,22 @@ pub async fn toggle_attachment_encryption(
             .find(|a| a.filename == filename)
             .ok_or_else(|| "附件不存在".to_string())?
             .clone();
+        let key = remote_attachments_key(id, &filename);
 
         // 如果目标状态与当前状态一致，直接返回成功
         if old_meta.encrypted == encrypted {
-            return Ok(encrypted);
+            return if encrypted {
+                Ok((encrypted, None))
+            } else {
+                let url = client.direct_url(&key)?;
+                Ok((encrypted, Some(url)))
+            };
         }
 
         // 下载原始数据
-        let (raw_stream, size) = client.download(&remote_attachments_key(id, &filename), None).await?;
+        let (raw_stream, size) = client
+            .download(&remote_attachments_key(id, &filename), None)
+            .await?;
 
         // 处理流转换
         let (processed_stream, new_nonce) = if old_meta.encrypted && !encrypted {
@@ -190,8 +198,9 @@ pub async fn toggle_attachment_encryption(
         });
 
         // 重新上传覆盖
-        let key = remote_attachments_key(id, &filename);
-        client.upload(&key, size, tracked_stream, &old_meta.mimetype).await?;
+        client
+            .upload(&key, size, tracked_stream, &old_meta.mimetype)
+            .await?;
 
         // 构造新的元数据并更新 Manifest
         let mut new_meta = old_meta.clone();
@@ -200,12 +209,17 @@ pub async fn toggle_attachment_encryption(
 
         update_diary_attachment(&cache, &crypto, &client, id, new_meta).await?;
 
-        Ok(encrypted)
+        return if encrypted {
+            Ok((encrypted, None))
+        } else {
+            let url = client.direct_url(&key)?;
+            Ok((encrypted, Some(url)))
+        };
     };
 
     match logic.await {
-        Ok(res) => {
-            let _ = event.send(ToggleAttachmentEncryptionEvent::Completed(res));
+        Ok((res, url)) => {
+            let _ = event.send(ToggleAttachmentEncryptionEvent::Completed(res, url));
         }
         Err(e) => {
             let _ = event.send(ToggleAttachmentEncryptionEvent::Error(e));
@@ -373,7 +387,8 @@ mod test {
             size,
             "text/plain".to_string(),
             stream,
-        ).await;
+        )
+        .await;
 
         let filename = "1"; // 第一个附件 ID 为 1
 
@@ -387,10 +402,13 @@ mod test {
             &diary_id,
             filename.to_string(),
             true, // 开启加密
-        ).await;
+        )
+        .await;
 
         // 验证元数据是否已更新为加密
-        let diary_encrypted = get_diary(&cache, &crypto, &client, &diary_id).await.unwrap();
+        let diary_encrypted = get_diary(&cache, &crypto, &client, &diary_id)
+            .await
+            .unwrap();
         let meta_enc = diary_encrypted.attachments.first().unwrap();
         assert!(meta_enc.encrypted, "附件应该是加密状态");
         assert!(!meta_enc.nonce.is_empty(), "加密状态下 nonce 不应为空");
@@ -405,16 +423,22 @@ mod test {
             &diary_id,
             filename.to_string(),
             false, // 关闭加密
-        ).await;
+        )
+        .await;
 
         // 检查数据是否还原
-        let diary_decrypted = get_diary(&cache, &crypto, &client, &diary_id).await.unwrap();
+        let diary_decrypted = get_diary(&cache, &crypto, &client, &diary_id)
+            .await
+            .unwrap();
         let meta_dec = diary_decrypted.attachments.first().unwrap();
         assert!(!meta_dec.encrypted, "附件应该是明文状态");
         assert!(meta_dec.nonce.is_empty(), "明文状态下 nonce 应该为空");
 
         // 下载并检查内容是否依然正确
-        let (mut down_stream, _) = client.download(&remote_attachments_key(&diary_id, filename), None).await.unwrap();
+        let (mut down_stream, _) = client
+            .download(&remote_attachments_key(&diary_id, filename), None)
+            .await
+            .unwrap();
         let mut downloaded_bytes = Vec::new();
         use futures::StreamExt;
         while let Some(chunk) = down_stream.next().await {

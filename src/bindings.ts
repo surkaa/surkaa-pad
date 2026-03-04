@@ -332,9 +332,9 @@ export type ToggleAttachmentEncryptionEvent = { event: "started" } |
  */
 { event: "progress"; data: number } | 
 /**
- * 转换完成后的加密状态
+ * 转换完成后返回加密状态和未加密才会存在的src
  */
-{ event: "completed"; data: boolean } | { event: "error"; data: string }
+{ event: "completed"; data: [boolean, string | null] } | { event: "error"; data: string }
 
 /** tauri-specta globals **/
 
