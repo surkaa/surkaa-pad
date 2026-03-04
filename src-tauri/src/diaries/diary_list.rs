@@ -38,7 +38,6 @@ pub async fn get_diary_content(
     client: &OssClient,
     id: &str,
 ) -> Result<(String, HashMap<String, String>), String> {
-    const ATTACHMENT_URL_EXPIRATION_SECONDS: u64 = 3600; // 附件URL过期时间，单位秒
     let diary = get_diary(cache, crypto, client, id).await?;
     let mut map = HashMap::new();
     for attachment in diary.attachments {
@@ -47,7 +46,7 @@ pub async fn get_diary_content(
         }
         let key = remote_attachments_key(id, &attachment.filename);
         let url = client
-            .direct_url(&key, ATTACHMENT_URL_EXPIRATION_SECONDS)
+            .direct_url(&key)
             .map_err(|e| format!("生成附件URL失败:{}", e))?;
         map.insert(attachment.filename, url);
     }
