@@ -1,5 +1,7 @@
-use crate::attachments::attachment::{add_attachment, delete_attachment};
-use crate::attachments::types::AddAttachmentEvent;
+use crate::attachments::attachment::{
+    add_attachment, delete_attachment, toggle_attachment_encryption,
+};
+use crate::attachments::types::{AddAttachmentEvent, ToggleAttachmentEncryptionEvent};
 use crate::crypto::Crypto;
 use crate::diaries::DiaryMemoryCache;
 use crate::object::{create_mock_stream, OssState};
@@ -43,7 +45,7 @@ pub fn cmd_add_attachment(
             encrypted,
             file,
             mimetype,
-            stream
+            stream,
         )
         .await;
     })
@@ -130,16 +132,17 @@ pub async fn cmd_add_image_attachment_from_camera(
 ) -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
-        use tauri_plugin_native_camera::NativeCameraExt;
         use base64::engine::general_purpose::STANDARD;
         use base64::Engine;
+        use tauri_plugin_native_camera::NativeCameraExt;
         const MIMETYPE: &str = "image/jpeg";
 
-        let result = app.native_camera().take_picture()
+        let result = app
+            .native_camera()
+            .take_picture()
             .map_err(|e| e.to_string())?;
         let base64_data = result.image_data;
-        let binary_data = STANDARD.decode(base64_data)
-            .map_err(|e| e.to_string())?;
+        let binary_data = STANDARD.decode(base64_data).map_err(|e| e.to_string())?;
         let len = binary_data.len();
         let stream = create_mock_stream(binary_data, len);
         let cache = cache.inner().clone();
@@ -157,11 +160,49 @@ pub async fn cmd_add_image_attachment_from_camera(
                 MIMETYPE.to_string(),
                 stream,
             )
-                .await;
+            .await;
         })
     }
     #[cfg(not(target_os = "android"))]
     {
+        // 简单使用一下参数避免编译器警告
+        let _ = (app, cache, crypto, client, tp, event, id, encrypted);
         Err("拍照功能仅在 Android 上可用".to_string())
     }
+}
+
+/// 将加密的附件转成未加密的、将未加密的附件转成加密的
+/// # Arguments
+/// * `id` - 日记 ID
+/// * `filename` - 附件 ID
+/// * `encrypted` - 是否需要加密
+/// # Returns
+/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_toggle_attachment_encryption(
+    cache: State<'_, DiaryMemoryCache>,
+    crypto: State<'_, Crypto>,
+    client: State<'_, OssState>,
+    tp: State<'_, TaskPool>,
+    event: Channel<ToggleAttachmentEncryptionEvent>,
+    id: String,
+    filename: String,
+    encrypted: bool,
+) -> Result<String, String> {
+    let cache = cache.inner().clone();
+    let crypto = crypto.inner().clone();
+    let client = client.get_client()?;
+    tp.spawn(async move {
+        toggle_attachment_encryption(
+            cache,
+            crypto,
+            client,
+            Arc::new(event),
+            &id,
+            filename,
+            encrypted,
+        )
+        .await;
+    })
 }

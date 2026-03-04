@@ -1,8 +1,10 @@
-use crate::attachments::types::AddAttachmentEvent;
+use crate::attachments::types::{AddAttachmentEvent, ToggleAttachmentEncryptionEvent};
 use crate::attachments::AttachmentMeta;
 use crate::crypto::types::EncryptionAlgorithm::Ctr;
 use crate::crypto::Crypto;
-use crate::diaries::{delete_diary_attachment, get_diary, update_diary_attachment, DiaryMemoryCache};
+use crate::diaries::{
+    delete_diary_attachment, get_diary, update_diary_attachment, DiaryMemoryCache,
+};
 use crate::object::tracker_stream::tracker_stream;
 use crate::object::{ByteStream, OssClient};
 use crate::storages::remote_attachments_key;
@@ -139,6 +141,78 @@ pub async fn delete_attachment(
     Ok(())
 }
 
+pub async fn toggle_attachment_encryption(
+    cache: DiaryMemoryCache,
+    crypto: Crypto,
+    client: OssClient,
+    event: Arc<dyn MessageSender<ToggleAttachmentEncryptionEvent>>,
+    id: &str,
+    filename: String,
+    encrypted: bool,
+) {
+    let _ = event.send(ToggleAttachmentEncryptionEvent::Started);
+
+    let logic = async {
+        // 获取当前附件信息
+        let diary = get_diary(&cache, &crypto, &client, id).await?;
+        let old_meta = diary
+            .attachments
+            .iter()
+            .find(|a| a.filename == filename)
+            .ok_or_else(|| "附件不存在".to_string())?
+            .clone();
+
+        // 如果目标状态与当前状态一致，直接返回成功
+        if old_meta.encrypted == encrypted {
+            return Ok(encrypted);
+        }
+
+        // 下载原始数据
+        let (raw_stream, size) = client.download(&remote_attachments_key(id, &filename), None).await?;
+
+        // 处理流转换
+        let (processed_stream, new_nonce) = if old_meta.encrypted && !encrypted {
+            // 解密：从加密转为明文
+            let decrypted = crypto.decrypt_streaming(raw_stream, &old_meta.nonce, 0)?;
+            (decrypted, vec![])
+        } else if !old_meta.encrypted && encrypted {
+            // 加密：从明文转为加密
+            let (encrypted_stream, nonce) = crypto.encrypt_streaming(raw_stream)?;
+            (encrypted_stream, nonce)
+        } else {
+            return Err("无效的转换状态".to_string());
+        };
+
+        // 包装进度追踪
+        let ec = event.clone();
+        let tracked_stream = tracker_stream(size, processed_stream, move |p| {
+            let _ = ec.send(ToggleAttachmentEncryptionEvent::Progress(p));
+        });
+
+        // 重新上传覆盖
+        let key = remote_attachments_key(id, &filename);
+        client.upload(&key, size, tracked_stream, &old_meta.mimetype).await?;
+
+        // 构造新的元数据并更新 Manifest
+        let mut new_meta = old_meta.clone();
+        new_meta.encrypted = encrypted;
+        new_meta.nonce = new_nonce;
+
+        update_diary_attachment(&cache, &crypto, &client, id, new_meta).await?;
+
+        Ok(encrypted)
+    };
+
+    match logic.await {
+        Ok(res) => {
+            let _ = event.send(ToggleAttachmentEncryptionEvent::Completed(res));
+        }
+        Err(e) => {
+            let _ = event.send(ToggleAttachmentEncryptionEvent::Error(e));
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -268,5 +342,87 @@ mod test {
         delete_diary(&cache, &client, &diary_id)
             .await
             .expect("测试结束时清理日记失败");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_toggle_attachment_encryption() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = Crypto::from_env();
+        let client = OssClient::from_env();
+
+        // 预置数据：初始化日记
+        let (summary, _) = save_diary(&crypto, &client, "加密切换测试")
+            .await
+            .expect("初始化日记失败");
+        let diary_id = summary.id;
+
+        // 上传一个明文附件
+        let raw_data = b"hello encryption world".to_vec();
+        let size = raw_data.len() as u64;
+        let stream = create_mock_stream(raw_data.clone(), size as usize);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AddAttachmentEvent>();
+
+        add_attachment(
+            cache.clone(),
+            crypto.clone(),
+            client.clone(),
+            Arc::new(tx),
+            &diary_id,
+            false, // 初始不加密
+            size,
+            "text/plain".to_string(),
+            stream,
+        ).await;
+
+        let filename = "1"; // 第一个附件 ID 为 1
+
+        // 切换为加密状态
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<ToggleAttachmentEncryptionEvent>();
+        toggle_attachment_encryption(
+            cache.clone(),
+            crypto.clone(),
+            client.clone(),
+            Arc::new(tx),
+            &diary_id,
+            filename.to_string(),
+            true, // 开启加密
+        ).await;
+
+        // 验证元数据是否已更新为加密
+        let diary_encrypted = get_diary(&cache, &crypto, &client, &diary_id).await.unwrap();
+        let meta_enc = diary_encrypted.attachments.first().unwrap();
+        assert!(meta_enc.encrypted, "附件应该是加密状态");
+        assert!(!meta_enc.nonce.is_empty(), "加密状态下 nonce 不应为空");
+
+        // 切换回明文状态
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<ToggleAttachmentEncryptionEvent>();
+        toggle_attachment_encryption(
+            cache.clone(),
+            crypto.clone(),
+            client.clone(),
+            Arc::new(tx),
+            &diary_id,
+            filename.to_string(),
+            false, // 关闭加密
+        ).await;
+
+        // 检查数据是否还原
+        let diary_decrypted = get_diary(&cache, &crypto, &client, &diary_id).await.unwrap();
+        let meta_dec = diary_decrypted.attachments.first().unwrap();
+        assert!(!meta_dec.encrypted, "附件应该是明文状态");
+        assert!(meta_dec.nonce.is_empty(), "明文状态下 nonce 应该为空");
+
+        // 下载并检查内容是否依然正确
+        let (mut down_stream, _) = client.download(&remote_attachments_key(&diary_id, filename), None).await.unwrap();
+        let mut downloaded_bytes = Vec::new();
+        use futures::StreamExt;
+        while let Some(chunk) = down_stream.next().await {
+            downloaded_bytes.extend_from_slice(&chunk.unwrap());
+        }
+        assert_eq!(downloaded_bytes, raw_data, "转换后的文件内容与原始数据不符");
+
+        // 清理
+        delete_diary(&cache, &client, &diary_id).await.unwrap();
     }
 }

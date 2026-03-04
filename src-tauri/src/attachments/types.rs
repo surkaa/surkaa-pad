@@ -17,6 +17,22 @@ pub enum AddAttachmentEvent {
     Error(String),
 }
 
+#[derive(Clone, Serialize, Type)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "event",
+    content = "data"
+)]
+pub enum ToggleAttachmentEncryptionEvent {
+    Started,
+    /// 0-100 的上传进度百分比
+    Progress(u8),
+    /// 转换完成后的加密状态
+    Completed(bool),
+    Error(String),
+}
+
 // 单个附件的元数据
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
 pub struct AttachmentMeta {
