@@ -9,28 +9,12 @@ use specta::Type;
     tag = "event",
     content = "data"
 )]
-pub enum AddAttachmentEvent {
+pub enum AttachmentProcessEvent {
     Started,
     /// 0-100 的上传进度百分比
     Progress(u8),
-    /// TODO 如果添加的是未加密的同样要返回url 或者干脆不在前端处理url了，后端统一返回在AttachmentMeta吧
-    Completed(AttachmentMeta),
-    Error(String),
-}
-
-#[derive(Clone, Serialize, Type)]
-#[serde(
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase",
-    tag = "event",
-    content = "data"
-)]
-pub enum ToggleAttachmentEncryptionEvent {
-    Started,
-    /// 0-100 的上传进度百分比
-    Progress(u8),
-    /// 转换完成后返回加密状态和未加密才会存在的src
-    Completed(bool, Option<String>),
+    /// 返回附件的元数据和访问URL
+    Completed(AttachmentMeta, String),
     Error(String),
 }
 

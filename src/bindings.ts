@@ -203,7 +203,7 @@ async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdAddAttachment(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, accessStr: string, encrypted: boolean) : Promise<Result<string, string>> {
+async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, accessStr: string, encrypted: boolean) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment", { event, id, accessStr, encrypted }) };
 } catch (e) {
@@ -221,7 +221,7 @@ async cmdAddAttachment(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, acc
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, data: number[], mimetype: string, encrypted: boolean) : Promise<Result<string, string>> {
+async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, data: number[], mimetype: string, encrypted: boolean) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment_memory", { event, id, data, mimetype, encrypted }) };
 } catch (e) {
@@ -253,7 +253,7 @@ async cmdDeleteAttachment(id: string, filename: string) : Promise<Result<null, s
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AddAttachmentEvent>, id: string, encrypted: boolean) : Promise<Result<string, string>> {
+async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, encrypted: boolean) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_add_image_attachment_from_camera", { event, id, encrypted }) };
 } catch (e) {
@@ -270,7 +270,7 @@ async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AddAttachmentEvent>, 
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<ToggleAttachmentEncryptionEvent>, id: string, filename: string, encrypted: boolean) : Promise<Result<string, string>> {
+async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string, encrypted: boolean) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_toggle_attachment_encryption", { event, id, filename, encrypted }) };
 } catch (e) {
@@ -308,12 +308,16 @@ async openDevtools() : Promise<void> {
 
 /** user-defined types **/
 
-export type AddAttachmentEvent = { event: "started" } | 
+export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm }
+export type AttachmentProcessEvent = { event: "started" } | 
 /**
  * 0-100 的上传进度百分比
  */
-{ event: "progress"; data: number } | { event: "completed"; data: AttachmentMeta } | { event: "error"; data: string }
-export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm }
+{ event: "progress"; data: number } | 
+/**
+ * 返回附件的元数据和访问URL
+ */
+{ event: "completed"; data: [AttachmentMeta, string] } | { event: "error"; data: string }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行
@@ -326,15 +330,6 @@ attachments: AttachmentMeta[] }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type TAURI_CHANNEL<TSend> = null
-export type ToggleAttachmentEncryptionEvent = { event: "started" } | 
-/**
- * 0-100 的上传进度百分比
- */
-{ event: "progress"; data: number } | 
-/**
- * 转换完成后返回加密状态和未加密才会存在的src
- */
-{ event: "completed"; data: [boolean, string | null] } | { event: "error"; data: string }
 
 /** tauri-specta globals **/
 

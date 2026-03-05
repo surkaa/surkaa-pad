@@ -1,7 +1,7 @@
 use crate::attachments::attachment::{
     add_attachment, delete_attachment, toggle_attachment_encryption,
 };
-use crate::attachments::types::{AddAttachmentEvent, ToggleAttachmentEncryptionEvent};
+use crate::attachments::types::{AttachmentProcessEvent};
 use crate::crypto::Crypto;
 use crate::diaries::DiaryMemoryCache;
 use crate::object::{create_mock_stream, OssState};
@@ -26,7 +26,7 @@ pub fn cmd_add_attachment(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
-    event: Channel<AddAttachmentEvent>,
+    event: Channel<AttachmentProcessEvent>,
     id: String,
     access_str: String,
     encrypted: bool,
@@ -66,7 +66,7 @@ pub fn cmd_add_attachment_memory(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
-    event: Channel<AddAttachmentEvent>,
+    event: Channel<AttachmentProcessEvent>,
     id: String,
     data: Vec<u8>,
     mimetype: String,
@@ -126,7 +126,7 @@ pub async fn cmd_add_image_attachment_from_camera(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
-    event: Channel<AddAttachmentEvent>,
+    event: Channel<AttachmentProcessEvent>,
     id: String,
     encrypted: bool,
 ) -> Result<String, String> {
@@ -185,7 +185,7 @@ pub fn cmd_toggle_attachment_encryption(
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     tp: State<'_, TaskPool>,
-    event: Channel<ToggleAttachmentEncryptionEvent>,
+    event: Channel<AttachmentProcessEvent>,
     id: String,
     filename: String,
     encrypted: bool,

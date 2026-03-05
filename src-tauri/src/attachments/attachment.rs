@@ -1,5 +1,5 @@
-use crate::attachments::types::{AddAttachmentEvent, ToggleAttachmentEncryptionEvent};
-use crate::attachments::AttachmentMeta;
+use crate::attachments::types::AttachmentProcessEvent;
+use crate::attachments::{get_full_attachment_url, AttachmentMeta};
 use crate::crypto::types::EncryptionAlgorithm::Ctr;
 use crate::crypto::Crypto;
 use crate::diaries::{
@@ -25,18 +25,18 @@ pub async fn add_attachment(
     cache: DiaryMemoryCache,
     crypto: Crypto,
     client: OssClient,
-    event: Arc<dyn MessageSender<AddAttachmentEvent>>,
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     encrypted: bool,
     size: u64,
     mimetype: String,
     stream: ByteStream,
 ) {
-    let _ = event.send(AddAttachmentEvent::Started);
+    let _ = event.send(AttachmentProcessEvent::Started);
     // 包装流 用来更新进度
     let ec = event.clone();
     let stream = tracker_stream(size, stream, move |progress| {
-        let _ = ec.send(AddAttachmentEvent::Progress(progress));
+        let _ = ec.send(AttachmentProcessEvent::Progress(progress));
     });
 
     let logic = async move {
@@ -106,15 +106,18 @@ pub async fn add_attachment(
         // 此时仍然持有 pending_ids 的锁，顺便当做排他锁更新 Manifest
         // 避免了并发上传完成后，同时回写 Manifest 导致的互相覆盖问题
         update_diary_attachment(&cache, &crypto, &client, id, attachment.clone()).await?;
-        Ok::<AttachmentMeta, String>(attachment)
+
+        let url = get_full_attachment_url(id, &attachment, &client)?;
+
+        Ok::<(AttachmentMeta, String), String>((attachment, url))
     };
 
     match logic.await {
         Err(e) => {
-            let _ = event.send(AddAttachmentEvent::Error(e));
+            let _ = event.send(AttachmentProcessEvent::Error(e));
         }
-        Ok(attachment) => {
-            let _ = event.send(AddAttachmentEvent::Completed(attachment));
+        Ok((attachment, url)) => {
+            let _ = event.send(AttachmentProcessEvent::Completed(attachment, url));
         }
     }
 }
@@ -145,12 +148,12 @@ pub async fn toggle_attachment_encryption(
     cache: DiaryMemoryCache,
     crypto: Crypto,
     client: OssClient,
-    event: Arc<dyn MessageSender<ToggleAttachmentEncryptionEvent>>,
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     filename: String,
     encrypted: bool,
 ) {
-    let _ = event.send(ToggleAttachmentEncryptionEvent::Started);
+    let _ = event.send(AttachmentProcessEvent::Started);
 
     let logic = async {
         // 获取当前附件信息
@@ -165,12 +168,8 @@ pub async fn toggle_attachment_encryption(
 
         // 如果目标状态与当前状态一致，直接返回成功
         if old_meta.encrypted == encrypted {
-            return if encrypted {
-                Ok((encrypted, None))
-            } else {
-                let url = client.direct_url(&key)?;
-                Ok((encrypted, Some(url)))
-            };
+            let url = get_full_attachment_url(id, &old_meta, &client)?;
+            return Ok((old_meta, url));
         }
 
         // 下载原始数据
@@ -194,7 +193,7 @@ pub async fn toggle_attachment_encryption(
         // 包装进度追踪
         let ec = event.clone();
         let tracked_stream = tracker_stream(size, processed_stream, move |p| {
-            let _ = ec.send(ToggleAttachmentEncryptionEvent::Progress(p));
+            let _ = ec.send(AttachmentProcessEvent::Progress(p));
         });
 
         // 重新上传覆盖
@@ -209,20 +208,16 @@ pub async fn toggle_attachment_encryption(
 
         update_diary_attachment(&cache, &crypto, &client, id, new_meta).await?;
 
-        return if encrypted {
-            Ok((encrypted, None))
-        } else {
-            let url = client.direct_url(&key)?;
-            Ok((encrypted, Some(url)))
-        };
+        let url = get_full_attachment_url(id, &old_meta, &client)?;
+        Ok((old_meta, url))
     };
 
     match logic.await {
-        Ok((res, url)) => {
-            let _ = event.send(ToggleAttachmentEncryptionEvent::Completed(res, url));
+        Ok((meta, url)) => {
+            let _ = event.send(AttachmentProcessEvent::Completed(meta, url));
         }
         Err(e) => {
-            let _ = event.send(ToggleAttachmentEncryptionEvent::Error(e));
+            let _ = event.send(AttachmentProcessEvent::Error(e));
         }
     }
 }
@@ -268,7 +263,7 @@ mod test {
             let crypto_clone = crypto.clone();
             let client_clone = client.clone();
             let id_clone = diary_id.clone();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AddAttachmentEvent>();
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
 
             // 构造 Mock 数据流 (需替换为项目实际的 ByteStream 构造方式)
             let dummy_content = format!("attachment_data_{}", i).into_bytes();
@@ -375,7 +370,7 @@ mod test {
         let raw_data = b"hello encryption world".to_vec();
         let size = raw_data.len() as u64;
         let stream = create_mock_stream(raw_data.clone(), size as usize);
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AddAttachmentEvent>();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
 
         add_attachment(
             cache.clone(),
@@ -393,7 +388,7 @@ mod test {
         let filename = "1"; // 第一个附件 ID 为 1
 
         // 切换为加密状态
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<ToggleAttachmentEncryptionEvent>();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         toggle_attachment_encryption(
             cache.clone(),
             crypto.clone(),
@@ -414,7 +409,7 @@ mod test {
         assert!(!meta_enc.nonce.is_empty(), "加密状态下 nonce 不应为空");
 
         // 切换回明文状态
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<ToggleAttachmentEncryptionEvent>();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         toggle_attachment_encryption(
             cache.clone(),
             crypto.clone(),

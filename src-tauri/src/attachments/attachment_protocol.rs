@@ -1,7 +1,7 @@
 use crate::crypto::types::EncryptionAlgorithm::Gcm;
 use crate::crypto::Crypto;
 use crate::diaries::{get_diary, DiaryMemoryCache};
-use crate::object::OssState;
+use crate::object::{OssClient, OssState};
 use crate::storages::remote_attachments_key;
 use futures_util::StreamExt;
 use http_range_header::parse_range_header;
@@ -12,7 +12,9 @@ use tauri::http::header::{
 use tauri::http::{Request, Response, StatusCode};
 use tauri::{Manager, UriSchemeContext, UriSchemeResponder, Wry};
 use tauri_plugin_log::log;
+use crate::attachments::AttachmentMeta;
 
+pub const PROTOCOL_NAME: &str = "attachment";
 const MAX_CHUNK_SIZE: u64 = 1024 * 1024; // 1MB
 
 /// 统一协议错误路由
@@ -69,7 +71,7 @@ pub fn attachment_protocol(
     });
 }
 
-/// 格式：/tag/id/filename，tag：image audio video
+/// 格式：/id/filename
 async fn process_attachment(
     cache: DiaryMemoryCache,
     crypto: Crypto,
@@ -83,7 +85,7 @@ async fn process_attachment(
     // Slice Pattern Matching 路由硬解
     let path = request.uri().path().trim_start_matches('/');
     let segments: Vec<&str> = path.split('/').collect();
-    let [_tag, id, filename] = segments.as_slice() else {
+    let [id, filename] = segments.as_slice() else {
         return Err(ProtocolError::BadRequest("Invalid URI path structure"));
     };
 
@@ -172,4 +174,16 @@ async fn process_attachment(
     builder
         .body(data)
         .map_err(|e| ProtocolError::Internal(e.to_string()))
+}
+
+pub fn get_full_attachment_url(id: &str, attachment: &AttachmentMeta, client: &OssClient) -> Result<String, String> {
+    if attachment.encrypted { 
+        Ok(format!("http://{}.localhost/{}/{}", PROTOCOL_NAME, id, &attachment.filename))
+    } else {
+        let key = remote_attachments_key(id, &attachment.filename);
+        let url = client
+            .direct_url(&key)
+            .map_err(|e| format!("生成附件URL失败:{}", e))?;
+        Ok(url)
+    }
 }

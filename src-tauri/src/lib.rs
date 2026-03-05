@@ -6,7 +6,7 @@ mod storages;
 mod tasks;
 mod utils;
 
-use crate::attachments::attachment_protocol;
+use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
 use crate::attachments::command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_delete_attachment,
     cmd_add_image_attachment_from_camera, cmd_toggle_attachment_encryption
@@ -111,7 +111,7 @@ pub fn run() {
         // 注册 dialog 插件
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
-        .register_asynchronous_uri_scheme_protocol("attachment", attachment_protocol)
+        .register_asynchronous_uri_scheme_protocol(PROTOCOL_NAME, attachment_protocol)
         .setup(move |app| {
             run_setup(app);
             builder.mount_events(app);
