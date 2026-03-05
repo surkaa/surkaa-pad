@@ -1,3 +1,5 @@
+import {AttachmentMeta} from "./bindings.ts";
+
 export type DiaryChangedEvent =
     | { type: 'created'; summary: DiarySummary }
     | { type: 'updated'; summary: DiarySummary }
@@ -6,9 +8,8 @@ export type DiaryChangedEvent =
 
 export type AttachmentEncryptionChangeEvent = {
     diaryId: string;
-    filename: string;
-    encrypted: boolean;
-    newUrl: string | null;
+    meta: AttachmentMeta,
+    url: string;
 }
 
 export type OssConfigType = {

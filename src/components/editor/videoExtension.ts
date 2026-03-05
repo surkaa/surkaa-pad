@@ -1,5 +1,4 @@
 import {Extension} from "./extension.ts";
-import {resolveMediaAttachmentUrl} from "../../utils";
 
 export const VideoExtension: Extension = {
     name: "video",
@@ -9,13 +8,11 @@ export const VideoExtension: Extension = {
     getMark: (filename) => `[[VID:${filename}]]`,
 
     toHtml: (source, ctx) => source.replace(/\[\[VID:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, _configStr) => {
-        const diaryId = ctx.getDiaryId();
-        const attachment = ctx.getAttachment(filename);
-        if (!attachment) {
-            console.error(`没有找到附件 ${filename}, 已自动移除`);
+        const src = ctx.getAttachmentUrl(filename);
+        if (!src) {
+            console.error(`无法找到视频附件：${filename}`);
             return '';
         }
-        const src = ctx.getAttachmentUrl(filename) || resolveMediaAttachmentUrl('video', diaryId, filename);
         return `<video controls src="${src}" data-id="${filename}"></video>`;
     }),
 

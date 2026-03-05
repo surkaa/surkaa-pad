@@ -1,8 +1,8 @@
 import {Channel} from "@tauri-apps/api/core";
-import {AddAttachmentEvent, AttachmentMeta, commands, ToggleAttachmentEncryptionEvent} from "../bindings.ts";
+import {AttachmentMeta, AttachmentProcessEvent, commands} from "../bindings.ts";
 import {computed, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
-import {formatBytes, insertFileNode, insertMediaNode, MediaType, resolveMediaAttachmentUrl} from "../utils";
+import {formatBytes, insertFileNode, insertMediaNode, MediaType} from "../utils";
 import {useQuasar} from "quasar";
 import {v4 as uuidv4} from "uuid";
 import {useEventBus} from "@vueuse/core";
@@ -13,6 +13,8 @@ export interface UploadTask {
     progress: number;
     status: 'pending' | 'uploading' | 'completed' | 'error';
 }
+
+type OnAttachmentProcessSuccess = (meta: AttachmentMeta, url: string) => void;
 
 export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLElement | undefined>, showPanel: Ref<boolean>) {
     const $q = useQuasar();
@@ -33,8 +35,8 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         return uploadTasks.value.every(task => task.status === 'completed' || task.status === 'error');
     });
 
-    function createUploadChannel(key: string, onSuccess?: (meta: AttachmentMeta) => void) {
-        const event = new Channel<AddAttachmentEvent>();
+    function createUploadChannel(key: string, onSuccess?: OnAttachmentProcessSuccess) {
+        const event = new Channel<AttachmentProcessEvent>();
         event.onmessage = (msg) => {
             const task = uploadTaskMap.value[key];
             if (!task) return;
@@ -49,7 +51,8 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                 case "completed":
                     task.status = 'completed';
                     task.progress = 1;
-                    onSuccess?.(msg.data);
+                    const [meta, url] = msg.data;
+                    onSuccess?.(meta, url);
                     break;
                 case "error":
                     task.status = 'error';
@@ -72,7 +75,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
     async function uploadAttachment(
         accessStr: string,
         encrypted: boolean,
-        completedCallback?: (meta: AttachmentMeta) => void
+        completedCallback?: (meta: AttachmentMeta, url: string) => void
     ) {
         const rawName = accessStr.split(/[\\/]/).pop() || "未知文件";
         const key = uuidv4();
@@ -89,7 +92,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         bytes: Uint8Array,
         mimetype: string,
         encrypted: boolean,
-        completedCallback?: (meta: AttachmentMeta) => void
+        completedCallback?: (meta: AttachmentMeta, url: string) => void
     ) {
         const key = uuidv4();
         uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
@@ -129,13 +132,11 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         if (!accessStrArr) return;
 
         const uploads = accessStrArr.map(accessStr =>
-            uploadAttachment(accessStr, encrypted, (att) => {
+            uploadAttachment(accessStr, encrypted, (att, url) => {
                 if (!nodeType) {
                     insertFileNode(editorDomRef.value, att.filename, formatBytes(att.size), currentRange);
                     return;
                 }
-                const resolveType = nodeType === 'img' ? 'image' : 'video';
-                const url = resolveMediaAttachmentUrl(resolveType, diaryId.value, att.filename);
                 insertMediaNode(editorDomRef.value, nodeType, url, att.filename, currentRange);
             })
         );
@@ -157,48 +158,21 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             const key = uuidv4();
             uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
 
-            const event = new Channel<ToggleAttachmentEncryptionEvent>();
-            event.onmessage = msg => {
-                const task = uploadTaskMap.value[key];
-                if (!task) {
-                    reject(new Error('无法找到对应的转换任务'));
-                    return;
-                }
-
-                switch (msg.event) {
-                    case "started":
-                        task.status = 'uploading';
-                        console.log('转换附件命令已开始执行:', filename, encrypted);
-                        break;
-                    case "progress":
-                        task.progress = msg.data / 100;
-                        console.log('转换进度:', task.progress);
-                        break;
-                    case "completed":
-                        task.status = 'completed';
-                        task.progress = 1;
-                        const [encryptedRes, unencryptedUrl] = msg.data;
-                        console.log('转换完成:', filename, encryptedRes, unencryptedUrl);
-                        diaryChangeBus.emit({
-                            type: 'updated-attachment-encryption',
-                            filename,
-                            encrypted: encryptedRes
-                        });
-                        attachmentUrlChangeBus.emit({
-                            diaryId: diaryId.value,
-                            filename,
-                            newUrl: unencryptedUrl,
-                            encrypted: encryptedRes
-                        });
-                        resolve();
-                        break;
-                    case "error":
-                        task.status = 'error';
-                        $q.notify({type: 'negative', message: `${task.filename}转换失败: ${msg.data}`});
-                        reject(new Error(msg.data));
-                        break;
-                }
-            }
+            const event = createUploadChannel(key, (meta, url) => {
+                console.log('转换完成:', filename, meta.encrypted, url);
+                // TODO 将diary和attachment存储到store中，这样就不需要发事件了
+                diaryChangeBus.emit({
+                    type: 'updated-attachment-encryption',
+                    filename,
+                    encrypted: meta.encrypted
+                });
+                attachmentUrlChangeBus.emit({
+                    diaryId: diaryId.value,
+                    meta,
+                    url,
+                });
+                resolve();
+            });
             commands.cmdToggleAttachmentEncryption(
                 event,
                 diaryId.value,
@@ -246,8 +220,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             const uint8Array = new Uint8Array(arrayBuffer);
             const virtualName = `Audio_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
 
-            await uploadMemoryAttachment(virtualName, uint8Array, mimetype, true, (att) => {
-                const url = resolveMediaAttachmentUrl('video', diaryId.value, att.filename);
+            await uploadMemoryAttachment(virtualName, uint8Array, mimetype, true, (att, url) => {
                 insertMediaNode(editorDomRef.value, 'audio', url, att.filename, currentRange);
             });
         },
@@ -257,8 +230,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             if (beforeClick()) return;
             const key = uuidv4();
             uploadTaskMap.value[key] = {filename: 'take photo', progress: 0, status: 'pending'};
-            const event = createUploadChannel(key, (meta) => {
-                const url = resolveMediaAttachmentUrl('image', diaryId.value, meta.filename);
+            const event = createUploadChannel(key, (meta, url) => {
                 insertMediaNode(editorDomRef.value, 'img', url, meta.filename, currentRange);
             });
             const res = await commands.cmdAddImageAttachmentFromCamera(event, diaryId.value, true);

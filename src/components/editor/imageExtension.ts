@@ -1,5 +1,4 @@
 import {Extension, MenuButton} from "./extension.ts";
-import {resolveMediaAttachmentUrl} from "../../utils";
 
 export const ImageExtension: Extension = {
     name: "image",
@@ -11,7 +10,11 @@ export const ImageExtension: Extension = {
     hasMark: (source, filename) => new RegExp(`\\[\\[IMG:${filename}(?:\\|[^\\]]*)?\]\\]`).test(source),
 
     toHtml: (source, ctx) => source.replace(/\[\[IMG:([^\]|]+)(?:\|([^\]]+))?]]/g, (_, filename, configStr) => {
-        const url = ctx.getAttachmentUrl(filename) || resolveMediaAttachmentUrl('image', ctx.getDiaryId(), filename);
+        const url = ctx.getAttachmentUrl(filename);
+        if (!url) {
+            console.error(`无法解析图片URL，因为没有找到附件 ${filename}`);
+            return '';
+        }
         const img = document.createElement('img');
         img.src = url;
         img.dataset.id = filename;

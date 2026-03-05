@@ -7,7 +7,7 @@ import {onBeforeRouteLeave, useRoute} from "vue-router";
 import {useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
-import {formatTimestamp, resolveMediaAttachmentUrl} from "../../utils";
+import {formatTimestamp} from "../../utils";
 import AttachmentCard from "../../components/AttachmentCard.vue";
 import {commands} from "../../bindings.ts";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
@@ -71,25 +71,16 @@ function showDiarySource() {
 
 attachmentUrlChangeBus.on((event) => {
   if (!(event.diaryId === diaryId.value && diary.value)) return;
-  const attIndex = diary.value.attachments.findIndex(att => att.filename === event.filename);
+  const attIndex = diary.value.attachments.findIndex(att => att.filename === event.meta.filename);
   if (attIndex === -1) return;
-  diary.value.attachments[attIndex].encrypted = event.encrypted;
-  const el = editorDomRef.value?.querySelector(`[data-id="${event.filename}"]`);
+  diary.value.attachments[attIndex] = event.meta;
+  const el = editorDomRef.value?.querySelector(`[data-id="${event.meta.filename}"]`);
   if (!el) return;
-  // if (el instanceof HTMLMediaElement || el instanceof HTMLImageElement) {
-  //   if (!event.newUrl) {
-  //     // 针对转成加密
-  //     el.src = resolveMediaAttachmentUrl()
-  //     return;
-  //   }
-  //   el.src = event.newUrl;
-  // }
-  if (el instanceof HTMLImageElement) {
-    el.src = event.newUrl || resolveMediaAttachmentUrl('image', diaryId.value, event.filename);
-  } else if (el instanceof HTMLVideoElement) {
-    el.src = event.newUrl || resolveMediaAttachmentUrl('video', diaryId.value, event.filename);
-  } else if (el instanceof HTMLAudioElement) {
-    el.src = event.newUrl || resolveMediaAttachmentUrl('audio', diaryId.value, event.filename);
+  if (el instanceof HTMLMediaElement) {
+    el.src = event.url;
+    el.load();
+  } else if (el instanceof HTMLImageElement) {
+    el.src = event.url;
   } else {
     console.warn('无法更新附件URL，未知元素类型:', el);
   }

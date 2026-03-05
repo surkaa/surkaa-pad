@@ -1,5 +1,4 @@
 import {Extension} from "./extension.ts";
-import {resolveMediaAttachmentUrl} from "../../utils";
 
 export const AudioExtension: Extension = {
     name: "audio",
@@ -9,13 +8,11 @@ export const AudioExtension: Extension = {
     getMark: (filename) => `[[AUD:${filename}]]`,
 
     toHtml: (source, ctx) => source.replace(/\[\[AUD:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, _configStr) => {
-        const diaryId = ctx.getDiaryId();
-        const attachment = ctx.getAttachment(filename);
-        if (!attachment) {
-            console.error(`没有找到附件 ${filename}, 已自动移除`);
+        const src = ctx.getAttachmentUrl(filename);
+        if (!src) {
+            console.error(`无法获取附件 ${filename} 的URL, 已自动移除`);
             return '';
         }
-        const src = ctx.getAttachmentUrl(filename) || resolveMediaAttachmentUrl('audio', diaryId, attachment.filename);
         return `<audio controls src="${src}" data-id="${filename}"></audio>`;
     }),
 

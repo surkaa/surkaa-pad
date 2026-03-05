@@ -20,7 +20,7 @@ const routes: RouteRecordRaw[] = [
     },
     {
         name: 'PreviewMedia',
-        path: '/preview-media/:type/:diaryId/:filename',
+        path: '/preview-media/:src',
         component: PreviewMedia,
         meta: {
             title: '媒体预览',

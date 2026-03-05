@@ -252,12 +252,12 @@ watch(scale, (newScale) => {
 });
 
 onMounted(() => {
-  const {diaryId, filename} = route.params;
-  if (Array.isArray(diaryId) || Array.isArray(filename)) {
-    console.log('Invalid parameter:', diaryId, filename);
+  const {src} = route.params;
+  if (Array.isArray(src)) {
+    console.log('Invalid parameter:', src);
     return;
   }
-  url.value = resolveMediaAttachmentUrl('image', diaryId, filename);
+  url.value = src;
 });
 
 onUnmounted(() => {
