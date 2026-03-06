@@ -11,12 +11,14 @@ import {storeToRefs} from "pinia";
 
 const {getEndTime} = useAppStore();
 const router = useRouter();
+const dataStore = useDataStore();
 const {
   diaryIds,
   diarySummaries,
   currentId,
   withAttachments,
-} = storeToRefs(useDataStore());
+  currentDiaryAttachmentUrlMap
+} = storeToRefs(dataStore);
 const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
@@ -47,7 +49,7 @@ async function loadDiarySummer(id: string) {
       console.error(`加载日记 ${id} 摘要失败:`, res.error);
       return;
     }
-    diarySummaries.value[id] = res.data;
+    dataStore.insertNewDiary(res.data);
   } catch (e) {
     console.error(`请求日记 ${id} 摘要失败:`, e);
   }
@@ -107,6 +109,7 @@ function handleCardVisible(id: string) {
 
 // 绑定到列表项点击
 function openDiary(id?: string) {
+  currentDiaryAttachmentUrlMap.value = {};
   if (!id) {
     // 新建日记
     currentId.value = "";

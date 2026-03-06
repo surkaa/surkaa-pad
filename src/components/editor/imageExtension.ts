@@ -49,12 +49,12 @@ export const ImageExtension: Extension = {
             console.error(`无法打开附件，因为没有找到 data-id 属性`);
             return;
         }
-        const attachment = ctx.getAttachment(filename);
-        if (!attachment) {
-            console.error(`没有找到附件 ${filename}`);
+        const src = ctx.getAttachmentUrl(filename);
+        if (!src) {
+            console.error(`没有找到附件src ${filename}`);
             return;
         }
-        ctx.gotoPreview('image', ctx.getDiaryId(), attachment.filename);
+        ctx.gotoPreview(src);
     },
 
     // 右键菜单实现

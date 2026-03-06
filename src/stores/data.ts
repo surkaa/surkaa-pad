@@ -8,6 +8,7 @@ export const useDataStore = defineStore('data', () => {
 
     // 当前正在编辑的日记ID，空字符串表示新建
     const currentId = ref<string>("");
+    const currentDiaryAttachmentUrlMap = ref<Record<string, string>>({});
 
     const currentDiary = computed(() => diarySummaries.value[currentId.value] || undefined);
     const withAttachments = computed(() => {
@@ -56,6 +57,7 @@ export const useDataStore = defineStore('data', () => {
         currentId,
         currentDiary,
         withAttachments,
+        currentDiaryAttachmentUrlMap,
         insertNewDiary,
         deleteSummary,
         updateAttachment,

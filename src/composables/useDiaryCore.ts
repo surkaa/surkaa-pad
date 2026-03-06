@@ -12,10 +12,9 @@ export function useDiaryCore() {
     const router = useRouter();
     const appWindow = getCurrentWindow();
     const dataStore = useDataStore();
-    const {currentId, currentDiary, diarySummaries} = storeToRefs(dataStore);
+    const {currentId, currentDiary, diarySummaries, currentDiaryAttachmentUrlMap} = storeToRefs(dataStore);
 
     const diaryContent = ref<string>("");
-    const attachmentMap = ref<Record<string, string>>({});
 
     const isDelBack = ref(false);
 
@@ -63,7 +62,7 @@ export function useDiaryCore() {
         diarySummaries.value[currentId.value] = summaryRes.data;
         const [content, map] = contentRes.data;
         diaryContent.value = content;
-        attachmentMap.value = map as Record<string, string>;
+        currentDiaryAttachmentUrlMap.value = map as Record<string, string>;
         // 延迟标记加载完成，避免触发首次 watch
         await nextTick();
         isInitialLoaded.value = true;
@@ -152,7 +151,7 @@ export function useDiaryCore() {
         diaryId: currentId,
         diary: currentDiary,
         diaryContent,
-        attachmentMap,
+        attachmentMap: currentDiaryAttachmentUrlMap,
         isInitialLoaded,
         isNew,
         unusedAttachments,

@@ -8,6 +8,7 @@ import {v4 as uuidv4} from "uuid";
 import {useEventBus} from "@vueuse/core";
 import {AttachmentEncryptionChangeEvent} from "../types";
 import {useDataStore} from "../stores/data.ts";
+import {storeToRefs} from "pinia";
 
 export interface UploadTask {
     filename: string;
@@ -20,6 +21,7 @@ type OnAttachmentProcessSuccess = (meta: AttachmentMeta, url: string) => void;
 export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLElement | undefined>, showPanel: Ref<boolean>) {
     const $q = useQuasar();
     const dataStore = useDataStore();
+    const {currentDiaryAttachmentUrlMap} = storeToRefs(dataStore);
     const attachmentUrlChangeBus = useEventBus<AttachmentEncryptionChangeEvent>('attachment-url-changed');
 
     const cancelTokens = new Set<string>();
@@ -137,6 +139,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
                     insertFileNode(editorDomRef.value, att.filename, formatBytes(att.size), currentRange);
                     return;
                 }
+                currentDiaryAttachmentUrlMap.value[att.filename] = url;
                 insertMediaNode(editorDomRef.value, nodeType, url, att.filename, currentRange);
             })
         );
