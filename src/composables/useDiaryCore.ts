@@ -1,18 +1,17 @@
 import {computed, nextTick, onDeactivated, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
-import {commands, DiarySummary} from "../bindings.ts";
+import {commands} from "../bindings.ts";
 import {EXTENSIONS} from "../components/editor/extension.ts";
-import {DiaryChangedEvent} from "../types";
-import {useEventBus} from "@vueuse/core";
+import {useDataStore} from "../stores/data.ts";
+import {storeToRefs} from "pinia";
 
-export function useDiaryCore(initialId: string) {
+export function useDiaryCore() {
     const $q = useQuasar();
     const router = useRouter();
+    const dataStore = useDataStore();
+    const {currentId, currentDiary, diarySummaries} = storeToRefs(dataStore);
 
-    const bus = useEventBus<DiaryChangedEvent>('diary-changed');
-    const diaryId = ref<string>(initialId);
-    const diary = ref<DiarySummary>();
     const diaryContent = ref<string>("");
     const attachmentMap = ref<Record<string, string>>({});
 
@@ -21,15 +20,15 @@ export function useDiaryCore(initialId: string) {
     // 标记是否已经完成初次加载，避免将后端的初次赋值误认为用户的输入
     const isInitialLoaded = ref(false);
 
-    const isNew = computed(() => diaryId.value.trim() === "");
+    const isNew = computed(() => currentId.value.trim() === "");
 
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
     const AUTO_SAVE_DELAY = 1000;
 
     const unusedAttachments = computed(() => {
-        if (!diary.value) return [];
+        if (!currentDiary.value) return [];
 
-        return diary.value.attachments.filter(attachment => {
+        return currentDiary.value.attachments.filter(attachment => {
             let isReferenced = false;
             for (const ext of EXTENSIONS) {
                 // 使用之前修复的正则校验
@@ -50,8 +49,8 @@ export function useDiaryCore(initialId: string) {
 
     async function loadDiaryInfo() {
         const [summaryRes, contentRes] = await Promise.all([
-            commands.cmdGetDiarySummary(diaryId.value),
-            commands.cmdGetDiaryContent(diaryId.value)
+            commands.cmdGetDiarySummary(currentId.value),
+            commands.cmdGetDiaryContent(currentId.value)
         ]);
 
         if (summaryRes.status === 'error' || contentRes.status === 'error') {
@@ -59,7 +58,7 @@ export function useDiaryCore(initialId: string) {
             return;
         }
 
-        diary.value = summaryRes.data;
+        diarySummaries.value[currentId.value] = summaryRes.data;
         const [content, map] = contentRes.data;
         diaryContent.value = content;
         attachmentMap.value = map as Record<string, string>;
@@ -76,39 +75,37 @@ export function useDiaryCore(initialId: string) {
                 return;
             }
             const [summary, content] = res.data;
-            diaryId.value = summary.id;
-            diary.value = summary;
+            currentId.value = summary.id;
+            dataStore.insertNewDiary(summary);
             diaryContent.value = content;
             $q.notify({type: 'positive', message: '日记已自动创建'});
-            bus.emit({type: 'created', summary});
             return;
         }
 
         // 已存在的日记，执行更新
-        const res = await commands.cmdUpdateDiaryContentOnly(diaryId.value, diaryContent.value);
+        const res = await commands.cmdUpdateDiaryContentOnly(currentId.value, diaryContent.value);
         if (res.status === 'error') {
             $q.notify({type: 'negative', message: `保存日记失败: ${res.error}`});
             return;
         }
-        diary.value = res.data;
-        bus.emit({type: 'updated', summary: res.data});
+        diarySummaries.value[currentId.value] = res.data;
     }
 
     function deleteDiary() {
-        if (!diaryId.value) return;
+        if (!currentId.value) return;
         $q.dialog({
             title: '确认删除',
             message: '确定要删除这篇日记吗？此操作无法撤销。',
             ok: {label: '删除', color: 'negative', flat: true},
             cancel: {label: '取消', color: 'primary', flat: true}
         }).onOk(async () => {
-            const res = await commands.cmdDeleteDiary(diaryId.value);
+            const res = await commands.cmdDeleteDiary(currentId.value);
             if (res.status === 'error') {
                 $q.notify({type: 'negative', message: `删除日记失败: ${res.error}`});
                 return;
             }
             $q.notify({type: 'positive', message: '日记已删除'});
-            bus.emit({type: 'deleted', id: diaryId.value});
+            dataStore.deleteSummary(currentId.value);
             isDelBack.value = true;
             router.back();
         });
@@ -124,7 +121,7 @@ export function useDiaryCore(initialId: string) {
         saveTimeout = setTimeout(saveDiary, AUTO_SAVE_DELAY);
     });
 
-    // 组件卸载时，如果还有没保存的，强制保存一次
+    // 组件卸载时，如果还有没保存的，强制保存一次 TODO 可以在appWindow.onCloseRequested关闭时也自动保存
     onDeactivated(async () => {
         if (saveTimeout) {
             clearTimeout(saveTimeout);
@@ -133,8 +130,8 @@ export function useDiaryCore(initialId: string) {
     });
 
     return {
-        diaryId,
-        diary,
+        diaryId: currentId,
+        diary: currentDiary,
         diaryContent,
         attachmentMap,
         isInitialLoaded,

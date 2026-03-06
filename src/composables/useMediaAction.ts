@@ -6,7 +6,8 @@ import {formatBytes, insertFileNode, insertMediaNode, MediaType} from "../utils"
 import {useQuasar} from "quasar";
 import {v4 as uuidv4} from "uuid";
 import {useEventBus} from "@vueuse/core";
-import {AttachmentEncryptionChangeEvent, DiaryChangedEvent} from "../types";
+import {AttachmentEncryptionChangeEvent} from "../types";
+import {useDataStore} from "../stores/data.ts";
 
 export interface UploadTask {
     filename: string;
@@ -18,8 +19,7 @@ type OnAttachmentProcessSuccess = (meta: AttachmentMeta, url: string) => void;
 
 export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLElement | undefined>, showPanel: Ref<boolean>) {
     const $q = useQuasar();
-    // TODO 把日记Summary放到store中应该就不需要这个事件了
-    const diaryChangeBus = useEventBus<DiaryChangedEvent>('diary-changed');
+    const dataStore = useDataStore();
     const attachmentUrlChangeBus = useEventBus<AttachmentEncryptionChangeEvent>('attachment-url-changed');
 
     const cancelTokens = new Set<string>();
@@ -160,12 +160,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
 
             const event = createUploadChannel(key, (meta, url) => {
                 console.log('转换完成:', filename, meta.encrypted, url);
-                // TODO 将diary和attachment存储到store中，这样就不需要发事件了
-                diaryChangeBus.emit({
-                    type: 'updated-attachment-encryption',
-                    filename,
-                    encrypted: meta.encrypted
-                });
+                dataStore.updateAttachment(diaryId.value, meta);
                 attachmentUrlChangeBus.emit({
                     diaryId: diaryId.value,
                     meta,

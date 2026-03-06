@@ -3,7 +3,7 @@ import {computed, nextTick, onActivated, onMounted, ref, watch} from "vue";
 import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
-import {onBeforeRouteLeave, useRoute} from "vue-router";
+import {onBeforeRouteLeave} from "vue-router";
 import {useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
@@ -12,20 +12,19 @@ import AttachmentCard from "../../components/AttachmentCard.vue";
 import {commands} from "../../bindings.ts";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useEventBus} from "@vueuse/core";
-import {AttachmentEncryptionChangeEvent, DiaryChangedEvent} from "../../types";
+import {AttachmentEncryptionChangeEvent} from "../../types";
+import {useDataStore} from "../../stores/data.ts";
 
-const route = useRoute();
 const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
 const attachmentUrlChangeBus = useEventBus<AttachmentEncryptionChangeEvent>('attachment-url-changed');
 
-const initialDiaryId = (route.params.id as string) || "";
 const {
   diaryId, diary, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
   loadDiaryInfo, deleteDiary
-} = useDiaryCore(initialDiaryId);
+} = useDiaryCore();
 
 // UI交互
 const {
@@ -40,7 +39,8 @@ const {
   audioRecording, insertVideo, insertFile, toggleAttachmentEncryption,
 } = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
 
-const bus = useEventBus<DiaryChangedEvent>('diary-changed');
+const {deleteAttachment} = useDataStore();
+
 const canUndo = computed(() => false);
 const canRedo = computed(() => false);
 
@@ -103,20 +103,10 @@ onBeforeRouteLeave((_to, _from, next) => {
     ok: {label: '删除', color: 'negative'},
     cancel: {label: '保留', color: 'primary'},
   }).onOk(() => {
-    console.log('删除附件:', orphans);
     Promise
         .all(orphans.map(att => commands.cmdDeleteAttachment(diaryId.value, att.filename)))
         .then(() => {
-          bus.emit({
-            type: "updated",
-            summary: {
-              id: diaryId.value,
-              title: diary.value?.title || '',
-              created: diary.value?.created || 0,
-              updated: diary.value?.updated || 0,
-              attachments: diary.value?.attachments.filter(att => !orphans.some(o => o.filename === att.filename)) || [],
-            }
-          })
+          deleteAttachment(diaryId.value, orphans.map(att => att.filename));
           next();
         })
         .catch(e => {

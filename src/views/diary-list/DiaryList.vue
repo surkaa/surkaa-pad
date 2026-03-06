@@ -3,25 +3,29 @@ import {computed, nextTick, onActivated, onDeactivated, ref} from "vue";
 import {useRouter} from "vue-router";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
-import {commands, DiarySummary} from "../../bindings.ts";
+import {commands} from "../../bindings.ts";
 import {useAppStore} from "../../stores/app.ts";
-import {useEventBus, useScroll, useTimestamp} from "@vueuse/core";
-import {DiaryChangedEvent} from "../../types";
+import {useScroll, useTimestamp} from "@vueuse/core";
+import {useDataStore} from "../../stores/data.ts";
+import {storeToRefs} from "pinia";
 
 const {getEndTime} = useAppStore();
 const router = useRouter();
-const diaryIds = ref<string[]>([]);
-const diarySummaries = ref<Record<string, DiarySummary | null>>({});
+const {
+  diaryIds,
+  diarySummaries,
+  currentId,
+  withAttachments,
+} = storeToRefs(useDataStore());
 const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
 
 const scrollContainer = ref<HTMLElement | null>(null);
-const { y } = useScroll(scrollContainer, {behavior: 'smooth'})
-const bus = useEventBus<DiaryChangedEvent>('diary-changed');
+const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
 
 // 倒计时
-const now = useTimestamp({ offset: 0, interval: 1000 })
+const now = useTimestamp({offset: 0, interval: 1000})
 
 // 计算剩余时间字符串，格式为 MM:SS
 const remainingStr = computed(() => {
@@ -30,19 +34,6 @@ const remainingStr = computed(() => {
   const seconds = Math.floor(ms / 1000) % 60;
   const minutes = Math.floor(ms / (1000 * 60)) % 60;
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-});
-
-// 日记统计信息
-const diaryStats = computed(() => {
-  const total = diaryIds.value.length;
-  const withAttachments = diarySummaries.value
-      ? Object.values(diarySummaries.value).filter(s => s && s.attachments.length).length
-      : 0;
-
-  return {
-    total,
-    withAttachments,
-  };
 });
 
 // 激活状态
@@ -118,39 +109,16 @@ function handleCardVisible(id: string) {
 function openDiary(id?: string) {
   if (!id) {
     // 新建日记
+    currentId.value = "";
     router.push({name: 'DiaryDetail'});
     return;
   }
   // 打开已有日记
-  router.push({name: 'DiaryDetail', params: {id}});
+  currentId.value = id;
+  router.push({name: 'DiaryDetail'});
 }
 
 defineOptions({name: 'DiaryList'});
-
-bus.on((payload) => {
-  switch (payload.type) {
-    case 'created':
-      if (diaryIds.value.includes(payload.summary.id)) {
-        return;
-      }
-      diaryIds.value.unshift(payload.summary.id);
-      diarySummaries.value[payload.summary.id] = payload.summary;
-      break;
-    case 'updated':
-      const old = diarySummaries.value[payload.summary.id];
-      if (old && old !== payload.summary) {
-        diarySummaries.value[payload.summary.id] = payload.summary;
-      }
-      break;
-    case 'deleted':
-      const index = diaryIds.value.indexOf(payload.id);
-      if (index !== -1) {
-        diaryIds.value.splice(index, 1);
-        delete diarySummaries.value[payload.id];
-      }
-      break;
-  }
-});
 
 onActivated(async () => {
   isActivating.value = true;
@@ -208,7 +176,7 @@ onDeactivated(() => {
       <q-btn @click="$router.push({ name: 'Settings' })">设置</q-btn>
     </Teleport>
     <Teleport v-if="isActivating" defer to="#footer-content">
-      <span>Total: {{ diaryStats.total }}</span>
+      <span>{{ withAttachments }} / {{ diaryIds.length }}</span>
       <span>Time: {{ remainingStr }}</span>
     </Teleport>
   </div>
@@ -264,6 +232,7 @@ onDeactivated(() => {
     :deep(.q-btn__content .q-anchor--skip) {
       display: none;
     }
+
     :deep(.q-page-sticky) {
       right: 16px !important;
       bottom: 16px !important;
