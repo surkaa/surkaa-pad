@@ -199,7 +199,7 @@ impl OssClient {
         }
     }
 
-    pub async fn upload_bytes(&self, key: &str, data: &Vec<u8>) -> Result<(), String> {
+    pub async fn upload_bytes(&self, key: &str, data: &[u8]) -> Result<(), String> {
         let url = self.get_url(key, "");
         let mut headers = self.build_headers(&Method::PUT, key, STREAM_MINE_TYPE)?;
         // 显式设置 Content-Length
@@ -211,7 +211,7 @@ impl OssClient {
             .http_client
             .put(url)
             .headers(headers)
-            .body(data.clone())
+            .body(data.to_owned())
             .send()
             .await
             .map_err(|e| format!("请求失败:{}", e))?;
