@@ -6,6 +6,7 @@ import {EXTENSIONS} from "../components/editor/extension.ts";
 import {useDataStore} from "../stores/data.ts";
 import {storeToRefs} from "pinia";
 import {getCurrentWindow} from "@tauri-apps/api/window";
+import {UnlistenFn} from "@tauri-apps/api/event";
 
 export function useDiaryCore() {
     const $q = useQuasar();
@@ -122,8 +123,9 @@ export function useDiaryCore() {
         saveTimeout = setTimeout(saveDiary, AUTO_SAVE_DELAY);
     });
 
+    let unlisten: UnlistenFn | null = null;
     onMounted(async () => {
-        const unlisten = await appWindow.onCloseRequested(async (event) => {
+        unlisten = await appWindow.onCloseRequested(async (event) => {
             event.preventDefault(); // 阻止默认的关闭行为，等待保存完成
             try {
                 if (saveTimeout) {
@@ -133,10 +135,12 @@ export function useDiaryCore() {
             } finally {
                 await appWindow.destroy();
             }
-            unlisten();
+            unlisten?.();
         });
+    });
 
-        onUnmounted(unlisten);
+    onUnmounted(() => {
+        unlisten?.();
     });
 
     // 组件卸载时，如果还有没保存的，强制保存一次
