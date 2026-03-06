@@ -11,7 +11,7 @@ const containerRef = ref<HTMLElement>();
 
 // 缩放、旋转和拖拽状态
 const scale = ref(1);
-const rotation = ref(0); // 旋转角度，单位：度
+const rotationRef = ref(0); // 旋转角度，单位：度
 const position = ref({x: 0, y: 0});
 const isDragging = ref(false);
 const lastPosition = ref({x: 0, y: 0});
@@ -42,14 +42,14 @@ function showTipMessage(message: string, duration: number = 2000) {
 
 // 旋转图片（顺时针90度）
 function rotateImage() {
-  rotation.value = rotation.value + 90;
-  showTipMessage(`已旋转: ${rotation.value % 360}°`);
+  rotationRef.value = rotationRef.value + 90;
+  showTipMessage(`已旋转: ${rotationRef.value % 360}°`);
 }
 
 // 重置状态
 function resetTransform() {
   scale.value = 1;
-  rotation.value = 0;
+  rotationRef.value = 0;
   position.value = {x: 0, y: 0};
   showTipMessage('已重置');
 }
@@ -251,10 +251,13 @@ watch(scale, (newScale) => {
 });
 
 onMounted(() => {
-  const {src} = route.params;
+  const {src, rotation} = route.params;
   if (Array.isArray(src)) {
     console.log('Invalid parameter:', src);
     return;
+  }
+  if (rotation && !Array.isArray(rotation)) {
+    rotationRef.value = Number(rotation) || 0;
   }
   url.value = src;
 });
@@ -283,7 +286,7 @@ onUnmounted(() => {
       <button
           class="control-btn"
           @click="resetTransform"
-          :disabled="scale === 1 && position.x === 0 && position.y === 0 && rotation === 0"
+          :disabled="scale === 1 && position.x === 0 && position.y === 0 && rotationRef === 0"
           aria-label="重置缩放和位置"
       >
         <svg class="control-icon" viewBox="0 0 24 24">
@@ -328,7 +331,7 @@ onUnmounted(() => {
           class="preview-image"
           :class="{ 'draggable': scale > 1 }"
           :style="{
-                    transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
+                    transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotationRef}deg)`,
                     cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
                   }"
           @load="addEventListeners"

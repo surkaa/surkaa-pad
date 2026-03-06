@@ -1,5 +1,6 @@
 import {Extension, MenuButton} from "./extension.ts";
 
+// TODO 考虑使用泛型避免频繁的类型断言
 export const ImageExtension: Extension = {
     name: "image",
 
@@ -24,6 +25,13 @@ export const ImageExtension: Extension = {
             if (params.get('size') === 'small') {
                 img.dataset.size = 'small'; // 使用 data-size 属性标记小图模式
             }
+            // 旋转角度
+            const rotation = params.get('rotation');
+            if (rotation) {
+                img.dataset.rotation = rotation;
+                // 立即应用旋转样式（便于编辑器中查看）
+                img.style.transform = `rotate(${rotation}deg)`;
+            }
         }
 
         return img.outerHTML;
@@ -37,6 +45,10 @@ export const ImageExtension: Extension = {
         const params = new URLSearchParams();
         if (node.dataset.size === 'small') {
             params.append('size', 'small');
+        }
+        const rotation = node.dataset.rotation;
+        if (rotation && rotation !== '0') {
+            params.append('rotation', rotation);
         }
 
         const configStr = params.toString();
@@ -54,13 +66,22 @@ export const ImageExtension: Extension = {
             console.error(`没有找到附件src ${filename}`);
             return;
         }
-        ctx.gotoPreview(src);
+        const rotation = (node as HTMLImageElement).dataset.rotation;
+        ctx.gotoPreview(src, rotation);
     },
 
     // 右键菜单实现
     onContextmenu: (_e, node, _ctx): MenuButton[] => {
         const imgNode = node as HTMLImageElement;
         const isSmall = imgNode.dataset.size === 'small';
+
+        // 辅助函数：更新旋转并同步样式
+        const setRotation = (target: HTMLImageElement, dRotation: number) => {
+            const currentRotation = parseInt(target.dataset.rotation || '0', 10);
+            const newRot = currentRotation + dRotation;
+            target.dataset.rotation = newRot.toString();
+            target.style.transform = `rotate(${newRot}deg)`;
+        };
 
         return [{
             label: isSmall ? '大图模式' : '小图模式',
@@ -71,6 +92,27 @@ export const ImageExtension: Extension = {
                 } else {
                     target.dataset.size = 'small'; // 设置属性
                 }
+            }
+        }, {
+            label: '顺时针旋转90°',
+            icon: 'rotate_90_degrees_cw',
+            action: (targetEl) => {
+                const target = targetEl as HTMLImageElement;
+                setRotation(target, 90);
+            }
+        }, {
+            label: '逆时针旋转90°',
+            icon: 'rotate_90_degrees_ccw',
+            action: (targetEl) => {
+                const target = targetEl as HTMLImageElement;
+                setRotation(target, -90);
+            }
+        }, {
+            label: '旋转180°',
+            icon: 'replay_180',
+            action: (targetEl) => {
+                const target = targetEl as HTMLImageElement;
+                setRotation(target, 180);
             }
         }];
     },

@@ -40,9 +40,9 @@ const extensionCtx: ExtensionContext = {
     if (!att || !attachmentMap[att.filename]) return null;
     return attachmentMap[att.filename];
   },
-  gotoPreview: (src) => router.push({
+  gotoPreview: (src, rotation) => router.push({
     name: 'PreviewMedia',
-    params: {src}
+    params: {src, rotation}
   }),
 }
 
