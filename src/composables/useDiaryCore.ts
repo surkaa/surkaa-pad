@@ -1,14 +1,16 @@
-import {computed, nextTick, onDeactivated, ref, watch} from 'vue';
+import {computed, nextTick, onDeactivated, onMounted, onUnmounted, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
 import {commands} from "../bindings.ts";
 import {EXTENSIONS} from "../components/editor/extension.ts";
 import {useDataStore} from "../stores/data.ts";
 import {storeToRefs} from "pinia";
+import {getCurrentWindow} from "@tauri-apps/api/window";
 
 export function useDiaryCore() {
     const $q = useQuasar();
     const router = useRouter();
+    const appWindow = getCurrentWindow();
     const dataStore = useDataStore();
     const {currentId, currentDiary, diarySummaries} = storeToRefs(dataStore);
 
@@ -121,7 +123,24 @@ export function useDiaryCore() {
         saveTimeout = setTimeout(saveDiary, AUTO_SAVE_DELAY);
     });
 
-    // 组件卸载时，如果还有没保存的，强制保存一次 TODO 可以在appWindow.onCloseRequested关闭时也自动保存
+    onMounted(async () => {
+        const unlisten = await appWindow.onCloseRequested(async (event) => {
+            event.preventDefault(); // 阻止默认的关闭行为，等待保存完成
+            try {
+                if (saveTimeout) {
+                    clearTimeout(saveTimeout);
+                    await saveDiary();
+                }
+            } finally {
+                await appWindow.destroy();
+            }
+            unlisten();
+        });
+
+        onUnmounted(unlisten);
+    });
+
+    // 组件卸载时，如果还有没保存的，强制保存一次
     onDeactivated(async () => {
         if (saveTimeout) {
             clearTimeout(saveTimeout);
