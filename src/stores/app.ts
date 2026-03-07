@@ -1,11 +1,10 @@
 import {defineStore} from "pinia";
 import {Store} from "@tauri-apps/plugin-store";
 import {OssConfigType, ThemeType} from "../types";
-import {computed, markRaw, ref} from "vue";
+import {markRaw, ref} from "vue";
 import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import {commands} from "../bindings.ts";
 import {useQuasar} from "quasar";
-import {exit} from "@tauri-apps/plugin-process";
 
 // --- 常量 ---
 const CONFIG_FILENAME = "settings.json";
@@ -15,24 +14,13 @@ const THEME_KEY = 'app-theme';
 const DEFAULT_THEME: ThemeType = 'system';
 const BIOMETRIC_ENABLED_KEY = "biometric_enabled";
 const BIOMETRIC_ENCRYPTED_DEK = "biometric_dek";
-// 解锁后1小时自动关闭应用
-const AUTO_CLOSE_APP_TIMEOUT = 60 * 60 * 1000;
-// 时间到时剩余操作时间
-const AUTO_CLOSE_APP_WARNING_TIME = 60 * 1000;
 
 export const useAppStore = defineStore('app', () => {
     let store = ref<Store | null>(null);
 
-    let closeTimer: ReturnType<typeof setTimeout> | null = null;
-    let startTime = ref(Date.now());
-
     const $q = useQuasar();
     const theme = ref<ThemeType>('system');
     const isBiometricEnabled = ref(false);
-
-    const getEndTime = computed(() => {
-        return startTime.value + AUTO_CLOSE_APP_TIMEOUT;
-    });
 
     function setTheme(t: ThemeType, save = true) {
         theme.value = t;
@@ -141,30 +129,6 @@ export const useAppStore = defineStore('app', () => {
         }
     }
 
-    function setTimeoutForCloseApp() {
-        if (closeTimer) clearTimeout(closeTimer);
-        console.log('设置自动关闭应用定时器');
-        startTime.value = Date.now();
-        closeTimer = setTimeout(() => {
-            console.log('即将自动关闭应用');
-            // 60s后退出
-            $q.dialog({
-                title: '安全提示',
-                message: '为了保护您的数据安全，应用将于一分钟后自动关闭。请保存您的工作。'
-            });
-            setTimeout(
-                () => exit(0),
-                AUTO_CLOSE_APP_WARNING_TIME
-            );
-            setTimeout(() => {
-                $q.dialog({
-                    title: '安全提示',
-                    message: '应用即将自动关闭以保护您的数据安全，请保存您的工作。'
-                });
-            }, AUTO_CLOSE_APP_WARNING_TIME / 2);
-        }, AUTO_CLOSE_APP_TIMEOUT);
-    }
-
     async function resetConfig() {
         if (!store.value) {
             throw new Error('Store 未初始化');
@@ -224,10 +188,8 @@ export const useAppStore = defineStore('app', () => {
         initOss,
         saveConfigAndLogin,
         resetConfig,
-        setTimeoutForCloseApp,
         setTheme,
         initStore,
-        getEndTime,
         isBiometricEnabled,
         enableBiometric,
         unlockWithBiometric,

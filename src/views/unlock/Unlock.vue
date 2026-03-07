@@ -45,6 +45,7 @@ import ErrorState from "./ErrorState.vue";
 import {getName, getVersion} from "@tauri-apps/api/app";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {useQuasar} from "quasar";
+import {useTimeoutStore} from "../../stores/timeout.ts";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
@@ -63,6 +64,7 @@ const appName = ref('App Name');
 
 const $q = useQuasar();
 const appStore = useAppStore();
+const {setTimeoutForCloseApp} = useTimeoutStore();
 const router = useRouter();
 
 function saveConfigAndLogin() {
@@ -130,7 +132,7 @@ function unlock() {
       .then(() => appStore.initOss(encryptedConfig.value))
       .then(() => {
         router.replace({name: 'DiaryList'});
-        appStore.setTimeoutForCloseApp();
+        setTimeoutForCloseApp();
       })
       .catch(err => {
         console.log("解锁失败：", err.message);
@@ -158,7 +160,7 @@ async function tryBiometricUnlock() {
     await appStore.initOss(encryptedConfig.value);
 
     $q.notify("生物识别解锁成功");
-    appStore.setTimeoutForCloseApp();
+    setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
   } catch (e: any) {
     // 用户取消或失败，不做处理，留在登录界面让用户输密码

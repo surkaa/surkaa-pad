@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onDeactivated, ref} from "vue";
+import {nextTick, onActivated, onDeactivated, ref} from "vue";
 import {useRouter} from "vue-router";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {commands} from "../../bindings.ts";
-import {useAppStore} from "../../stores/app.ts";
-import {useScroll, useTimestamp} from "@vueuse/core";
+import {useScroll} from "@vueuse/core";
 import {useDataStore} from "../../stores/data.ts";
 import {storeToRefs} from "pinia";
+import {useTimeoutStore} from "../../stores/timeout.ts";
 
-const {getEndTime} = useAppStore();
+const {remainingStr} = useTimeoutStore();
 const router = useRouter();
 const dataStore = useDataStore();
 const {
@@ -25,18 +25,6 @@ const isFirstLoadFinished = ref(false);
 
 const scrollContainer = ref<HTMLElement | null>(null);
 const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
-
-// 倒计时
-const now = useTimestamp({offset: 0, interval: 1000})
-
-// 计算剩余时间字符串，格式为 MM:SS
-const remainingStr = computed(() => {
-  const diff = new Date(getEndTime).getTime() - now.value
-  const ms = Math.max(0, diff);
-  const seconds = Math.floor(ms / 1000) % 60;
-  const minutes = Math.floor(ms / (1000 * 60)) % 60;
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-});
 
 // 激活状态
 const isActivating = ref(true);
