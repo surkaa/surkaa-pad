@@ -6,10 +6,10 @@ import {BaseExtension} from "./baseExtension.ts";
 import {FileExtension} from "./fileExtension.ts";
 
 // 定义菜单按钮的数据结构
-export interface MenuButton {
+export interface MenuButton<N = HTMLElement> {
     label: string;
     icon?: string;
-    action: (target: HTMLElement | null) => void;
+    action: (target: N) => void;
 }
 
 export interface ExtensionContext {
@@ -17,19 +17,17 @@ export interface ExtensionContext {
     getAttachment(filename: string): AttachmentMeta | null;
     getAttachmentUrl(filename: string): string | null;
     gotoPreview(src: string, rotation?: string): void;
-    emit: {
-        rotateAttachment(filename: string, rotation: number): void;
-    }
+    emit: (eventName: string, ...args: any[]) => void;
 }
 
-export interface Extension {
+export interface Extension<N extends HTMLElement = HTMLElement> {
     name: string;
 
     // 转换规则：HTML -> Source
     toSource?: (html: string) => string;
 
     // 安全 DOM 节点级反解析
-    serialize?: (node: HTMLElement) => string;
+    serialize?: (node: N) => string;
 
     // 转换规则：Source -> HTML
     toHtml?: (md: string, ctx: ExtensionContext) => string;
@@ -44,19 +42,19 @@ export interface Extension {
     hasMark?: (source: string, filename: string) => boolean;
 
     // 单击回调
-    onClick?: (e: MouseEvent, node: HTMLElement, ctx: ExtensionContext) => void;
+    onClick?: (e: MouseEvent, node: N, ctx: ExtensionContext) => void;
 
     // 上下文菜单 (windows右键/android长按) -> 返回要显示的菜单按钮列表
-    onContextmenu?: (e: MouseEvent, node: HTMLElement, ctx: ExtensionContext) => MenuButton[];
+    onContextmenu?: (e: MouseEvent, node: N, ctx: ExtensionContext) => MenuButton<N>[];
 
     // 是否是加密了的附件
-    isEncrypted?: (node: HTMLElement, ctx: ExtensionContext) => boolean;
+    isEncrypted?: (node: N, ctx: ExtensionContext) => boolean;
 
     // 获取附件的文件名
-    getFilename?: (node: HTMLElement) => string | undefined;
+    getFilename?: (node: N) => string | undefined;
 }
 
-export const EXTENSIONS: Extension[] = [
+export const EXTENSIONS: Extension<any>[] = [
     ImageExtension,
     AudioExtension,
     VideoExtension,

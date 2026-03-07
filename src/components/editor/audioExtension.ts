@@ -1,6 +1,6 @@
 import {Extension} from "./extension.ts";
 
-export const AudioExtension: Extension = {
+export const AudioExtension: Extension<HTMLAudioElement> = {
     name: "audio",
 
     match: (node) => node.nodeName === 'AUDIO',
@@ -26,11 +26,11 @@ export const AudioExtension: Extension = {
     },
 
     isEncrypted: (node, ctx) => {
-        const filename = (node as HTMLAudioElement).dataset.id;
+        const filename = node.dataset.id;
         if (!filename) return false;
         const attachment = ctx.getAttachment(filename);
         return attachment ? attachment.encrypted : false;
     },
 
-    getFilename: (node) => (node as HTMLAudioElement).dataset.id
+    getFilename: (node) => node.dataset.id
 }

@@ -45,9 +45,9 @@ const extensionCtx: ExtensionContext = {
     name: 'PreviewMedia',
     params: {src, rotation}
   }),
-  emit: {
-    rotateAttachment(filename: string, rotation: number) {
-      emit('rotateAttachment', filename, rotation);
+  emit(event, ...args) {
+    if (event === 'rotateAttachment') {
+      emit('rotateAttachment', args[0], args[1]);
     }
   }
 }

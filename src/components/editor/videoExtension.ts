@@ -1,6 +1,6 @@
 import {Extension} from "./extension.ts";
 
-export const VideoExtension: Extension = {
+export const VideoExtension: Extension<HTMLVideoElement> = {
     name: "video",
 
     match: (node) => node.nodeName === 'VIDEO',
@@ -26,11 +26,11 @@ export const VideoExtension: Extension = {
     },
 
     isEncrypted: (node, ctx) => {
-        const filename = (node as HTMLVideoElement).dataset.id;
+        const filename = node.dataset.id;
         if (!filename) return false;
         const attachment = ctx.getAttachment(filename);
         return attachment ? attachment.encrypted : false;
     },
 
-    getFilename: (node) => (node as HTMLVideoElement).dataset.id
+    getFilename: (node) => node.dataset.id
 }

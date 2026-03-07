@@ -12,6 +12,10 @@ export function useContextMenu(
     const currentPlatform = platform();
 
     async function handleEditorContextMenu(e: MouseEvent) {
+        if (!e.target) {
+            console.error("无法获取事件目标，无法判断是否显示转换按钮");
+            return;
+        }
         const target = e.target as HTMLElement;
         const handler = EXTENSIONS.find(ext => ext.match && ext.match(target));
 

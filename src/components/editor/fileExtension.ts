@@ -1,7 +1,7 @@
 import { Extension } from "./extension.ts";
 import {formatBytes} from "../../utils";
 
-export const FileExtension: Extension = {
+export const FileExtension: Extension<HTMLDivElement> = {
     name: "file",
 
     // 根据固定的 class 识别文件节点
@@ -19,7 +19,7 @@ export const FileExtension: Extension = {
         div.contentEditable = 'false';
 
         const att = ctx.getAttachment(filename);
-        let filesizeText = '';
+        let filesizeText;
         if (att) {
             filesizeText = formatBytes(att.size);
         } else {
@@ -47,5 +47,5 @@ export const FileExtension: Extension = {
         console.log(`Attachment: ${att?.filename}`);
     },
 
-    getFilename: (node) => (node as HTMLDivElement).dataset.id
+    getFilename: (node) => node.dataset.id
 }

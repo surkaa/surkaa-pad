@@ -1,7 +1,6 @@
 import {Extension, MenuButton} from "./extension.ts";
 
-// TODO 考虑使用泛型避免频繁的类型断言
-export const ImageExtension: Extension = {
+export const ImageExtension: Extension<HTMLImageElement> = {
     name: "image",
 
     match: (node) => node.nodeName === 'IMG',
@@ -30,8 +29,7 @@ export const ImageExtension: Extension = {
         return img.outerHTML;
     }),
 
-    serialize: (n: HTMLElement) => {
-        const node = n as HTMLImageElement;
+    serialize: (node) => {
         const filename = node.dataset.id;
         if (!filename) return '';
 
@@ -45,7 +43,7 @@ export const ImageExtension: Extension = {
     },
 
     onClick: (_e, node, ctx) => {
-        const filename = (node as HTMLImageElement).dataset.id;
+        const filename = node.dataset.id;
         if (!filename) {
             console.error(`无法打开附件，因为没有找到 data-id 属性`);
             return;
@@ -59,8 +57,7 @@ export const ImageExtension: Extension = {
     },
 
     // 右键菜单实现
-    onContextmenu: (_e, node, ctx): MenuButton[] => {
-        const imgNode = node as HTMLImageElement;
+    onContextmenu: (_e, imgNode, ctx): MenuButton<HTMLImageElement>[] => {
         const isSmall = imgNode.dataset.size === 'small';
         const filename = imgNode.dataset.id;
         if (!filename) {
@@ -70,8 +67,7 @@ export const ImageExtension: Extension = {
 
         return [{
             label: isSmall ? '大图模式' : '小图模式',
-            action: (targetEl) => {
-                const target = targetEl as HTMLImageElement;
+            action: (target) => {
                 if (isSmall) {
                     delete target.dataset.size; // 移除属性，恢复默认
                 } else {
@@ -81,24 +77,24 @@ export const ImageExtension: Extension = {
         }, {
             label: '顺时针旋转90°',
             icon: 'rotate_90_degrees_cw',
-            action: () => ctx.emit.rotateAttachment(filename, 90),
+            action: () => ctx.emit("rotateAttachment", filename, 90),
         }, {
             label: '逆时针旋转90°',
             icon: 'rotate_90_degrees_ccw',
-            action: () => ctx.emit.rotateAttachment(filename, -90),
+            action: () => ctx.emit("rotateAttachment", filename, -90),
         }, {
             label: '旋转180°',
             icon: 'replay_180',
-            action: () => ctx.emit.rotateAttachment(filename, 180),
+            action: () => ctx.emit("rotateAttachment", filename, 180),
         }];
     },
 
     isEncrypted: (node, ctx) => {
-        const filename = (node as HTMLImageElement).dataset.id;
+        const filename = node.dataset.id;
         if (!filename) return false;
         const attachment = ctx.getAttachment(filename);
         return attachment ? attachment.encrypted : false;
     },
 
-    getFilename: (node) => (node as HTMLImageElement).dataset.id
+    getFilename: (node) => node.dataset.id
 }
