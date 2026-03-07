@@ -28,9 +28,9 @@ async cmdUnlock(masterPassword: string, salt: string) : Promise<Result<string, s
  * # Arguments
  * * `data` - 待加密的数据
  * # Returns
- * * `Result<(Vec<u8>, Vec<u8>), String>` - 成功时返回 (密文, nonce)，失败时返回错误信息
+ * * `Result<Vec<u8>, String>` - 成功时返回密文（包含nonce在首），失败时返回错误信息
  */
-async cmdEncryptData(data: string) : Promise<Result<[number[], number[]], string>> {
+async cmdEncryptData(data: string) : Promise<Result<number[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_encrypt_data", { data }) };
 } catch (e) {
@@ -41,14 +41,13 @@ async cmdEncryptData(data: string) : Promise<Result<[number[], number[]], string
 /**
  * 解密数据
  * # Arguments
- * * `ciphertext` - 密文
- * * `nonce` - 解密用的 nonce
+ * * `encrypted` - 密文
  * # Returns
  * * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
  */
-async cmdDecryptData(ciphertext: number[], nonce: number[]) : Promise<Result<string, string>> {
+async cmdDecryptData(encrypted: number[]) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_decrypt_data", { ciphertext, nonce }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_decrypt_data", { encrypted }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -32,11 +32,7 @@ pub async fn save_diary(
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
 
     // 加密 manifest
-    let (ciphertext, nonce) = crypto.encrypt(&manifest_json)?;
-
-    // 组合 nonce 和 ciphertext，前面放 nonce
-    let mut encrypted_manifest = nonce;
-    encrypted_manifest.extend_from_slice(&ciphertext);
+    let encrypted_manifest = crypto.encrypt(&manifest_json)?;
 
     // 上传到 OSS
     let object_key = remote_manifest_key(&id);
@@ -70,7 +66,7 @@ pub async fn get_diary(
         .await
         .map_err(|e| format!("未能下载加密清单用于缓存: {}", e))?;
 
-    let manifest_bytes = crypto.decrypt_from_full_ciphertext(&encrypted_data)?;
+    let manifest_bytes = crypto.decrypt(&encrypted_data)?;
 
     // 反序列化 JSON
     let manifest: DiaryManifest =
@@ -105,11 +101,7 @@ async fn update_diary(
     let manifest_json = serde_json::to_vec(&diary).map_err(|e| format!("未能序列化日记: {}", e))?;
 
     // 加密 manifest
-    let (ciphertext, nonce) = crypto.encrypt(&manifest_json)?;
-
-    // 组合 nonce 和 ciphertext，前面放 nonce
-    let mut encrypted_manifest = nonce;
-    encrypted_manifest.extend_from_slice(&ciphertext);
+    let encrypted_manifest = crypto.encrypt(&manifest_json)?;
 
     // 上传到 OSS，覆盖原有的 manifest
     let object_key = remote_manifest_key(&diary.id);

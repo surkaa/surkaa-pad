@@ -32,30 +32,25 @@ pub async fn cmd_biometric_unlock(crypto: State<'_, Crypto>, dek: String) -> Res
 /// # Arguments
 /// * `data` - 待加密的数据
 /// # Returns
-/// * `Result<(Vec<u8>, Vec<u8>), String>` - 成功时返回 (密文, nonce)，失败时返回错误信息
+/// * `Result<Vec<u8>, String>` - 成功时返回密文（包含nonce在首），失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_encrypt_data(
-    crypto: State<'_, Crypto>,
-    data: String,
-) -> Result<(Vec<u8>, Vec<u8>), String> {
+pub async fn cmd_encrypt_data(crypto: State<'_, Crypto>, data: String) -> Result<Vec<u8>, String> {
     crypto.encrypt(data.as_bytes())
 }
 
 /// 解密数据
 /// # Arguments
-/// * `ciphertext` - 密文
-/// * `nonce` - 解密用的 nonce
+/// * `encrypted` - 密文
 /// # Returns
 /// * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_decrypt_data(
     crypto: State<'_, Crypto>,
-    ciphertext: Vec<u8>,
-    nonce: Vec<u8>,
+    encrypted: Vec<u8>,
 ) -> Result<String, String> {
-    let decrypted_bytes = crypto.decrypt(&ciphertext, &nonce)?;
+    let decrypted_bytes = crypto.decrypt(&encrypted)?;
     let decrypted_string = String::from_utf8(decrypted_bytes).map_err(|e| e.to_string())?;
     Ok(decrypted_string)
 }

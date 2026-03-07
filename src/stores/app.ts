@@ -78,9 +78,8 @@ export const useAppStore = defineStore('app', () => {
         if (res.status == 'error') {
             throw new Error(`加密配置失败: ${res.error}`);
         }
-        const [encrypted_data, nonce] = res.data;
 
-        const encryptedConfig = [...nonce, ...encrypted_data];
+        const encryptedConfig = res.data;
 
         // 保存加密后的配置
         await store.value.set(CONFIG_KEY, encryptedConfig);
@@ -110,9 +109,7 @@ export const useAppStore = defineStore('app', () => {
     }
 
     async function initOss(encryptedConfig: number[]) {
-        const nonce = encryptedConfig.slice(0, 12);
-        const ciphertext = encryptedConfig.slice(12);
-        const res = await commands.cmdDecryptData(ciphertext, nonce);
+        const res = await commands.cmdDecryptData(encryptedConfig);
         if (res.status == 'error') {
             throw new Error(`解密配置失败: ${res.error}`);
         }
