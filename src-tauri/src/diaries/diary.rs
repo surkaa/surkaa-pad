@@ -10,7 +10,6 @@ use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;
 use serde_json::from_slice;
 
-// TODO 整合这三个state 同时在下面的方法更新缓存
 pub async fn save_diary(
     crypto: &Crypto,
     client: &OssClient,
