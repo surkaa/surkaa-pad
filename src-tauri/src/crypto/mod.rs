@@ -151,13 +151,6 @@ impl Crypto {
         if dek.as_bytes().len() == types::KEY_LEN {
             let mut dek_array = [0u8; types::KEY_LEN];
             dek_array.copy_from_slice(dek.as_bytes());
-            #[cfg(debug_assertions)]
-            {
-                // 将派生的密钥打印到调试控制台
-                use base64::Engine;
-                let dek_b64 = base64::engine::general_purpose::STANDARD.encode(dek_array);
-                println!("派生的 DEK (Base64): {}", dek_b64);
-            }
             let derived_key = types::DerivedKey(dek_array);
             let _ = self.inner.dek.set(derived_key);
             let dek_string = hex::encode(dek_array);
