@@ -12,12 +12,6 @@ export const FileExtension: Extension<HTMLDivElement> = {
     hasMark: (source, filename) => new RegExp(`\\[\\[FILE:${filename}\\]\\]`).test(source),
 
     toHtml: (source, ctx) => source.replace(/\[\[FILE:([^\]]+)]]/g, (_, filename) => {
-        const div = document.createElement('div');
-        div.className = 'editor-file-attachment';
-        div.dataset.id = filename;
-        // 使其在富文本中作为一个整体块，不可选中内部文字
-        div.contentEditable = 'false';
-
         const att = ctx.getAttachment(filename);
         let filesizeText;
         if (att) {
@@ -27,8 +21,7 @@ export const FileExtension: Extension<HTMLDivElement> = {
         }
 
         // 内部 DOM 结构：图标 + 文件名
-        div.innerHTML = `<div class="file-title"><span class="file-icon">📎</span><span class="file-name">${filename}</span></div><span class="file-size">${filesizeText}</span>`;
-        return div.outerHTML;
+        return `<div data-id="${filename}" contenteditable="false" class="editor-file-attachment"><div class="file-title"><span class="file-icon">📎</span><span class="file-name">${filename}</span></div><span class="file-size">${filesizeText}</span></div>`;
     }),
 
     serialize: (n: HTMLElement) => {

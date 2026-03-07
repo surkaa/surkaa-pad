@@ -15,18 +15,15 @@ export const ImageExtension: Extension<HTMLImageElement> = {
             console.error(`无法解析图片URL，因为没有找到附件 ${filename}`);
             return '';
         }
-        const img = document.createElement('img');
-        img.src = url;
-        img.dataset.id = filename;
-        // 解析配置项
+
+        let sizeAttr = '';
         if (configStr) {
+            // 解析配置项
             const params = new URLSearchParams(configStr);
-            if (params.get('size') === 'small') {
-                img.dataset.size = 'small'; // 使用 data-size 属性标记小图模式
-            }
+            if (params.get('size') === 'small') sizeAttr = ' data-size="small"';
         }
 
-        return img.outerHTML;
+        return `<img alt="${filename}" src="${url}" data-id="${filename}"${sizeAttr} />`;
     }),
 
     serialize: (node) => {
