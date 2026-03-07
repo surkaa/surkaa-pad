@@ -20,7 +20,8 @@ export const useDataStore = defineStore('data', () => {
     function insertNewDiary(summary: DiarySummary) {
         diarySummaries.value[summary.id] = summary;
         if (!diaryIds.value.includes(summary.id)) {
-            diaryIds.value.push(summary.id);
+            // 在头部新增id
+            diaryIds.value.unshift(summary.id);
         }
     }
 
