@@ -209,10 +209,10 @@ pub async fn toggle_attachment_encryption(
         new_meta.encrypted = encrypted;
         new_meta.nonce = new_nonce;
 
-        update_diary_attachment(&cache, &crypto, &client, id, new_meta).await?;
+        update_diary_attachment(&cache, &crypto, &client, id, new_meta.clone()).await?;
 
-        let url = get_full_attachment_url(id, &old_meta, &client)?;
-        Ok((old_meta, url))
+        let url = get_full_attachment_url(id, &new_meta, &client)?;
+        Ok((new_meta, url))
     };
 
     match logic.await {
