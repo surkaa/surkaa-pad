@@ -76,15 +76,18 @@ function parseHtmlToSource(html: string): string {
     // 转换成数组防止操作子节点时引发迭代器异常
     const children = Array.from(node.childNodes);
     for (const child of children) {
-      walkAndReplace(child); // 向下递归
-
+      // 先尝试让插件接管
       const ext = EXTENSIONS.find(e => e.match && e.match(child));
       if (ext && ext.serialize) {
         // 调用插件生成 [[IMG:xxx]] 等标记
         const sourceText = ext.serialize(child as HTMLElement);
         // 原地替换：将复杂的 <img>/<audio> 节点替换为纯文本节点
         node.replaceChild(document.createTextNode(sourceText), child);
+        continue; // 已经被接管替换，直接跳过，不需要再深层遍历它的子节点
       }
+
+      // 如果不是自定义组件，再向下递归
+      walkAndReplace(child);
     }
   };
 
