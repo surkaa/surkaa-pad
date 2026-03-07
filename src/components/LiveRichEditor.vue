@@ -15,6 +15,7 @@ const {modelValue, diarySummary, attachmentMap} = defineProps<{
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
   (e: 'toggleAttachmentEncryption', filename: string, encrypted: boolean): Promise<void>;
+  (e: 'rotateAttachment', filename: string, rotation: number): void;
 }>();
 
 const editor = ref<HTMLDivElement>();
@@ -44,6 +45,11 @@ const extensionCtx: ExtensionContext = {
     name: 'PreviewMedia',
     params: {src, rotation}
   }),
+  emit: {
+    rotateAttachment(filename: string, rotation: number) {
+      emit('rotateAttachment', filename, rotation);
+    }
+  }
 }
 
 const {handleEditorContextMenu} = useContextMenu(

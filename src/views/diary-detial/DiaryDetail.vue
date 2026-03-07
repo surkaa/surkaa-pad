@@ -37,6 +37,7 @@ const {
   uploadTasks, showUploadDialog, isUploading, showAudioDrawer,
   handleAudioRecorded, insertPhoto, takePhoto, insertAudio,
   audioRecording, insertVideo, insertFile, toggleAttachmentEncryption,
+  rotateAttachment,
 } = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
 
 const {deleteAttachment} = useDataStore();
@@ -70,6 +71,7 @@ function showDiarySource() {
 }
 
 attachmentUrlChangeBus.on((event) => {
+  // TODO 考虑在更合适的地方操作DOM
   if (!(event.diaryId === diaryId.value && diary.value)) return;
   const attIndex = diary.value.attachments.findIndex(att => att.filename === event.meta.filename);
   if (attIndex === -1) return;
@@ -151,6 +153,7 @@ onActivated(async () => {
         :diarySummary="diary"
         :attachmentMap="attachmentMap"
         @toggleAttachmentEncryption="toggleAttachmentEncryption"
+        @rotateAttachment="rotateAttachment"
         style="width: 100%; flex: 1; padding: 16px"
     />
 

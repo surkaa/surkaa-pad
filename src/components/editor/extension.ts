@@ -17,6 +17,9 @@ export interface ExtensionContext {
     getAttachment(filename: string): AttachmentMeta | null;
     getAttachmentUrl(filename: string): string | null;
     gotoPreview(src: string, rotation?: string): void;
+    emit: {
+        rotateAttachment(filename: string, rotation: number): void;
+    }
 }
 
 export interface Extension {

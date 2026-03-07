@@ -190,6 +190,48 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         });
     }
 
+    async function rotateAttachment(filename: string, rotation: number) {
+        if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
+            console.log(`无法获取日记ID或文件名，无法执行旋转。diaryId: ${diaryId.value}, filename: ${filename}`);
+            $q.notify({type: 'negative', message: '无法获取日记ID或文件名，无法执行旋转'});
+            return;
+        }
+        if ([90, 180, -90].indexOf(rotation) === -1) {
+            console.log(`无效的旋转角度: ${rotation}`);
+            $q.notify({type: 'negative', message: '无效的旋转角度'});
+            return;
+        }
+        uploadTaskMap.value = {};
+        editorDomRef.value?.focus();
+        const key = uuidv4();
+        uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
+
+        const event = createUploadChannel(key, (meta, url) => {
+            console.log('旋转完成:', filename, url);
+            dataStore.updateAttachment(diaryId.value, meta);
+            attachmentUrlChangeBus.emit({
+                diaryId: diaryId.value,
+                meta,
+                url,
+            });
+        });
+
+        const res = await commands.cmdRotateImageAttachment(
+            event,
+            diaryId.value,
+            filename,
+            rotation
+        );
+        if (res.status === "error") {
+            uploadTaskMap.value[key].status = 'error';
+            $q.notify({type: 'negative', message: res.error});
+            console.error('旋转图片失败:', res.error);
+        } else {
+            showUploadDialog.value = true;
+            console.log('发送旋转图片命令，等待结果...');
+        }
+    }
+
     onUnmounted(async () => {
         if (cancelTokens.size === 0) return;
 
@@ -242,5 +284,6 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         insertVideo: () => genericBatchUpload(false, ['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video', "video"),
         insertFile: async () => genericBatchUpload(true, ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar']),
         toggleAttachmentEncryption,
+        rotateAttachment,
     };
 }
