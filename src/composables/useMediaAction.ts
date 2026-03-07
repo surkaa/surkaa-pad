@@ -5,8 +5,6 @@ import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {formatBytes, insertFileNode, insertMediaNode, MediaType} from "../utils";
 import {useQuasar} from "quasar";
 import {v4 as uuidv4} from "uuid";
-import {useEventBus} from "@vueuse/core";
-import {AttachmentEncryptionChangeEvent} from "../types";
 import {useDataStore} from "../stores/data.ts";
 import {storeToRefs} from "pinia";
 
@@ -18,11 +16,15 @@ export interface UploadTask {
 
 type OnAttachmentProcessSuccess = (meta: AttachmentMeta, url: string) => void;
 
-export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLElement | undefined>, showPanel: Ref<boolean>) {
+export function useMediaAction(
+    diaryId: Ref<string>,
+    editorDomRef: Ref<HTMLElement | undefined>,
+    showPanel: Ref<boolean>,
+    updateAttachmentUrl: (filename: string, url: string) => void
+) {
     const $q = useQuasar();
     const dataStore = useDataStore();
     const {currentDiaryAttachmentUrlMap} = storeToRefs(dataStore);
-    const attachmentUrlChangeBus = useEventBus<AttachmentEncryptionChangeEvent>('attachment-url-changed');
 
     const cancelTokens = new Set<string>();
 
@@ -164,11 +166,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
             const event = createUploadChannel(key, (meta, url) => {
                 console.log('转换完成:', filename, meta.encrypted, url);
                 dataStore.updateAttachment(diaryId.value, meta);
-                attachmentUrlChangeBus.emit({
-                    diaryId: diaryId.value,
-                    meta,
-                    url,
-                });
+                updateAttachmentUrl(filename, url);
                 resolve();
             });
             commands.cmdToggleAttachmentEncryption(
@@ -209,11 +207,7 @@ export function useMediaAction(diaryId: Ref<string>, editorDomRef: Ref<HTMLEleme
         const event = createUploadChannel(key, (meta, url) => {
             console.log('旋转完成:', filename, url);
             dataStore.updateAttachment(diaryId.value, meta);
-            attachmentUrlChangeBus.emit({
-                diaryId: diaryId.value,
-                meta,
-                url,
-            });
+            updateAttachmentUrl(filename, url);
         });
 
         const res = await commands.cmdRotateImageAttachment(

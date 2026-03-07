@@ -137,7 +137,22 @@ function handleEditorClick(e: MouseEvent) {
 
 // 暴露editor给父组件
 defineExpose({
-  editor
+  editor,
+  updateSrc(id: string, newUrl: string) {
+    if (!editor.value) return false;
+    const el = editor.value.querySelector(`img[data-id="${id}"]`);
+    if (!el) return false;
+    if (el instanceof HTMLMediaElement) {
+      el.src = newUrl;
+      el.load();
+    } else if (el instanceof HTMLImageElement) {
+      el.src = newUrl;
+    } else {
+      console.warn('无法更新附件URL，未知元素类型:', el);
+      return false;
+    }
+    return true;
+  }
 });
 
 onMounted(async () => {

@@ -11,15 +11,12 @@ import {formatTimestamp} from "../../utils";
 import AttachmentCard from "../../components/AttachmentCard.vue";
 import {commands} from "../../bindings.ts";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
-import {useEventBus} from "@vueuse/core";
-import {AttachmentEncryptionChangeEvent} from "../../types";
 import {useDataStore} from "../../stores/data.ts";
 
 const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
-const attachmentUrlChangeBus = useEventBus<AttachmentEncryptionChangeEvent>('attachment-url-changed');
 
 const {
   diaryId, diary, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
@@ -38,7 +35,16 @@ const {
   handleAudioRecorded, insertPhoto, takePhoto, insertAudio,
   audioRecording, insertVideo, insertFile, toggleAttachmentEncryption,
   rotateAttachment,
-} = useMediaAction(diaryId, editorDomRef, showToolbarPanel);
+} = useMediaAction(diaryId, editorDomRef, showToolbarPanel, (filename, url) => {
+  if (liveEditorRef.value) {
+    const res = liveEditorRef.value?.updateSrc(filename, url);
+    if (!res) {
+      $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
+    }
+  } else {
+    $q.notify({type: 'negative', message: '编辑器未准备好，无法更新附件链接'});
+  }
+});
 
 const {deleteAttachment} = useDataStore();
 
@@ -69,24 +75,6 @@ function showDiarySource() {
   });
   showMenu.value = false;
 }
-
-attachmentUrlChangeBus.on((event) => {
-  // TODO 考虑在更合适的地方操作DOM
-  if (!(event.diaryId === diaryId.value && diary.value)) return;
-  const attIndex = diary.value.attachments.findIndex(att => att.filename === event.meta.filename);
-  if (attIndex === -1) return;
-  diary.value.attachments[attIndex] = event.meta;
-  const el = editorDomRef.value?.querySelector(`[data-id="${event.meta.filename}"]`);
-  if (!el) return;
-  if (el instanceof HTMLMediaElement) {
-    el.src = event.url;
-    el.load();
-  } else if (el instanceof HTMLImageElement) {
-    el.src = event.url;
-  } else {
-    console.warn('无法更新附件URL，未知元素类型:', el);
-  }
-});
 
 defineOptions({name: 'DiaryDetail'});
 
