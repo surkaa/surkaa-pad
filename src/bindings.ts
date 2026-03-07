@@ -278,6 +278,23 @@ async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>
 }
 },
 /**
+ * 旋转图片附件 顺时针90度、逆时针90度和180度
+ * # Arguments
+ * * `id` - 日记 ID
+ * * `filename` - 附件 ID
+ * * `rotation` - 旋转角度，单位为度，支持90、-90和180
+ * # Returns
+ * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ */
+async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string, rotation: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_rotate_image_attachment", { event, id, filename, rotation }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 取消任务
  * # Arguments
  * * `cancel_token` - 任务取消令牌

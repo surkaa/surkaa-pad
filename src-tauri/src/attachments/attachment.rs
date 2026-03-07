@@ -6,11 +6,14 @@ use crate::diaries::{
     delete_diary_attachment, get_diary, update_diary_attachment, DiaryMemoryCache,
 };
 use crate::object::tracker_stream::tracker_stream;
-use crate::object::{ByteStream, OssClient};
+use crate::object::{create_mock_stream, ByteStream, OssClient};
 use crate::storages::remote_attachments_key;
 use crate::utils::message_sender::MessageSender;
 use dashmap::DashMap;
+use futures_util::StreamExt;
+use image::ImageFormat;
 use std::collections::HashSet;
+use std::io::Cursor;
 use std::sync::{Arc, LazyLock};
 use tokio::sync::Mutex;
 
@@ -210,6 +213,120 @@ pub async fn toggle_attachment_encryption(
 
         let url = get_full_attachment_url(id, &old_meta, &client)?;
         Ok((old_meta, url))
+    };
+
+    match logic.await {
+        Ok((meta, url)) => {
+            let _ = event.send(AttachmentProcessEvent::Completed(meta, url));
+        }
+        Err(e) => {
+            let _ = event.send(AttachmentProcessEvent::Error(e));
+        }
+    }
+}
+
+pub async fn rotate_image_attachment(
+    cache: DiaryMemoryCache,
+    crypto: Crypto,
+    client: OssClient,
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
+    id: &str,
+    filename: String,
+    rotation: i32,
+) {
+    let _ = event.send(AttachmentProcessEvent::Started);
+
+    let logic = async {
+        // 检测 rotation 参数是否合法
+        if ![90, -90, 180].contains(&rotation) {
+            return Err("不支持的旋转角度，仅支持 90, -90, 180".to_string());
+        }
+        // 获取元数据
+        let diary = get_diary(&cache, &crypto, &client, id).await?;
+        let old_meta = diary
+            .attachments
+            .iter()
+            .find(|a| a.filename == filename)
+            .ok_or_else(|| "附件不存在".to_string())?
+            .clone();
+
+        // 验证 MIME 类型是否为图片
+        if !old_meta.mimetype.starts_with("image/") {
+            return Err("附件不是图片，无法旋转".to_string());
+        }
+
+        // 下载并解密原始数据
+        let (raw_stream, _size) = client
+            .download(&remote_attachments_key(id, &filename), None)
+            .await?;
+
+        let mut stream = if old_meta.encrypted {
+            crypto.decrypt_streaming(raw_stream, &old_meta.nonce, 0)?
+        } else {
+            raw_stream
+        };
+
+        // 将流收集到内存 图片处理必须在内存中进行
+        let mut buffer = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            buffer.extend_from_slice(&chunk.map_err(|e| e.to_string())?);
+        }
+
+        // 使用 image 库处理旋转
+        // load_from_memory 会自动识别 jpeg/png 等格式
+        let img = image::load_from_memory(&buffer).map_err(|e| format!("图片解码失败: {}", e))?;
+
+        let rotated_img = match rotation {
+            90 => img.rotate90(),
+            180 => img.rotate180(),
+            -90 => img.rotate270(),
+            _ => return Err("不支持的旋转角度，仅支持 90, 180, -90".to_string()),
+        };
+
+        // 4. 将旋转后的图片编码回字节流
+        // 保持原始的 MIME 类型（简单起见，这里假设是常用格式）
+        let mut output_buffer = Vec::new();
+        let format = match old_meta.mimetype.as_str() {
+            "image/jpeg" | "image/jpg" => ImageFormat::Jpeg,
+            "image/png" => ImageFormat::Png,
+            "image/webp" => ImageFormat::WebP,
+            _ => ImageFormat::Png, // 默认 PNG
+        };
+
+        rotated_img
+            .write_to(&mut Cursor::new(&mut output_buffer), format)
+            .map_err(|e| format!("图片编码失败: {}", e))?;
+
+        let new_size = output_buffer.len() as u64;
+
+        // 重新上传并保持原有的加密策略
+        let key = remote_attachments_key(id, &filename);
+        let (upload_stream, new_nonce, is_encrypted) = if old_meta.encrypted {
+            let (s, n) =
+                crypto.encrypt_streaming(create_mock_stream(output_buffer, new_size as usize))?;
+            (s, n, true)
+        } else {
+            (
+                create_mock_stream(output_buffer, new_size as usize),
+                vec![],
+                false,
+            )
+        };
+
+        client
+            .upload(&key, new_size, upload_stream, &old_meta.mimetype)
+            .await?;
+
+        // 更新元数据 (主要是 size 和可能的 nonce)
+        let mut new_meta = old_meta.clone();
+        new_meta.size = new_size;
+        new_meta.nonce = new_nonce;
+        new_meta.encrypted = is_encrypted;
+
+        update_diary_attachment(&cache, &crypto, &client, id, new_meta.clone()).await?;
+
+        let url = get_full_attachment_url(id, &new_meta, &client)?;
+        Ok((new_meta, url))
     };
 
     match logic.await {
@@ -440,6 +557,109 @@ mod test {
             downloaded_bytes.extend_from_slice(&chunk.unwrap());
         }
         assert_eq!(downloaded_bytes, raw_data, "转换后的文件内容与原始数据不符");
+
+        // 清理
+        delete_diary(&cache, &client, &diary_id).await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_rotate_image_attachment() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = Crypto::from_env();
+        let client = OssClient::from_env();
+
+        // 准备环境：保存日记并上传一张原始图片
+        let (summary, _) = save_diary(&crypto, &client, "图片旋转测试")
+            .await
+            .expect("初始化日记失败");
+        let diary_id = summary.id;
+
+        // 创建一个简单的 2x1 红色 RGBA 像素图片字节数据 (作为模拟)
+        // 实际测试建议使用一个真实的 small jpeg 字节，或者用 image 库生成
+        let mut img_buffer = Vec::new();
+        let test_img = image::RgbImage::new(10, 20); // 宽10, 高20
+        test_img
+            .write_to(&mut Cursor::new(&mut img_buffer), ImageFormat::Png)
+            .expect("生成测试图片失败");
+
+        let original_size = img_buffer.len() as u64;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
+
+        // 上传原始图片
+        add_attachment(
+            cache.clone(),
+            crypto.clone(),
+            client.clone(),
+            Arc::new(tx),
+            &diary_id,
+            true, // 测试加密状态下的旋转
+            original_size,
+            "image/png".to_string(),
+            create_mock_stream(img_buffer, original_size as usize),
+        )
+        .await;
+
+        let filename = "1";
+
+        // 执行旋转操作：顺时针 90 度
+        let (tx_rot, mut rx_rot) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
+        let event_sender = Arc::new(tx_rot);
+
+        rotate_image_attachment(
+            cache.clone(),
+            crypto.clone(),
+            client.clone(),
+            event_sender,
+            &diary_id,
+            filename.to_string(),
+            90, // 顺时针 90
+        )
+        .await;
+
+        // 验证结果
+        let mut completed = false;
+        while let Some(event) = rx_rot.recv().await {
+            match event {
+                AttachmentProcessEvent::Started => {}
+                AttachmentProcessEvent::Progress(_) => {}
+                AttachmentProcessEvent::Completed(meta, _url) => {
+                    assert_eq!(meta.filename, filename);
+                    assert!(meta.encrypted, "旋转后应保持加密状态");
+                    completed = true;
+                }
+                AttachmentProcessEvent::Error(e) => {
+                    panic!("旋转失败: {}", e);
+                }
+            }
+        }
+        assert!(completed, "未收到 Completed 事件");
+
+        // 验证数据确实被修改（下载并检查）
+        let (raw_stream, _) = client
+            .download(&remote_attachments_key(&diary_id, filename), None)
+            .await
+            .unwrap();
+
+        // 解密
+        let diary = get_diary(&cache, &crypto, &client, &diary_id)
+            .await
+            .unwrap();
+        let meta = diary.attachments.first().unwrap();
+        let mut dec_stream = crypto
+            .decrypt_streaming(raw_stream, &meta.nonce, 0)
+            .unwrap();
+
+        let mut rotated_data = Vec::new();
+        use futures::StreamExt;
+        while let Some(chunk) = dec_stream.next().await {
+            rotated_data.extend_from_slice(&chunk.unwrap());
+        }
+
+        // 使用 image 库加载回旋转后的数据，验证尺寸是否互换 (10x20 -> 20x10)
+        let final_img = image::load_from_memory(&rotated_data).expect("无法解码旋转后的图片");
+        assert_eq!(final_img.width(), 20);
+        assert_eq!(final_img.height(), 10);
 
         // 清理
         delete_diary(&cache, &client, &diary_id).await.unwrap();

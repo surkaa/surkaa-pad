@@ -1,7 +1,7 @@
 use crate::attachments::attachment::{
-    add_attachment, delete_attachment, toggle_attachment_encryption,
+    add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption,
 };
-use crate::attachments::types::{AttachmentProcessEvent};
+use crate::attachments::types::AttachmentProcessEvent;
 use crate::crypto::Crypto;
 use crate::diaries::DiaryMemoryCache;
 use crate::object::{create_mock_stream, OssState};
@@ -202,6 +202,42 @@ pub fn cmd_toggle_attachment_encryption(
             &id,
             filename,
             encrypted,
+        )
+        .await;
+    })
+}
+
+/// 旋转图片附件 顺时针90度、逆时针90度和180度
+/// # Arguments
+/// * `id` - 日记 ID
+/// * `filename` - 附件 ID
+/// * `rotation` - 旋转角度，单位为度，支持90、-90和180
+/// # Returns
+/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_rotate_image_attachment(
+    cache: State<'_, DiaryMemoryCache>,
+    crypto: State<'_, Crypto>,
+    client: State<'_, OssState>,
+    tp: State<'_, TaskPool>,
+    event: Channel<AttachmentProcessEvent>,
+    id: String,
+    filename: String,
+    rotation: i32,
+) -> Result<String, String> {
+    let cache = cache.inner().clone();
+    let crypto = crypto.inner().clone();
+    let client = client.get_client()?;
+    tp.spawn(async move {
+        rotate_image_attachment(
+            cache,
+            crypto,
+            client,
+            Arc::new(event),
+            &id,
+            filename,
+            rotation,
         )
         .await;
     })
