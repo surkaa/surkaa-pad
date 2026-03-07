@@ -6,11 +6,11 @@ mod storages;
 mod tasks;
 mod utils;
 
-use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
 use crate::attachments::command::{
-    cmd_add_attachment, cmd_add_attachment_memory, cmd_delete_attachment,
-    cmd_add_image_attachment_from_camera, cmd_toggle_attachment_encryption
+    cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
+    cmd_delete_attachment, cmd_toggle_attachment_encryption,
 };
+use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
 use crate::crypto::command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
 };
@@ -24,7 +24,6 @@ use crate::object::command::cmd_init_oss_client;
 use crate::object::OssState;
 use crate::tasks::command::cmd_cancel_task;
 use crate::tasks::TaskPool;
-use crate::utils::command::open_devtools;
 use tauri::{App, Manager};
 
 fn run_setup(app: &mut App) {
@@ -67,7 +66,6 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_toggle_attachment_encryption,
             // 其他
             cmd_cancel_task,
-            open_devtools,
         ]);
 
     #[cfg(debug_assertions)]
