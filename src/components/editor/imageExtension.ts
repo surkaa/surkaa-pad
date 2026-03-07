@@ -25,13 +25,6 @@ export const ImageExtension: Extension = {
             if (params.get('size') === 'small') {
                 img.dataset.size = 'small'; // 使用 data-size 属性标记小图模式
             }
-            // 旋转角度
-            const rotation = params.get('rotation');
-            if (rotation) {
-                img.dataset.rotation = rotation;
-                // 立即应用旋转样式（便于编辑器中查看）
-                img.style.transform = `rotate(${rotation}deg)`;
-            }
         }
 
         return img.outerHTML;
@@ -45,10 +38,6 @@ export const ImageExtension: Extension = {
         const params = new URLSearchParams();
         if (node.dataset.size === 'small') {
             params.append('size', 'small');
-        }
-        const rotation = node.dataset.rotation;
-        if (rotation && rotation !== '0') {
-            params.append('rotation', rotation);
         }
 
         const configStr = params.toString();
@@ -66,8 +55,7 @@ export const ImageExtension: Extension = {
             console.error(`没有找到附件src ${filename}`);
             return;
         }
-        const rotation = (node as HTMLImageElement).dataset.rotation;
-        ctx.gotoPreview(src, rotation);
+        ctx.gotoPreview(src);
     },
 
     // 右键菜单实现

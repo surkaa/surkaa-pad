@@ -251,13 +251,10 @@ watch(scale, (newScale) => {
 });
 
 onMounted(() => {
-  const {src, rotation} = route.params;
+  const {src} = route.params;
   if (Array.isArray(src)) {
     console.log('Invalid parameter:', src);
     return;
-  }
-  if (rotation && !Array.isArray(rotation)) {
-    rotationRef.value = Number(rotation) || 0;
   }
   url.value = src;
 });
