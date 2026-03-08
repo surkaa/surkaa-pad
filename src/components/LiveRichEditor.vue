@@ -17,6 +17,7 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
   (e: 'toggleAttachmentEncryption', filename: string, encrypted: boolean): Promise<void>;
   (e: 'rotateAttachment', filename: string, rotation: number): void;
+  (e: 'pasteAttachments', files: File[]): void; // 上传完成后外部手动调用插入dom节点
 }>();
 
 const editor = ref<HTMLDivElement>();
@@ -140,7 +141,37 @@ function handleEditorClick(e: MouseEvent) {
   }
 }
 
+async function handlePaste(e: ClipboardEvent) {
+  e.preventDefault();
+
+  const clipboardData = e.clipboardData;
+  if (!clipboardData) return;
+
+  // 优先处理图片文件
+  if (clipboardData.files && clipboardData.files.length > 0) {
+    const files = Array.from(clipboardData.files);
+    if (!files.length) return;
+    emit('pasteAttachments', files);
+    return;
+  }
+
+  // 处理纯文本 直接提取 Plain Text 插入光标位置
+  let text = clipboardData.getData('text/plain');
+
+  if (text) {
+    // 利用 selection 将文本安全插入光标位置
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount) {
+      // 将纯文本中的换行符转换为 <br> 节点插入
+      // 或者直接调用 document.execCommand('insertText', false, text); (最简单省事)
+      document.execCommand('insertText', false, text);
+    }
+    handleInput();
+  }
+}
+
 // 暴露editor给父组件
+// noinspection JSDeprecatedSymbols
 defineExpose({
   editor,
   updateSrc(id: string, newUrl: string) {
@@ -198,6 +229,7 @@ watch(() => modelValue, (newVal) => {
       @input="handleInput"
       @click="handleEditorClick"
       @contextmenu="handleEditorContextMenu"
+      @paste="handlePaste"
   ></div>
 </template>
 
@@ -261,7 +293,6 @@ watch(() => modelValue, (newVal) => {
     align-items: center;
     justify-content: space-between;
     padding: 8px 12px;
-    margin: 8px 5px;
     background-color: var(--pad-bg-color);
     border: 1px solid var(--pad-border-color);
     border-radius: 6px;

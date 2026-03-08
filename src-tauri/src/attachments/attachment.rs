@@ -32,7 +32,7 @@ pub async fn add_attachment(
     id: &str,
     encrypted: bool,
     size: u64,
-    mimetype: String,
+    mimetype: String, // TODO 如果mimetype为空，则考虑自动检测
     stream: ByteStream,
 ) {
     let _ = event.send(AttachmentProcessEvent::Started);

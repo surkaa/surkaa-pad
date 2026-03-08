@@ -244,6 +244,51 @@ export function useMediaAction(
         }
     }
 
+    async function pasteAttachments(files: File[]) {
+        if (!editorContentRef.value) {
+            console.error('编辑器内容引用未定义，无法插入媒体节点');
+            return;
+        }
+        console.log('粘贴的文件列表:', files.length);
+        const currentRange = editorContentRef.value?.captureRange() || null;
+        showUploadDialog.value = true;
+        uploadTaskMap.value = {};
+        const uploads = Array.from(files).map(file => {
+            return new Promise<void>((resolve) => {
+                const reader = new FileReader();
+                reader.onload = async () => {
+                    const arrayBuffer = reader.result as ArrayBuffer;
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    await uploadMemoryAttachment(file.name, uint8Array, file.type, false, (att, url) => {
+                        if (!editorContentRef.value) {
+                            console.error('编辑器内容引用未定义，无法插入媒体节点');
+                            return;
+                        }
+                        if (file.type.startsWith('image/')) {
+                            currentDiaryAttachmentUrlMap.value[att.filename] = url;
+                            editorContentRef.value.insertMediaNode('img', url, att.filename, currentRange);
+                        } else if (file.type.startsWith('audio/')) {
+                            currentDiaryAttachmentUrlMap.value[att.filename] = url;
+                            editorContentRef.value.insertMediaNode('audio', url, att.filename, currentRange);
+                        } else if (file.type.startsWith('video/')) {
+                            currentDiaryAttachmentUrlMap.value[att.filename] = url;
+                            editorContentRef.value.insertMediaNode('video', url, att.filename, currentRange);
+                        } else {
+                            editorContentRef.value.insertFileNode(att.filename, formatBytes(att.size), currentRange);
+                        }
+                        resolve();
+                    });
+                };
+                reader.onerror = () => {
+                    $q.notify({type: 'negative', message: `${file.name} 读取失败`});
+                    resolve();
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        });
+        await Promise.allSettled(uploads);
+    }
+
     onUnmounted(async () => {
         if (cancelTokens.size === 0) return;
 
@@ -305,5 +350,6 @@ export function useMediaAction(
         insertFile: async () => genericBatchUpload(true, ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar']),
         toggleAttachmentEncryption,
         rotateAttachment,
+        pasteAttachments,
     };
 }

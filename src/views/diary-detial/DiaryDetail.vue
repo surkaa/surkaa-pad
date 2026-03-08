@@ -34,7 +34,7 @@ const {
   uploadTasks, showUploadDialog, isUploading, showAudioDrawer,
   handleAudioRecorded, insertPhoto, takePhoto, insertAudio,
   audioRecording, insertVideo, insertFile, toggleAttachmentEncryption,
-  rotateAttachment,
+  rotateAttachment, pasteAttachments
 } = useMediaAction(diaryId, editorDomRef, showToolbarPanel, liveEditorRef);
 
 const {deleteAttachment} = useDataStore();
@@ -130,6 +130,7 @@ onActivated(async () => {
         :attachmentMap="attachmentMap"
         @toggleAttachmentEncryption="toggleAttachmentEncryption"
         @rotateAttachment="rotateAttachment"
+        @pasteAttachments="pasteAttachments"
         style="width: 100%; flex: 1; padding: 16px"
     />
 
