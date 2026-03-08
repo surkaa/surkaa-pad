@@ -1,12 +1,8 @@
 # SurKaa Pad
 
-端到端加密日记软件  
+端到端加密的日记软件  
 
-需要有阿里云OSS的Bucket的AK密钥，同时和一个主密码即可享受端到端加密的日记体验。
-
-## TODO
-
-- 添加立即拍摄并上传的即时功能
+需要有阿里云OSS的Bucket的AK密钥以及一个主密码即可享受丝滑的端到端加密的日记体验。
 
 # 阿里云配置指南
 
@@ -14,12 +10,12 @@
 
 要使用 SurKaa Pad，需要准备以下阿里云 OSS 配置信息：
 
-| 配置项 | 描述 | 获取位置 |
-|--------|------|----------|
-| `ALIYUN_KEY` | 阿里云 AccessKey ID，用于身份验证 | 阿里云控制台 → 访问控制 → AccessKey 管理 |
-| `ALIYUN_SECRET` | 阿里云 AccessKey Secret，用于签名验证 | 阿里云控制台 → 访问控制 → AccessKey 管理 |
-| `ALIYUN_BUCKET_NAME` | OSS 存储桶名称，用于存储加密的日记数据 | 阿里云 OSS 控制台 → 存储桶列表 → 创建的存储桶名称 |
-| `ALIYUN_ENDPOINT` | OSS 访问域名，格式如：`cn-hangzhou` | 阿里云 OSS 控制台 → 存储桶概览 → 访问域名 |
+| 配置项                  | 描述                                           | 获取位置                           |
+|----------------------|----------------------------------------------|--------------------------------|
+| `ALIYUN_KEY`         | 阿里云 AccessKey ID，用于身份验证                      | 阿里云控制台 → 访问控制 → AccessKey 管理   |
+| `ALIYUN_SECRET`      | 阿里云 AccessKey Secret，用于签名验证                  | 阿里云控制台 → 访问控制 → AccessKey 管理   |
+| `ALIYUN_BUCKET_NAME` | OSS 存储桶名称，用于存储加密的日记数据                        | 阿里云 OSS 控制台 → 存储桶列表 → 创建的存储桶名称 |
+| `ALIYUN_ENDPOINT`    | OSS 访问域名，格式如：`oss-cn-guangzhou.aliyuncs.com` | 阿里云 OSS 控制台 → 存储桶概览 → 访问域名     |
 
 ## 获取步骤
 
@@ -39,7 +35,7 @@
 - 其他设置可使用默认值
 - 创建成功后记录下：
   - **存储桶名称** → `ALIYUN_BUCKET_NAME`
-  - **Endpoint** → `ALIYUN_ENDPOINT`（格式如：`cn-hangzhou`）
+  - **Endpoint** → `ALIYUN_ENDPOINT`（格式如：`oss-cn-guangzhou.aliyuncs.com`）
 
 ### 4. 创建访问密钥
 - 在控制台右上角悬停头像，进入"AccessKey 管理"
