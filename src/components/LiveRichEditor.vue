@@ -163,7 +163,9 @@ defineExpose({
     return sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
   },
   insertMediaNode,
-  insertFileNode
+  insertFileNode,
+  undo: () => document.execCommand('undo'),
+  redo: () => document.execCommand('redo'),
 });
 
 onMounted(async () => {

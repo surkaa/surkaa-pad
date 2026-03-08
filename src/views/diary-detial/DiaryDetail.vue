@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onMounted, ref, watch} from "vue";
+import {nextTick, onActivated, onMounted, ref, watch} from "vue";
 import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
@@ -38,9 +38,6 @@ const {
 } = useMediaAction(diaryId, editorDomRef, showToolbarPanel, liveEditorRef);
 
 const {deleteAttachment} = useDataStore();
-
-const canUndo = computed(() => false);
-const canRedo = computed(() => false);
 
 function openDiaryDetail() {
   if (!diary.value) {
@@ -139,9 +136,9 @@ onActivated(async () => {
     <EditToolbar
         :view="showToolbar || showToolbarPanel"
         :panelOpen="showToolbarPanel"
-        :undo="canUndo"
-        :redo="canRedo"
         v-click-outside="() => showToolbarPanel = false"
+        @undo="liveEditorRef?.undo"
+        @redo="liveEditorRef?.redo"
         @additionalAction="additionalAction"
         @insertPhoto="insertPhoto"
         @takePhoto="takePhoto"

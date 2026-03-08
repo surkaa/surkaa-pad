@@ -5,13 +5,9 @@ import {platform} from "@tauri-apps/plugin-os";
 const {
   view,
   panelOpen,
-  undo,
-  redo,
 } = defineProps<{
   view: boolean,
   panelOpen: boolean,
-  undo: boolean,
-  redo: boolean,
 }>();
 
 const isAndroid = platform() === 'android';
@@ -32,8 +28,8 @@ const emit = defineEmits([
 
       <div class="toolbar-header">
         <div class="toolbar-scroll">
-          <button class="tool-btn" @click.stop="emit('undo')" :disabled="!undo">↺</button>
-          <button class="tool-btn" @click.stop="emit('redo')" :disabled="!redo">↻</button>
+          <button class="tool-btn" @click.stop="emit('undo')">↺</button>
+          <button class="tool-btn" @click.stop="emit('redo')">↻</button>
         </div>
         <div class="divider"></div>
 
