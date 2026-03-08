@@ -4,7 +4,7 @@ export const BaseExtension: Extension = {
     name: "base",
     toSource: html => html
         // 空段落应映射为双换行符，补偿 Inline 和 Block 混排时的视觉间隔
-        .replace(/<div><br\s*\/?>.*?<\/div>/gi, '\n\n')
+        .replace(/<div><br\s*\/?>\s*<\/div>/gi, '\n\n')
         // 正常块级元素起手计为一个换行
         .replace(/<div>/gi, '\n')
         .replace(/<\/div>/gi, '')
