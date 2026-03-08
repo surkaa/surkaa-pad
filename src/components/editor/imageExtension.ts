@@ -23,7 +23,7 @@ export const ImageExtension: Extension<HTMLImageElement> = {
             if (params.get('size') === 'small') sizeAttr = ' data-size="small"';
         }
 
-        return `<img alt="${filename}" src="${url}" data-id="${filename}"${sizeAttr} />`;
+        return `<img loading="lazy" alt="${filename}" src="${url}" data-id="${filename}"${sizeAttr} />`;
     }),
 
     serialize: (node) => {
