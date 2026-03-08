@@ -180,7 +180,6 @@ defineExpose({
     if (!el) return false;
     if (el instanceof HTMLMediaElement) {
       el.src = newUrl;
-      el.load();
     } else if (el instanceof HTMLImageElement) {
       el.src = newUrl;
     } else {

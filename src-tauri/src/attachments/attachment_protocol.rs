@@ -6,6 +6,7 @@ use crate::storages::remote_attachments_key;
 use futures_util::StreamExt;
 use http_range_header::parse_range_header;
 use std::cmp::min;
+use chrono::Utc;
 use tauri::http::header::{
     ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
 };
@@ -177,8 +178,9 @@ async fn process_attachment(
 }
 
 pub fn get_full_attachment_url(id: &str, attachment: &AttachmentMeta, client: &OssClient) -> Result<String, String> {
-    if attachment.encrypted { 
-        Ok(format!("http://{}.localhost/{}/{}", PROTOCOL_NAME, id, &attachment.filename))
+    if attachment.encrypted {
+        let timestamp = Utc::now().timestamp();
+        Ok(format!("http://{}.localhost/{}/{}?t={}", PROTOCOL_NAME, id, &attachment.filename, timestamp))
     } else {
         let key = remote_attachments_key(id, &attachment.filename);
         let url = client
