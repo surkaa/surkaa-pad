@@ -5,6 +5,7 @@ import {ExtensionContext, EXTENSIONS} from "./editor/extension.ts";
 import {useRouter} from "vue-router";
 import {useContextMenu} from "./editor/useContextMenu.ts";
 import {useScroll, useStorage} from "@vueuse/core";
+import {useDomInsert} from "./editor/useDomInsert.ts";
 
 const router = useRouter();
 const {modelValue, diarySummary, attachmentMap} = defineProps<{
@@ -57,6 +58,7 @@ const {handleEditorContextMenu} = useContextMenu(
     handleInput,
     (filename, encrypted) => emit('toggleAttachmentEncryption', filename, encrypted)
 );
+const {insertMediaNode, insertFileNode} = useDomInsert(editor);
 
 function parseSourceToHtml(source: string): string {
   let result = source;
@@ -155,7 +157,13 @@ defineExpose({
       return false;
     }
     return true;
-  }
+  },
+  captureRange() {
+    const sel = window.getSelection();
+    return sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+  },
+  insertMediaNode,
+  insertFileNode
 });
 
 onMounted(async () => {

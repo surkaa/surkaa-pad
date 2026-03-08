@@ -2,11 +2,13 @@ import {Channel} from "@tauri-apps/api/core";
 import {AttachmentMeta, AttachmentProcessEvent, commands} from "../bindings.ts";
 import {computed, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
-import {formatBytes, insertFileNode, insertMediaNode, MediaType} from "../utils";
+import {formatBytes} from "../utils";
 import {useQuasar} from "quasar";
 import {v4 as uuidv4} from "uuid";
 import {useDataStore} from "../stores/data.ts";
 import {storeToRefs} from "pinia";
+import {MediaType} from "../components/editor/useDomInsert.ts";
+import LiveRichEditor from "../components/LiveRichEditor.vue";
 
 export interface UploadTask {
     filename: string;
@@ -20,7 +22,7 @@ export function useMediaAction(
     diaryId: Ref<string>,
     editorDomRef: Ref<HTMLElement | undefined>,
     showPanel: Ref<boolean>,
-    updateAttachmentUrl: (filename: string, url: string) => void
+    editorContentRef: Ref<InstanceType<typeof LiveRichEditor> | undefined>
 ) {
     const $q = useQuasar();
     const dataStore = useDataStore();
@@ -108,11 +110,6 @@ export function useMediaAction(
         handleCommandResult(key, res);
     }
 
-    const captureRange = (): Range | null => {
-        const sel = window.getSelection();
-        return sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
-    };
-
     function beforeClick() {
         if (!diaryId.value) {
             $q.notify({type: 'warning', message: '请先创建日记才能使用录音功能'});
@@ -125,7 +122,7 @@ export function useMediaAction(
     }
 
     const genericBatchUpload = async (encrypted: boolean, extensions: string[], nodeType?: MediaType, pickerMode?: PickerMode) => {
-        const currentRange = captureRange();
+        const currentRange = editorContentRef.value?.captureRange() || null;
         if (beforeClick()) return;
         const accessStrArr = await open({
             multiple: true,
@@ -137,12 +134,16 @@ export function useMediaAction(
 
         const uploads = accessStrArr.map(accessStr =>
             uploadAttachment(accessStr, encrypted, (att, url) => {
+                if (!editorContentRef.value) {
+                    console.error('编辑器内容引用未定义，无法插入媒体节点');
+                    return;
+                }
                 if (!nodeType) {
-                    insertFileNode(editorDomRef.value, att.filename, formatBytes(att.size), currentRange);
+                    editorContentRef.value.insertFileNode(att.filename, formatBytes(att.size), currentRange);
                     return;
                 }
                 currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                insertMediaNode(editorDomRef.value, nodeType, url, att.filename, currentRange);
+                editorContentRef.value.insertMediaNode(nodeType, url, att.filename, currentRange);
             })
         );
         showUploadDialog.value = true;
@@ -166,7 +167,16 @@ export function useMediaAction(
             const event = createUploadChannel(key, (meta, url) => {
                 console.log('转换完成:', filename, meta.encrypted, url);
                 dataStore.updateAttachment(diaryId.value, meta);
-                updateAttachmentUrl(filename, url);
+                if (!editorContentRef.value) {
+                    console.error('编辑器内容引用未定义，无法更新媒体链接');
+                    $q.notify({type: 'negative', message: '编辑器内容引用未定义，无法更新媒体链接'});
+                    resolve();
+                    return;
+                }
+                const res = editorContentRef.value.updateSrc(filename, url);
+                if (!res) {
+                    $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
+                }
                 resolve();
             });
             commands.cmdToggleAttachmentEncryption(
@@ -207,7 +217,15 @@ export function useMediaAction(
         const event = createUploadChannel(key, (meta, url) => {
             console.log('旋转完成:', filename, url);
             dataStore.updateAttachment(diaryId.value, meta);
-            updateAttachmentUrl(filename, url);
+            if (!editorContentRef.value) {
+                console.error('编辑器内容引用未定义，无法更新媒体链接');
+                $q.notify({type: 'negative', message: '编辑器内容引用未定义，无法更新媒体链接'});
+                return;
+            }
+            const res = editorContentRef.value.updateSrc(filename, url);
+            if (!res) {
+                $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
+            }
         });
 
         const res = await commands.cmdRotateImageAttachment(
@@ -247,7 +265,7 @@ export function useMediaAction(
         showAudioDrawer,
         handleAudioRecorded: async (mimetype: string, stream: ReadableStream<Uint8Array>) => {
             showAudioDrawer.value = false;
-            const currentRange = captureRange();
+            const currentRange = editorContentRef.value?.captureRange() || null;
             if (beforeClick()) return;
 
             const arrayBuffer = await new Response(stream).arrayBuffer();
@@ -255,17 +273,25 @@ export function useMediaAction(
             const virtualName = `Audio_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
 
             await uploadMemoryAttachment(virtualName, uint8Array, mimetype, true, (att, url) => {
-                insertMediaNode(editorDomRef.value, 'audio', url, att.filename, currentRange);
+                if (!editorContentRef.value) {
+                    console.error('编辑器内容引用未定义，无法插入音频节点');
+                    return;
+                }
+                editorContentRef.value.insertMediaNode('audio', url, att.filename, currentRange);
             });
         },
         insertPhoto: () => genericBatchUpload(true, ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], 'img', "image"),
         takePhoto: async () => {
-            const currentRange = captureRange();
+            const currentRange = editorContentRef.value?.captureRange() || null;
             if (beforeClick()) return;
             const key = uuidv4();
             uploadTaskMap.value[key] = {filename: 'take photo', progress: 0, status: 'pending'};
             const event = createUploadChannel(key, (meta, url) => {
-                insertMediaNode(editorDomRef.value, 'img', url, meta.filename, currentRange);
+                if (!editorContentRef.value) {
+                    console.error('编辑器内容引用未定义，无法插入图片节点');
+                    return;
+                }
+                editorContentRef.value.insertMediaNode('img', url, meta.filename, currentRange);
             });
             const res = await commands.cmdAddImageAttachmentFromCamera(event, diaryId.value, true);
             handleCommandResult(key, res);

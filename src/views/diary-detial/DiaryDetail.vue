@@ -35,16 +35,7 @@ const {
   handleAudioRecorded, insertPhoto, takePhoto, insertAudio,
   audioRecording, insertVideo, insertFile, toggleAttachmentEncryption,
   rotateAttachment,
-} = useMediaAction(diaryId, editorDomRef, showToolbarPanel, (filename, url) => {
-  if (liveEditorRef.value) {
-    const res = liveEditorRef.value?.updateSrc(filename, url);
-    if (!res) {
-      $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
-    }
-  } else {
-    $q.notify({type: 'negative', message: '编辑器未准备好，无法更新附件链接'});
-  }
-});
+} = useMediaAction(diaryId, editorDomRef, showToolbarPanel, liveEditorRef);
 
 const {deleteAttachment} = useDataStore();
 
