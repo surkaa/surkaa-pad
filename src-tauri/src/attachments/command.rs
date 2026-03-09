@@ -4,9 +4,9 @@ use crate::attachments::attachment::{
 use crate::attachments::types::AttachmentProcessEvent;
 use crate::crypto::Crypto;
 use crate::diaries::DiaryMemoryCache;
-use crate::object::{create_mock_stream, OssState};
+use crate::object::{OssState};
 use crate::tasks::TaskPool;
-use crate::utils::open_file_stream;
+use crate::utils::{open_file_stream, create_mock_stream};
 use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;

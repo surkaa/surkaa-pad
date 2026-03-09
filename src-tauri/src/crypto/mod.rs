@@ -186,7 +186,7 @@ fn ctr_stream_cipher(stream: ByteStream, mut cipher: types::Aes256Ctr) -> ByteSt
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::object::create_mock_stream;
+    use crate::utils::create_mock_stream;
 
     #[test]
     fn test_derive_encrypt_decrypt() {

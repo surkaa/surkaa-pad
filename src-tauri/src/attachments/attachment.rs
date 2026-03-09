@@ -6,8 +6,9 @@ use crate::diaries::{
     delete_diary_attachment, get_diary, update_diary_attachment, DiaryMemoryCache,
 };
 use crate::object::tracker_stream::tracker_stream;
-use crate::object::{create_mock_stream, ByteStream, OssClient};
+use crate::object::{ByteStream, OssClient};
 use crate::storages::remote_attachments_key;
+use crate::utils::create_mock_stream;
 use crate::utils::message_sender::MessageSender;
 use dashmap::DashMap;
 use futures_util::StreamExt;
@@ -343,7 +344,7 @@ pub async fn rotate_image_attachment(
 mod test {
     use super::*;
     use crate::diaries::{delete_diary, page_diary_ids, save_diary};
-    use crate::object::create_mock_stream;
+    use crate::utils::create_mock_stream;
     use futures::future::join_all;
     use serial_test::serial;
     use std::sync::Arc;
