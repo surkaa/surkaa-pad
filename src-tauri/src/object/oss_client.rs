@@ -3,81 +3,17 @@ use base64::Engine;
 use chrono::Utc;
 use futures_util::TryStreamExt;
 use hmac::{Hmac, Mac};
-use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use std::io::Error;
 use std::sync::Arc;
 
-use crate::object::types::ByteStream;
+use crate::object::types::{
+    AliyunListObjectsResult, AliyunObjectSummary, ByteStream, ObjectMetadata,
+    ATTACHMENT_URL_EXPIRATION_SECONDS, STREAM_MINE_TYPE,
+};
 use crate::object::NextToken;
 use tauri::http::header::{CONTENT_TYPE, DATE};
 use tauri::http::{HeaderMap, HeaderValue, Method};
-
-const STREAM_MINE_TYPE: &str = "application/octet-stream";
-
-// 附件URL过期时间，单位秒
-const ATTACHMENT_URL_EXPIRATION_SECONDS: i64 = 3600;
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct ObjectMetadata {
-    key: String,
-    size: u64,
-    last_modified: chrono::DateTime<Utc>,
-    etag: String,
-}
-
-impl ObjectMetadata {
-    pub fn key(&self) -> &str {
-        &self.key
-    }
-
-    pub fn etag(&self) -> &str {
-        &self.etag
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct AliyunListObjectsResult {
-    pub name: String,
-    pub prefix: Option<String>,
-    // pub marker: Option<String>,
-    pub max_keys: i32,
-    // pub is_truncated: bool,
-    #[serde(rename = "Contents", default)] // 避免没有对象时反序列化失败
-    pub contents: Vec<AliyunObjectSummary>,
-    pub next_continuation_token: Option<String>,
-}
-
-impl AliyunListObjectsResult {
-    pub fn from_xml(xml: String) -> Result<Self, quick_xml::DeError> {
-        quick_xml::de::from_str(&xml)
-    }
-}
-
-/// List Objects 中的单个对象摘要
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct AliyunObjectSummary {
-    pub key: String,
-    pub last_modified: String,
-    pub e_tag: String,
-    pub size: u64,
-    pub storage_class: String,
-}
-
-impl AliyunObjectSummary {
-    fn to_object_metadata(self) -> ObjectMetadata {
-        ObjectMetadata {
-            key: self.key,
-            size: self.size,
-            last_modified: chrono::DateTime::parse_from_rfc3339(&self.last_modified)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            etag: self.e_tag.replace("\"", ""),
-        }
-    }
-}
 
 pub struct OssClientInner {
     endpoint: String,
@@ -310,12 +246,12 @@ impl OssClient {
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(0);
 
-        Ok(ObjectMetadata {
-            key: key.to_string(),
+        Ok(ObjectMetadata::new(
+            key.to_string(),
             size,
             last_modified,
             etag,
-        })
+        ))
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/listobjects-v2
@@ -558,12 +494,12 @@ mod tests {
 
         // 获取元数据
         let metadata = client.get_metadata(key).await.expect("获取元数据失败");
-        assert_eq!(metadata.key, key);
-        assert_eq!(metadata.size, file_size);
-        assert_eq!(metadata.etag, md5_etag);
+        assert_eq!(metadata.key(), key);
+        assert_eq!(metadata.size(), file_size);
+        assert_eq!(metadata.etag(), md5_etag);
         let now = Utc::now();
-        assert!(metadata.last_modified <= now);
-        assert!(metadata.last_modified >= now - chrono::Duration::seconds(10));
+        assert!(metadata.last_modified() <= now);
+        assert!(metadata.last_modified() >= now - chrono::Duration::seconds(10));
 
         // 列出对象
         let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
