@@ -308,16 +308,14 @@ export function useMediaAction(
         showUploadDialog,
         isUploading,
         showAudioDrawer,
-        handleAudioRecorded: async (mimetype: string, stream: ReadableStream<Uint8Array>) => {
+        handleAudioRecorded: async (mimetype: string, data: Uint8Array) => {
             showAudioDrawer.value = false;
             const currentRange = editorContentRef.value?.captureRange() || null;
             if (beforeClick()) return;
 
-            const arrayBuffer = await new Response(stream).arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
             const virtualName = `Audio_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
 
-            await uploadMemoryAttachment(virtualName, uint8Array, mimetype, true, (att, url) => {
+            await uploadMemoryAttachment(virtualName, data, mimetype, true, (att, url) => {
                 if (!editorContentRef.value) {
                     console.error('编辑器内容引用未定义，无法插入音频节点');
                     return;

@@ -22,7 +22,7 @@ const {
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'recorded', mimetype: string, stream: ReadableStream<Uint8Array>): void;
+  (e: 'recorded', mimetype: string, data: Uint8Array): void;
 }>();
 
 // 格式化时长显示（MM:SS）
@@ -120,13 +120,13 @@ async function stopRecording() {
 
   let audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
   const newWebmBuffer = setWebmDuration(await audioBlob.arrayBuffer(), Date.now() - startTime);
-  audioBlob = new Blob([newWebmBuffer], { type: mediaRecorder.mimeType });
+  const data = new Uint8Array(newWebmBuffer);
 
   // 重置音频数据
   audioChunks = [];
 
   emit('close');
-  emit('recorded', mediaRecorder.mimeType, audioBlob.stream());
+  emit('recorded', mediaRecorder.mimeType, data);
   console.log("录音停止...");
   stopInterval();
 }
