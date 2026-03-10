@@ -1,8 +1,76 @@
 # SurKaa Pad
 
-端到端加密的日记软件  
+> 端到端加密的私人日记应用，数据由你掌控。
 
-需要有阿里云OSS的Bucket的AK密钥以及一个主密码即可享受丝滑的端到端加密的日记体验。
+## 项目简介
+
+SurKaa Pad 是一款基于 [Tauri 2](https://tauri.app/) 构建的跨平台（桌面 & Android）私人日记软件。所有日记内容与附件均在**本地完成加密**后再同步至阿里云 OSS，云端仅存储密文，即便是云服务提供商也无法读取你的任何隐私数据。
+
+只需准备一个阿里云 OSS Bucket 的访问密钥（AK）与一个自定义主密码，即可享受丝滑的端到端加密日记体验。
+
+## 核心特性
+
+- 🔐 **端到端加密**：日记正文采用 AES-256-GCM 加密，媒体附件采用 AES-256-CTR 流式加密；主密码通过 Argon2id 算法派生数据加密密钥（DEK），零知识架构保障隐私安全。
+- ☁️ **云端同步**：以阿里云 OSS 作为加密数据的存储后端，随时随地跨设备访问你的日记。
+- 📝 **富文本日记**：支持创建、编辑、删除日记，提供流畅的文字书写体验。
+- 🔍 **全文搜索**：对日记内容进行本地全文检索，快速找到历史记录。
+- 🖼️ **媒体附件**：支持在日记中附加图片与视频，附件同样经过端到端加密存储与传输；支持直接调用相机拍照附加；支持图片旋转与附件单独加密/解密切换。
+- 👆 **生物识别解锁**（Android）：支持指纹或面容快速解锁应用，免去每次输入主密码的繁琐。
+- 🌗 **深色 / 浅色 / 跟随系统**：三种主题模式随心切换。
+- 📱 **跨平台**：基于 Tauri 2 构建，同时支持 Windows 桌面端与 Android 移动端。
+- 📦 **数据管理**：支持导出日志文件，支持一键重置应用配置。
+
+## 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| 前端框架 | [Vue 3](https://vuejs.org/) + TypeScript |
+| UI 组件库 | [Quasar Framework](https://quasar.dev/) |
+| 桌面/移动壳 | [Tauri 2](https://tauri.app/)（Rust） |
+| 加密算法 | AES-256-GCM（文本） / AES-256-CTR（流媒体） / Argon2id（密钥派生） |
+| 云存储 | 阿里云 OSS |
+| 构建工具 | [Vite](https://vite.dev/) + [pnpm](https://pnpm.io/) |
+
+## 开发与构建
+
+### 环境准备
+
+- [Node.js](https://nodejs.org/) >= 18
+- [pnpm](https://pnpm.io/)
+- [Rust](https://www.rust-lang.org/tools/install) 工具链（stable）
+- [Tauri CLI 2](https://tauri.app/start/prerequisites/)
+
+### 安装依赖
+
+```bash
+pnpm install
+```
+
+### 本地开发（桌面）
+
+```bash
+pnpm tauri:msi:dev
+```
+
+### 本地开发（Android）
+
+```bash
+pnpm tauri:android:dev
+```
+
+### 生产构建（桌面 MSI）
+
+```bash
+pnpm tauri:msi:build
+```
+
+### 生产构建（Android APK / AAB）
+
+```bash
+pnpm build:android:build
+```
+
+---
 
 # 阿里云配置指南
 
