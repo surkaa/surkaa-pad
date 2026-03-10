@@ -5042,16 +5042,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-biometric"
-version = "2.3.2"
-dependencies = [
- "log",
- "serde",
- "serde_json",
- "serde_repr",
- "tauri",
- "tauri-plugin",
- "thiserror 2.0.18",
-]
+version = "0.0.1"
 
 [[package]]
 name = "tauri-plugin-dialog"

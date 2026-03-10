@@ -27,8 +27,13 @@ use crate::tasks::TaskPool;
 use tauri::{App, Manager};
 
 fn run_setup(app: &mut App) {
+    let cache_dir = app
+        .path()
+        .app_data_dir()
+        .expect("无法获取应用数据目录")
+        .join("oss_cache");
     app.manage(Crypto::new());
-    app.manage(OssState::new());
+    app.manage(OssState::new(cache_dir));
     app.manage(TaskPool::new());
     app.manage(DiaryMemoryCache::new());
 

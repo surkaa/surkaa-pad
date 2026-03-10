@@ -126,6 +126,17 @@ fn open_file(uri_string: &str) -> io::Result<File> {
 
 /// 在 IOS 未实现
 #[cfg(target_os = "ios")]
-fn open_file(path: &str) -> io::Result<()> {
+fn open_file(path: &str) -> io::Result<File> {
     todo!()
+}
+
+/// 在 Linux 和 macOS 上直接打开路径
+#[cfg(not(any(
+    target_os = "windows",
+    target_os = "android",
+    target_os = "ios"
+)))]
+fn open_file(path: &str) -> io::Result<File> {
+    let path = std::path::PathBuf::from(path);
+    File::open(path)
 }
