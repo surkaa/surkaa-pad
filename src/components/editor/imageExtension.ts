@@ -81,7 +81,7 @@ export const ImageExtension: Extension<HTMLImageElement> = {
             action: () => ctx.emit("rotateAttachment", filename, -90),
         }, {
             label: '旋转180°',
-            icon: 'replay_180',
+            icon: 'cached',
             action: () => ctx.emit("rotateAttachment", filename, 180),
         }];
     },
