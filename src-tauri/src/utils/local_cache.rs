@@ -1,6 +1,7 @@
 use crate::object::ByteStream;
 use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 
@@ -10,7 +11,7 @@ const TMP_FILE_SUFFIX: &str = ".tmp";
 
 #[derive(Clone)]
 pub struct LocalCache {
-    cache_dir: PathBuf,
+    cache_dir: Arc<PathBuf>,
 }
 
 impl LocalCache {
@@ -20,7 +21,7 @@ impl LocalCache {
         tokio::fs::create_dir_all(&cache_dir)
             .await
             .map_err(|e| format!("无法创建缓存根目录: {}", e))?;
-        Ok(Self { cache_dir })
+        Ok(Self { cache_dir: Arc::new(cache_dir) })
     }
 
     fn get_path(&self, key: &str) -> (PathBuf, PathBuf) {

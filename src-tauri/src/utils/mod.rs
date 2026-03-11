@@ -6,3 +6,4 @@ mod local_cache;
 
 pub use files::open_file_stream;
 pub use mock_stream::create_mock_stream;
+pub use local_cache::LocalCache;
