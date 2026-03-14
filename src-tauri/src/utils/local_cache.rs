@@ -68,11 +68,10 @@ impl LocalCache {
     }
 
     /// 删除指定 key 的缓存文件
-    pub async fn delete(&self, key: &str) -> Result<(), String> {
+    pub async fn delete(&self, key: &str) {
         let (data_path, md5_path) = self.get_path(key);
         let _ = tokio::fs::remove_file(&data_path).await;
         let _ = tokio::fs::remove_file(&md5_path).await;
-        Ok(())
     }
 
     /// 直接保存数据文件并计算和返回 MD5 值

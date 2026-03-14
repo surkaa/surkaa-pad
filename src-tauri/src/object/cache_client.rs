@@ -54,24 +54,44 @@ impl CacheOssClient {
         stream: ByteStream,
         mimetype: &str,
     ) -> Result<(), String> {
-        self.oss.upload(key, len, stream, mimetype).await?;
-        // 更新本地缓存
-        let etag = self.cache.save(key, stream).await?;
-        // 更新内存map
-        self.keys_etag_map.insert(key.to_string(), (etag, len));
-        Ok(())
+        // 直接调用，暂时不处理保存到本地，在download再处理
+        self.oss.upload(key, len, stream, mimetype).await
     }
 
     pub async fn delete(&self, key: &str) -> Result<(), String> {
-        todo!()
+        self.oss.delete(key).await?;
+        // 更新内存map
+        self.keys_etag_map.remove(key);
+        // 删除本地缓存
+        self.cache.delete(key).await;
+        Ok(())
     }
 
-    pub async fn delete_with_prefix(&self, prefix: &str) -> Result<u32, String> {
-        todo!()
+    pub async fn delete_with_prefix(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let del_keys = self.oss.delete_with_prefix(prefix).await?;
+        for del_key in &del_keys {
+            self.cache.delete(del_key).await;
+            self.keys_etag_map.remove(del_key);
+        }
+        Ok(del_keys)
     }
 
     pub async fn get_metadata(&self, key: &str) -> Result<ObjectMetadata, String> {
-        self.oss.get_metadata(key).await
+        let metadata = self.oss.get_metadata(key).await?;
+        if let Some(res) = self.keys_etag_map.get(&key.to_string()) {
+            let key = res.key();
+            let (md5_str, size) = res.value();
+            if *size != metadata.size() || *md5_str != metadata.etag() {
+                self.keys_etag_map
+                    .insert(key.to_string(), (md5_str.to_string(), metadata.size()));
+            }
+        } else {
+            self.keys_etag_map.insert(
+                key.to_string(),
+                (metadata.etag().to_string(), metadata.size()),
+            );
+        }
+        Ok(metadata)
     }
 
     pub async fn download(
@@ -79,6 +99,9 @@ impl CacheOssClient {
         key: &str,
         range: Option<(u64, u64)>,
     ) -> Result<(ByteStream, u64), String> {
+        if range.is_none() {
+            // 全量下下载时考虑使用缓存
+        }
         todo!()
     }
 

@@ -179,7 +179,7 @@ impl OssClient {
         }
     }
 
-    pub async fn delete_with_prefix(&self, prefix: &str) -> Result<u32, String> {
+    pub async fn delete_with_prefix(&self, prefix: &str) -> Result<Vec<String>, String> {
         // 列出所有匹配的对象
         let mut next_token: Option<String> = None;
         let mut needs_deletion = Vec::new();
@@ -193,12 +193,11 @@ impl OssClient {
             }
             next_token = nt;
         }
-        let total = needs_deletion.len() as u32;
         // 逐个删除对象
-        for key in needs_deletion {
-            self.delete(&key).await?;
+        for key in &needs_deletion {
+            self.delete(key).await?;
         }
-        Ok(total)
+        Ok(needs_deletion)
     }
 
     pub async fn get_metadata(&self, key: &str) -> Result<ObjectMetadata, String> {
@@ -559,11 +558,11 @@ mod tests {
         assert_eq!(objects.len(), keys.len(), "对象不应被删除");
 
         // 使用前缀删除
-        let delete_count = client
+        let delete_keys = client
             .delete_with_prefix(prefix)
             .await
             .expect("前缀删除失败");
-        assert_eq!(delete_count, keys.len() as u32, "应删除所有上传的对象");
+        assert_eq!(delete_keys.len(), keys.len(), "应删除所有上传的对象");
         // 确认删除
         assert_empty(&client, "测试结束后对象存储应为空").await;
     }
