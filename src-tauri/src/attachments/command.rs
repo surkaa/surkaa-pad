@@ -76,6 +76,14 @@ pub fn cmd_add_attachment_memory(
     let crypto = crypto.inner().clone();
     let client = client.get_client()?;
     let len = data.len();
+    let mimetype = if mimetype.is_empty() {
+        let end = std::cmp::min(data.len(), 128);
+        infer::get(&data[..end])
+            .map(|t| t.mime_type().to_string())
+            .unwrap_or("application/octet-stream".to_string())
+    } else {
+        mimetype
+    };
     let stream = create_mock_stream(data, len);
     tp.spawn(async move {
         add_attachment(
