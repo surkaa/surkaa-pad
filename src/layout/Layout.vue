@@ -27,7 +27,7 @@ function back() {
           {{ layoutStore.customTitle || route.meta.title || 'SurKaa Pad' }}
         </div>
         <q-space v-if="!route.meta.searchMod"/>
-        <div id="header-actions"></div>
+        <div id="header-actions" class="col q-ml-sm row justify-end items-center"></div>
       </div>
     </q-header>
 
