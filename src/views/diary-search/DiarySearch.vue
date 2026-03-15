@@ -4,8 +4,10 @@ import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import {commands, DiarySummary, SearchDiariesEvent} from "../../bindings.ts";
 import {Channel} from "@tauri-apps/api/core";
 import {useQuasar} from "quasar";
+import {useOpenDiaryDetail} from "../../composables/useOpenDiaryDetail.ts";
 
 const $q = useQuasar();
+const {openDiary} = useOpenDiaryDetail();
 const keyword = ref('');
 
 const diarySummaries = ref<DiarySummary[]>([]);
@@ -104,7 +106,7 @@ onUnmounted(() => {
           v-for="d in diarySummaries"
           :key="d.id"
           :diary="d"
-          @click="$router.push({name: 'DiaryDetail', params: {id: d.id}})"
+          @click="openDiary(d.id)"
       />
       <div v-if="!diarySummaries.length">
         <p class="text-center text-gray-500">无日记</p>

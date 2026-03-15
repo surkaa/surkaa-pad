@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {nextTick, onActivated, onDeactivated, ref} from "vue";
-import {useRouter} from "vue-router";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {commands} from "../../bindings.ts";
@@ -8,17 +7,16 @@ import {useScroll} from "@vueuse/core";
 import {useDataStore} from "../../stores/data.ts";
 import {storeToRefs} from "pinia";
 import {useTimeoutStore} from "../../stores/timeout.ts";
+import {useOpenDiaryDetail} from "../../composables/useOpenDiaryDetail.ts";
 
 const {remainingStr} = useTimeoutStore();
-const router = useRouter();
 const dataStore = useDataStore();
 const {
   diaryIds,
   diarySummaries,
-  currentId,
-  withAttachments,
-  currentDiaryAttachmentUrlMap
+  withAttachments
 } = storeToRefs(dataStore);
+const {openDiary} = useOpenDiaryDetail();
 const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
@@ -93,20 +91,6 @@ function handleCardVisible(id: string) {
   if (diarySummaries.value[id] === null) {
     loadDiarySummer(id).then();
   }
-}
-
-// 绑定到列表项点击
-function openDiary(id?: string) {
-  currentDiaryAttachmentUrlMap.value = {};
-  if (!id) {
-    // 新建日记
-    currentId.value = "";
-    router.push({name: 'DiaryDetail'});
-    return;
-  }
-  // 打开已有日记
-  currentId.value = id;
-  router.push({name: 'DiaryDetail'});
 }
 
 defineOptions({name: 'DiaryList'});
