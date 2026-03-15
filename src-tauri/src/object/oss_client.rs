@@ -105,13 +105,14 @@ impl OssClient {
         Ok(headers)
     }
 
+    /// https://help.aliyun.com/zh/oss/developer-reference/putobject
     pub async fn upload(
         &self,
         key: &str,
         len: u64,
         stream: ByteStream,
         mimetype: &str,
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         let url = self.get_url(key, "");
         let mut headers = self.build_headers(&Method::PUT, key, mimetype)?;
         // 显式设置 Content-Length
@@ -130,13 +131,20 @@ impl OssClient {
             .map_err(|e| format!("请求失败:{}", e))?;
 
         if resp.status().is_success() {
-            Ok(())
+            let etag = resp
+                .headers()
+                .get("Etag")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.replace("\"", ""))
+                .unwrap_or_default();
+            Ok(etag)
         } else {
             Err(format!("上传失败 状态码:{}", resp.status()))
         }
     }
 
-    pub async fn upload_bytes(&self, key: &str, data: &[u8]) -> Result<(), String> {
+    /// https://help.aliyun.com/zh/oss/developer-reference/putobject
+    pub async fn upload_bytes(&self, key: &str, data: &[u8]) -> Result<String, String> {
         let url = self.get_url(key, "");
         let mut headers = self.build_headers(&Method::PUT, key, STREAM_MINE_TYPE)?;
         // 显式设置 Content-Length
@@ -154,9 +162,15 @@ impl OssClient {
             .map_err(|e| format!("请求失败:{}", e))?;
 
         if resp.status().is_success() {
-            Ok(())
+            let etag = resp
+                .headers()
+                .get("ETag")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.replace("\"", ""))
+                .unwrap_or_default();
+            Ok(etag)
         } else {
-            Err(format!("上传失败 状态码:{}", resp.status()))
+            Err(format!("上传字节失败 状态码:{}", resp.status()))
         }
     }
 
@@ -420,6 +434,7 @@ impl OssClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::create_mock_stream;
     use bytes::Bytes;
     use futures_util::stream::iter;
     use serial_test::serial;
@@ -664,5 +679,33 @@ mod tests {
             status
         );
         assert_eq!(body.as_ref(), test_content, "下载的内容与上传的不一致");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_upload_etag() {
+        let client = OssClient::from_env();
+        let test_key = "upload_etag.txt";
+        let test_content = b"Hello OSS Uploaded Test";
+        assert_empty(&client, "测试开始前对象存储应为空").await;
+        let etag = client
+            .upload_bytes(test_key, &test_content.to_vec())
+            .await
+            .expect("上传测试文件失败");
+        let md5 = format!("{:X}", md5::compute(&test_content));
+        assert_eq!(&etag, &md5, "返回的 ETag 应该是内容的 MD5 值");
+        client.delete(test_key).await.expect("删除失败");
+        let stream_etag = client
+            .upload(
+                test_key,
+                test_content.len() as u64,
+                create_mock_stream(test_content.to_vec(), test_content.len()),
+                STREAM_MINE_TYPE,
+            )
+            .await
+            .expect("使用流上传测试文件失败");
+        assert_eq!(&stream_etag, &md5, "返回的 ETag 应该是内容的 MD5 值");
+        client.delete(test_key).await.expect("删除失败");
+        assert_empty(&client, "测试后对象存储应为空").await;
     }
 }

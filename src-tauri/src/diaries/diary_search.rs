@@ -125,10 +125,10 @@ mod tests {
         assert!(ids.is_empty(), "测试环境不干净，存在日记数据");
 
         // 创建几个测试日记
-        let _ = save_diary(&crypto, &client, "这是第一篇日记，包含关键词 rust").await;
-        let _ = save_diary(&crypto, &client, "这是第二篇日记，不包含关键词").await;
-        let _ = save_diary(&crypto, &client, "这是第三篇日记，包含关键词 rust 和 async").await;
-        let _ = save_diary(&crypto, &client, "这是第四篇日记，包含关键词 async").await;
+        let _ = save_diary(&cache, &crypto, &client, "这是第一篇日记，包含关键词 rust").await;
+        let _ = save_diary(&cache, &crypto, &client, "这是第二篇日记，不包含关键词").await;
+        let _ = save_diary(&cache, &crypto, &client, "这是第三篇日记，包含关键词 rust 和 async").await;
+        let _ = save_diary(&cache, &crypto, &client, "这是第四篇日记，包含关键词 async").await;
 
         // 收集结果
         let (matches, unmatches) =

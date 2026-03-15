@@ -73,7 +73,7 @@ mod tests {
         let content = "这是一个测试日记内容";
         let test_count = 21; // 测试环境下按10条分页，创建21条以测试分页逻辑
         for _ in 0..test_count {
-            let _ = save_diary(&crypto, &client, format!("{}\n{}", title, content).as_str())
+            let _ = save_diary(&cache, &crypto, &client, format!("{}\n{}", title, content).as_str())
                 .await
                 .expect("无法保存日记");
         }

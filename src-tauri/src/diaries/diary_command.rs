@@ -20,12 +20,14 @@ use tauri::State;
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_save_diary(
+    cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
     client: State<'_, OssState>,
     content: &str,
 ) -> Result<(DiarySummary, String), String> {
+    let cache = cache.inner().clone();
     let client = client.get_client()?;
-    save_diary(&crypto, &client, content).await
+    save_diary(&cache, &crypto, &client, content).await
 }
 
 /// 删除日记及其所有附件

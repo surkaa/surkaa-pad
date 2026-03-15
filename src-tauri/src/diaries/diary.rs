@@ -11,6 +11,7 @@ use chrono::Utc;
 use serde_json::from_slice;
 
 pub async fn save_diary(
+    cache: &DiaryMemoryCache,
     crypto: &Crypto,
     client: &OssClient,
     content: &str,
@@ -35,10 +36,13 @@ pub async fn save_diary(
 
     // 上传到 OSS
     let object_key = remote_manifest_key(&id);
-    client
+    let etag = client
         .upload_bytes(&object_key, &encrypted_manifest)
         .await
         .map_err(|e| format!("Failed to upload manifest: {}", e))?;
+
+    // 保存到内存缓存中
+    cache.insert(&id, manifest.clone(), etag);
 
     Ok((DiarySummary::from_manifest(manifest), content.to_string()))
 }
@@ -104,14 +108,13 @@ async fn update_diary(
 
     // 上传到 OSS，覆盖原有的 manifest
     let object_key = remote_manifest_key(&diary.id);
-    client
+    let etag = client
         .upload_bytes(&object_key, &encrypted_manifest)
         .await
         .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
 
-    // 获取ETag并更新缓存
-    let metadata = client.get_metadata(&object_key).await?;
-    cache.insert(&diary.id, diary.clone(), metadata.etag().to_string());
+    // 更新缓存
+    cache.insert(&diary.id, diary.clone(), etag);
 
     Ok(())
 }
@@ -195,7 +198,7 @@ mod tests {
 
         // 测试创建
         let initial_content = "Integration test diary content.";
-        let (summary, content) = save_diary(&crypto, &client, initial_content)
+        let (summary, content) = save_diary(&cache, &crypto, &client, initial_content)
             .await
             .expect("未能保存日记");
 

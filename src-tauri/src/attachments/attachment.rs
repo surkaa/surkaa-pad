@@ -368,7 +368,7 @@ mod test {
         );
 
         // 1. 预置数据: 初始化日记主体
-        let (summary, _) = save_diary(&crypto, &client, "并发附件测试日记主体")
+        let (summary, _) = save_diary(&cache, &crypto, &client, "并发附件测试日记主体")
             .await
             .expect("未能初始化测试日记");
         let diary_id = summary.id;
@@ -480,7 +480,7 @@ mod test {
         let client = OssClient::from_env();
 
         // 预置数据：初始化日记
-        let (summary, _) = save_diary(&crypto, &client, "加密切换测试")
+        let (summary, _) = save_diary(&cache, &crypto, &client, "加密切换测试")
             .await
             .expect("初始化日记失败");
         let diary_id = summary.id;
@@ -572,7 +572,7 @@ mod test {
         let client = OssClient::from_env();
 
         // 准备环境：保存日记并上传一张原始图片
-        let (summary, _) = save_diary(&crypto, &client, "图片旋转测试")
+        let (summary, _) = save_diary(&cache, &crypto, &client, "图片旋转测试")
             .await
             .expect("初始化日记失败");
         let diary_id = summary.id;
