@@ -1,11 +1,11 @@
-import {computed, nextTick, onDeactivated, onMounted, onUnmounted, ref, watch} from 'vue';
+import {computed, nextTick, onActivated, onDeactivated, onUnmounted, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
 import {commands} from "../bindings.ts";
 import {EXTENSIONS} from "../components/editor/extension.ts";
 import {useDataStore} from "../stores/data.ts";
 import {storeToRefs} from "pinia";
-import {getCurrentWindow} from "@tauri-apps/api/window";
+import {CloseRequestedEvent, getCurrentWindow} from "@tauri-apps/api/window";
 import {UnlistenFn} from "@tauri-apps/api/event";
 
 export function useDiaryCore() {
@@ -120,33 +120,52 @@ export function useDiaryCore() {
         // 清除上一次的定时器（防抖）
         if (saveTimeout) clearTimeout(saveTimeout);
         // 开启新的定时器
-        saveTimeout = setTimeout(saveDiary, AUTO_SAVE_DELAY);
+        saveTimeout = setTimeout(async () => {
+            await saveDiary();
+            saveTimeout = null;
+        }, AUTO_SAVE_DELAY);
     });
 
     let unlisten: UnlistenFn | null = null;
-    onMounted(async () => {
-        unlisten = await appWindow.onCloseRequested(async (event) => {
-            event.preventDefault(); // 阻止默认的关闭行为，等待保存完成
-            try {
-                if (saveTimeout) {
-                    clearTimeout(saveTimeout);
-                    await saveDiary();
-                }
-            } finally {
-                await appWindow.destroy();
+    // 关闭窗口的处理逻辑
+    const handleWindowClose = async (event: CloseRequestedEvent) => {
+        event.preventDefault();
+        try {
+            if (saveTimeout) {
+                clearTimeout(saveTimeout);
+                saveTimeout = null;
+                await saveDiary();
             }
-            unlisten?.();
-        });
+        } finally {
+            await appWindow.destroy();
+        }
+    };
+    onActivated(async () => {
+        // 防止重复注册
+        if (!unlisten) {
+            unlisten = await appWindow.onCloseRequested(handleWindowClose);
+        }
     });
 
     onUnmounted(() => {
-        unlisten?.();
+        if (unlisten) {
+            unlisten();
+            unlisten = null;
+        }
     });
 
     // 组件卸载时，如果还有没保存的，强制保存一次
     onDeactivated(async () => {
+        // 卸载窗口关闭监听器，防止后台堆积
+        if (unlisten) {
+            unlisten();
+            unlisten = null;
+        }
+
+        // 处理未保存的内容
         if (saveTimeout) {
             clearTimeout(saveTimeout);
+            saveTimeout = null;
             await saveDiary();
         }
     });
