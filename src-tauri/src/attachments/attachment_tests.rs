@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod test {
+mod tests {
     use std::io::Cursor;
     use crate::diaries::{delete_diary, get_diary, page_diary_ids, save_diary};
     use crate::utils::create_mock_stream;
