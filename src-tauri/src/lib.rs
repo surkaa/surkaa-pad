@@ -5,6 +5,7 @@ mod object;
 mod storages;
 mod tasks;
 mod utils;
+mod cache;
 
 use crate::attachments::command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
