@@ -4,7 +4,7 @@ import LiveRichEditor from "../../components/LiveRichEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
 import {onBeforeRouteLeave} from "vue-router";
-import {useQuasar} from "quasar";
+import {Dialog, useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
 import {formatTimestamp} from "../../utils";
@@ -12,6 +12,7 @@ import AttachmentCard from "../../components/AttachmentCard.vue";
 import {commands} from "../../bindings.ts";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useDataStore} from "../../stores/data.ts";
+import ImagePreview from "../../components/ImagePreview.vue";
 
 const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
@@ -62,6 +63,13 @@ function showDiarySource() {
     ok: {label: '关闭', color: 'primary'},
   });
   showMenu.value = false;
+}
+
+function showImage(src: string) {
+  Dialog.create({
+    component: ImagePreview,
+    componentProps: {src}
+  })
 }
 
 defineOptions({name: 'DiaryDetail'});
@@ -131,6 +139,7 @@ onActivated(async () => {
         @toggleAttachmentEncryption="toggleAttachmentEncryption"
         @rotateAttachment="rotateAttachment"
         @pasteAttachments="pasteAttachments"
+        @showImage="showImage"
         style="width: 100%; flex: 1; padding: 16px"
     />
 

@@ -2,7 +2,6 @@ import {createRouter, createWebHashHistory, type RouteRecordRaw} from "vue-route
 import Unlock from "../views/unlock/Unlock.vue";
 import DiaryList from "../views/diary-list/DiaryList.vue";
 import DiaryDetail from "../views/diary-detial/DiaryDetail.vue";
-import PreviewMedia from "../views/preview-media/PreviewMedia.vue";
 import Settings from "../views/settings/Settings.vue";
 import {addCache, removeCache} from "../composables/useKeepAlive.ts";
 import Layout from "../layout/Layout.vue";
@@ -16,15 +15,6 @@ const routes: RouteRecordRaw[] = [
         component: Unlock,
         meta: {
             title: '解锁屏幕'
-        }
-    },
-    {
-        name: 'PreviewMedia',
-        path: '/preview-media/:src',
-        component: PreviewMedia,
-        meta: {
-            title: '媒体预览',
-            depth: 3
         }
     },
     {

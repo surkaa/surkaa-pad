@@ -2,12 +2,10 @@
 import {nextTick, onMounted, ref, watch} from "vue";
 import {DiarySummary} from "../bindings.ts";
 import {ExtensionContext, EXTENSIONS} from "./editor/extension.ts";
-import {useRouter} from "vue-router";
 import {useContextMenu} from "./editor/useContextMenu.ts";
 import {useScroll, useStorage} from "@vueuse/core";
 import {useDomInsert} from "./editor/useDomInsert.ts";
 
-const router = useRouter();
 const {modelValue, diarySummary, attachmentMap} = defineProps<{
   modelValue: string;
   diarySummary?: DiarySummary;
@@ -18,6 +16,7 @@ const emit = defineEmits<{
   (e: 'toggleAttachmentEncryption', filename: string, encrypted: boolean): Promise<void>;
   (e: 'rotateAttachment', filename: string, rotation: number): void;
   (e: 'pasteAttachments', files: File[]): void; // 上传完成后外部手动调用插入dom节点
+  (e: 'showImage', src: string): void
 }>();
 
 const editor = ref<HTMLDivElement>();
@@ -43,10 +42,9 @@ const extensionCtx: ExtensionContext = {
     if (!att || !attachmentMap[att.filename]) return null;
     return attachmentMap[att.filename];
   },
-  gotoPreview: (src, rotation) => router.push({
-    name: 'PreviewMedia',
-    params: {src, rotation}
-  }),
+  gotoPreview(src) {
+    emit('showImage', src);
+  },
   emit(event, ...args) {
     if (event === 'rotateAttachment') {
       emit('rotateAttachment', args[0], args[1]);

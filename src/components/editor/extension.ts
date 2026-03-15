@@ -16,7 +16,7 @@ export interface ExtensionContext {
     getDiaryId(): string;
     getAttachment(filename: string): AttachmentMeta | null;
     getAttachmentUrl(filename: string): string | null;
-    gotoPreview(src: string, rotation?: string): void;
+    gotoPreview(src: string): void;
     emit: (eventName: string, ...args: any[]) => void;
 }
 
