@@ -8,10 +8,11 @@ use std::io::Error;
 use std::sync::Arc;
 
 use crate::object::types::{
-    AliyunListObjectsResult, AliyunObjectSummary, ByteStream, ObjectMetadata,
+    AliyunListObjectsResult, AliyunObjectSummary, ObjectMetadata,
     ATTACHMENT_URL_EXPIRATION_SECONDS, STREAM_MINE_TYPE,
 };
 use crate::object::NextToken;
+use crate::stream::ByteStream;
 use tauri::http::header::{CONTENT_TYPE, DATE};
 use tauri::http::{HeaderMap, HeaderValue, Method};
 

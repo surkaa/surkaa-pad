@@ -1,7 +1,7 @@
 pub mod command;
 pub mod types;
 
-use crate::object::ByteStream;
+use crate::stream::ByteStream;
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::aes::cipher::crypto_common::rand_core::RngCore;

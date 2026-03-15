@@ -1,13 +1,7 @@
-use bytes::Bytes;
-use futures::Stream;
-use std::io::Error;
-use std::pin::Pin;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 pub type NextToken = Option<String>;
-
-pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>>;
 
 pub(super) const STREAM_MINE_TYPE: &str = "application/octet-stream";
 

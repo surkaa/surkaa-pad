@@ -1,4 +1,4 @@
-use crate::object::ByteStream;
+use crate::stream::ByteStream;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Seek};

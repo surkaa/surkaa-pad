@@ -1,4 +1,4 @@
-use crate::object::ByteStream;
+use super::ByteStream;
 use futures_util::StreamExt;
 
 /// 包装一个 ByteStream 来跟踪上传进度

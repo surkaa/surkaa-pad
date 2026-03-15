@@ -1,4 +1,4 @@
-use crate::object::ByteStream;
+use super::ByteStream;
 use bytes::Bytes;
 use futures_util::stream;
 
