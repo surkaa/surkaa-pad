@@ -1,10 +1,11 @@
 use crate::cryptos::Crypto;
 use crate::diaries::diary_list::page_diary_ids;
+use crate::diaries::get_diary;
 use crate::diaries::types::{DiarySummary, SearchDiariesEvent};
-use crate::diaries::{get_diary, DiaryMemoryCache};
 use crate::object::{NextToken, OssClient};
 use crate::utils::message_sender::MessageSender;
 use std::sync::Arc;
+use crate::caches::DiaryMemoryCache;
 
 pub async fn search_diaries(
     cache: &DiaryMemoryCache,
@@ -69,6 +70,7 @@ pub async fn search_diaries(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::caches::DiaryMemoryCache;
     use crate::diaries::diary::{delete_diary, save_diary};
     use serial_test::serial;
 
@@ -127,7 +129,13 @@ mod tests {
         // 创建几个测试日记
         let _ = save_diary(&cache, &crypto, &client, "这是第一篇日记，包含关键词 rust").await;
         let _ = save_diary(&cache, &crypto, &client, "这是第二篇日记，不包含关键词").await;
-        let _ = save_diary(&cache, &crypto, &client, "这是第三篇日记，包含关键词 rust 和 async").await;
+        let _ = save_diary(
+            &cache,
+            &crypto,
+            &client,
+            "这是第三篇日记，包含关键词 rust 和 async",
+        )
+        .await;
         let _ = save_diary(&cache, &crypto, &client, "这是第四篇日记，包含关键词 async").await;
 
         // 收集结果

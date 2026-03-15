@@ -3,7 +3,6 @@ use crate::attachments::attachment::{
 };
 use crate::attachments::types::AttachmentProcessEvent;
 use crate::cryptos::Crypto;
-use crate::diaries::DiaryMemoryCache;
 use crate::object::{OssState};
 use crate::tasks::TaskPool;
 use crate::utils::{open_file_stream, create_mock_stream};
@@ -11,6 +10,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::State;
+use crate::caches::DiaryMemoryCache;
 
 /// 给日记添加附件
 /// # Arguments

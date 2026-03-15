@@ -4,7 +4,6 @@ mod diary_list;
 mod diary_search;
 mod types;
 
-pub use crate::caches::DiaryMemoryCache;
 pub use diary::*;
 pub use types::DiaryManifest;
 

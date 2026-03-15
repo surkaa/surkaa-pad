@@ -21,7 +21,7 @@ use crate::diaries::diary_command::{
     cmd_delete_diary, cmd_get_diary_content, cmd_get_diary_summary, cmd_page_diary_ids,
     cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
 };
-use crate::diaries::DiaryMemoryCache;
+use crate::caches::DiaryMemoryCache;
 use crate::object::object_command::cmd_init_oss_client;
 use crate::object::OssState;
 use crate::tasks::task_command::cmd_cancel_task;

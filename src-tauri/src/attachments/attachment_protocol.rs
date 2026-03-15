@@ -1,19 +1,20 @@
+use crate::attachments::AttachmentMeta;
 use crate::cryptos::types::EncryptionAlgorithm::Gcm;
 use crate::cryptos::Crypto;
-use crate::diaries::{get_diary, DiaryMemoryCache};
+use crate::diaries::get_diary;
 use crate::object::{OssClient, OssState};
 use crate::storages::remote_attachments_key;
+use chrono::Utc;
 use futures_util::StreamExt;
 use http_range_header::parse_range_header;
 use std::cmp::min;
-use chrono::Utc;
 use tauri::http::header::{
     ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
 };
 use tauri::http::{Request, Response, StatusCode};
 use tauri::{Manager, UriSchemeContext, UriSchemeResponder, Wry};
 use tauri_plugin_log::log;
-use crate::attachments::AttachmentMeta;
+use crate::caches::DiaryMemoryCache;
 
 pub const PROTOCOL_NAME: &str = "attachment";
 const MAX_CHUNK_SIZE: u64 = 1024 * 1024; // 1MB
@@ -110,17 +111,14 @@ async fn process_attachment(
 
     let (start, end, is_range) = match range_header_val {
         Some(raw_range) => {
-            let ranges = parse_range_header(raw_range)
-                .map_err(|e| {
-                    log::error!("Parse range header error: {:?}", e);
-                    ProtocolError::BadRequest("Invalid Range format")
-                })?;
-            let valid_ranges = ranges
-                .validate(file_size)
-                .map_err(|e| {
-                    log::error!("Parse range header error: {:?}", e);
-                    ProtocolError::RangeNotSatisfiable(file_size)
-                })?;
+            let ranges = parse_range_header(raw_range).map_err(|e| {
+                log::error!("Parse range header error: {:?}", e);
+                ProtocolError::BadRequest("Invalid Range format")
+            })?;
+            let valid_ranges = ranges.validate(file_size).map_err(|e| {
+                log::error!("Parse range header error: {:?}", e);
+                ProtocolError::RangeNotSatisfiable(file_size)
+            })?;
             let r = &valid_ranges[0];
             let s = *r.start();
             // 应用 MAX_CHUNK_SIZE 限制，防止内存溢出
@@ -177,10 +175,17 @@ async fn process_attachment(
         .map_err(|e| ProtocolError::Internal(e.to_string()))
 }
 
-pub fn get_full_attachment_url(id: &str, attachment: &AttachmentMeta, client: &OssClient) -> Result<String, String> {
+pub fn get_full_attachment_url(
+    id: &str,
+    attachment: &AttachmentMeta,
+    client: &OssClient,
+) -> Result<String, String> {
     if attachment.encrypted {
         let timestamp = Utc::now().timestamp();
-        Ok(format!("http://{}.localhost/{}/{}?t={}", PROTOCOL_NAME, id, &attachment.filename, timestamp))
+        Ok(format!(
+            "http://{}.localhost/{}/{}?t={}",
+            PROTOCOL_NAME, id, &attachment.filename, timestamp
+        ))
     } else {
         let key = remote_attachments_key(id, &attachment.filename);
         let url = client
