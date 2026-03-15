@@ -50,9 +50,6 @@ function openDiaryDetail() {
 
 function additionalAction() {
   showToolbarPanel.value = !showToolbarPanel.value;
-  if (liveEditorRef.value?.editor) {
-    liveEditorRef.value?.editor.focus();
-  }
 }
 
 function showDiarySource() {
