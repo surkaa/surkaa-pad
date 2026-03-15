@@ -1,4 +1,4 @@
-use crate::crypto::Crypto;
+use crate::cryptos::Crypto;
 use crate::object::{NextToken, OssState};
 use std::collections::HashMap;
 use std::sync::Arc;

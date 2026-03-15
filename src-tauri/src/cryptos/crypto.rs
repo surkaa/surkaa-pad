@@ -1,6 +1,4 @@
-pub mod command;
-pub mod types;
-
+use super::types::{Aes256Ctr, DerivedKey, CTR_NONCE_LEN, KEY_LEN, MEMORY_COST_KIB, NONCE_LEN};
 use crate::stream::ByteStream;
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use aes_gcm::aead::{Aead, OsRng};
@@ -12,15 +10,16 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use std::sync::{Arc, OnceLock};
 use zeroize::Zeroize;
-impl std::ops::Deref for types::DerivedKey {
-    type Target = [u8; types::KEY_LEN];
+
+impl std::ops::Deref for DerivedKey {
+    type Target = [u8; KEY_LEN];
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 struct InnerCrypto {
-    dek: OnceLock<types::DerivedKey>,
+    dek: OnceLock<DerivedKey>,
 }
 
 #[derive(Clone)]
@@ -50,10 +49,10 @@ impl Crypto {
     /// 利用提供的派生密钥解密给定数据
     pub fn decrypt(&self, encrypted: &[u8]) -> Result<Vec<u8>, String> {
         // 从前NONCE_LEN字节中提取nonce
-        if encrypted.len() < types::NONCE_LEN {
+        if encrypted.len() < NONCE_LEN {
             return Err("密文长度不足以包含 nonce".to_string());
         }
-        let (nonce_bytes, ciphertext) = encrypted.split_at(types::NONCE_LEN);
+        let (nonce_bytes, ciphertext) = encrypted.split_at(NONCE_LEN);
         let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
         let cipher =
             Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|e| format!("无效的密钥: {:?}", e))?;
@@ -72,10 +71,10 @@ impl Crypto {
         let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
 
         // 生成随机NONCE
-        let mut nonce = [0u8; types::CTR_NONCE_LEN];
+        let mut nonce = [0u8; CTR_NONCE_LEN];
         OsRng.fill_bytes(&mut nonce);
 
-        let cipher = types::Aes256Ctr::new(dek.as_ref().into(), (&nonce).into());
+        let cipher = Aes256Ctr::new(dek.as_ref().into(), (&nonce).into());
 
         let mapped_stream = ctr_stream_cipher(stream, cipher);
 
@@ -91,11 +90,11 @@ impl Crypto {
     ) -> Result<ByteStream, String> {
         let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
 
-        if nonce.len() != types::CTR_NONCE_LEN {
+        if nonce.len() != CTR_NONCE_LEN {
             return Err("NONCE 长度错误".to_string());
         }
 
-        let mut cipher = types::Aes256Ctr::new(dek.as_ref().into(), nonce.into());
+        let mut cipher = Aes256Ctr::new(dek.as_ref().into(), nonce.into());
 
         // 计算初始计数器值：start_offset / 16（块大小）
         cipher.seek(start_offset);
@@ -111,7 +110,7 @@ impl Crypto {
         let cipher =
             Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|e| format!("无效的密钥: {:?}", e))?;
 
-        let mut nonce_bytes = [0u8; types::NONCE_LEN];
+        let mut nonce_bytes = [0u8; NONCE_LEN];
         OsRng.fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
@@ -126,9 +125,9 @@ impl Crypto {
     pub fn derive_dek(&self, mut password: String, salt: String) -> Result<String, String> {
         let params = ParamsBuilder::new()
             .t_cost(2)
-            .m_cost(types::MEMORY_COST_KIB)
+            .m_cost(MEMORY_COST_KIB)
             .p_cost(4)
-            .output_len(types::KEY_LEN)
+            .output_len(KEY_LEN)
             .build()
             .map_err(|e| format!("参数错误:{}", e))?;
 
@@ -143,10 +142,10 @@ impl Crypto {
         password.zeroize();
 
         let dek = hash.hash.ok_or("无法提取哈希值".to_string())?;
-        if dek.as_bytes().len() == types::KEY_LEN {
-            let mut dek_array = [0u8; types::KEY_LEN];
+        if dek.as_bytes().len() == KEY_LEN {
+            let mut dek_array = [0u8; KEY_LEN];
             dek_array.copy_from_slice(dek.as_bytes());
-            let derived_key = types::DerivedKey(dek_array);
+            let derived_key = DerivedKey(dek_array);
             let _ = self.inner.dek.set(derived_key);
             let dek_string = hex::encode(dek_array);
             dek_array.zeroize();
@@ -160,19 +159,19 @@ impl Crypto {
     pub fn init_by_dek_string(&self, dek: String) -> Result<(), String> {
         let dek_bytes: Vec<u8> =
             hex::decode(&dek).map_err(|e| format!("Failed to decode DEK: {}", e))?;
-        if dek_bytes.len() != types::KEY_LEN {
+        if dek_bytes.len() != KEY_LEN {
             return Err("Invalid DEK length".to_string());
         }
-        let mut dek_array = [0u8; types::KEY_LEN];
+        let mut dek_array = [0u8; KEY_LEN];
         dek_array.copy_from_slice(&dek_bytes);
-        let derived_key = types::DerivedKey(dek_array);
+        let derived_key = DerivedKey(dek_array);
         let _ = self.inner.dek.set(derived_key);
         dek_array.zeroize();
         Ok(())
     }
 }
 
-fn ctr_stream_cipher(stream: ByteStream, mut cipher: types::Aes256Ctr) -> ByteStream {
+fn ctr_stream_cipher(stream: ByteStream, mut cipher: Aes256Ctr) -> ByteStream {
     Box::pin(stream.map(move |result| match result {
         Ok(bytes) => {
             let mut buffer = bytes.to_vec();
@@ -242,9 +241,7 @@ mod tests {
 
         // 解密测试
         let decrypt_start = std::time::Instant::now();
-        let decrypted_data = crypto
-            .decrypt(&encrypted_data)
-            .expect("无法解密大文件");
+        let decrypted_data = crypto.decrypt(&encrypted_data).expect("无法解密大文件");
         let decrypt_duration = decrypt_start.elapsed();
         println!("解密大文件用时: {:?}", decrypt_duration);
 

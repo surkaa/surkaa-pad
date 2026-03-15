@@ -1,5 +1,5 @@
-use crate::crypto::types::EncryptionAlgorithm::Gcm;
-use crate::crypto::Crypto;
+use crate::cryptos::types::EncryptionAlgorithm::Gcm;
+use crate::cryptos::Crypto;
 use crate::diaries::{get_diary, DiaryMemoryCache};
 use crate::object::{OssClient, OssState};
 use crate::storages::remote_attachments_key;

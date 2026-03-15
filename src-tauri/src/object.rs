@@ -1,4 +1,4 @@
-pub mod command;
+pub mod object_command;
 mod oss_client;
 mod oss_state;
 mod types;

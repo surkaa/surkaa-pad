@@ -1,10 +1,10 @@
-pub mod command;
+pub mod diary_command;
 mod diary;
 mod diary_list;
 mod diary_search;
 mod types;
 
-pub use crate::cache::diary_memory_cache::DiaryMemoryCache;
+pub use crate::caches::DiaryMemoryCache;
 pub use diary::*;
 pub use types::DiaryManifest;
 

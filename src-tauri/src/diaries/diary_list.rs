@@ -1,5 +1,5 @@
 use crate::attachments::get_full_attachment_url;
-use crate::crypto::Crypto;
+use crate::cryptos::Crypto;
 use crate::diaries::types::DiarySummary;
 use crate::diaries::{get_diary, DiaryMemoryCache};
 use crate::object::{NextToken, OssClient};

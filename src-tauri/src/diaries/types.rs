@@ -1,5 +1,5 @@
 use crate::attachments::AttachmentMeta;
-use crate::crypto::types::EncryptionAlgorithm;
+use crate::cryptos::types::EncryptionAlgorithm;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 

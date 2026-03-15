@@ -1,4 +1,4 @@
-use crate::crypto::Crypto;
+use crate::cryptos::Crypto;
 use crate::diaries::diary_list::page_diary_ids;
 use crate::diaries::types::{DiarySummary, SearchDiariesEvent};
 use crate::diaries::{get_diary, DiaryMemoryCache};
