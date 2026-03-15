@@ -23,10 +23,10 @@ function back() {
     <q-header bordered class="app-header">
       <div class="header-left q-px-md row items-center full-height">
         <q-btn flat round icon="arrow_back" v-if="canBack" @click="back" size="sm"/>
-        <div class="header-global q-ml-sm">
+        <div class="header-global q-ml-sm" v-if="!route.meta.searchMod">
           {{ layoutStore.customTitle || route.meta.title || 'SurKaa Pad' }}
         </div>
-        <q-space/>
+        <q-space v-if="!route.meta.searchMod"/>
         <div id="header-actions"></div>
       </div>
     </q-header>

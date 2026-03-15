@@ -60,7 +60,8 @@ const routes: RouteRecordRaw[] = [
                 meta: {
                     title: '🔍',
                     depth: 2,
-                    keepAlive: true
+                    keepAlive: true,
+                    searchMod: true
                 }
             },
             {
