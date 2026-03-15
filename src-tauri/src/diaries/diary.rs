@@ -3,8 +3,8 @@ use crate::object::OssClient;
 use crate::storages::remote_manifest_key;
 
 use crate::attachments::AttachmentMeta;
-use crate::cryptos::types::EncryptionAlgorithm::Gcm;
-use crate::diaries::types::DiarySummary;
+use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
+use crate::diaries::diary_types::DiarySummary;
 use crate::diaries::DiaryManifest;
 use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;

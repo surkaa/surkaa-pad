@@ -1,7 +1,7 @@
 use crate::attachments::get_full_attachment_url;
 use crate::caches::DiaryMemoryCache;
 use crate::cryptos::Crypto;
-use crate::diaries::types::DiarySummary;
+use crate::diaries::diary_types::DiarySummary;
 use crate::diaries::get_diary;
 use crate::object::{NextToken, OssClient};
 use crate::storages::diary_id_from_manifest_key;

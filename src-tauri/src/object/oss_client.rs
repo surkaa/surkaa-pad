@@ -7,7 +7,7 @@ use sha1::Sha1;
 use std::io::Error;
 use std::sync::Arc;
 
-use crate::object::types::{
+use crate::object::object_types::{
     AliyunListObjectsResult, AliyunObjectSummary, ObjectMetadata,
     ATTACHMENT_URL_EXPIRATION_SECONDS, STREAM_MINE_TYPE,
 };

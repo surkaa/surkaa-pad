@@ -1,7 +1,7 @@
-use crate::attachments::types::AttachmentProcessEvent;
+use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::attachments::{get_full_attachment_url, AttachmentMeta};
 use crate::caches::DiaryMemoryCache;
-use crate::cryptos::types::EncryptionAlgorithm::Ctr;
+use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
 use crate::cryptos::Crypto;
 use crate::diaries::{delete_diary_attachment, get_diary, update_diary_attachment};
 use crate::object::OssClient;

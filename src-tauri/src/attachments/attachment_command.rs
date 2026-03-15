@@ -1,7 +1,7 @@
 use crate::attachments::attachment::{
     add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption,
 };
-use crate::attachments::types::AttachmentProcessEvent;
+use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::cryptos::Crypto;
 use crate::object::{OssState};
 use crate::tasks::TaskPool;

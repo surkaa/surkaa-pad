@@ -1,5 +1,5 @@
 use crate::attachments::AttachmentMeta;
-use crate::cryptos::types::EncryptionAlgorithm::Gcm;
+use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
 use crate::cryptos::Crypto;
 use crate::diaries::get_diary;
 use crate::object::{OssClient, OssState};
