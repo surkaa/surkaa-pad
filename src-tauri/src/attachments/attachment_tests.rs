@@ -1,19 +1,21 @@
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-    use crate::diaries::{delete_diary, get_diary, page_diary_ids, save_diary};
-    use crate::utils::create_mock_stream;
-    use futures::future::join_all;
-    use serial_test::serial;
-    use std::sync::Arc;
-    use image::ImageFormat;
-    use tokio::task::JoinHandle;
-    use crate::attachments::attachment::{add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption};
+    use crate::attachments::attachment::{
+        add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption,
+    };
     use crate::attachments::attachment_types::AttachmentProcessEvent;
     use crate::caches::DiaryMemoryCache;
     use crate::cryptos::Crypto;
+    use crate::diaries::{delete_diary, get_diary, page_diary_ids, save_diary};
     use crate::object::OssClient;
     use crate::storages::remote_attachments_key;
+    use crate::stream::{collect_data, create_mock_stream};
+    use futures::future::join_all;
+    use image::ImageFormat;
+    use serial_test::serial;
+    use std::io::Cursor;
+    use std::sync::Arc;
+    use tokio::task::JoinHandle;
 
     #[serial]
     #[tokio::test]
@@ -65,7 +67,7 @@ mod tests {
                     "text/plain".to_string(),
                     stream,
                 )
-                    .await
+                .await
             }));
         }
 
@@ -114,7 +116,7 @@ mod tests {
                     &id_clone,
                     filename_str,
                 )
-                    .await
+                .await
             }));
         }
 
@@ -166,7 +168,7 @@ mod tests {
             "text/plain".to_string(),
             stream,
         )
-            .await;
+        .await;
 
         let filename = "1"; // 第一个附件 ID 为 1
 
@@ -181,7 +183,7 @@ mod tests {
             filename.to_string(),
             true, // 开启加密
         )
-            .await;
+        .await;
 
         // 验证元数据是否已更新为加密
         let diary_encrypted = get_diary(&cache, &crypto, &client, &diary_id)
@@ -202,7 +204,7 @@ mod tests {
             filename.to_string(),
             false, // 关闭加密
         )
-            .await;
+        .await;
 
         // 检查数据是否还原
         let diary_decrypted = get_diary(&cache, &crypto, &client, &diary_id)
@@ -213,15 +215,11 @@ mod tests {
         assert!(meta_dec.nonce.is_empty(), "明文状态下 nonce 应该为空");
 
         // 下载并检查内容是否依然正确
-        let (mut down_stream, _) = client
+        let (down_stream, _) = client
             .download(&remote_attachments_key(&diary_id, filename), None)
             .await
             .unwrap();
-        let mut downloaded_bytes = Vec::new();
-        use futures::StreamExt;
-        while let Some(chunk) = down_stream.next().await {
-            downloaded_bytes.extend_from_slice(&chunk.unwrap());
-        }
+        let downloaded_bytes = collect_data(down_stream).await.expect("收集失败");
         assert_eq!(downloaded_bytes, raw_data, "转换后的文件内容与原始数据不符");
 
         // 清理
@@ -264,7 +262,7 @@ mod tests {
             "image/png".to_string(),
             create_mock_stream(img_buffer, original_size as usize),
         )
-            .await;
+        .await;
 
         let filename = "1";
 
@@ -281,7 +279,7 @@ mod tests {
             filename.to_string(),
             90, // 顺时针 90
         )
-            .await;
+        .await;
 
         // 验证结果
         let mut completed = false;
@@ -312,15 +310,11 @@ mod tests {
             .await
             .unwrap();
         let meta = diary.attachments.first().unwrap();
-        let mut dec_stream = crypto
+        let dec_stream = crypto
             .decrypt_streaming(raw_stream, &meta.nonce, 0)
             .unwrap();
 
-        let mut rotated_data = Vec::new();
-        use futures::StreamExt;
-        while let Some(chunk) = dec_stream.next().await {
-            rotated_data.extend_from_slice(&chunk.unwrap());
-        }
+        let rotated_data = collect_data(dec_stream).await.expect("收集旋转后数据失败");
 
         // 使用 image 库加载回旋转后的数据，验证尺寸是否互换 (10x20 -> 20x10)
         let final_img = image::load_from_memory(&rotated_data).expect("无法解码旋转后的图片");

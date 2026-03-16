@@ -5,7 +5,6 @@ use crate::diaries::get_diary;
 use crate::object::{OssClient, OssState};
 use crate::storages::remote_attachments_key;
 use chrono::Utc;
-use futures_util::StreamExt;
 use http_range_header::parse_range_header;
 use std::cmp::min;
 use tauri::http::header::{
@@ -15,6 +14,7 @@ use tauri::http::{Request, Response, StatusCode};
 use tauri::{Manager, UriSchemeContext, UriSchemeResponder, Wry};
 use tauri_plugin_log::log;
 use crate::caches::DiaryMemoryCache;
+use crate::stream::collect_data_with_capacity;
 
 pub const PROTOCOL_NAME: &str = "attachment";
 const MAX_CHUNK_SIZE: u64 = 1024 * 1024; // 1MB
@@ -134,7 +134,7 @@ async fn process_attachment(
         .await
         .map_err(|e| ProtocolError::Internal(e.to_string()))?;
 
-    let mut stream = if attachment.encrypted {
+    let stream = if attachment.encrypted {
         crypto
             .decrypt_streaming(stream, &attachment.nonce, start)
             .map_err(|e| ProtocolError::Internal(e.to_string()))?
@@ -144,11 +144,9 @@ async fn process_attachment(
 
     // 消费 Stream，将其收集到内存中的 Vec<u8>
     // 因为这只是整个文件中的一个 Range Chunk（切片），所以放进内存是安全的
-    let mut data = Vec::with_capacity(len as usize);
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| ProtocolError::Internal(e.to_string()))?;
-        data.extend_from_slice(&bytes);
-    }
+    let data = collect_data_with_capacity(stream, len as usize)
+        .await
+        .map_err(|e| ProtocolError::Internal(e.to_string()))?;
 
     let status = if is_range {
         StatusCode::PARTIAL_CONTENT

@@ -6,12 +6,10 @@ use crate::cryptos::Crypto;
 use crate::diaries::{delete_diary_attachment, get_diary, update_diary_attachment};
 use crate::object::OssClient;
 use crate::storages::remote_attachments_key;
-use crate::stream::tracker_stream::tracker_stream;
+use crate::stream::{collect_data, create_mock_stream, tracker_stream};
 use crate::stream::ByteStream;
-use crate::utils::create_mock_stream;
 use crate::utils::message_sender::MessageSender;
 use dashmap::DashMap;
-use futures_util::StreamExt;
 use image::ImageFormat;
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -261,17 +259,14 @@ pub async fn rotate_image_attachment(
             .download(&remote_attachments_key(id, &filename), None)
             .await?;
 
-        let mut stream = if old_meta.encrypted {
+        let stream = if old_meta.encrypted {
             crypto.decrypt_streaming(raw_stream, &old_meta.nonce, 0)?
         } else {
             raw_stream
         };
 
         // 将流收集到内存 图片处理必须在内存中进行
-        let mut buffer = Vec::new();
-        while let Some(chunk) = stream.next().await {
-            buffer.extend_from_slice(&chunk.map_err(|e| e.to_string())?);
-        }
+        let buffer = collect_data(stream).await?;
 
         // 使用 image 库处理旋转
         // load_from_memory 会自动识别 jpeg/png 等格式

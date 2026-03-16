@@ -1,10 +1,11 @@
 #[cfg(test)]
 mod tests {
     use crate::cryptos::Crypto;
-    use crate::utils::create_mock_stream;
+    use crate::stream::{collect_data, create_mock_stream};
     use aes_gcm::aead::OsRng;
     use aes_gcm::aes::cipher::crypto_common::rand_core::RngCore;
-    use futures_util::StreamExt;
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
 
     #[test]
     fn test_derive_encrypt_decrypt() {
@@ -81,17 +82,14 @@ mod tests {
         // 模拟 64KB 为一个 Chunk 的数据流
         let input_stream = create_mock_stream(original_data.clone(), 64 * 1024);
 
-        // 【注意】：这里假设你已经把名字改正确了，即 encrypt_streaming 是负责生成 nonce 的那个！
-        let (mut encrypted_stream, nonce) = crypto
+        let (encrypted_stream, nonce) = crypto
             .encrypt_streaming(input_stream)
             .expect("流式加密失败");
 
         // 消费流，把加密后的块重新收集到 Vec 中
-        let mut encrypted_data = Vec::new();
-        while let Some(chunk_result) = encrypted_stream.next().await {
-            let chunk = chunk_result.expect("读取加密流失败");
-            encrypted_data.extend_from_slice(&chunk);
-        }
+        let encrypted_data = collect_data(encrypted_stream)
+            .await
+            .expect("读取加密流失败");
 
         let encrypt_duration = encrypt_start.elapsed();
         println!("CTR 流式加密用时: {:?}", encrypt_duration);
@@ -106,20 +104,87 @@ mod tests {
 
         // 将刚才收集的密文再次变成 Stream 喂给解密器
         let encrypted_input_stream = create_mock_stream(encrypted_data, 64 * 1024);
-        let mut decrypted_stream = crypto
+        let decrypted_stream = crypto
             .decrypt_streaming(encrypted_input_stream, &nonce, 0)
             .expect("流式解密失败");
 
-        let mut decrypted_data = Vec::new();
-        while let Some(chunk_result) = decrypted_stream.next().await {
-            let chunk = chunk_result.expect("读取解密流失败");
-            decrypted_data.extend_from_slice(&chunk);
-        }
+        let decrypted_data = collect_data(decrypted_stream)
+            .await
+            .expect("读取解密流失败");
 
         let decrypt_duration = decrypt_start.elapsed();
         println!("CTR 流式解密用时: {:?}", decrypt_duration);
 
         // 终极验证：解密后的明文必须和最开始的原始数据一模一样
         assert_eq!(original_data, decrypted_data);
+    }
+
+    #[tokio::test]
+    async fn test_ctr_streaming_decrypt_with_offset() {
+        let crypto = Crypto::new();
+        let password = "offset_test_password".to_string();
+        let salt = STANDARD.encode("offset_test_salt").replace("=", "");
+        crypto.derive_dek(password, salt).expect("派生密钥失败");
+
+        // 生成约 2MB  多的随机数据
+        let data_size = 2 * 1024 * 1024 + 123;
+        let mut original_data = vec![0u8; data_size];
+        OsRng.fill_bytes(&mut original_data);
+
+        // 流式加密整个数据，得到 nonce 和完整密文
+        let input_stream = create_mock_stream(original_data.clone(), 64 * 1024);
+        let (encrypted_stream, nonce) = crypto
+            .encrypt_streaming(input_stream)
+            .expect("流式加密失败");
+
+        let full_encrypted = collect_data(encrypted_stream)
+            .await
+            .expect("收集加密数据失败");
+        assert_eq!(full_encrypted.len(), original_data.len());
+
+        // 定义要测试的偏移量
+        let mut offsets: Vec<u64> = vec![
+            0,
+            16 * 100,     // 1600，块对齐
+            16 * 100 + 7, // 1607，非块对齐
+            5000,
+            1024 * 1024,            // 1MB
+            1024 * 1024 + 123,      // 略大于一半
+            data_size as u64 - 100, // 接近末尾
+        ];
+        // 再随机增加offset
+        let mut rng = OsRng;
+        for _ in 0..10 {
+            let mut buf = [0u8; 8];
+            rng.fill_bytes(&mut buf);
+            let random_offset = u64::from_le_bytes(buf) % (data_size as u64);
+            offsets.push(random_offset);
+        }
+
+        for &offset in &offsets {
+            if offset >= data_size as u64 {
+                continue; // 跳过超出数据范围的偏移
+            }
+            println!("Testing offset: {}", offset);
+
+            // 预期明文：从 offset 开始的原始数据切片
+            let expected_slice = &original_data[offset as usize..];
+
+            // 从完整密文中截取相同偏移开始的切片
+            let encrypted_slice = &full_encrypted[offset as usize..];
+
+            // 将密文切片构建为流，传入 offset 进行解密
+            let encrypted_stream = create_mock_stream(encrypted_slice.to_vec(), 64 * 1024);
+            let decrypted_stream = crypto
+                .decrypt_streaming(encrypted_stream, &nonce, offset)
+                .expect("流式解密失败");
+
+            let decrypted = collect_data(decrypted_stream)
+                .await
+                .expect("收集解密数据失败");
+
+            assert_eq!(decrypted.len(), expected_slice.len());
+            assert_eq!(decrypted, expected_slice);
+        }
     }
 }

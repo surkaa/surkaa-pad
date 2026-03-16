@@ -1,12 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use crate::utils::create_mock_stream;
     use bytes::Bytes;
     use futures_util::stream::iter;
     use serial_test::serial;
     use std::iter::once;
     use crate::object::OssClient;
-    use crate::stream::ByteStream;
+    use crate::stream::{create_mock_stream, ByteStream};
     use std::io::Error;
     use chrono::Utc;
     use futures_util::TryStreamExt;
