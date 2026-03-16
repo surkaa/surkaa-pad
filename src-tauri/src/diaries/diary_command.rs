@@ -1,14 +1,13 @@
-use crate::cryptos::Crypto;
-use crate::object::{NextToken, OssState};
+use crate::object::NextToken;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 
-use crate::caches::DiaryMemoryCache;
 use crate::diaries::diary::{delete_diary, save_diary, update_diary_content_only};
 use crate::diaries::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
 use crate::diaries::diary_search::search_diaries;
 use crate::diaries::diary_types::{DiarySummary, SearchDiariesEvent};
+use crate::state::AppState;
 use crate::tasks::TaskPool;
 use tauri::State;
 
@@ -20,14 +19,16 @@ use tauri::State;
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_save_diary(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+    state: State<'_, AppState>,
     content: &str,
 ) -> Result<(DiarySummary, String), String> {
-    let cache = cache.inner().clone();
-    let client = client.get_client()?;
-    save_diary(&cache, &crypto, &client, content).await
+    save_diary(
+        &state.diary_cache(),
+        &state.crypto(),
+        &state.get_client()?,
+        content,
+    )
+    .await
 }
 
 /// 删除日记及其所有附件
@@ -37,14 +38,8 @@ pub async fn cmd_save_diary(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_delete_diary(
-    cache: State<'_, DiaryMemoryCache>,
-    client: State<'_, OssState>,
-    id: &str,
-) -> Result<(), String> {
-    let cache = cache.inner().clone();
-    let client = client.get_client()?;
-    delete_diary(&cache, &client, id).await
+pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), String> {
+    delete_diary(&state.diary_cache(), &state.get_client()?, id).await
 }
 
 /// 更新日记的内容
@@ -56,14 +51,18 @@ pub async fn cmd_delete_diary(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_update_diary_content_only(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+    state: State<'_, AppState>,
     id: &str,
     new_content: &str,
 ) -> Result<DiarySummary, String> {
-    let client = client.get_client()?;
-    update_diary_content_only(&cache, &crypto, &client, id, new_content).await
+    update_diary_content_only(
+        &state.diary_cache(),
+        &state.crypto,
+        &state.get_client()?,
+        id,
+        new_content,
+    )
+    .await
 }
 
 /// 分页列出diary主键列表
@@ -75,11 +74,10 @@ pub async fn cmd_update_diary_content_only(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_page_diary_ids(
-    client: State<'_, OssState>,
+    state: State<'_, AppState>,
     next_token: NextToken,
 ) -> Result<(Vec<String>, NextToken), String> {
-    let client = client.get_client()?;
-    page_diary_ids(&client, next_token).await
+    page_diary_ids(&state.get_client()?, next_token).await
 }
 
 /// 获取日记Summary
@@ -90,13 +88,16 @@ pub async fn cmd_page_diary_ids(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_get_diary_summary(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+    state: State<'_, AppState>,
     id: &str,
 ) -> Result<DiarySummary, String> {
-    let client = client.get_client()?;
-    get_diary_summary(&cache, &crypto, &client, id).await
+    get_diary_summary(
+        &state.diary_cache(),
+        &state.crypto,
+        &state.get_client()?,
+        id,
+    )
+    .await
 }
 
 /// 获取日记内容
@@ -107,13 +108,16 @@ pub async fn cmd_get_diary_summary(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_get_diary_content(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+    state: State<'_, AppState>,
     id: &str,
 ) -> Result<(String, HashMap<String, String>), String> {
-    let client = client.get_client()?;
-    get_diary_content(&cache, &crypto, &client, id).await
+    get_diary_content(
+        &state.diary_cache(),
+        &state.crypto,
+        &state.get_client()?,
+        id,
+    )
+    .await
 }
 
 /// 搜索日记
@@ -124,17 +128,15 @@ pub async fn cmd_get_diary_content(
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_search_diaries(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+    state: State<'_, AppState>,
     tp: State<'_, TaskPool>,
     event: Channel<SearchDiariesEvent>,
     keyword: String,
     or: bool,
 ) -> Result<String, String> {
-    let cache = cache.inner().clone();
-    let crypto = crypto.inner().clone();
-    let client = client.get_client()?;
+    let cache = state.diary_cache();
+    let crypto = state.crypto();
+    let client = state.get_client()?;
     let event = event.clone();
     tp.spawn(async move {
         search_diaries(&cache, &crypto, &client, Arc::new(event), keyword, or).await;

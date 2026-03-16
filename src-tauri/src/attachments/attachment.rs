@@ -24,9 +24,7 @@ static DIARY_ALLOCATORS: LazyLock<DashMap<String, Arc<Mutex<HashSet<u32>>>>> =
 static DELETE_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
 
 pub async fn add_attachment(
-    cache: DiaryMemoryCache,
-    crypto: Crypto,
-    client: OssClient,
+    (crypto, cache, client): (Crypto, DiaryMemoryCache, OssClient),
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     encrypted: bool,
@@ -147,9 +145,7 @@ pub async fn delete_attachment(
 }
 
 pub async fn toggle_attachment_encryption(
-    cache: DiaryMemoryCache,
-    crypto: Crypto,
-    client: OssClient,
+    (crypto, cache, client): (Crypto, DiaryMemoryCache, OssClient),
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     filename: String,
@@ -225,9 +221,7 @@ pub async fn toggle_attachment_encryption(
 }
 
 pub async fn rotate_image_attachment(
-    cache: DiaryMemoryCache,
-    crypto: Crypto,
-    client: OssClient,
+    (crypto, cache, client): (Crypto, DiaryMemoryCache, OssClient),
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     filename: String,

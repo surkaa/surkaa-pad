@@ -1,9 +1,8 @@
 use crate::attachments::AttachmentMeta;
-use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
-use crate::cryptos::Crypto;
 use crate::diaries::get_diary;
-use crate::object::{OssClient, OssState};
+use crate::object::OssClient;
+use crate::state::AppState;
 use crate::storages::remote_attachments_key;
 use crate::stream::collect_data_with_capacity;
 use chrono::Utc;
@@ -58,12 +57,10 @@ pub fn attachment_protocol(
     responder: UriSchemeResponder,
 ) {
     let app_handle = context.app_handle();
-    let cache = app_handle.state::<DiaryMemoryCache>().inner().clone();
-    let crypto = app_handle.state::<Crypto>().inner().clone();
-    let oss_state = app_handle.state::<OssState>().inner().clone();
+    let state = app_handle.state::<AppState>().inner().clone();
     log::info!("收到附件协议请求: {}", request.uri());
     tauri::async_runtime::spawn(async move {
-        let response = process_attachment(cache, crypto, oss_state, request)
+        let response = process_attachment(state, request)
             .await
             .unwrap_or_else(|e| {
                 tauri_plugin_log::log::error!("Protocol error: {:?}", e);
@@ -75,14 +72,14 @@ pub fn attachment_protocol(
 
 /// 格式：/id/filename
 async fn process_attachment(
-    cache: DiaryMemoryCache,
-    crypto: Crypto,
-    oss_state: OssState,
+    state: AppState,
     request: Request<Vec<u8>>,
 ) -> Result<Response<Vec<u8>>, ProtocolError> {
-    let client = oss_state
+    let client = state
         .get_client()
         .map_err(|_| ProtocolError::Internal("OSS client not ready".into()))?;
+    let cache = state.diary_cache();
+    let crypto = state.crypto();
 
     // Slice Pattern Matching 路由硬解
     let path = request.uri().path().trim_start_matches('/');

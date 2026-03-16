@@ -3,6 +3,7 @@ mod caches;
 mod cryptos;
 mod diaries;
 mod object;
+mod state;
 mod storages;
 mod stream;
 mod tasks;
@@ -13,26 +14,20 @@ use crate::attachments::attachment_command::{
     cmd_delete_attachment, cmd_rotate_image_attachment, cmd_toggle_attachment_encryption,
 };
 use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
-use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
 };
-use crate::cryptos::Crypto;
 use crate::diaries::diary_command::{
     cmd_delete_diary, cmd_get_diary_content, cmd_get_diary_summary, cmd_page_diary_ids,
     cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
 };
 use crate::object::object_command::cmd_init_oss_client;
-use crate::object::OssState;
 use crate::tasks::task_command::cmd_cancel_task;
-use crate::tasks::TaskPool;
 use tauri::{App, Manager};
+use crate::state::AppState;
 
 fn run_setup(app: &mut App) {
-    app.manage(Crypto::new());
-    app.manage(OssState::new());
-    app.manage(TaskPool::new());
-    app.manage(DiaryMemoryCache::new());
+    app.manage(AppState::new());
 
     #[cfg(target_os = "android")]
     {

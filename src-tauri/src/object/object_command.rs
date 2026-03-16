@@ -1,4 +1,4 @@
-use crate::object::OssState;
+use crate::state::AppState;
 use tauri::State;
 
 /// 初始化 OSS 客户端
@@ -12,13 +12,13 @@ use tauri::State;
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_init_oss_client(
-    client_state: State<'_, OssState>,
+    state: State<'_, AppState>,
     akid: String,
     aks: String,
     bucket: String,
     endpoint: String,
 ) -> Result<(), String> {
-    client_state
+    state
         .initialize(akid, aks, endpoint, bucket)
         .await
         .map_err(|e| e.to_string())

@@ -4,9 +4,8 @@ use crate::attachments::attachment::{
 use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::caches::DiaryMemoryCache;
 use crate::cryptos::Crypto;
-use crate::object::OssState;
+use crate::state::AppState;
 use crate::stream::create_mock_stream;
-use crate::tasks::TaskPool;
 use crate::utils::open_file_stream;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -23,24 +22,17 @@ use tauri::State;
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_add_attachment(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    tp: State<'_, TaskPool>,
+    state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
     access_str: String,
     encrypted: bool,
 ) -> Result<String, String> {
-    let cache = cache.inner().clone();
-    let crypto = crypto.inner().clone();
-    let client = client.get_client()?;
+    let three_state = state.three_state()?;
     let (file, mimetype, stream) = open_file_stream(access_str)?;
-    tp.spawn(async move {
+    state.task_pool().spawn(async move {
         add_attachment(
-            cache,
-            crypto,
-            client,
+            three_state,
             Arc::new(event),
             &id,
             encrypted,
@@ -63,19 +55,14 @@ pub fn cmd_add_attachment(
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_add_attachment_memory(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    tp: State<'_, TaskPool>,
+    state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
     data: Vec<u8>,
     mimetype: String,
     encrypted: bool,
 ) -> Result<String, String> {
-    let cache = cache.inner().clone();
-    let crypto = crypto.inner().clone();
-    let client = client.get_client()?;
+    let three_state = state.three_state()?;
     let len = data.len();
     let mimetype = if mimetype.is_empty() {
         let end = std::cmp::min(data.len(), 128);
@@ -86,11 +73,9 @@ pub fn cmd_add_attachment_memory(
         mimetype
     };
     let stream = create_mock_stream(data, len);
-    tp.spawn(async move {
+    state.task_pool().spawn(async move {
         add_attachment(
-            cache,
-            crypto,
-            client,
+            three_state,
             Arc::new(event),
             &id,
             encrypted,
@@ -113,11 +98,11 @@ pub fn cmd_add_attachment_memory(
 pub async fn cmd_delete_attachment(
     cache: State<'_, DiaryMemoryCache>,
     crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
+    state: State<'_, AppState>,
     id: &str,
     filename: String,
 ) -> Result<(), String> {
-    let client = client.get_client()?;
+    let client = state.get_client()?;
     delete_attachment(&cache, crypto.deref(), &client, id, filename).await
 }
 
@@ -131,10 +116,7 @@ pub async fn cmd_delete_attachment(
 #[specta::specta]
 pub async fn cmd_add_image_attachment_from_camera(
     app: tauri::AppHandle,
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    tp: State<'_, TaskPool>,
+    state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
     encrypted: bool,
@@ -157,7 +139,7 @@ pub async fn cmd_add_image_attachment_from_camera(
         let cache = cache.inner().clone();
         let crypto = crypto.inner().clone();
         let client = client.get_client()?;
-        tp.spawn(async move {
+        state.task_pool().spawn(async move {
             add_attachment(
                 cache,
                 crypto,
@@ -175,7 +157,7 @@ pub async fn cmd_add_image_attachment_from_camera(
     #[cfg(not(target_os = "android"))]
     {
         // 简单使用一下参数避免编译器警告
-        let _ = (app, cache, crypto, client, tp, event, id, encrypted);
+        let _ = (app, state, event, id, encrypted);
         Err("拍照功能仅在 Android 上可用".to_string())
     }
 }
@@ -190,23 +172,16 @@ pub async fn cmd_add_image_attachment_from_camera(
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_toggle_attachment_encryption(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    tp: State<'_, TaskPool>,
+    state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
     filename: String,
     encrypted: bool,
 ) -> Result<String, String> {
-    let cache = cache.inner().clone();
-    let crypto = crypto.inner().clone();
-    let client = client.get_client()?;
-    tp.spawn(async move {
+    let three_state = state.three_state()?;
+    state.task_pool().spawn(async move {
         toggle_attachment_encryption(
-            cache,
-            crypto,
-            client,
+            three_state,
             Arc::new(event),
             &id,
             filename,
@@ -226,23 +201,16 @@ pub fn cmd_toggle_attachment_encryption(
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_rotate_image_attachment(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
-    client: State<'_, OssState>,
-    tp: State<'_, TaskPool>,
+    state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
     filename: String,
     rotation: i32,
 ) -> Result<String, String> {
-    let cache = cache.inner().clone();
-    let crypto = crypto.inner().clone();
-    let client = client.get_client()?;
-    tp.spawn(async move {
+    let three_state = state.three_state()?;
+    state.task_pool().spawn(async move {
         rotate_image_attachment(
-            cache,
-            crypto,
-            client,
+            three_state,
             Arc::new(event),
             &id,
             filename,

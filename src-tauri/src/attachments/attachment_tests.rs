@@ -57,9 +57,7 @@ mod tests {
 
             add_tasks.push(tokio::spawn(async move {
                 add_attachment(
-                    cache_clone,
-                    crypto_clone,
-                    client_clone,
+                    (crypto_clone, cache_clone, client_clone),
                     Arc::new(tx),
                     &id_clone,
                     false,
@@ -158,9 +156,7 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
 
         add_attachment(
-            cache.clone(),
-            crypto.clone(),
-            client.clone(),
+            (crypto.clone(), cache.clone(), client.clone()),
             Arc::new(tx),
             &diary_id,
             false, // 初始不加密
@@ -175,9 +171,7 @@ mod tests {
         // 切换为加密状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         toggle_attachment_encryption(
-            cache.clone(),
-            crypto.clone(),
-            client.clone(),
+            (crypto.clone(), cache.clone(), client.clone()),
             Arc::new(tx),
             &diary_id,
             filename.to_string(),
@@ -196,9 +190,7 @@ mod tests {
         // 切换回明文状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         toggle_attachment_encryption(
-            cache.clone(),
-            crypto.clone(),
-            client.clone(),
+            (crypto.clone(), cache.clone(), client.clone()),
             Arc::new(tx),
             &diary_id,
             filename.to_string(),
@@ -252,9 +244,7 @@ mod tests {
 
         // 上传原始图片
         add_attachment(
-            cache.clone(),
-            crypto.clone(),
-            client.clone(),
+            (crypto.clone(), cache.clone(), client.clone()),
             Arc::new(tx),
             &diary_id,
             true, // 测试加密状态下的旋转
@@ -271,9 +261,7 @@ mod tests {
         let event_sender = Arc::new(tx_rot);
 
         rotate_image_attachment(
-            cache.clone(),
-            crypto.clone(),
-            client.clone(),
+            (crypto.clone(), cache.clone(), client.clone()),
             event_sender,
             &diary_id,
             filename.to_string(),
