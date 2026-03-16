@@ -75,15 +75,15 @@ pub(super) struct AliyunObjectSummary {
     pub storage_class: String,
 }
 
-impl AliyunObjectSummary {
-    pub(super) fn to_object_metadata(self) -> ObjectMetadata {
+impl From<AliyunObjectSummary> for ObjectMetadata {
+    fn from(val: AliyunObjectSummary) -> Self {
         ObjectMetadata {
-            key: self.key,
-            size: self.size,
-            last_modified: chrono::DateTime::parse_from_rfc3339(&self.last_modified)
+            key: val.key,
+            size: val.size,
+            last_modified: chrono::DateTime::parse_from_rfc3339(&val.last_modified)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
-            etag: self.e_tag.replace("\"", ""),
+            etag: val.e_tag.replace("\"", ""),
         }
     }
 }

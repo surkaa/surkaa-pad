@@ -314,7 +314,7 @@ impl OssClient {
         let objects = aliyun_result
             .contents
             .into_iter()
-            .map(AliyunObjectSummary::to_object_metadata)
+            .map(AliyunObjectSummary::into)
             .collect();
         Ok((objects, next_token))
     }
