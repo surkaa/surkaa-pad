@@ -1,15 +1,15 @@
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
-    use futures_util::stream::iter;
-    use serial_test::serial;
-    use std::iter::once;
+    use crate::object::object_types::STREAM_MINE_TYPE;
     use crate::object::OssClient;
     use crate::stream::{create_mock_stream, ByteStream};
-    use std::io::Error;
+    use bytes::Bytes;
     use chrono::Utc;
+    use futures_util::stream::iter;
     use futures_util::TryStreamExt;
-    use crate::object::object_types::STREAM_MINE_TYPE;
+    use serial_test::serial;
+    use std::io::Error;
+    use std::iter::once;
 
     async fn assert_empty(client: &OssClient, msg: &str) {
         // 检查有没有遗留的测试文件

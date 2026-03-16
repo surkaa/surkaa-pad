@@ -5,13 +5,16 @@ use std::io::{Read, Seek};
 use tokio_util::io::ReaderStream;
 
 pub fn open_file_stream(access_str: String) -> Result<(u64, String, ByteStream), String> {
-    let mut file = open_file(&access_str).map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
+    let mut file =
+        open_file(&access_str).map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
     let metadata = file
         .metadata()
         .map_err(|e| format!("无法获取文件元数据: {}", e))?;
     let file_size = metadata.len();
     let mut buffer = [0; 128];
-    let n = file.read(&mut buffer).map_err(|e| format!("无法读取文件内容: {}", e))?;
+    let n = file
+        .read(&mut buffer)
+        .map_err(|e| format!("无法读取文件内容: {}", e))?;
     if n == 0 {
         return Err("文件为空".to_string());
     }
@@ -20,7 +23,8 @@ pub fn open_file_stream(access_str: String) -> Result<(u64, String, ByteStream),
         .ok_or_else(|| "无法判断文件类型".to_string())?;
 
     // 重置文件指针到开头
-    file.seek(io::SeekFrom::Start(0)).map_err(|e| format!("无法重置文件指针: {}", e))?;
+    file.seek(io::SeekFrom::Start(0))
+        .map_err(|e| format!("无法重置文件指针: {}", e))?;
 
     let tokio_file = tokio::fs::File::from_std(file);
     let stream = ReaderStream::new(tokio_file);

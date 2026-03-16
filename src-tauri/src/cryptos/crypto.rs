@@ -1,4 +1,6 @@
-use super::crypto_types::{Aes256Ctr, DerivedKey, CTR_NONCE_LEN, KEY_LEN, MEMORY_COST_KIB, NONCE_LEN};
+use super::crypto_types::{
+    Aes256Ctr, DerivedKey, CTR_NONCE_LEN, KEY_LEN, MEMORY_COST_KIB, NONCE_LEN,
+};
 use crate::stream::ByteStream;
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use aes_gcm::aead::{Aead, OsRng};

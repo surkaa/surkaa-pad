@@ -23,7 +23,6 @@ pub const CTR_NONCE_LEN: usize = 16;
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct DerivedKey(pub [u8; KEY_LEN]);
 
-
 #[derive(Deserialize, Serialize, Clone, Debug, Type, PartialEq)]
 pub enum EncryptionAlgorithm {
     #[serde(rename = "AES256-GCM_v1")]

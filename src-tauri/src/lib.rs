@@ -1,3 +1,5 @@
+mod attachments;
+mod caches;
 mod cryptos;
 mod diaries;
 mod object;
@@ -5,14 +7,13 @@ mod storages;
 mod stream;
 mod tasks;
 mod utils;
-mod caches;
-mod attachments;
 
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
     cmd_delete_attachment, cmd_rotate_image_attachment, cmd_toggle_attachment_encryption,
 };
 use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
+use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
 };
@@ -21,7 +22,6 @@ use crate::diaries::diary_command::{
     cmd_delete_diary, cmd_get_diary_content, cmd_get_diary_summary, cmd_page_diary_ids,
     cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
 };
-use crate::caches::DiaryMemoryCache;
 use crate::object::object_command::cmd_init_oss_client;
 use crate::object::OssState;
 use crate::tasks::task_command::cmd_cancel_task;

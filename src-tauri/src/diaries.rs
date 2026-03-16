@@ -1,5 +1,5 @@
-pub mod diary_command;
 mod diary;
+pub mod diary_command;
 mod diary_list;
 mod diary_search;
 mod diary_types;
