@@ -9,7 +9,6 @@ import {useQuasar} from "quasar";
 // --- 常量 ---
 const CONFIG_FILENAME = "settings.json";
 const CONFIG_KEY = "encrypted_oss_config";
-const SALT = 'NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg';
 const THEME_KEY = 'app-theme';
 const DEFAULT_THEME: ThemeType = 'system';
 const BIOMETRIC_ENABLED_KEY = "biometric_enabled";
@@ -70,7 +69,7 @@ export const useAppStore = defineStore('app', () => {
         }
 
         // 解锁
-        await commands.cmdUnlock(masterPassword, SALT);
+        await commands.cmdUnlock(masterPassword);
 
         // 加密oss配置
         const configJson = JSON.stringify(ossConfig);
@@ -105,7 +104,7 @@ export const useAppStore = defineStore('app', () => {
     }
 
     async function unlock(masterPassword: string) {
-        await commands.cmdUnlock(masterPassword, SALT);
+        await commands.cmdUnlock(masterPassword);
     }
 
     async function initOss(encryptedConfig: number[]) {
@@ -135,7 +134,7 @@ export const useAppStore = defineStore('app', () => {
     }
 
     async function enableBiometric(masterPassword: string) {
-        const res = await commands.cmdUnlock(masterPassword, SALT);
+        const res = await commands.cmdUnlock(masterPassword);
         if (res.status == 'error') {
             throw new Error(`解锁失败: ${res.error}`);
         }

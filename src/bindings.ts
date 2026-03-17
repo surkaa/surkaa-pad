@@ -11,13 +11,12 @@ export const commands = {
  * 解锁加密管理器
  * # Arguments
  * * `master_password` - 主密码
- * * `salt` - 盐值
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdUnlock(masterPassword: string, salt: string) : Promise<Result<string, string>> {
+async cmdUnlock(masterPassword: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_unlock", { masterPassword, salt }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_unlock", { masterPassword }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -4,7 +4,6 @@ use tauri::State;
 /// 解锁加密管理器
 /// # Arguments
 /// * `master_password` - 主密码
-/// * `salt` - 盐值
 /// # Returns
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
@@ -12,9 +11,8 @@ use tauri::State;
 pub async fn cmd_unlock(
     crypto: State<'_, Crypto>,
     master_password: String,
-    salt: String,
 ) -> Result<String, String> {
-    crypto.derive_dek(master_password, salt)
+    crypto.derive_dek(master_password, "NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg".to_string())
 }
 
 /// 生物解锁，传入dek解锁
