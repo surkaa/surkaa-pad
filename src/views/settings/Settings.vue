@@ -18,7 +18,6 @@
                 {label: '浅色模式', value: 'light', icon: 'light_mode'},
                 {label: '深色模式', value: 'dark', icon: 'dark_mode'}
               ]"
-                @update:model-value="val => configStore.saveNormalConfig('app-theme', val)"
             />
           </q-card-section>
         </q-card>
@@ -95,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import {onDeactivated, onMounted, onUnmounted, ref} from 'vue';
+import {ref} from 'vue';
 import {platform} from "@tauri-apps/plugin-os";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {exportLogFile} from "../../utils";
@@ -104,8 +103,6 @@ import {useQuasar} from "quasar";
 import {useConfigStore} from "../../stores/config.ts";
 import {commands} from "../../bindings.ts";
 import {biometricCipher} from "../../../../Forks/tauri-plugins-workspace/plugins/biometric";
-import {DEFAULT_THEME, ThemeType} from "../../types.ts";
-import {UnlistenFn} from "@tauri-apps/api/event";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -113,10 +110,8 @@ const configStore = useConfigStore();
 const showPasswordVerify = ref(false);
 const verifyPassword = ref('');
 const loading = ref(false);
-const theme = ref<ThemeType>();
-const biometricEnable = ref<boolean>();
-let themeUnListenerFn: UnlistenFn | null = null;
-let biometricEnabledUnListenerFn: UnlistenFn | null = null;
+const theme = configStore.useTauriConfig('app-theme');
+const biometricEnable = configStore.useTauriConfig('biometric_enabled');
 const isAndroid = ref(platform() === 'android');
 
 // 接收 Quasar v-model 抛出的 boolean
@@ -167,42 +162,6 @@ async function handleReset() {
 }
 
 defineOptions({name: 'Settings'});
-
-onMounted(async () => {
-  themeUnListenerFn = await configStore.watchConfig('app-theme', (t) => {
-    if (t) {
-      theme.value = t;
-    } else {
-      console.log('t deleted');
-      theme.value = DEFAULT_THEME;
-    }
-  }, true);
-  biometricEnabledUnListenerFn = await configStore.watchConfig('biometric_enabled', (b) => {
-    biometricEnable.value = b || false;
-  }, true);
-});
-
-onUnmounted(() => {
-  if (themeUnListenerFn) {
-    themeUnListenerFn();
-    themeUnListenerFn = null;
-  }
-  if (biometricEnabledUnListenerFn) {
-    biometricEnabledUnListenerFn();
-    biometricEnabledUnListenerFn = null;
-  }
-});
-
-onDeactivated(() => {
-  if (themeUnListenerFn) {
-    themeUnListenerFn();
-    themeUnListenerFn = null;
-  }
-  if (biometricEnabledUnListenerFn) {
-    biometricEnabledUnListenerFn();
-    biometricEnabledUnListenerFn = null;
-  }
-});
 </script>
 
 <style scoped lang="scss">

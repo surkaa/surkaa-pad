@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import {onMounted, onUnmounted} from "vue";
 import {platform} from "@tauri-apps/plugin-os";
 import {useEventListener} from "@vueuse/core";
 import {useConfigStore} from "./stores/config.ts";
-import {UnlistenFn} from "@tauri-apps/api/event";
+import {watchEffect} from "vue";
 
 const configStore = useConfigStore();
 const p = platform();
-let unListener: UnlistenFn | null = null;
 
 if (p === 'windows') {
   useEventListener('keydown', (event: KeyboardEvent) => {
@@ -31,41 +29,34 @@ if (p === 'windows') {
   });
 }
 
-onMounted(async () => {
-  unListener = await configStore.watchConfig('app-theme', (t) => {
-    console.log('theme change', t);
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const applyTheme = (e: MediaQueryListEvent | MediaQueryList) => {
-      if (e.matches) {
-        document.body.classList.add('body--dark');
-      } else {
-        document.body.classList.remove('body--dark');
-      }
-    };
-    switch (t) {
-      case "dark":
-        document.body.classList.add('body--dark');
-        mediaQuery.removeEventListener('change', applyTheme);
-        break;
-      case "light":
-        document.body.classList.remove('body--dark');
-        mediaQuery.removeEventListener('change', applyTheme);
-        break;
-      case undefined:
-      case "system":
-        applyTheme(mediaQuery);
-        mediaQuery.addEventListener('change', applyTheme);
-        break;
-    }
-  }, true);
-});
+const theme = configStore.useTauriConfig('app-theme');
+const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
-onUnmounted(() => {
-  if (unListener) {
-    unListener();
-    unListener = null;
+// DOM 副作用交给 watchEffect 托管，theme 变化时自动重新执行
+watchEffect((onCleanup) => {
+  const applySystemTheme = (e: MediaQueryListEvent | MediaQueryList) => {
+    document.body.classList.toggle('body--dark', e.matches);
+  };
+
+  switch (theme.value) {
+    case "dark":
+      document.body.classList.add('body--dark');
+      break;
+    case "light":
+      document.body.classList.remove('body--dark');
+      break;
+    default:
+      // 只有 system 或 undefined 时挂载系统级监听
+      applySystemTheme(mediaQuery);
+      mediaQuery.addEventListener('change', applySystemTheme);
+
+      // onCleanup 用于在这个 watchEffect 重新执行前清理上一次的事件监听器
+      onCleanup(() => {
+        mediaQuery.removeEventListener('change', applySystemTheme);
+      });
+      break;
   }
-})
+});
 </script>
 
 <template>

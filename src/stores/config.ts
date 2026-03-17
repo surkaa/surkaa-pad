@@ -1,7 +1,8 @@
 import {defineStore} from "pinia";
-import {markRaw, ref} from "vue";
+import {customRef, markRaw, onScopeDispose, Ref, ref} from "vue";
 import {Store} from "@tauri-apps/plugin-store";
 import {DEFAULT_THEME, ThemeType} from "../types.ts";
+import {UnlistenFn} from "@tauri-apps/api/event";
 
 const CONFIG_FILENAME = "settings.json";
 
@@ -46,17 +47,55 @@ export const useConfigStore = defineStore('config', () => {
         return val;
     }
 
-    async function watchConfig<K extends ConfigKey>(
-        key: K,
-        callback: (value: ConfigMap[K] | undefined) => void,
-        immediate?: boolean
-    ) {
-        const s = await initStore();
-        if (immediate) {
-            const val = await s.get<ConfigMap[K]>(key);
-            callback(val === null || val === undefined ? DEFAULT_CONFIG[key] : val);
-        }
-        return await s.onKeyChange<ConfigMap[K]>(key, callback);
+    // Vue 3 响应式 Hook：自动双向同步 Tauri Store，自动在组件卸载时清理监听
+    function useTauriConfig<K extends ConfigKey>(key: K): Ref<ConfigMap[K]> {
+        let val: ConfigMap[K] = DEFAULT_CONFIG[key];
+        let unlisten: UnlistenFn | null = null;
+        // 防抖标志，避免循环保存
+        let isSyncing = false;
+
+        const tauriRef = customRef((track, trigger) => {
+            return {
+                get() {
+                    track();
+                    return val;
+                },
+                set(newValue) {
+                    val = newValue;
+                    trigger();
+                    // 如果不是来自底层的更新，则触发保存
+                    if (!isSyncing) {
+                        saveNormalConfig(key, newValue).catch(console.error);
+                    }
+                }
+            };
+        });
+
+        // 异步初始化与监听
+        initStore().then(async (s) => {
+            const initial = await s.get<ConfigMap[K]>(key);
+            if (initial !== null && initial !== undefined) {
+                isSyncing = true;
+                tauriRef.value = initial;
+                isSyncing = false;
+            }
+
+            unlisten = await s.onKeyChange<ConfigMap[K]>(key, (newVal) => {
+                isSyncing = true;
+                tauriRef.value = newVal === null || newVal === undefined ? DEFAULT_CONFIG[key] : newVal;
+                isSyncing = false;
+            });
+        });
+
+        // 核心：当前组件上下文销毁时，自动清理 Tauri 的 Event Listener
+        onScopeDispose(() => {
+            if (unlisten) {
+                unlisten();
+                unlisten = null;
+            }
+        });
+
+        return tauriRef;
     }
 
     async function deleteConfig(...keys: ConfigKey[]): Promise<void> {
@@ -70,7 +109,7 @@ export const useConfigStore = defineStore('config', () => {
     return {
         saveNormalConfig,
         getNormalConfig,
-        watchConfig,
+        useTauriConfig,
         deleteConfig
     }
 
