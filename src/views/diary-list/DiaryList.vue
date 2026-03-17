@@ -9,7 +9,7 @@ import {storeToRefs} from "pinia";
 import {useTimeoutStore} from "../../stores/timeout.ts";
 import {useOpenDiaryDetail} from "../../composables/useOpenDiaryDetail.ts";
 
-const {remainingStr} = useTimeoutStore();
+const timeoutStore = useTimeoutStore();
 const dataStore = useDataStore();
 const {
   diaryIds,
@@ -167,7 +167,7 @@ onDeactivated(() => {
     </Teleport>
     <Teleport v-if="isActivating" defer to="#footer-content">
       <span>{{ withAttachments }} / {{ diaryIds.length }}</span>
-      <span>Time: {{ remainingStr }}</span>
+      <span>Time: {{ timeoutStore.remainingStr }}</span>
     </Teleport>
   </div>
 </template>
