@@ -2,12 +2,9 @@ use crate::attachments::attachment::{
     add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption,
 };
 use crate::attachments::attachment_types::AttachmentProcessEvent;
-use crate::caches::DiaryMemoryCache;
-use crate::cryptos::Crypto;
 use crate::state::AppState;
 use crate::stream::create_mock_stream;
 use crate::utils::open_file_stream;
-use std::ops::Deref;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -96,14 +93,12 @@ pub fn cmd_add_attachment_memory(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_delete_attachment(
-    cache: State<'_, DiaryMemoryCache>,
-    crypto: State<'_, Crypto>,
     state: State<'_, AppState>,
     id: &str,
     filename: String,
 ) -> Result<(), String> {
     let client = state.get_client()?;
-    delete_attachment(&cache, crypto.deref(), &client, id, filename).await
+    delete_attachment(&state.diary_cache(), &state.crypto(), &client, id, filename).await
 }
 
 /// 拍摄图片来添加
