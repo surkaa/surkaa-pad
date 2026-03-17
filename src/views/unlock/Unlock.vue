@@ -1,34 +1,138 @@
 <template>
-  <main id="unlock">
-    <div class="unlock-container">
-      <UnlockHeader :version :appName/>
+  <main id="unlock" class="flex flex-center">
+    <q-card class="unlock-container text-center q-pa-none" flat>
 
-      <div class="divider"></div>
+      <q-card-section class="app-header q-py-lg">
+        <div class="row items-center justify-center q-gutter-x-sm">
+          <img alt="app-logo" class="app-logo" src="/app-icon.png"/>
+          <div class="text-h5 text-weight-bold">{{ appName }}</div>
+          <div class="text-subtitle1 text-weight-regular version-text">{{ version }}</div>
+        </div>
+      </q-card-section>
 
-      <div class="content-area">
-        <LoadingState v-if="pipeline === 'wait-load-config'"/>
+      <q-card-section class="content-area q-pa-lg">
 
-        <LoginSection
+        <div v-if="pipeline === 'wait-load-config'" class="column items-center justify-center q-py-xl">
+          <q-spinner color="primary" size="3em" :thickness="4"/>
+          <div class="text-grey-7 q-mt-md text-subtitle1">正在加载配置...</div>
+        </div>
+
+        <q-form
             v-else-if="pipeline === 'login'"
-            v-model:masterPassword="masterPassword"
-            :loading="loading"
-            @unlock="unlock"
-            @reset="confirmReset"
-        />
+            @submit.prevent="unlock"
+            class="q-gutter-y-lg q-pa-sm"
+        >
+          <div class="text-h6 text-weight-bold q-mb-sm" style="color: var(--pad-text-color)">欢迎回来</div>
 
-        <ConfigSection
+          <q-input
+              v-model="masterPassword"
+              type="password"
+              label="输入主密码"
+              outlined
+              autofocus
+              color="primary"
+              :disable="loading"
+              :rules="[val => !!val || '请输入主密码']"
+              lazy-rules
+          />
+
+          <q-btn
+              type="submit"
+              color="primary"
+              class="full-width primary-gradient-btn"
+              size="lg"
+              :loading="loading"
+              label="解锁"
+              unelevated
+          />
+
+          <div class="q-mt-lg pt-md row justify-center">
+            <q-btn flat color="grey-6" size="sm" label="重置配置" @click="confirmReset" :disable="loading"/>
+          </div>
+        </q-form>
+
+        <q-form
             v-else-if="pipeline === 'config'"
-            v-model:masterPassword="masterPassword"
-            :ossConfig="ossConfig"
-            v-model:quickConfig="quickConfig"
-            v-model:showQuickInput="showQuickInput"
-            :loading="loading"
-            @save="saveConfigAndLogin"
-        />
+            @submit.prevent="saveConfigAndLogin"
+            class="q-gutter-y-md"
+        >
+          <div class="text-h6 text-weight-bold text-grey-9 q-mb-sm">首次配置</div>
 
-        <ErrorState v-else/>
-      </div>
-    </div>
+          <q-input
+              v-model="masterPassword"
+              type="password"
+              label="设置主密码"
+              outlined
+              color="primary"
+              :disable="loading"
+              :rules="[val => !!val || '主密码不能为空']"
+              lazy-rules
+          >
+            <template v-slot:prepend>
+              <q-icon name="vpn_key"/>
+            </template>
+          </q-input>
+
+          <div class="row justify-center q-pb-sm">
+            <q-btn
+                flat
+                rounded
+                color="primary"
+                :icon="showQuickInput ? 'list' : 'bolt'"
+                :label="showQuickInput ? '使用常规配置' : '使用快速配置'"
+                @click="showQuickInput = !showQuickInput"
+                class="bg-grey-2"
+                size="sm"
+            />
+          </div>
+
+          <template v-if="!showQuickInput">
+            <q-input v-model="ossConfig.akid" label="AccessKey ID" outlined dense color="primary" :disable="loading"
+                     :rules="[val => !!val || '必填']" hide-bottom-space/>
+            <q-input v-model="ossConfig.aks" type="password" label="AccessKey Secret" outlined dense color="primary"
+                     :disable="loading" :rules="[val => !!val || '必填']" hide-bottom-space/>
+            <q-input v-model="ossConfig.bucket" label="Bucket 名称" outlined dense color="primary" :disable="loading"
+                     :rules="[val => !!val || '必填']" hide-bottom-space/>
+            <q-input v-model="ossConfig.endpoint" label="Endpoint" outlined dense color="primary" :disable="loading"
+                     :rules="[val => !!val || '必填']" hide-bottom-space/>
+          </template>
+
+          <template v-else>
+            <q-input
+                v-model="quickConfig"
+                type="textarea"
+                label="快速配置内容"
+                outlined
+                color="primary"
+                :disable="loading"
+                rows="5"
+                class="quick-config-input"
+                placeholder="ALIYUN_KEY=xxx&#10;ALIYUN_SECRET=xxx&#10;ALIYUN_BUCKET_NAME=xxx&#10;ALIYUN_ENDPOINT=xxx"
+                :rules="[val => !!val || '配置内容不能为空']"
+                hide-bottom-space
+            />
+          </template>
+
+          <q-btn
+              type="submit"
+              color="primary"
+              class="full-width primary-gradient-btn q-mt-lg"
+              size="lg"
+              :loading="loading"
+              label="保存并登录"
+              icon="save"
+              unelevated
+          />
+        </q-form>
+
+        <div v-else class="column items-center justify-center q-py-xl text-negative">
+          <q-icon name="warning_amber" size="4em"/>
+          <div class="text-h6 text-weight-bold q-mt-md">发生了未知的错误</div>
+          <div class="text-grey-7">请刷新页面重试或检查应用状态</div>
+        </div>
+
+      </q-card-section>
+    </q-card>
   </main>
 </template>
 
@@ -36,11 +140,6 @@
 import {onMounted, ref} from "vue";
 import {OssConfigType} from "../../types.ts";
 import {useRouter} from "vue-router";
-import UnlockHeader from "./UnlockHeader.vue";
-import LoadingState from "./LoadingState.vue";
-import LoginSection from "./LoginSection.vue";
-import ConfigSection from "./ConfigSection.vue";
-import ErrorState from "./ErrorState.vue";
 import {getName, getVersion} from "@tauri-apps/api/app";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {useQuasar} from "quasar";
@@ -76,7 +175,7 @@ async function saveConfigAndLogin() {
   // 如果快速配置不为空 则解析快速配置
   if (quickConfig.value.trim() !== '') {
     if (masterPassword.value.trim() == '') {
-      $q.notify("使用快速配置时，主密码不能为空。");
+      $q.notify({type: 'warning', message: "使用快速配置时，主密码不能为空。"});
       loading.value = false;
       return;
     }
@@ -111,38 +210,28 @@ async function saveConfigAndLogin() {
   const configJson = JSON.stringify(ossConfig.value);
   const res = await commands.cmdEncryptData(configJson);
   if (res.status == 'error') {
-    throw new Error(`加密配置失败: ${res.error}`);
+    $q.notify({type: 'negative', message: `加密配置失败: ${res.error}`});
+    loading.value = false;
+    return;
   }
 
   encryptedConfig.value = res.data;
   await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig.value);
-  $q.notify("保存成功，请登录以验证主密码。");
+  $q.notify({type: 'positive', message: "保存成功，请登录以验证主密码。"});
+
   masterPassword.value = "";
-  ossConfig.value = {
-    akid: '',
-    aks: '',
-    bucket: '',
-    endpoint: '',
-  };
+  ossConfig.value = {akid: '', aks: '', bucket: '', endpoint: ''};
   pipeline.value = 'login';
   loading.value = false;
 }
 
-async function unlock() {
-  if (loading.value) return;
-  loading.value = true;
-  const unlockRes = await commands.cmdUnlock(masterPassword.value);
-  if (unlockRes.status == 'error') {
-    $q.notify({type: "negative", message: `解锁失败: ${unlockRes.error}`});
-    loading.value = false;
-    return;
-  }
+async function initOss() {
   const res = await commands.cmdDecryptData(encryptedConfig.value);
   if (res.status == 'error') {
     $q.notify({type: "negative", message: `解密配置失败: ${res.error}`});
-    loading.value = false;
-    return;
+    return false;
   }
+
   const ossConfig = JSON.parse(res.data) as OssConfigType;
   const initRes = await commands.cmdInitOssClient(
       ossConfig.akid,
@@ -152,6 +241,23 @@ async function unlock() {
   );
   if (initRes.status == 'error') {
     $q.notify({type: "negative", message: `初始化 OSS 客户端失败: ${initRes.error}`});
+    return false;
+  }
+  return true;
+}
+
+async function unlock() {
+  if (loading.value) return;
+  loading.value = true;
+
+  const unlockRes = await commands.cmdUnlock(masterPassword.value);
+  if (unlockRes.status == 'error') {
+    $q.notify({type: "negative", message: `解锁失败: ${unlockRes.error}`});
+    loading.value = false;
+    return;
+  }
+
+  if (!(await initOss())) {
     loading.value = false;
     return;
   }
@@ -162,8 +268,7 @@ async function unlock() {
 }
 
 async function confirmReset() {
-  // 确认是否重置
-  if (await confirm('确定要OssClient配置吗？这将删除所有本地配置。')) {
+  if (await confirm('确定要重置OssClient配置吗？这将删除所有本地配置。')) {
     await configStore.deleteConfig('encrypted_oss_config', 'biometric_enabled', 'biometric_dek');
     pipeline.value = 'config';
     masterPassword.value = '';
@@ -171,47 +276,26 @@ async function confirmReset() {
 }
 
 async function tryBiometricUnlock() {
-  loading.value = true;
-  try {
-    const dataToDecrypt = await configStore.getNormalConfig('biometric_dek');
-    if (!dataToDecrypt) {
-      $q.notify({type: 'negative', message: "未找到生物识别凭据"});
-      return;
-    }
-
-    const {data} = await biometricCipher('请验证身份以解锁日记', {dataToDecrypt});
-
-    const res = await commands.cmdBiometricUnlock(data);
-    if (res.status == 'error') {
-      $q.notify({type: 'negative', message: `生物识别解锁失败: ${res.error}`});
-      return;
-    }
-    const decryptRes = await commands.cmdDecryptData(encryptedConfig.value);
-    if (decryptRes.status == 'error') {
-      $q.notify({type: 'negative', message: `解密配置失败: ${decryptRes.error}`});
-      return;
-    }
-    const ossConfig = JSON.parse(decryptRes.data) as OssConfigType;
-    const initRes = await commands.cmdInitOssClient(
-        ossConfig.akid,
-        ossConfig.aks,
-        ossConfig.bucket,
-        ossConfig.endpoint
-    );
-    if (initRes.status == 'error') {
-      $q.notify({type: 'negative', message: `初始化 OSS 客户端失败: ${initRes.error}`});
-      return;
-    }
-
-    $q.notify("生物识别解锁成功");
-    setTimeoutForCloseApp();
-    await router.replace({name: 'DiaryList'});
-  } catch (e: any) {
-    // 用户取消或失败，不做处理，留在登录界面让用户输密码
-    console.log("生物识别未通过:", e);
-  } finally {
-    loading.value = false;
+  const dataToDecrypt = await configStore.getNormalConfig('biometric_dek');
+  if (!dataToDecrypt) {
+    $q.notify({type: 'warning', message: "未找到生物识别凭据"});
+    return;
   }
+
+  const {data} = await biometricCipher('请验证身份以解锁日记', {dataToDecrypt});
+
+  const res = await commands.cmdBiometricUnlock(data);
+  if (res.status == 'error') {
+    $q.notify({type: 'negative', message: `生物识别解锁失败: ${res.error}`});
+    return;
+  }
+
+  if (!(await initOss())) {
+    return;
+  }
+
+  setTimeoutForCloseApp();
+  await router.replace({name: 'DiaryList'});
 }
 
 onMounted(async () => {
@@ -234,38 +318,58 @@ onMounted(async () => {
 #unlock {
   width: 100%;
   height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
   background-color: var(--pad-bg-color-100);
   font-family: var(--pad-font-family), serif;
   padding: 5%;
   box-sizing: border-box;
   user-select: none;
+}
 
-  .unlock-container {
-    width: 100%;
-    max-width: 512px;
-    background-color: var(--pad-bg-color-200);
-    border-radius: var(--pad-radius-xl);
-    border: 1px solid var(--pad-border-color-100);
-    box-shadow: var(--pad-shadow-lg);
-    overflow: hidden;
-    animation: container-enter 0.5s ease-out;
+.unlock-container {
+  width: 100%;
+  max-width: 512px;
+  background-color: var(--pad-bg-color-200);
+  border-radius: var(--pad-radius-xl);
+  border: 1px solid var(--pad-border-color-100);
+  box-shadow: var(--pad-shadow-lg);
+  overflow: hidden;
+  animation: container-enter 0.5s ease-out;
+}
+
+.app-header {
+  background: var(--pad-primary-gradient);
+  color: var(--pad-text-color-light);
+
+  .app-logo {
+    width: 48px;
+    height: 48px;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
   }
 
-  .divider {
-    height: 1px;
-    background: var(--pad-border-color-100);
-    margin: 0;
-  }
-
-  .content-area {
-    padding: 32px;
+  .version-text {
+    opacity: 0.8;
   }
 }
 
-// 动画定义
+.primary-gradient-btn {
+  background: var(--pad-primary-gradient) !important;
+  border-radius: var(--pad-radius-lg);
+  transition: all var(--pad-transition-base);
+
+  &:hover:not(.disabled) {
+    transform: translateY(-2px);
+    box-shadow: var(--pad-shadow-md);
+  }
+
+  &:active:not(.disabled) {
+    transform: translateY(0);
+  }
+}
+
+.quick-config-input :deep(textarea) {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
 @keyframes container-enter {
   from {
     opacity: 0;
@@ -285,10 +389,7 @@ onMounted(async () => {
     .unlock-container {
       border-radius: 0;
       border: none;
-    }
-
-    .content-area {
-      padding: 24px 20px;
+      box-shadow: none;
     }
   }
 }
