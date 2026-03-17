@@ -108,7 +108,7 @@ async function saveConfigAndLogin() {
   await commands.cmdUnlock(masterPassword.value);
 
   // 加密oss配置
-  const configJson = JSON.stringify(ossConfig);
+  const configJson = JSON.stringify(ossConfig.value);
   const res = await commands.cmdEncryptData(configJson);
   if (res.status == 'error') {
     throw new Error(`加密配置失败: ${res.error}`);
@@ -134,11 +134,13 @@ async function unlock() {
   const unlockRes = await commands.cmdUnlock(masterPassword.value);
   if (unlockRes.status == 'error') {
     $q.notify({type: "negative", message: `解锁失败: ${unlockRes.error}`});
+    loading.value = false;
     return;
   }
   const res = await commands.cmdDecryptData(encryptedConfig.value);
   if (res.status == 'error') {
     $q.notify({type: "negative", message: `解密配置失败: ${res.error}`});
+    loading.value = false;
     return;
   }
   const ossConfig = JSON.parse(res.data) as OssConfigType;
@@ -150,6 +152,7 @@ async function unlock() {
   );
   if (initRes.status == 'error') {
     $q.notify({type: "negative", message: `初始化 OSS 客户端失败: ${initRes.error}`});
+    loading.value = false;
     return;
   }
   console.log('Unlock Successful');

@@ -20,6 +20,7 @@ const {openDiary} = useOpenDiaryDetail();
 const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
+const isLoading = ref(false);
 
 const scrollContainer = ref<HTMLElement | null>(null);
 const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
@@ -43,6 +44,13 @@ async function loadDiarySummer(id: string) {
 
 // 无限滚动的核心回调函数
 async function onLoad(_index: number, done: (stop?: boolean) => void) {
+  // 如果正在加载中，直接跳过，防止由于滚动过快导致的重复请求
+  if (isLoading.value) {
+    done(false);
+    return;
+  }
+
+  isLoading.value = true; // 开始加载
   try {
     const res = await commands.cmdPageDiaryIds(nextToken.value);
     if (res.status == 'error') {
@@ -78,6 +86,7 @@ async function onLoad(_index: number, done: (stop?: boolean) => void) {
     console.error('加载失败:', error);
     done(true);
   } finally {
+    isLoading.value = false;
     // 标记首次加载完成
     if (!isFirstLoadFinished.value) {
       isFirstLoadFinished.value = true;
@@ -126,9 +135,15 @@ onDeactivated(() => {
               @click="openDiary(id)"
               @visible="handleCardVisible(id)"
           />
+
+          <template v-slot:loading>
+            <div class="row justify-center q-my-md">
+              <q-spinner-dots color="primary" size="40px" />
+            </div>
+          </template>
         </q-infinite-scroll>
 
-        <div v-if="diaryIds.length === 0">
+        <div v-if="diaryIds.length === 0 && !isLoading">
           <DiaryListEmpty @create="openDiary()"/>
         </div>
       </section>

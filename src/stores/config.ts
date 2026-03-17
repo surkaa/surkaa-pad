@@ -41,7 +41,6 @@ export const useConfigStore = defineStore('config', () => {
         const s = await initStore();
         const val = await s.get<ConfigMap[K]>(key);
         if (val === null || val === undefined) {
-            await saveNormalConfig(key, DEFAULT_CONFIG[key]);
             return DEFAULT_CONFIG[key];
         }
         return val;
