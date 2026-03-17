@@ -11,12 +11,14 @@ type ConfigMap = {
     "biometric_enabled": boolean;
     "biometric_dek": string | null;
     "encrypted_oss_config": number[] | null;
+    "unlock_start_time": number | null;
 };
 const DEFAULT_CONFIG = {
     "app-theme": DEFAULT_THEME,
     "biometric_enabled": false,
     "biometric_dek": null,
     "encrypted_oss_config": null,
+    "unlock_start_time": null,
 } satisfies ConfigMap;
 
 type ConfigKey = keyof ConfigMap;
