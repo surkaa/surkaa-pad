@@ -127,7 +127,7 @@ ALIYUN_ENDPOINT=xxx"
 </template>
 
 <script setup lang="ts">
-import { OssConfigType } from "../../types";
+import { OssConfigType } from "../../types.ts";
 
 defineProps<{
   masterPassword: string;

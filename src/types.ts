@@ -6,3 +6,4 @@ export type OssConfigType = {
 }
 
 export type ThemeType = 'light' | 'dark' | 'system';
+export const DEFAULT_THEME: ThemeType = 'system';

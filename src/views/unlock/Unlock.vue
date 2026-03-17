@@ -34,8 +34,7 @@
 
 <script setup lang="ts">
 import {onMounted, ref} from "vue";
-import {useAppStore} from "../../stores/app.ts";
-import {OssConfigType} from "../../types";
+import {OssConfigType} from "../../types.ts";
 import {useRouter} from "vue-router";
 import UnlockHeader from "./UnlockHeader.vue";
 import LoadingState from "./LoadingState.vue";
@@ -46,6 +45,9 @@ import {getName, getVersion} from "@tauri-apps/api/app";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {useQuasar} from "quasar";
 import {useTimeoutStore} from "../../stores/timeout.ts";
+import {useConfigStore} from "../../stores/config.ts";
+import {commands} from "../../bindings.ts";
+import {biometricCipher} from "../../../../Forks/tauri-plugins-workspace/plugins/biometric";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
@@ -63,11 +65,11 @@ const version = ref('0.0.0');
 const appName = ref('App Name');
 
 const $q = useQuasar();
-const appStore = useAppStore();
+const configStore = useConfigStore();
 const {setTimeoutForCloseApp} = useTimeoutStore();
 const router = useRouter();
 
-function saveConfigAndLogin() {
+async function saveConfigAndLogin() {
   if (loading.value) return;
   loading.value = true;
 
@@ -103,61 +105,100 @@ function saveConfigAndLogin() {
     });
   }
 
-  appStore.saveConfigAndLogin(
-      masterPassword.value,
-      ossConfig.value,
-  )
-      .then(() => appStore.getEncryptedConfig())
-      .then((ec) => {
-        if (!ec) throw new Error('无法获取加密配置');
-        encryptedConfig.value = ec;
-        $q.notify("保存成功，请登录以验证主密码。");
-        masterPassword.value = '';
-        ossConfig.value = {
-          akid: '',
-          aks: '',
-          bucket: '',
-          endpoint: '',
-        };
-        pipeline.value = 'login';
-      })
-      .catch(err => $q.notify(`保存配置失败：${err.message || err}`))
-      .finally(() => loading.value = false);
+  await commands.cmdUnlock(masterPassword.value);
+
+  // 加密oss配置
+  const configJson = JSON.stringify(ossConfig);
+  const res = await commands.cmdEncryptData(configJson);
+  if (res.status == 'error') {
+    throw new Error(`加密配置失败: ${res.error}`);
+  }
+
+  encryptedConfig.value = res.data;
+  await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig.value);
+  $q.notify("保存成功，请登录以验证主密码。");
+  masterPassword.value = "";
+  ossConfig.value = {
+    akid: '',
+    aks: '',
+    bucket: '',
+    endpoint: '',
+  };
+  pipeline.value = 'login';
+  loading.value = false;
 }
 
-function unlock() {
+async function unlock() {
   if (loading.value) return;
   loading.value = true;
-  appStore.unlock(masterPassword.value)
-      .then(() => appStore.initOss(encryptedConfig.value))
-      .then(() => {
-        router.replace({name: 'DiaryList'});
-        setTimeoutForCloseApp();
-      })
-      .catch(err => {
-        console.log("解锁失败：", err.message);
-        $q.notify(`解锁失败：${err.message || err}`);
-      })
-      .finally(() => loading.value = false);
+  const unlockRes = await commands.cmdUnlock(masterPassword.value);
+  if (unlockRes.status == 'error') {
+    $q.notify({type: "negative", message: `解锁失败: ${unlockRes.error}`});
+    return;
+  }
+  const res = await commands.cmdDecryptData(encryptedConfig.value);
+  if (res.status == 'error') {
+    $q.notify({type: "negative", message: `解密配置失败: ${res.error}`});
+    return;
+  }
+  const ossConfig = JSON.parse(res.data) as OssConfigType;
+  const initRes = await commands.cmdInitOssClient(
+      ossConfig.akid,
+      ossConfig.aks,
+      ossConfig.bucket,
+      ossConfig.endpoint
+  );
+  if (initRes.status == 'error') {
+    $q.notify({type: "negative", message: `初始化 OSS 客户端失败: ${initRes.error}`});
+    return;
+  }
+  console.log('Unlock Successful');
+  loading.value = false;
+  setTimeoutForCloseApp();
+  await router.replace({name: 'DiaryList'});
 }
 
 async function confirmReset() {
   // 确认是否重置
-  if (await confirm('确定要重置配置吗？这将删除所有本地配置。')) {
-    appStore.resetConfig()
-        .then(() => {
-          pipeline.value = 'config';
-          masterPassword.value = '';
-        })
-        .catch(err => $q.notify(`重置配置失败：${err.message || err}`));
+  if (await confirm('确定要OssClient配置吗？这将删除所有本地配置。')) {
+    await configStore.deleteConfig('encrypted_oss_config', 'biometric_enabled', 'biometric_dek');
+    pipeline.value = 'config';
+    masterPassword.value = '';
   }
 }
 
 async function tryBiometricUnlock() {
   loading.value = true;
   try {
-    await appStore.unlockWithBiometric();
-    await appStore.initOss(encryptedConfig.value);
+    const dataToDecrypt = await configStore.getNormalConfig('biometric_dek');
+    if (!dataToDecrypt) {
+      $q.notify({type: 'negative', message: "未找到生物识别凭据"});
+      return;
+    }
+
+    const {data} = await biometricCipher('请验证身份以解锁日记', {dataToDecrypt});
+
+    const res = await commands.cmdBiometricUnlock(data);
+    if (res.status == 'error') {
+      $q.notify({type: 'negative', message: `生物识别解锁失败: ${res.error}`});
+      return;
+    }
+    const decryptRes = await commands.cmdDecryptData(encryptedConfig.value);
+    if (decryptRes.status == 'error') {
+      $q.notify({type: 'negative', message: `解密配置失败: ${decryptRes.error}`});
+      return;
+    }
+    const ossConfig = JSON.parse(decryptRes.data) as OssConfigType;
+    const initRes = await commands.cmdInitOssClient(
+        ossConfig.akid,
+        ossConfig.aks,
+        ossConfig.bucket,
+        ossConfig.endpoint
+    );
+    if (initRes.status == 'error') {
+      $q.notify({type: 'negative', message: `初始化 OSS 客户端失败: ${initRes.error}`});
+      return;
+    }
 
     $q.notify("生物识别解锁成功");
     setTimeoutForCloseApp();
@@ -173,11 +214,11 @@ async function tryBiometricUnlock() {
 onMounted(async () => {
   version.value = await getVersion();
   appName.value = await getName();
-  const ec = await appStore.getEncryptedConfig();
+  const ec = await configStore.getNormalConfig('encrypted_oss_config');
   if (ec) {
     pipeline.value = 'login';
     encryptedConfig.value = ec;
-    if (appStore.isBiometricEnabled) {
+    if (await configStore.getNormalConfig('biometric_enabled')) {
       await tryBiometricUnlock();
     }
   } else {

@@ -7,7 +7,7 @@
           <q-card-section>
             <div class="text-weight-medium q-mb-md label-text">显示模式</div>
             <q-btn-toggle
-                v-model="appStore.theme"
+                v-model="theme"
                 spread
                 no-caps
                 unelevated
@@ -18,7 +18,7 @@
                 {label: '浅色模式', value: 'light', icon: 'light_mode'},
                 {label: '深色模式', value: 'dark', icon: 'dark_mode'}
               ]"
-                @update:model-value="val => appStore.setTheme(val)"
+                @update:model-value="val => configStore.saveNormalConfig('app-theme', val)"
             />
           </q-card-section>
         </q-card>
@@ -34,12 +34,13 @@
             </q-item-section>
             <q-item-section side>
               <q-toggle
-                  :model-value="appStore.isBiometricEnabled"
+                  v-model="biometricEnable"
                   @update:model-value="handleBiometricToggle"
                   color="primary"
                   :disable="!isAndroid"
               />
-              <q-badge v-if="!isAndroid" color="grey-6" floating transparent style="top: 8px; right: 0;">系统不支持</q-badge>
+              <q-badge v-if="!isAndroid" color="grey-6" floating transparent style="top: 8px; right: 0;">系统不支持
+              </q-badge>
             </q-item-section>
           </q-item>
         </q-list>
@@ -50,11 +51,15 @@
         <q-list bordered separator class="pad-card rounded-borders">
           <q-item clickable v-ripple @click="exportLogFile">
             <q-item-section class="label-text text-weight-medium">导出日志文件</q-item-section>
-            <q-item-section side><q-icon name="chevron_right" class="desc-text" /></q-item-section>
+            <q-item-section side>
+              <q-icon name="chevron_right" class="desc-text"/>
+            </q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="handleReset">
             <q-item-section class="text-negative text-weight-medium">重置应用配置</q-item-section>
-            <q-item-section side><q-icon name="chevron_right" color="negative" /></q-item-section>
+            <q-item-section side>
+              <q-icon name="chevron_right" color="negative"/>
+            </q-item-section>
           </q-item>
         </q-list>
       </div>
@@ -80,8 +85,9 @@
         </q-card-section>
 
         <q-card-actions align="right" class="q-pb-md q-pr-md">
-          <q-btn flat label="取消" color="grey-7" v-close-popup @click="cancelBiometric" />
-          <q-btn unelevated label="确认开启" color="primary" :loading="loading" :disable="!verifyPassword" @click="confirmEnableBiometric" />
+          <q-btn flat label="取消" color="grey-7" v-close-popup @click="cancelBiometric"/>
+          <q-btn unelevated label="确认开启" color="primary" :loading="loading" :disable="!verifyPassword"
+                 @click="confirmEnableBiometric"/>
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -89,20 +95,28 @@
 </template>
 
 <script setup lang="ts">
-import {ref} from 'vue';
-import {useAppStore} from "../../stores/app.ts";
+import {onDeactivated, onMounted, onUnmounted, ref} from 'vue';
 import {platform} from "@tauri-apps/plugin-os";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {exportLogFile} from "../../utils";
 import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from "quasar";
+import {useConfigStore} from "../../stores/config.ts";
+import {commands} from "../../bindings.ts";
+import {biometricCipher} from "../../../../Forks/tauri-plugins-workspace/plugins/biometric";
+import {DEFAULT_THEME, ThemeType} from "../../types.ts";
+import {UnlistenFn} from "@tauri-apps/api/event";
 
 const $q = useQuasar();
-const appStore = useAppStore();
+const configStore = useConfigStore();
 
 const showPasswordVerify = ref(false);
 const verifyPassword = ref('');
 const loading = ref(false);
+const theme = ref<ThemeType>();
+const biometricEnable = ref<boolean>();
+let themeUnListenerFn: UnlistenFn | null = null;
+let biometricEnabledUnListenerFn: UnlistenFn | null = null;
 const isAndroid = ref(platform() === 'android');
 
 // 接收 Quasar v-model 抛出的 boolean
@@ -112,7 +126,7 @@ async function handleBiometricToggle(newValue: boolean) {
     verifyPassword.value = '';
   } else {
     if (await confirm('确定要关闭生物识别解锁吗？')) {
-      await appStore.disableBiometric();
+      await configStore.deleteConfig('biometric_enabled', 'biometric_dek');
       $q.notify('生物识别已禁用');
     }
   }
@@ -122,7 +136,14 @@ async function confirmEnableBiometric() {
   if (!verifyPassword.value) return;
   loading.value = true;
   try {
-    await appStore.enableBiometric(verifyPassword.value);
+    const res = await commands.cmdUnlock(verifyPassword.value);
+    if (res.status == 'error') {
+      $q.notify(res.error);
+      return;
+    }
+    const response = await biometricCipher('请验证生物识别以启用快速解锁', {dataToEncrypt: res.data});
+    await configStore.saveNormalConfig('biometric_enabled', true);
+    await configStore.saveNormalConfig('biometric_dek', response.data);
     $q.notify('生物识别已成功开启');
     showPasswordVerify.value = false;
   } catch (err: any) {
@@ -138,15 +159,50 @@ function cancelBiometric() {
 }
 
 async function handleReset() {
-  if (await confirm('确定要重置所有配置吗？此操作不可撤销。重置后将自动重启应用')) {
-    appStore.resetConfig().then(() => {
-      $q.notify('配置已重置');
-      setTimeout(relaunch, 1000);
-    });
+  if (await confirm('确定要重置OssClient配置吗？此操作不可撤销。重置后将自动重启应用')) {
+    await configStore.deleteConfig('encrypted_oss_config', 'biometric_dek', 'biometric_enabled');
+    $q.notify('配置已重置, 即将自动重启');
+    setTimeout(relaunch, 1000);
   }
 }
 
 defineOptions({name: 'Settings'});
+
+onMounted(async () => {
+  themeUnListenerFn = await configStore.watchConfig('app-theme', (t) => {
+    if (t) {
+      theme.value = t;
+    } else {
+      console.log('t deleted');
+      theme.value = DEFAULT_THEME;
+    }
+  }, true);
+  biometricEnabledUnListenerFn = await configStore.watchConfig('biometric_enabled', (b) => {
+    biometricEnable.value = b || false;
+  }, true);
+});
+
+onUnmounted(() => {
+  if (themeUnListenerFn) {
+    themeUnListenerFn();
+    themeUnListenerFn = null;
+  }
+  if (biometricEnabledUnListenerFn) {
+    biometricEnabledUnListenerFn();
+    biometricEnabledUnListenerFn = null;
+  }
+});
+
+onDeactivated(() => {
+  if (themeUnListenerFn) {
+    themeUnListenerFn();
+    themeUnListenerFn = null;
+  }
+  if (biometricEnabledUnListenerFn) {
+    biometricEnabledUnListenerFn();
+    biometricEnabledUnListenerFn = null;
+  }
+});
 </script>
 
 <style scoped lang="scss">
@@ -162,9 +218,17 @@ defineOptions({name: 'Settings'});
     overflow-y: auto;
   }
 
-  .title-text { color: var(--pad-text-color-100); }
-  .label-text { color: var(--pad-text-color-200); }
-  .desc-text { color: var(--pad-text-color-400); }
+  .title-text {
+    color: var(--pad-text-color-100);
+  }
+
+  .label-text {
+    color: var(--pad-text-color-200);
+  }
+
+  .desc-text {
+    color: var(--pad-text-color-400);
+  }
 
   .group-title {
     font-size: 0.85rem;
