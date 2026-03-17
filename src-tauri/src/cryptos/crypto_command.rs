@@ -1,5 +1,5 @@
-use tauri::State;
 use crate::state::AppState;
+use tauri::State;
 
 /// 解锁加密管理器
 /// # Arguments
@@ -12,7 +12,10 @@ pub async fn cmd_unlock(
     state: State<'_, AppState>,
     master_password: String,
 ) -> Result<String, String> {
-    state.crypto().derive_dek(master_password, "NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg".to_string())
+    state.crypto().derive_dek(
+        master_password,
+        "NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg".to_string(),
+    )
 }
 
 /// 生物解锁，传入dek解锁

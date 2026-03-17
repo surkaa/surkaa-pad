@@ -175,14 +175,7 @@ pub fn cmd_toggle_attachment_encryption(
 ) -> Result<String, String> {
     let three_state = state.three_state()?;
     state.task_pool().spawn(async move {
-        toggle_attachment_encryption(
-            three_state,
-            Arc::new(event),
-            &id,
-            filename,
-            encrypted,
-        )
-        .await;
+        toggle_attachment_encryption(three_state, Arc::new(event), &id, filename, encrypted).await;
     })
 }
 
@@ -204,13 +197,6 @@ pub fn cmd_rotate_image_attachment(
 ) -> Result<String, String> {
     let three_state = state.three_state()?;
     state.task_pool().spawn(async move {
-        rotate_image_attachment(
-            three_state,
-            Arc::new(event),
-            &id,
-            filename,
-            rotation,
-        )
-        .await;
+        rotate_image_attachment(three_state, Arc::new(event), &id, filename, rotation).await;
     })
 }

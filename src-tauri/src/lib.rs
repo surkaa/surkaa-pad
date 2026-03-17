@@ -22,9 +22,9 @@ use crate::diaries::diary_command::{
     cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
 };
 use crate::object::object_command::cmd_init_oss_client;
+use crate::state::AppState;
 use crate::tasks::task_command::cmd_cancel_task;
 use tauri::{App, Manager};
-use crate::state::AppState;
 
 fn run_setup(app: &mut App) {
     app.manage(AppState::new());
