@@ -204,7 +204,13 @@ async function saveConfigAndLogin() {
     });
   }
 
-  await api.cmdUnlock(masterPassword.value);
+  try {
+    await api.cmdUnlock(masterPassword.value);
+  } catch (e) {
+    $q.notify({type: 'negative', message: `主密码验证失败: ${e}`});
+    loading.value = false;
+    return;
+  }
 
   // 加密oss配置
   const configJson = JSON.stringify(ossConfig.value);
