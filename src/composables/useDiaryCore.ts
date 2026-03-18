@@ -7,6 +7,7 @@ import {storeToRefs} from "pinia";
 import {CloseRequestedEvent, getCurrentWindow} from "@tauri-apps/api/window";
 import {UnlistenFn} from "@tauri-apps/api/event";
 import api from "../utils/api.ts";
+import {formatError} from "../utils/formatError.ts";
 
 export function useDiaryCore() {
     const $q = useQuasar();
@@ -77,7 +78,7 @@ export function useDiaryCore() {
                 diaryContent.value = content;
                 $q.notify({type: 'positive', message: '日记已自动创建'});
             } catch (e) {
-                $q.notify({type: 'negative', message: `保存日记失败: ${e}`});
+                $q.notify({type: 'negative', message: `保存日记失败: ${formatError(e)}`});
             }
             return;
         }
@@ -89,7 +90,7 @@ export function useDiaryCore() {
                 diaryContent.value
             );
         } catch (e) {
-            $q.notify({type: 'negative', message: `保存日记失败: ${e}`});
+            $q.notify({type: 'negative', message: `保存日记失败: ${formatError(e)}`});
         }
     }
 
@@ -104,7 +105,7 @@ export function useDiaryCore() {
             try {
                 await api.cmdDeleteDiary(currentId.value);
             } catch (e) {
-                $q.notify({type: 'negative', message: `删除日记失败: ${e}`});
+                $q.notify({type: 'negative', message: `删除日记失败: ${formatError(e)}`});
             }
             $q.notify({type: 'positive', message: '日记已删除'});
             dataStore.deleteSummary(currentId.value);

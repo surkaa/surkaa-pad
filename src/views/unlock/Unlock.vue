@@ -147,6 +147,7 @@ import {useTimeoutStore} from "../../stores/timeout.ts";
 import {useConfigStore} from "../../stores/config.ts";
 import {biometricCipher} from "../../../../Forks/tauri-plugins-workspace/plugins/biometric";
 import api from "../../utils/api.ts";
+import {formatError} from "../../utils/formatError.ts";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
@@ -207,7 +208,7 @@ async function saveConfigAndLogin() {
   try {
     await api.cmdUnlock(masterPassword.value);
   } catch (e) {
-    $q.notify({type: 'negative', message: `主密码验证失败: ${e}`});
+    $q.notify({type: 'negative', message: `主密码验证失败: ${formatError(e)}`});
     loading.value = false;
     return;
   }
@@ -219,7 +220,7 @@ async function saveConfigAndLogin() {
     await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig.value);
     $q.notify({type: 'positive', message: "保存成功，请登录以验证主密码。"});
   } catch (e) {
-    $q.notify({type: 'negative', message: `加密配置失败: ${e}`});
+    $q.notify({type: 'negative', message: `加密配置失败: ${formatError(e)}`});
     return;
   } finally {
     loading.value = false;
@@ -242,7 +243,7 @@ async function initOss() {
     );
     return true;
   } catch (e) {
-    $q.notify({type: "negative", message: `初始化 OSS 客户端失败: ${e}`});
+    $q.notify({type: "negative", message: `初始化 OSS 客户端失败: ${formatError(e)}`});
     return false;
   }
 }
@@ -262,7 +263,7 @@ async function unlock() {
     await setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
   } catch (e) {
-    $q.notify({type: "negative", message: `解锁失败: ${e}`});
+    $q.notify({type: "negative", message: `解锁失败: ${formatError(e)}`});
   } finally {
     loading.value = false;
   }
@@ -296,7 +297,7 @@ async function tryBiometricUnlock() {
     await setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
   } catch (e) {
-    $q.notify({type: 'negative', message: `生物识别解锁失败: ${e}`});
+    $q.notify({type: 'negative', message: `生物识别解锁失败: ${formatError(e)}`});
   }
 }
 

@@ -10,6 +10,7 @@ import {storeToRefs} from "pinia";
 import {MediaType} from "../components/editor/useDomInsert.ts";
 import LiveRichEditor from "../components/LiveRichEditor.vue";
 import api from "../utils/api.ts";
+import {formatError} from "../utils/formatError.ts";
 
 export interface UploadTask {
     filename: string;
@@ -191,7 +192,7 @@ export function useMediaAction(
                 cancelTokens.add(cancelRes);
                 console.log('转换附件命令已发送，取消令牌:', cancelRes);
             }).catch(e => {
-                $q.notify({type: 'negative', message: String(e)});
+                $q.notify({type: 'negative', message: formatError(e)});
                 reject(new Error(e));
             });
             console.log('发送转换附件命令，等待结果...');
@@ -240,7 +241,7 @@ export function useMediaAction(
             console.log('发送旋转图片命令，等待结果...');
         } catch (e) {
             uploadTaskMap.value[key].status = 'error';
-            $q.notify({type: 'negative', message: String(e)});
+            $q.notify({type: 'negative', message: formatError(e)});
             console.error('旋转图片失败:', e);
         }
     }
@@ -342,7 +343,7 @@ export function useMediaAction(
                 cancelTokens.add(res);
             } catch (e) {
                 uploadTaskMap.value[key].status = 'error';
-                console.error("调用 Rust 后端失败:", String(e));
+                console.error("调用 Rust 后端失败:", formatError(e));
             }
         },
         audioRecording: () => {

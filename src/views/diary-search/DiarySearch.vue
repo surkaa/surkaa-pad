@@ -6,6 +6,7 @@ import {Channel} from "@tauri-apps/api/core";
 import {useQuasar} from "quasar";
 import {useOpenDiaryDetail} from "../../composables/useOpenDiaryDetail.ts";
 import api from "../../utils/api.ts";
+import {formatError} from "../../utils/formatError.ts";
 
 const $q = useQuasar();
 const {openDiary} = useOpenDiaryDetail();
@@ -56,7 +57,7 @@ async function searchHandle() {
     cancelToken.value = await api.cmdSearchDiaries(event, keyword.value, or.value);
     console.log('搜索中，取消令牌：', cancelToken.value);
   } catch (e) {
-    $q.notify({type: 'negative', message: String(e) || '搜索失败'});
+    $q.notify({type: 'negative', message: formatError(e)});
   }
 }
 

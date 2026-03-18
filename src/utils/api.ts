@@ -10,7 +10,7 @@ export type WrappedCommands = {
     ) => UnwrapResult<ReturnType<(typeof commands)[K]>>;
 };
 
-export const api = {} as WrappedCommands;
+const api = {} as WrappedCommands;
 
 for (const key of Object.keys(commands) as Array<keyof typeof commands>) {
     const originalMethod = commands[key] as Function;
@@ -19,7 +19,7 @@ for (const key of Object.keys(commands) as Array<keyof typeof commands>) {
         const res = await originalMethod(...args);
 
         // 判断返回值是否为 tauri-specta 生成的 Result 结构
-        if (res && typeof res === 'object' && 'status' in res) {
+        if (res && typeof res === 'object' && 'status' in res && ('error' in res || 'data' in res)) {
             if (res.status === 'error') {
                 // 直接抛出错误，外部可以通过 try/catch 或 .catch() 捕获
                 throw res.error;
