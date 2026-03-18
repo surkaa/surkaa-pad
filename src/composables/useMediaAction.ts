@@ -1,5 +1,5 @@
 import {Channel} from "@tauri-apps/api/core";
-import {AttachmentMeta, AttachmentProcessEvent, commands} from "../bindings.ts";
+import {AttachmentMeta, AttachmentProcessEvent} from "../bindings.ts";
 import {computed, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {formatBytes} from "../utils";
@@ -9,6 +9,7 @@ import {useDataStore} from "../stores/data.ts";
 import {storeToRefs} from "pinia";
 import {MediaType} from "../components/editor/useDomInsert.ts";
 import LiveRichEditor from "../components/LiveRichEditor.vue";
+import api from "../utils/api.ts";
 
 export interface UploadTask {
     filename: string;
@@ -69,15 +70,6 @@ export function useMediaAction(
         return event;
     }
 
-    function handleCommandResult(key: string, res: { status: "ok" | "error", data?: string, error?: string }) {
-        if (res.status === "error") {
-            uploadTaskMap.value[key].status = 'error';
-            console.error("调用 Rust 后端失败:", res.error);
-            return;
-        }
-        if (res.data) cancelTokens.add(res.data);
-    }
-
     async function uploadAttachment(
         accessStr: string,
         encrypted: boolean,
@@ -89,8 +81,13 @@ export function useMediaAction(
 
         const event = createUploadChannel(key, completedCallback);
 
-        const res = await commands.cmdAddAttachment(event, diaryId.value, accessStr, encrypted);
-        handleCommandResult(key, res);
+        try {
+            const res = await api.cmdAddAttachment(event, diaryId.value, accessStr, encrypted);
+            cancelTokens.add(res);
+        } catch (e) {
+            uploadTaskMap.value[key].status = 'error';
+            console.error("调用 Rust 后端失败:", e);
+        }
     }
 
     async function uploadMemoryAttachment(
@@ -105,9 +102,14 @@ export function useMediaAction(
         showUploadDialog.value = true;
 
         const event = createUploadChannel(key, completedCallback);
-        // @ts-ignore
-        const res = await commands.cmdAddAttachmentMemory(event, diaryId.value, bytes, mimetype, encrypted);
-        handleCommandResult(key, res);
+        try {
+            // @ts-ignore
+            const res = await api.cmdAddAttachmentMemory(event, diaryId.value, bytes, mimetype, encrypted);
+            cancelTokens.add(res);
+        } catch (e) {
+            uploadTaskMap.value[key].status = 'error';
+            console.error("调用 Rust 后端失败:", e);
+        }
     }
 
     function beforeClick() {
@@ -179,20 +181,17 @@ export function useMediaAction(
                 }
                 resolve();
             });
-            commands.cmdToggleAttachmentEncryption(
+            api.cmdToggleAttachmentEncryption(
                 event,
                 diaryId.value,
                 filename,
                 encrypted
             ).then(cancelRes => {
-                if (cancelRes.status === "error") {
-                    $q.notify({type: 'negative', message: cancelRes.error});
-                    reject(new Error(cancelRes.error));
-                    return;
-                } else {
-                    showUploadDialog.value = true;
-                    console.log('转换附件命令已发送，取消令牌:', cancelRes.data);
-                }
+                showUploadDialog.value = true;
+                console.log('转换附件命令已发送，取消令牌:', cancelRes);
+            }).catch(e => {
+                $q.notify({type: 'negative', message: String(e)});
+                reject(new Error(e));
             });
             console.log('发送转换附件命令，等待结果...');
         });
@@ -228,19 +227,19 @@ export function useMediaAction(
             }
         });
 
-        const res = await commands.cmdRotateImageAttachment(
-            event,
-            diaryId.value,
-            filename,
-            rotation
-        );
-        if (res.status === "error") {
-            uploadTaskMap.value[key].status = 'error';
-            $q.notify({type: 'negative', message: res.error});
-            console.error('旋转图片失败:', res.error);
-        } else {
+        try {
+            const cancelToken = await api.cmdRotateImageAttachment(
+                event,
+                diaryId.value,
+                filename,
+                rotation
+            );
             showUploadDialog.value = true;
             console.log('发送旋转图片命令，等待结果...');
+        } catch (e) {
+            uploadTaskMap.value[key].status = 'error';
+            $q.notify({type: 'negative', message: String(e)});
+            console.error('旋转图片失败:', e);
         }
     }
 
@@ -292,7 +291,7 @@ export function useMediaAction(
     onUnmounted(async () => {
         if (cancelTokens.size === 0) return;
 
-        const cancelPromises = Array.from(cancelTokens).map(token => commands.cmdCancelTask(token));
+        const cancelPromises = Array.from(cancelTokens).map(token => api.cmdCancelTask(token));
         const results = await Promise.allSettled(cancelPromises);
 
         for (const result of results) {
@@ -336,8 +335,13 @@ export function useMediaAction(
                 }
                 editorContentRef.value.insertMediaNode('img', url, meta.filename, currentRange);
             });
-            const res = await commands.cmdAddImageAttachmentFromCamera(event, diaryId.value, true);
-            handleCommandResult(key, res);
+            try {
+                const res = await api.cmdAddImageAttachmentFromCamera(event, diaryId.value, true);
+                cancelTokens.add(res);
+            } catch (e) {
+                uploadTaskMap.value[key].status = 'error';
+                console.error("调用 Rust 后端失败:", String(e));
+            }
         },
         audioRecording: () => {
             if (beforeClick()) return;

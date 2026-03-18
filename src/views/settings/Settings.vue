@@ -101,8 +101,8 @@ import {exportLogFile} from "../../utils";
 import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from "quasar";
 import {useConfigStore} from "../../stores/config.ts";
-import {commands} from "../../bindings.ts";
 import {biometricCipher} from "../../../../Forks/tauri-plugins-workspace/plugins/biometric";
+import api from "../../utils/api.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -131,12 +131,8 @@ async function confirmEnableBiometric() {
   if (!verifyPassword.value) return;
   loading.value = true;
   try {
-    const res = await commands.cmdUnlock(verifyPassword.value);
-    if (res.status == 'error') {
-      $q.notify(res.error);
-      return;
-    }
-    const response = await biometricCipher('请验证生物识别以启用快速解锁', {dataToEncrypt: res.data});
+    const dataToEncrypt = await api.cmdUnlock(verifyPassword.value);
+    const response = await biometricCipher('请验证生物识别以启用快速解锁', {dataToEncrypt});
     await configStore.saveNormalConfig('biometric_enabled', true);
     await configStore.saveNormalConfig('biometric_dek', response.data);
     $q.notify('生物识别已成功开启');

@@ -2,12 +2,12 @@
 import {nextTick, onActivated, onDeactivated, ref} from "vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
-import {commands} from "../../bindings.ts";
 import {useScroll} from "@vueuse/core";
 import {useDataStore} from "../../stores/data.ts";
 import {storeToRefs} from "pinia";
 import {useTimeoutStore} from "../../stores/timeout.ts";
 import {useOpenDiaryDetail} from "../../composables/useOpenDiaryDetail.ts";
+import api from "../../utils/api.ts";
 
 const timeoutStore = useTimeoutStore();
 const dataStore = useDataStore();
@@ -31,12 +31,8 @@ const isActivating = ref(true);
 // 获取单个日记的摘要
 async function loadDiarySummer(id: string) {
   try {
-    const res = await commands.cmdGetDiarySummary(id);
-    if (res.status === 'error') {
-      console.error(`加载日记 ${id} 摘要失败:`, res.error);
-      return;
-    }
-    dataStore.insertNewDiary(res.data);
+    const summary = await api.cmdGetDiarySummary(id);
+    dataStore.insertNewDiary(summary);
   } catch (e) {
     console.error(`请求日记 ${id} 摘要失败:`, e);
   }
@@ -52,13 +48,7 @@ async function onLoad(_index: number, done: (stop?: boolean) => void) {
 
   isLoading.value = true; // 开始加载
   try {
-    const res = await commands.cmdPageDiaryIds(nextToken.value);
-    if (res.status == 'error') {
-      console.error('加载日记ID失败:', res.error);
-      done(true);
-      return;
-    }
-    const [ids, nt] = res.data;
+    const [ids, nt] = await api.cmdPageDiaryIds(nextToken.value);
 
     for (const id of ids) {
       if (diarySummaries.value[id] === undefined) {
@@ -138,7 +128,7 @@ onDeactivated(() => {
 
           <template v-slot:loading>
             <div class="row justify-center q-my-md">
-              <q-spinner-dots color="primary" size="40px" />
+              <q-spinner-dots color="primary" size="40px"/>
             </div>
           </template>
         </q-infinite-scroll>

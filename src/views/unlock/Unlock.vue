@@ -145,8 +145,8 @@ import {confirm} from '@tauri-apps/plugin-dialog';
 import {useQuasar} from "quasar";
 import {useTimeoutStore} from "../../stores/timeout.ts";
 import {useConfigStore} from "../../stores/config.ts";
-import {commands} from "../../bindings.ts";
 import {biometricCipher} from "../../../../Forks/tauri-plugins-workspace/plugins/biometric";
+import api from "../../utils/api.ts";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
@@ -204,67 +204,62 @@ async function saveConfigAndLogin() {
     });
   }
 
-  await commands.cmdUnlock(masterPassword.value);
+  await api.cmdUnlock(masterPassword.value);
 
   // 加密oss配置
   const configJson = JSON.stringify(ossConfig.value);
-  const res = await commands.cmdEncryptData(configJson);
-  if (res.status == 'error') {
-    $q.notify({type: 'negative', message: `加密配置失败: ${res.error}`});
-    loading.value = false;
+  try {
+    encryptedConfig.value = await api.cmdEncryptData(configJson);
+    await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig.value);
+    $q.notify({type: 'positive', message: "保存成功，请登录以验证主密码。"});
+  } catch (e) {
+    $q.notify({type: 'negative', message: `加密配置失败: ${e}`});
     return;
+  } finally {
+    loading.value = false;
   }
-
-  encryptedConfig.value = res.data;
-  await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig.value);
-  $q.notify({type: 'positive', message: "保存成功，请登录以验证主密码。"});
 
   masterPassword.value = "";
   ossConfig.value = {akid: '', aks: '', bucket: '', endpoint: ''};
   pipeline.value = 'login';
-  loading.value = false;
 }
 
 async function initOss() {
-  const res = await commands.cmdDecryptData(encryptedConfig.value);
-  if (res.status == 'error') {
-    $q.notify({type: "negative", message: `解密配置失败: ${res.error}`});
+  try {
+    const res = await api.cmdDecryptData(encryptedConfig.value);
+    const ossConfig = JSON.parse(res) as OssConfigType;
+    await api.cmdInitOssClient(
+        ossConfig.akid,
+        ossConfig.aks,
+        ossConfig.bucket,
+        ossConfig.endpoint
+    );
+    return true;
+  } catch (e) {
+    $q.notify({type: "negative", message: `初始化 OSS 客户端失败: ${e}`});
     return false;
   }
-
-  const ossConfig = JSON.parse(res.data) as OssConfigType;
-  const initRes = await commands.cmdInitOssClient(
-      ossConfig.akid,
-      ossConfig.aks,
-      ossConfig.bucket,
-      ossConfig.endpoint
-  );
-  if (initRes.status == 'error') {
-    $q.notify({type: "negative", message: `初始化 OSS 客户端失败: ${initRes.error}`});
-    return false;
-  }
-  return true;
 }
 
 async function unlock() {
   if (loading.value) return;
   loading.value = true;
 
-  const unlockRes = await commands.cmdUnlock(masterPassword.value);
-  if (unlockRes.status == 'error') {
-    $q.notify({type: "negative", message: `解锁失败: ${unlockRes.error}`});
-    loading.value = false;
-    return;
-  }
+  try {
+    await api.cmdUnlock(masterPassword.value);
 
-  if (!(await initOss())) {
+    if (!(await initOss())) {
+      return;
+    }
+
+    console.log('Unlock Successful');
+    await setTimeoutForCloseApp();
+    await router.replace({name: 'DiaryList'});
+  } catch (e) {
+    $q.notify({type: "negative", message: `解锁失败: ${e}`});
+  } finally {
     loading.value = false;
-    return;
   }
-  console.log('Unlock Successful');
-  loading.value = false;
-  setTimeoutForCloseApp();
-  await router.replace({name: 'DiaryList'});
 }
 
 async function confirmReset() {
@@ -276,26 +271,27 @@ async function confirmReset() {
 }
 
 async function tryBiometricUnlock() {
-  const dataToDecrypt = await configStore.getNormalConfig('biometric_dek');
-  if (!dataToDecrypt) {
-    $q.notify({type: 'warning', message: "未找到生物识别凭据"});
-    return;
+  try {
+    const dataToDecrypt = await configStore.getNormalConfig('biometric_dek');
+    if (!dataToDecrypt) {
+      $q.notify({type: 'warning', message: "未找到生物识别凭据"});
+      return;
+    }
+
+    const {data} = await biometricCipher('请验证身份以解锁日记', {dataToDecrypt});
+
+    await api.cmdBiometricUnlock(data);
+
+    if (!(await initOss())) {
+      return;
+    }
+
+    console.log('Biometric Unlock Successful');
+    await setTimeoutForCloseApp();
+    await router.replace({name: 'DiaryList'});
+  } catch (e) {
+    $q.notify({type: 'negative', message: `生物识别解锁失败: ${e}`});
   }
-
-  const {data} = await biometricCipher('请验证身份以解锁日记', {dataToDecrypt});
-
-  const res = await commands.cmdBiometricUnlock(data);
-  if (res.status == 'error') {
-    $q.notify({type: 'negative', message: `生物识别解锁失败: ${res.error}`});
-    return;
-  }
-
-  if (!(await initOss())) {
-    return;
-  }
-
-  setTimeoutForCloseApp();
-  await router.replace({name: 'DiaryList'});
 }
 
 onMounted(async () => {

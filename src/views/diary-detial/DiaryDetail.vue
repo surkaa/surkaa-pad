@@ -9,10 +9,10 @@ import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
 import {formatTimestamp} from "../../utils";
 import AttachmentCard from "../../components/AttachmentCard.vue";
-import {commands} from "../../bindings.ts";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useDataStore} from "../../stores/data.ts";
 import ImagePreview from "../../components/ImagePreview.vue";
+import api from "../../utils/api.ts";
 
 const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
@@ -87,7 +87,7 @@ onBeforeRouteLeave((_to, _from, next) => {
     cancel: {label: '保留', color: 'primary'},
   }).onOk(() => {
     Promise
-        .all(orphans.map(att => commands.cmdDeleteAttachment(diaryId.value, att.filename)))
+        .all(orphans.map(att => api.cmdDeleteAttachment(diaryId.value, att.filename)))
         .then(() => {
           deleteAttachment(diaryId.value, orphans.map(att => att.filename));
           next();

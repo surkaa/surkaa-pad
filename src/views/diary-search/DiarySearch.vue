@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import {onActivated, onDeactivated, onUnmounted, ref} from "vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
-import {commands, DiarySummary, SearchDiariesEvent} from "../../bindings.ts";
+import {DiarySummary, SearchDiariesEvent} from "../../bindings.ts";
 import {Channel} from "@tauri-apps/api/core";
 import {useQuasar} from "quasar";
 import {useOpenDiaryDetail} from "../../composables/useOpenDiaryDetail.ts";
+import api from "../../utils/api.ts";
 
 const $q = useQuasar();
 const {openDiary} = useOpenDiaryDetail();
@@ -23,7 +24,7 @@ const isActivating = ref(true);
 
 async function searchHandle() {
   if (cancelToken.value) {
-    await commands.cmdCancelTask(cancelToken.value);
+    await api.cmdCancelTask(cancelToken.value);
     return;
   }
   // 清空
@@ -51,13 +52,12 @@ async function searchHandle() {
         break;
     }
   };
-  const res = await commands.cmdSearchDiaries(event, keyword.value, or.value);
-  if (res.status == 'error') {
-    $q.notify({type: 'negative', message: res.error || '搜索失败'});
-    return;
+  try {
+    cancelToken.value = await api.cmdSearchDiaries(event, keyword.value, or.value);
+    console.log('搜索中，取消令牌：', cancelToken.value);
+  } catch (e) {
+    $q.notify({type: 'negative', message: String(e) || '搜索失败'});
   }
-  cancelToken.value = res.data;
-  console.log('搜索中，取消令牌：', cancelToken.value);
 }
 
 function handleScroll(e: Event) {
@@ -84,7 +84,7 @@ onDeactivated(() => {
 onUnmounted(() => {
   // 组件销毁时取消搜索任务
   if (cancelToken.value) {
-    commands.cmdCancelTask(cancelToken.value);
+    api.cmdCancelTask(cancelToken.value).then();
   }
   keyword.value = '';
 })
@@ -114,7 +114,7 @@ onUnmounted(() => {
     </section>
 
     <Teleport v-if="isActivating" defer to="#footer-content">
-      <span>共搜索到 {{diarySummaries.length}} 个日记</span>
+      <span>共搜索到 {{ diarySummaries.length }} 个日记</span>
     </Teleport>
   </div>
 </template>

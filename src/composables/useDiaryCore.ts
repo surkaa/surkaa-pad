@@ -1,12 +1,12 @@
 import {computed, nextTick, onActivated, onDeactivated, onUnmounted, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
-import {commands} from "../bindings.ts";
 import {EXTENSIONS} from "../components/editor/extension.ts";
 import {useDataStore} from "../stores/data.ts";
 import {storeToRefs} from "pinia";
 import {CloseRequestedEvent, getCurrentWindow} from "@tauri-apps/api/window";
 import {UnlistenFn} from "@tauri-apps/api/event";
+import api from "../utils/api.ts";
 
 export function useDiaryCore() {
     const $q = useQuasar();
@@ -50,47 +50,47 @@ export function useDiaryCore() {
     });
 
     async function loadDiaryInfo() {
-        const [summaryRes, contentRes] = await Promise.all([
-            commands.cmdGetDiarySummary(currentId.value),
-            commands.cmdGetDiaryContent(currentId.value)
-        ]);
+        try {
+            const [summaryRes, contentRes] = await Promise.all([
+                api.cmdGetDiarySummary(currentId.value),
+                api.cmdGetDiaryContent(currentId.value)
+            ]);
 
-        if (summaryRes.status === 'error' || contentRes.status === 'error') {
-            console.error(`加载日记失败:`, summaryRes, contentRes);
-            return;
+            diarySummaries.value[currentId.value] = summaryRes;
+            const [content, map] = contentRes;
+            diaryContent.value = content;
+            currentDiaryAttachmentUrlMap.value = map as Record<string, string>;
+            // 延迟标记加载完成，避免触发首次 watch
+            await nextTick();
+            isInitialLoaded.value = true;
+        } catch (e) {
+            console.error(`加载日记失败:`, e);
         }
-
-        diarySummaries.value[currentId.value] = summaryRes.data;
-        const [content, map] = contentRes.data;
-        diaryContent.value = content;
-        currentDiaryAttachmentUrlMap.value = map as Record<string, string>;
-        // 延迟标记加载完成，避免触发首次 watch
-        await nextTick();
-        isInitialLoaded.value = true;
     }
 
     async function saveDiary() {
         if (isNew.value) {
-            const res = await commands.cmdSaveDiary(diaryContent.value);
-            if (res.status === 'error') {
-                $q.notify({type: 'negative', message: `保存日记失败: ${res.error}`});
-                return;
+            try {
+                const [summary, content] = await api.cmdSaveDiary(diaryContent.value);
+                currentId.value = summary.id;
+                dataStore.insertNewDiary(summary);
+                diaryContent.value = content;
+                $q.notify({type: 'positive', message: '日记已自动创建'});
+            } catch (e) {
+                $q.notify({type: 'negative', message: `保存日记失败: ${e}`});
             }
-            const [summary, content] = res.data;
-            currentId.value = summary.id;
-            dataStore.insertNewDiary(summary);
-            diaryContent.value = content;
-            $q.notify({type: 'positive', message: '日记已自动创建'});
             return;
         }
 
-        // 已存在的日记，执行更新
-        const res = await commands.cmdUpdateDiaryContentOnly(currentId.value, diaryContent.value);
-        if (res.status === 'error') {
-            $q.notify({type: 'negative', message: `保存日记失败: ${res.error}`});
-            return;
+        try {
+            // 已存在的日记，执行更新
+            diarySummaries.value[currentId.value] = await api.cmdUpdateDiaryContentOnly(
+                currentId.value,
+                diaryContent.value
+            );
+        } catch (e) {
+            $q.notify({type: 'negative', message: `保存日记失败: ${e}`});
         }
-        diarySummaries.value[currentId.value] = res.data;
     }
 
     function deleteDiary() {
@@ -101,10 +101,10 @@ export function useDiaryCore() {
             ok: {label: '删除', color: 'negative', flat: true},
             cancel: {label: '取消', color: 'primary', flat: true}
         }).onOk(async () => {
-            const res = await commands.cmdDeleteDiary(currentId.value);
-            if (res.status === 'error') {
-                $q.notify({type: 'negative', message: `删除日记失败: ${res.error}`});
-                return;
+            try {
+                await api.cmdDeleteDiary(currentId.value);
+            } catch (e) {
+                $q.notify({type: 'negative', message: `删除日记失败: ${e}`});
             }
             $q.notify({type: 'positive', message: '日记已删除'});
             dataStore.deleteSummary(currentId.value);
