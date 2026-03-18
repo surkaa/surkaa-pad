@@ -188,6 +188,7 @@ export function useMediaAction(
                 encrypted
             ).then(cancelRes => {
                 showUploadDialog.value = true;
+                cancelTokens.add(cancelRes);
                 console.log('转换附件命令已发送，取消令牌:', cancelRes);
             }).catch(e => {
                 $q.notify({type: 'negative', message: String(e)});
@@ -235,6 +236,7 @@ export function useMediaAction(
                 rotation
             );
             showUploadDialog.value = true;
+            cancelTokens.add(cancelToken);
             console.log('发送旋转图片命令，等待结果...');
         } catch (e) {
             uploadTaskMap.value[key].status = 'error';
