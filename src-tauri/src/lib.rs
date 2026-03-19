@@ -14,7 +14,6 @@ use crate::attachments::attachment_command::{
     cmd_delete_attachment, cmd_rotate_image_attachment, cmd_toggle_attachment_encryption,
 };
 use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
-use crate::caches::LocalFileCache;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
 };

@@ -8,7 +8,6 @@ use crate::diaries::diary_list::{get_diary_content, get_diary_summary, page_diar
 use crate::diaries::diary_search::search_diaries;
 use crate::diaries::diary_types::{DiarySummary, SearchDiariesEvent};
 use crate::state::AppState;
-use crate::tasks::TaskPool;
 use tauri::State;
 
 /// 根据内容保存日记
@@ -129,7 +128,6 @@ pub async fn cmd_get_diary_content(
 #[specta::specta]
 pub fn cmd_search_diaries(
     state: State<'_, AppState>,
-    tp: State<'_, TaskPool>,
     event: Channel<SearchDiariesEvent>,
     keyword: String,
     or: bool,
@@ -138,7 +136,7 @@ pub fn cmd_search_diaries(
     let crypto = state.crypto();
     let client = state.get_client()?;
     let event = event.clone();
-    tp.spawn(async move {
+    state.task_pool().spawn(async move {
         search_diaries(&cache, &crypto, &client, Arc::new(event), keyword, or).await;
     })
 }
