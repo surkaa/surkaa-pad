@@ -74,8 +74,8 @@ pub async fn get_diary(
         }
     }
 
-    // 检查文件缓存 TODO 考虑去掉SIZE
-    if let Some((size, etag)) = lfc.get(&object_key).await? {
+    // 检查文件缓存
+    if let Some((_size, etag)) = lfc.get(&object_key).await? {
         if etag == metadata.etag() {
             let cache_bytes = lfc.get_data(&object_key).await?;
             let manifest_bytes = crypto.decrypt(&cache_bytes)?;
