@@ -1,6 +1,4 @@
-use crate::attachments::attachment::{
-    add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption,
-};
+use crate::attachments::attachment::{add_attachment, caching_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption};
 use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::state::AppState;
 use crate::stream::create_mock_stream;
@@ -98,7 +96,15 @@ pub async fn cmd_delete_attachment(
     filename: String,
 ) -> Result<(), String> {
     let client = state.get_client()?;
-    delete_attachment(&state.diary_cache(), &state.crypto(), &client, id, filename).await
+    delete_attachment(
+        &state.diary_cache(),
+        &state.local_file_cache(),
+        &state.crypto(),
+        &client,
+        id,
+        filename,
+    )
+    .await
 }
 
 /// 拍摄图片来添加
@@ -118,8 +124,8 @@ pub async fn cmd_add_image_attachment_from_camera(
 ) -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
-        use base64::engine::general_purpose::STANDARD;
         use base64::Engine;
+        use base64::engine::general_purpose::STANDARD;
         use tauri_plugin_native_camera::NativeCameraExt;
         const MIMETYPE: &str = "image/jpeg";
 
@@ -161,7 +167,6 @@ pub async fn cmd_add_image_attachment_from_camera(
 /// # Arguments
 /// * `id` - 日记 ID
 /// * `filename` - 附件 ID
-/// * `encrypted` - 是否需要加密
 /// # Returns
 /// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
 #[tauri::command]
@@ -171,11 +176,10 @@ pub fn cmd_toggle_attachment_encryption(
     event: Channel<AttachmentProcessEvent>,
     id: String,
     filename: String,
-    encrypted: bool,
 ) -> Result<String, String> {
     let three_state = state.three_state()?;
     state.task_pool().spawn(async move {
-        toggle_attachment_encryption(three_state, Arc::new(event), &id, filename, encrypted).await;
+        toggle_attachment_encryption(three_state, Arc::new(event), &id, filename).await;
     })
 }
 
@@ -198,5 +202,26 @@ pub fn cmd_rotate_image_attachment(
     let three_state = state.three_state()?;
     state.task_pool().spawn(async move {
         rotate_image_attachment(three_state, Arc::new(event), &id, filename, rotation).await;
+    })
+}
+
+/// 主动缓存云端附件到本地
+/// # Arguments
+/// * `id` - 日记 ID
+/// * `filename` - 附件 ID
+/// # Returns
+/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_caching_attachment(
+    state: State<'_, AppState>,
+    event: Channel<AttachmentProcessEvent>,
+    id: String,
+    filename: String,
+) -> Result<String, String> {
+    let lfc = state.local_file_cache();
+    let client = state.get_client()?;
+    state.task_pool().spawn(async move {
+        caching_attachment(&lfc, &client, Arc::new(event), &id, &filename).await;
     })
 }

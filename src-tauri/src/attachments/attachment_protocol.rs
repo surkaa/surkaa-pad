@@ -1,3 +1,4 @@
+use crate::attachments::attachment::get_attachment_stream;
 use crate::attachments::AttachmentMeta;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
 use crate::diaries::get_diary;
@@ -79,6 +80,7 @@ async fn process_attachment(
         .get_client()
         .map_err(|_| ProtocolError::Internal("OSS client not ready".into()))?;
     let cache = state.diary_cache();
+    let lfc = state.local_file_cache();
     let crypto = state.crypto();
 
     // Slice Pattern Matching 路由硬解
@@ -88,7 +90,7 @@ async fn process_attachment(
         return Err(ProtocolError::BadRequest("Invalid URI path structure"));
     };
 
-    let diary = get_diary(&cache, &crypto, &client, id)
+    let diary = get_diary(&cache, &lfc, &crypto, &client, id)
         .await
         .map_err(|e| ProtocolError::Internal(e.to_string()))?;
 
@@ -126,8 +128,7 @@ async fn process_attachment(
     };
 
     let key = remote_attachments_key(id, filename);
-    let (stream, len) = client
-        .download(&key, Some((start, end)))
+    let (stream, len) = get_attachment_stream(&key, &lfc, &client, Some((start, end)))
         .await
         .map_err(|e| ProtocolError::Internal(e.to_string()))?;
 
@@ -182,6 +183,7 @@ pub fn get_full_attachment_url(
             PROTOCOL_NAME, id, &attachment.filename, timestamp
         ))
     } else {
+        // TODO 考虑针对未加密的附件也尝试访问缓存
         let key = remote_attachments_key(id, &attachment.filename);
         let url = client
             .direct_url(&key)

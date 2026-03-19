@@ -15,6 +15,8 @@ pub enum AttachmentProcessEvent {
     Progress(u8),
     /// 返回附件的元数据和访问URL
     Completed(AttachmentMeta, String),
+    /// 不返回数据但仍成功的场景
+    CompletedWithoutData,
     Error(String),
 }
 
@@ -28,4 +30,5 @@ pub struct AttachmentMeta {
     pub encrypted: bool,
     pub nonce: Vec<u8>, // 用于加密该文件的独立 IV
     pub algorithm: EncryptionAlgorithm,
+    // TODO 是否需要直接在这存储ETag？
 }

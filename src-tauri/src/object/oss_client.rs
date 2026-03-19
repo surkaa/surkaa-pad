@@ -393,8 +393,6 @@ impl OssClient {
         let expires = Utc::now().timestamp() + ATTACHMENT_URL_EXPIRATION_SECONDS;
 
         // 构造签名字符串 (CanonicalizedResource)
-        // 格式：VERB + \n + Content-MD5 + \n + Content-Type + \n + Expires + \n + CanonicalizedResource
-        // 对于 URL 签名，Content-MD5 和 Content-Type 通常为空
         let canonicalized_resource = format!("/{}/{}", self.inner.bucket, key);
         let string_to_sign = format!(
             "{}\n\n\n{}\n{}",
@@ -411,12 +409,10 @@ impl OssClient {
 
         let signature = STANDARD.encode(mac.finalize().into_bytes());
 
-        // 对签名进行 URL 编码（防止特殊字符破坏 URL 结构）
-        // 注意：这里需要对 signature 进行 url encode，虽然 base64 只有 + / =，但仍建议处理
+        // 对签名进行 URL 编码
         let encoded_signature = urlencoding::encode(&signature);
 
         // 拼接最终 URL
-        // 格式：https://<bucket>.<endpoint>/<key>?OSSAccessKeyId=<ak>&Expires=<expires>&Signature=<sig>
         let url = format!(
             "https://{}.{}/{}?OSSAccessKeyId={}&Expires={}&Signature={}",
             self.inner.bucket,

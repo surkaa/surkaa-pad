@@ -1,4 +1,5 @@
-use crate::caches::DiaryMemoryCache;
+use std::path::PathBuf;
+use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::Crypto;
 use crate::object::OssClient;
 use crate::tasks::TaskPool;
@@ -6,20 +7,23 @@ use std::sync::{Arc, OnceLock};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub crypto: Crypto,
+    crypto: Crypto,
     oss_client_lock: Arc<OnceLock<OssClient>>,
     diary_cache: DiaryMemoryCache,
+    local_file_cache: LocalFileCache,
     task_pool: TaskPool,
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub fn new(path: PathBuf) -> Self {
         let crypto = Crypto::new();
         let diary_cache = DiaryMemoryCache::new();
+        let local_file_cache = LocalFileCache::new(path);
         let task_pool = TaskPool::new();
         Self {
             crypto,
             oss_client_lock: Arc::new(OnceLock::new()),
+            local_file_cache,
             diary_cache,
             task_pool,
         }
@@ -57,15 +61,20 @@ impl AppState {
     pub fn diary_cache(&self) -> DiaryMemoryCache {
         self.diary_cache.clone()
     }
+    
+    pub fn local_file_cache(&self) -> LocalFileCache {
+        self.local_file_cache.clone()
+    }
 
     pub fn task_pool(&self) -> TaskPool {
         self.task_pool.clone()
     }
 
-    pub fn three_state(&self) -> Result<(Crypto, DiaryMemoryCache, OssClient), String> {
+    pub fn three_state(&self) -> Result<(Crypto, DiaryMemoryCache, LocalFileCache, OssClient), String> {
         Ok((
             self.crypto.clone(),
             self.diary_cache.clone(),
+            self.local_file_cache.clone(),
             self.get_client()?,
         ))
     }

@@ -1,5 +1,5 @@
-use crate::state::AppState;
 use tauri::State;
+use crate::state::AppState;
 
 /// 解锁加密管理器
 /// # Arguments

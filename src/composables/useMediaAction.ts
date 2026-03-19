@@ -62,6 +62,10 @@ export function useMediaAction(
                     const [meta, url] = msg.data;
                     onSuccess?.(meta, url);
                     break;
+                case "completedWithoutData":
+                    task.status = 'completed';
+                    task.progress = 1;
+                    break;
                 case "error":
                     task.status = 'error';
                     $q.notify({type: 'negative', message: `${task.filename} 上传失败: ${msg.data}`});
@@ -153,7 +157,7 @@ export function useMediaAction(
         await Promise.allSettled(uploads);
     };
 
-    async function toggleAttachmentEncryption(filename: string, encrypted: boolean) {
+    async function toggleAttachmentEncryption(filename: string) {
         return new Promise<void>((resolve, reject) => {
             if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
                 console.log(`无法获取日记ID或文件名，无法执行转换。diaryId: ${diaryId.value}, filename: ${filename}`);
@@ -185,8 +189,7 @@ export function useMediaAction(
             api.cmdToggleAttachmentEncryption(
                 event,
                 diaryId.value,
-                filename,
-                encrypted
+                filename
             ).then(cancelRes => {
                 showUploadDialog.value = true;
                 cancelTokens.add(cancelRes);
@@ -353,6 +356,17 @@ export function useMediaAction(
         insertAudio: () => genericBatchUpload(false, ['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
         insertVideo: () => genericBatchUpload(false, ['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video', "video"),
         insertFile: async () => genericBatchUpload(true, ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar']),
+        cachingAttachment: async (filenames: string[]) => {
+            if (!filenames.length) return;
+            showUploadDialog.value = true;
+            for (const filename of filenames) {
+                const key = uuidv4();
+                uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
+                const event = createUploadChannel(key);
+                const res = await commands.cmdCachingAttachment(event, diaryId.value, filename);
+                handleCommandResult(key, res);
+            }
+        },
         toggleAttachmentEncryption,
         rotateAttachment,
         pasteAttachments,

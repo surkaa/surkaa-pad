@@ -4,7 +4,7 @@ mod tests {
         add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption,
     };
     use crate::attachments::attachment_types::AttachmentProcessEvent;
-    use crate::caches::DiaryMemoryCache;
+    use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::Crypto;
     use crate::diaries::{delete_diary, get_diary, page_diary_ids, save_diary};
     use crate::object::OssClient;
@@ -23,6 +23,7 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let lfc = LocalFileCache::new_test();
 
         // 0. 判断是是否为空
         let (ids, _) = page_diary_ids(&client, None)
@@ -34,7 +35,7 @@ mod tests {
         );
 
         // 1. 预置数据: 初始化日记主体
-        let (summary, _) = save_diary(&cache, &crypto, &client, "并发附件测试日记主体")
+        let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "并发附件测试日记主体")
             .await
             .expect("未能初始化测试日记");
         let diary_id = summary.id;
@@ -45,6 +46,7 @@ mod tests {
         // 2. 核心测试: 并发添加附件
         for i in 0..concurrency_level {
             let cache_clone = cache.clone();
+            let lfc_clone = lfc.clone();
             let crypto_clone = crypto.clone();
             let client_clone = client.clone();
             let id_clone = diary_id.clone();
@@ -57,7 +59,7 @@ mod tests {
 
             add_tasks.push(tokio::spawn(async move {
                 add_attachment(
-                    (crypto_clone, cache_clone, client_clone),
+                    (crypto_clone, cache_clone, lfc_clone, client_clone),
                     Arc::new(tx),
                     &id_clone,
                     false,
@@ -73,7 +75,7 @@ mod tests {
         let _ = join_all(add_tasks).await;
 
         // 3. 断言: 验证写一致性与防覆盖
-        let manifest = get_diary(&cache, &crypto, &client, &diary_id)
+        let manifest = get_diary(&cache, &lfc, &crypto, &client, &diary_id)
             .await
             .expect("重新获取日记清单失败");
 
@@ -101,6 +103,7 @@ mod tests {
         let mut del_tasks: Vec<JoinHandle<_>> = Vec::with_capacity(concurrency_level);
         for filename in filenames {
             let cache_clone = cache.clone();
+            let lfc_clone = lfc.clone();
             let crypto_clone = crypto.clone();
             let client_clone = client.clone();
             let id_clone = diary_id.clone();
@@ -109,6 +112,7 @@ mod tests {
             del_tasks.push(tokio::spawn(async move {
                 delete_attachment(
                     &cache_clone,
+                    &lfc_clone,
                     &crypto_clone,
                     &client_clone,
                     &id_clone,
@@ -121,7 +125,7 @@ mod tests {
         let _ = join_all(del_tasks).await;
 
         // 5. 断言: 验证并发删一致性
-        let final_manifest = get_diary(&cache, &crypto, &client, &diary_id)
+        let final_manifest = get_diary(&cache, &lfc, &crypto, &client, &diary_id)
             .await
             .expect("最终获取日记清单失败");
 
@@ -131,7 +135,7 @@ mod tests {
         );
 
         // 清理测试数据
-        delete_diary(&cache, &client, &diary_id)
+        delete_diary(&cache, &lfc, &client, &diary_id)
             .await
             .expect("测试结束时清理日记失败");
     }
@@ -142,9 +146,10 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let lfc = LocalFileCache::new_test();
 
         // 预置数据：初始化日记
-        let (summary, _) = save_diary(&cache, &crypto, &client, "加密切换测试")
+        let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "加密切换测试")
             .await
             .expect("初始化日记失败");
         let diary_id = summary.id;
@@ -156,7 +161,7 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
 
         add_attachment(
-            (crypto.clone(), cache.clone(), client.clone()),
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
             Arc::new(tx),
             &diary_id,
             false, // 初始不加密
@@ -171,16 +176,15 @@ mod tests {
         // 切换为加密状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         toggle_attachment_encryption(
-            (crypto.clone(), cache.clone(), client.clone()),
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
             Arc::new(tx),
             &diary_id,
             filename.to_string(),
-            true, // 开启加密
         )
         .await;
 
         // 验证元数据是否已更新为加密
-        let diary_encrypted = get_diary(&cache, &crypto, &client, &diary_id)
+        let diary_encrypted = get_diary(&cache, &lfc, &crypto, &client, &diary_id)
             .await
             .unwrap();
         let meta_enc = diary_encrypted.attachments.first().unwrap();
@@ -190,16 +194,15 @@ mod tests {
         // 切换回明文状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         toggle_attachment_encryption(
-            (crypto.clone(), cache.clone(), client.clone()),
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
             Arc::new(tx),
             &diary_id,
             filename.to_string(),
-            false, // 关闭加密
         )
         .await;
 
         // 检查数据是否还原
-        let diary_decrypted = get_diary(&cache, &crypto, &client, &diary_id)
+        let diary_decrypted = get_diary(&cache, &lfc, &crypto, &client, &diary_id)
             .await
             .unwrap();
         let meta_dec = diary_decrypted.attachments.first().unwrap();
@@ -215,7 +218,9 @@ mod tests {
         assert_eq!(downloaded_bytes, raw_data, "转换后的文件内容与原始数据不符");
 
         // 清理
-        delete_diary(&cache, &client, &diary_id).await.unwrap();
+        delete_diary(&cache, &lfc, &client, &diary_id)
+            .await
+            .unwrap();
     }
 
     #[serial]
@@ -224,9 +229,10 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let lfc = LocalFileCache::new_test();
 
         // 准备环境：保存日记并上传一张原始图片
-        let (summary, _) = save_diary(&cache, &crypto, &client, "图片旋转测试")
+        let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "图片旋转测试")
             .await
             .expect("初始化日记失败");
         let diary_id = summary.id;
@@ -244,7 +250,7 @@ mod tests {
 
         // 上传原始图片
         add_attachment(
-            (crypto.clone(), cache.clone(), client.clone()),
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
             Arc::new(tx),
             &diary_id,
             true, // 测试加密状态下的旋转
@@ -261,7 +267,7 @@ mod tests {
         let event_sender = Arc::new(tx_rot);
 
         rotate_image_attachment(
-            (crypto.clone(), cache.clone(), client.clone()),
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
             event_sender,
             &diary_id,
             filename.to_string(),
@@ -280,6 +286,9 @@ mod tests {
                     assert!(meta.encrypted, "旋转后应保持加密状态");
                     completed = true;
                 }
+                AttachmentProcessEvent::CompletedWithoutData => {
+                    panic!("旋转不应该出现这个状态")
+                }
                 AttachmentProcessEvent::Error(e) => {
                     panic!("旋转失败: {}", e);
                 }
@@ -294,7 +303,7 @@ mod tests {
             .unwrap();
 
         // 解密
-        let diary = get_diary(&cache, &crypto, &client, &diary_id)
+        let diary = get_diary(&cache, &lfc, &crypto, &client, &diary_id)
             .await
             .unwrap();
         let meta = diary.attachments.first().unwrap();
@@ -310,6 +319,95 @@ mod tests {
         assert_eq!(final_img.height(), 10);
 
         // 清理
-        delete_diary(&cache, &client, &diary_id).await.unwrap();
+        delete_diary(&cache, &lfc, &client, &diary_id)
+            .await
+            .unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_attachment_local_cache_lifecycle() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = Crypto::from_env();
+        let client = OssClient::from_env();
+        let lfc = LocalFileCache::new_test();
+
+        // 预置数据：初始化日记主体
+        let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "附件缓存生命周期测试")
+            .await
+            .unwrap();
+        let diary_id = summary.id;
+
+        let raw_data = b"cache payload test".to_vec();
+        let size = raw_data.len() as u64;
+        let stream = create_mock_stream(raw_data.clone(), size as usize);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
+
+        // 上传附件并测试缓存是否生成
+        add_attachment(
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            Arc::new(tx),
+            &diary_id,
+            false,
+            size,
+            "text/plain".to_string(),
+            stream,
+        )
+        .await;
+
+        let mut filename = String::new();
+        while let Some(event) = rx.recv().await {
+            if let AttachmentProcessEvent::Completed(m, _) = event {
+                filename = m.filename;
+                break;
+            }
+        }
+        assert!(!filename.is_empty(), "附件上传未完成");
+
+        let key = remote_attachments_key(&diary_id, &filename);
+
+        // 验证缓存是否存在以及数据内容
+        let cached = lfc.get(&key).await.unwrap();
+        assert!(cached.is_some(), "附件上传后应该被正确缓存");
+        let cached_data = lfc.get_data(&key).await.unwrap();
+        assert_eq!(cached_data, raw_data, "本地缓存内容与上传的原始数据不一致");
+
+        // 触发 toggle_attachment_encryption，验证缓存是否被正确替换
+        let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
+        toggle_attachment_encryption(
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            Arc::new(tx2),
+            &diary_id,
+            filename.clone(),
+        )
+        .await;
+
+        while let Some(event) = rx2.recv().await {
+            if let AttachmentProcessEvent::Completed(_, _) = event {
+                break;
+            }
+        }
+
+        // 验证切换加密后缓存内容已经发生变化（由于加入了加密，内容不可能与原文相同）
+        let new_cached_data = lfc.get_data(&key).await.unwrap();
+        assert_ne!(
+            new_cached_data, raw_data,
+            "切换加密后，本地缓存的载荷应该发生变化"
+        );
+
+        // 删除附件，验证缓存被清空
+        delete_attachment(&cache, &lfc, &crypto, &client, &diary_id, filename)
+            .await
+            .unwrap();
+        let cached_after_delete = lfc.get(&key).await.unwrap();
+        assert!(
+            cached_after_delete.is_none(),
+            "附件删除后，关联的本地缓存应该被一并清除"
+        );
+
+        // 清理日记
+        delete_diary(&cache, &lfc, &client, &diary_id)
+            .await
+            .unwrap();
     }
 }
