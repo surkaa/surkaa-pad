@@ -14,6 +14,7 @@ use crate::attachments::attachment_command::{
     cmd_delete_attachment, cmd_rotate_image_attachment, cmd_toggle_attachment_encryption,
 };
 use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
+use crate::caches::LOCAL_FILE_CACHE_FILENAME;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
 };
@@ -27,12 +28,13 @@ use crate::tasks::task_command::cmd_cancel_task;
 use tauri::{App, Manager};
 
 fn run_setup(app: &mut App) {
-    let path = app
+    let cache_path = app
         .handle()
         .path()
         .app_cache_dir()
         .expect("failed to get cache dir");
-    app.manage(AppState::new(path));
+    let lfc_path = cache_path.join(LOCAL_FILE_CACHE_FILENAME);
+    app.manage(AppState::new(lfc_path));
 
     #[cfg(target_os = "android")]
     {

@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 
+pub const LOCAL_FILE_CACHE_FILENAME: &str = "lfc";
+
 const DATA_FILE_SUFFIX: &str = ".data";
 const MD5_FILE_SUFFIX: &str = ".md5";
 const TMP_FILE_SUFFIX: &str = ".tmp";
