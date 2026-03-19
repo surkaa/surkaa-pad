@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub crypto: Crypto,
+    crypto: Crypto,
     oss_client_lock: Arc<OnceLock<OssClient>>,
     diary_cache: DiaryMemoryCache,
     task_pool: TaskPool,

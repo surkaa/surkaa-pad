@@ -57,7 +57,7 @@ pub async fn cmd_update_diary_content_only(
 ) -> Result<DiarySummary, String> {
     update_diary_content_only(
         &state.diary_cache(),
-        &state.crypto,
+        &state.crypto(),
         &state.get_client()?,
         id,
         new_content,
@@ -93,7 +93,7 @@ pub async fn cmd_get_diary_summary(
 ) -> Result<DiarySummary, String> {
     get_diary_summary(
         &state.diary_cache(),
-        &state.crypto,
+        &state.crypto(),
         &state.get_client()?,
         id,
     )
@@ -113,7 +113,7 @@ pub async fn cmd_get_diary_content(
 ) -> Result<(String, HashMap<String, String>), String> {
     get_diary_content(
         &state.diary_cache(),
-        &state.crypto,
+        &state.crypto(),
         &state.get_client()?,
         id,
     )
