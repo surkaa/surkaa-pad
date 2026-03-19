@@ -31,12 +31,8 @@ const {
 } = useEditorUI();
 
 // 媒体操作
-const {
-  uploadTasks, showUploadDialog, isUploading, showAudioDrawer,
-  handleAudioRecorded, insertPhoto, takePhoto, insertAudio,
-  audioRecording, insertVideo, insertFile, toggleAttachmentEncryption,
-  rotateAttachment, pasteAttachments, cachingAttachment, // TODO 收起来
-} = useMediaAction(diaryId, editorDomRef, showToolbarPanel, liveEditorRef);
+const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, liveEditorRef);
+const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaAction;
 
 const {deleteAttachment} = useDataStore();
 
@@ -133,9 +129,9 @@ onActivated(async () => {
         v-model="diaryContent"
         :diarySummary="diary"
         :attachmentMap="attachmentMap"
-        @toggleAttachmentEncryption="toggleAttachmentEncryption"
-        @rotateAttachment="rotateAttachment"
-        @pasteAttachments="pasteAttachments"
+        @toggleAttachmentEncryption="mediaAction.toggleAttachmentEncryption"
+        @rotateAttachment="mediaAction.rotateAttachment"
+        @pasteAttachments="mediaAction.pasteAttachments"
         @showImage="showImage"
         style="width: 100%; flex: 1; padding: 16px"
     />
@@ -147,19 +143,19 @@ onActivated(async () => {
         @undo="liveEditorRef?.undo"
         @redo="liveEditorRef?.redo"
         @additionalAction="additionalAction"
-        @insertPhoto="insertPhoto"
-        @takePhoto="takePhoto"
-        @insertAudio="insertAudio"
-        @audioRecording="audioRecording"
-        @insertVideo="insertVideo"
-        @insertFile="insertFile"
+        @insertPhoto="mediaAction.insertPhoto"
+        @takePhoto="mediaAction.takePhoto"
+        @insertAudio="mediaAction.insertAudio"
+        @audioRecording="mediaAction.audioRecording"
+        @insertVideo="mediaAction.insertVideo"
+        @insertFile="mediaAction.insertFile"
         style="width: 100%; flex-shrink: 0"
     />
 
     <CaptureAudioDrawer
         :visible="showAudioDrawer"
         @close="showAudioDrawer = false"
-        @recorded="handleAudioRecorded"
+        @recorded="mediaAction.handleAudioRecorded"
     />
 
     <q-dialog v-model="showMenu" position="bottom">
@@ -171,7 +167,7 @@ onActivated(async () => {
           <q-item clickable v-ripple @click="() => {deleteDiary(); showMenu = false}">
             <q-item-section>删除</q-item-section>
           </q-item>
-          <q-item :disable="diary == undefined" clickable v-ripple @click="() => {cachingAttachment(diary!.attachments.map(att => att.filename)); showMenu = false}">
+          <q-item :disable="diary == undefined" clickable v-ripple @click="() => {mediaAction.cachingAttachment(diary!.attachments.map(att => att.filename)); showMenu = false}">
             <q-item-section>缓存所有附件到本地</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="showMenu = false">
