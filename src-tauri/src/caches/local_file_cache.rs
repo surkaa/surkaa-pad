@@ -1,10 +1,10 @@
-use tokio::io::AsyncReadExt;
-use std::io::SeekFrom;
 use crate::stream::ByteStream;
 use futures_util::StreamExt;
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri_plugin_log::log::{debug};
+use tauri_plugin_log::log::debug;
+use tokio::io::AsyncReadExt;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
@@ -132,7 +132,11 @@ impl LocalFileCache {
     }
 
     /// 根据key直接返回完整的数据流
-    pub async fn get_stream(&self, key: &str, range: Option<(u64, u64)>) -> Result<ByteStream, String> {
+    pub async fn get_stream(
+        &self,
+        key: &str,
+        range: Option<(u64, u64)>,
+    ) -> Result<ByteStream, String> {
         let (data_path, md5_path) = self.get_path(key);
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
@@ -142,7 +146,8 @@ impl LocalFileCache {
                 .map_err(|e| format!("无法打开数据文件: {}", e))?;
             if let Some((start, end)) = range {
                 // 将文件指针移动到 start 的位置
-                tokio_file.seek(SeekFrom::Start(start))
+                tokio_file
+                    .seek(SeekFrom::Start(start))
                     .await
                     .map_err(|e| format!("无法定位文件指针: {}", e))?;
 
@@ -262,6 +267,50 @@ impl LocalFileCache {
         };
 
         Ok((Box::pin(wrapped_stream), SaveHandle { state }))
+    }
+
+    /// 流式直接存储数据
+    pub async fn direct_save_with_md5(
+        &self,
+        key: &str,
+        md5: &str,
+        mut stream: ByteStream,
+    ) -> Result<(), String> {
+        let (data_path, md5_path) = self.get_path(key);
+        Self::ensure_parent_dir(&data_path).await?;
+
+        // 创建临时文件
+        let tmp_path = data_path.with_extension(format!("{}{}", DATA_FILE_SUFFIX, TMP_FILE_SUFFIX));
+        let mut file = tokio::fs::File::create(&tmp_path)
+            .await
+            .map_err(|e| format!("无法创建数据文件: {}", e))?;
+
+        // 写入数据
+        while let Some(chunk) = stream.next().await {
+            if let Ok(chunk) = chunk {
+                debug!(">>> 准备将 {} 字节写入本地缓存...", chunk.len());
+                if let Err(e) = file.write_all(&chunk).await {
+                    let _ = tokio::fs::remove_file(&tmp_path).await;
+                    return Err(format!("写入数据文件失败: {}", e));
+                }
+            } else {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err("读取输入流失败".to_string());
+            }
+        }
+
+        file.sync_all().await.map_err(|e| e.to_string())?;
+        // 重命名
+        tokio::fs::rename(&tmp_path, &data_path)
+            .await
+            .map_err(|e| format!("数据文件重命名失败: {}", e))?;
+
+        // 写入md5
+        tokio::fs::write(&md5_path, &md5)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
     }
 
     /// 根据key直接返回完整的数据

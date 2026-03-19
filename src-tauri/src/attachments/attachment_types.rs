@@ -15,6 +15,8 @@ pub enum AttachmentProcessEvent {
     Progress(u8),
     /// 返回附件的元数据和访问URL
     Completed(AttachmentMeta, String),
+    /// 不返回数据但仍成功的场景
+    CompletedWithoutData,
     Error(String),
 }
 

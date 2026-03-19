@@ -35,7 +35,7 @@ const {
   uploadTasks, showUploadDialog, isUploading, showAudioDrawer,
   handleAudioRecorded, insertPhoto, takePhoto, insertAudio,
   audioRecording, insertVideo, insertFile, toggleAttachmentEncryption,
-  rotateAttachment, pasteAttachments
+  rotateAttachment, pasteAttachments, cachingAttachment, // TODO 收起来
 } = useMediaAction(diaryId, editorDomRef, showToolbarPanel, liveEditorRef);
 
 const {deleteAttachment} = useDataStore();
@@ -170,6 +170,9 @@ onActivated(async () => {
           </q-item>
           <q-item clickable v-ripple @click="() => {deleteDiary(); showMenu = false}">
             <q-item-section>删除</q-item-section>
+          </q-item>
+          <q-item :disable="diary == undefined" clickable v-ripple @click="() => {cachingAttachment(diary!.attachments.map(att => att.filename)); showMenu = false}">
+            <q-item-section>缓存所有附件到本地</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="showMenu = false">
             <q-item-section>取消</q-item-section>

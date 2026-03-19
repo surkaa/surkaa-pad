@@ -286,6 +286,9 @@ mod tests {
                     assert!(meta.encrypted, "旋转后应保持加密状态");
                     completed = true;
                 }
+                AttachmentProcessEvent::CompletedWithoutData => {
+                    panic!("旋转不应该出现这个状态")
+                }
                 AttachmentProcessEvent::Error(e) => {
                     panic!("旋转失败: {}", e);
                 }

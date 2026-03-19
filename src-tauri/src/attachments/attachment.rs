@@ -27,7 +27,7 @@ pub async fn get_attachment_stream(
     key: &str,
     lfc: &LocalFileCache,
     client: &OssClient,
-    range: Option<(u64, u64)>
+    range: Option<(u64, u64)>,
 ) -> Result<(ByteStream, u64), String> {
     if let Some(etag) = lfc.get(key).await? {
         // 本地有缓存就判断是否是最新的
@@ -38,6 +38,8 @@ pub async fn get_attachment_stream(
         if metadata.etag() == etag {
             Ok((lfc.get_stream(key, range).await?, metadata.size()))
         } else {
+            // 删除本地过期的缓存
+            lfc.delete(key).await;
             Ok(client.download(key, range).await?)
         }
     } else {
@@ -371,6 +373,44 @@ pub async fn rotate_image_attachment(
         }
         Err(e) => {
             let _ = event.send(AttachmentProcessEvent::Error(e));
+        }
+    }
+}
+
+pub async fn caching_attachment(
+    lfc: &LocalFileCache,
+    client: &OssClient,
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
+    id: &str,
+    filename: &str,
+) {
+    let _ = event.send(AttachmentProcessEvent::Started);
+    let key = remote_attachments_key(id, filename);
+    let logic = async {
+        let metadata = client.get_metadata(&key).await?;
+        if let Some(etag) = lfc.get(&key).await? {
+            if metadata.etag() == etag {
+                let _ = event.send(AttachmentProcessEvent::CompletedWithoutData);
+                return Ok(());
+            }
+        }
+        // 保存
+        let (stream, len) = client.download(&key, None).await?;
+        let ec = event.clone();
+        let stream = tracker_stream(len, stream, move |progress| {
+            let _ = ec.send(AttachmentProcessEvent::Progress(progress));
+        });
+        lfc.direct_save_with_md5(&key, metadata.etag(), stream)
+            .await?;
+
+        Ok::<(), String>(())
+    };
+    match logic.await {
+        Ok(()) => {
+            let _ = event.send(AttachmentProcessEvent::CompletedWithoutData);
+        }
+        Err(e) => {
+            let _ = event.send(AttachmentProcessEvent::Error(e.clone()));
         }
     }
 }

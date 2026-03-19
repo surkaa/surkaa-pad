@@ -294,6 +294,22 @@ async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
 }
 },
 /**
+ * 主动缓存云端附件到本地
+ * # Arguments
+ * * `id` - 日记 ID
+ * * `filename` - 附件 ID
+ * # Returns
+ * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ */
+async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_caching_attachment", { event, id, filename }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 取消任务
  * # Arguments
  * * `cancel_token` - 任务取消令牌
@@ -329,7 +345,11 @@ export type AttachmentProcessEvent = { event: "started" } |
 /**
  * 返回附件的元数据和访问URL
  */
-{ event: "completed"; data: [AttachmentMeta, string] } | { event: "error"; data: string }
+{ event: "completed"; data: [AttachmentMeta, string] } | 
+/**
+ * 不返回数据但仍成功的场景
+ */
+{ event: "completedWithoutData" } | { event: "error"; data: string }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行
