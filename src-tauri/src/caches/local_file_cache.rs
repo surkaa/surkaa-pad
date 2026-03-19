@@ -100,8 +100,8 @@ impl LocalFileCache {
         let _ = tokio::fs::remove_file(&md5_path).await;
     }
 
-    /// 直接保存数据文件并计算和返回 MD5 值
-    pub async fn save_bytes(&self, key: &str, data: &[u8]) -> Result<String, String> {
+    /// 直接保存数据文件并计算
+    pub async fn save_bytes(&self, key: &str, data: &[u8]) -> Result<(), String> {
         let (data_path, md5_path) = self.get_path(key);
         Self::ensure_parent_dir(&data_path).await?;
 
@@ -122,11 +122,11 @@ impl LocalFileCache {
             .await
             .map_err(|e| format!("无法保存 MD5 文件: {}", e))?;
 
-        Ok(md5)
+        Ok(())
     }
 
-    /// 流式保存数据文件并计算和返回 MD5 值
-    pub async fn save(&self, key: &str, mut stream: ByteStream) -> Result<String, String> {
+    /// 流式保存数据文件并计算
+    pub async fn save(&self, key: &str, mut stream: ByteStream) -> Result<(), String> {
         let (data_path, md5_path) = self.get_path(key);
         Self::ensure_parent_dir(&data_path).await?;
 
@@ -162,7 +162,7 @@ impl LocalFileCache {
             .await
             .map_err(|e| format!("无法保存 MD5 文件: {}", e))?;
 
-        Ok(md5)
+        Ok(())
     }
 
     /// 根据key直接返回完整的数据
