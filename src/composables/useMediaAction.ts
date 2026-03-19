@@ -363,8 +363,14 @@ export function useMediaAction(
                 const key = uuidv4();
                 uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
                 const event = createUploadChannel(key);
-                const res = await commands.cmdCachingAttachment(event, diaryId.value, filename);
-                handleCommandResult(key, res);
+                try {
+                    const cancelToken = await api.cmdCachingAttachment(event, diaryId.value, filename);
+                    cancelTokens.add(cancelToken);
+                } catch (e) {
+                    uploadTaskMap.value[key].status = 'error';
+                    $q.notify({type: 'negative', message: `缓存 ${filename} 失败: ${formatError(e)}`});
+                    console.error(`缓存 ${filename} 失败:`, e);
+                }
             }
         },
         toggleAttachmentEncryption,
