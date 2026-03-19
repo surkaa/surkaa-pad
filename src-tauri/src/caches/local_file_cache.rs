@@ -1,9 +1,9 @@
+use crate::stream::ByteStream;
+use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
-use crate::stream::ByteStream;
 
 const DATA_FILE_SUFFIX: &str = ".data";
 const MD5_FILE_SUFFIX: &str = ".md5";
@@ -15,13 +15,10 @@ pub struct LocalFileCache {
 }
 
 impl LocalFileCache {
-    pub async fn new(dir: impl Into<PathBuf>) -> Result<Self, String> {
-        let cache_dir = dir.into();
-        // 初始化时确保根缓存目录存在
-        tokio::fs::create_dir_all(&cache_dir)
-            .await
-            .map_err(|e| format!("无法创建缓存根目录: {}", e))?;
-        Ok(Self { cache_dir: Arc::new(cache_dir) })
+    pub fn new(exists_dir: PathBuf) -> Self {
+        Self {
+            cache_dir: Arc::new(exists_dir),
+        }
     }
 
     fn get_path(&self, key: &str) -> (PathBuf, PathBuf) {

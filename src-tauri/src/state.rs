@@ -1,4 +1,5 @@
-use crate::caches::DiaryMemoryCache;
+use std::path::PathBuf;
+use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::Crypto;
 use crate::object::OssClient;
 use crate::tasks::TaskPool;
@@ -9,17 +10,20 @@ pub struct AppState {
     crypto: Crypto,
     oss_client_lock: Arc<OnceLock<OssClient>>,
     diary_cache: DiaryMemoryCache,
+    local_file_cache: LocalFileCache,
     task_pool: TaskPool,
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub fn new(path: PathBuf) -> Self {
         let crypto = Crypto::new();
         let diary_cache = DiaryMemoryCache::new();
+        let local_file_cache = LocalFileCache::new(path);
         let task_pool = TaskPool::new();
         Self {
             crypto,
             oss_client_lock: Arc::new(OnceLock::new()),
+            local_file_cache,
             diary_cache,
             task_pool,
         }
