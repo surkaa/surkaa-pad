@@ -21,6 +21,17 @@ impl LocalFileCache {
         }
     }
 
+    #[cfg(test)]
+    pub fn new_test() -> Self {
+        let path = tempfile::tempdir()
+            .expect("无法创建临时目录")
+            .path()
+            .to_path_buf();
+        Self {
+            cache_dir: Arc::new(path),
+        }
+    }
+
     fn get_path(&self, key: &str) -> (PathBuf, PathBuf) {
         let path = self.cache_dir.join(key);
         let path_full = path.extension().unwrap_or_default().to_string_lossy();
@@ -42,7 +53,7 @@ impl LocalFileCache {
     }
 
     /// 获取指定 key 的数据文件大小和 MD5 值
-    pub async fn get(&self, key: &str) -> Result<(u64, String), String> {
+    pub async fn get(&self, key: &str) -> Result<Option<(u64, String)>, String> {
         let (data_path, md5_path) = self.get_path(key);
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
@@ -58,9 +69,9 @@ impl LocalFileCache {
                 .trim()
                 .to_string();
 
-            Ok((size, md5))
+            Ok(Some((size, md5)))
         } else {
-            Err("缓存不存在".to_string())
+            Ok(None)
         }
     }
 
@@ -104,7 +115,7 @@ impl LocalFileCache {
             .await
             .map_err(|e| format!("数据文件重命名失败: {}", e))?;
 
-        let md5 = format!("{:x}", md5::compute(data));
+        let md5 = format!("{:X}", md5::compute(data));
         tokio::fs::write(&md5_path, &md5)
             .await
             .map_err(|e| format!("无法保存 MD5 文件: {}", e))?;
@@ -144,7 +155,7 @@ impl LocalFileCache {
             .await
             .map_err(|e| format!("数据文件重命名失败: {}", e))?;
 
-        let md5 = format!("{:x}", context.finalize());
+        let md5 = format!("{:X}", context.finalize());
         tokio::fs::write(&md5_path, &md5)
             .await
             .map_err(|e| format!("无法保存 MD5 文件: {}", e))?;

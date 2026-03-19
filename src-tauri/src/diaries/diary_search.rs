@@ -1,4 +1,4 @@
-use crate::caches::DiaryMemoryCache;
+use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::Crypto;
 use crate::diaries::diary_list::page_diary_ids;
 use crate::diaries::diary_types::{DiarySummary, SearchDiariesEvent};
@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 pub async fn search_diaries(
     cache: &DiaryMemoryCache,
+    lfc: &LocalFileCache,
     crypto: &Crypto,
     client: &OssClient,
     event: Arc<dyn MessageSender<SearchDiariesEvent>>,
@@ -28,7 +29,7 @@ pub async fn search_diaries(
                 let ecc = event.clone();
                 let kc = keywords.clone();
                 async move {
-                    let diary = get_diary(cache, crypto, client, &id).await?;
+                    let diary = get_diary(cache, lfc, crypto, client, &id).await?;
 
                     let content = diary.content();
                     // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词

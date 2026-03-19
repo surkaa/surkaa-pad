@@ -98,7 +98,7 @@ pub async fn cmd_delete_attachment(
     filename: String,
 ) -> Result<(), String> {
     let client = state.get_client()?;
-    delete_attachment(&state.diary_cache(), &state.crypto(), &client, id, filename).await
+    delete_attachment(&state.diary_cache(), &state.local_file_cache(), &state.crypto(), &client, id, filename).await
 }
 
 /// 拍摄图片来添加

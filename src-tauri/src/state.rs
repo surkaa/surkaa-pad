@@ -61,15 +61,20 @@ impl AppState {
     pub fn diary_cache(&self) -> DiaryMemoryCache {
         self.diary_cache.clone()
     }
+    
+    pub fn local_file_cache(&self) -> LocalFileCache {
+        self.local_file_cache.clone()
+    }
 
     pub fn task_pool(&self) -> TaskPool {
         self.task_pool.clone()
     }
 
-    pub fn three_state(&self) -> Result<(Crypto, DiaryMemoryCache, OssClient), String> {
+    pub fn three_state(&self) -> Result<(Crypto, DiaryMemoryCache, LocalFileCache, OssClient), String> {
         Ok((
             self.crypto.clone(),
             self.diary_cache.clone(),
+            self.local_file_cache.clone(),
             self.get_client()?,
         ))
     }

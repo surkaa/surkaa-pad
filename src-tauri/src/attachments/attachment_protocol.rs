@@ -79,6 +79,7 @@ async fn process_attachment(
         .get_client()
         .map_err(|_| ProtocolError::Internal("OSS client not ready".into()))?;
     let cache = state.diary_cache();
+    let lfc = state.local_file_cache();
     let crypto = state.crypto();
 
     // Slice Pattern Matching 路由硬解
@@ -88,7 +89,7 @@ async fn process_attachment(
         return Err(ProtocolError::BadRequest("Invalid URI path structure"));
     };
 
-    let diary = get_diary(&cache, &crypto, &client, id)
+    let diary = get_diary(&cache, &lfc, &crypto, &client, id)
         .await
         .map_err(|e| ProtocolError::Internal(e.to_string()))?;
 

@@ -1,5 +1,5 @@
 use crate::attachments::get_full_attachment_url;
-use crate::caches::DiaryMemoryCache;
+use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::Crypto;
 use crate::diaries::diary_types::DiarySummary;
 use crate::diaries::get_diary;
@@ -26,21 +26,23 @@ pub async fn page_diary_ids(
 
 pub async fn get_diary_summary(
     cache: &DiaryMemoryCache,
+    lfc: &LocalFileCache,
     crypto: &Crypto,
     client: &OssClient,
     id: &str,
 ) -> Result<DiarySummary, String> {
-    let diary = get_diary(cache, crypto, client, id).await?;
+    let diary = get_diary(cache, lfc, crypto, client, id).await?;
     Ok(DiarySummary::from_manifest(diary))
 }
 
 pub async fn get_diary_content(
     cache: &DiaryMemoryCache,
+    lfc: &LocalFileCache,
     crypto: &Crypto,
     client: &OssClient,
     id: &str,
 ) -> Result<(String, HashMap<String, String>), String> {
-    let diary = get_diary(cache, crypto, client, id).await?;
+    let diary = get_diary(cache, lfc, crypto, client, id).await?;
     let mut map = HashMap::new();
     for attachment in diary.attachments {
         let url = get_full_attachment_url(id, &attachment, client)?;
