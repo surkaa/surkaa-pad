@@ -183,6 +183,7 @@ pub fn get_full_attachment_url(
             PROTOCOL_NAME, id, &attachment.filename, timestamp
         ))
     } else {
+        // TODO 考虑针对未加密的附件也尝试访问缓存
         let key = remote_attachments_key(id, &attachment.filename);
         let url = client
             .direct_url(&key)
