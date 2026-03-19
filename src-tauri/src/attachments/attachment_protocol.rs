@@ -1,3 +1,4 @@
+use crate::attachments::attachment::get_attachment_stream;
 use crate::attachments::AttachmentMeta;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
 use crate::diaries::get_diary;
@@ -127,8 +128,7 @@ async fn process_attachment(
     };
 
     let key = remote_attachments_key(id, filename);
-    let (stream, len) = client
-        .download(&key, Some((start, end)))
+    let (stream, len) = get_attachment_stream(&key, &lfc, &client, Some((start, end)))
         .await
         .map_err(|e| ProtocolError::Internal(e.to_string()))?;
 

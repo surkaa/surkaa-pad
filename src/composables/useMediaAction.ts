@@ -150,7 +150,7 @@ export function useMediaAction(
         await Promise.allSettled(uploads);
     };
 
-    async function toggleAttachmentEncryption(filename: string, encrypted: boolean) {
+    async function toggleAttachmentEncryption(filename: string) {
         return new Promise<void>((resolve, reject) => {
             if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
                 console.log(`无法获取日记ID或文件名，无法执行转换。diaryId: ${diaryId.value}, filename: ${filename}`);
@@ -182,8 +182,7 @@ export function useMediaAction(
             commands.cmdToggleAttachmentEncryption(
                 event,
                 diaryId.value,
-                filename,
-                encrypted
+                filename
             ).then(cancelRes => {
                 if (cancelRes.status === "error") {
                     $q.notify({type: 'negative', message: cancelRes.error});

@@ -102,7 +102,7 @@ mod diary_tests {
         // 验证本地缓存已生成
         let cached = lfc.get(&object_key).await.expect("检查缓存失败");
         assert!(cached.is_some(), "本地缓存文件未生成");
-        let (_, cached_etag1) = cached.unwrap();
+        let cached_etag1 = cached.unwrap();
         assert_eq!(cached_etag1, etag1, "本地缓存的 etag 与 OSS 不一致");
 
         // 模拟外部直接修改 OSS 上的日记内容（绕过更新接口）
@@ -140,7 +140,7 @@ mod diary_tests {
         // 验证本地缓存已被更新为新 etag 和新内容
         let cached_after = lfc.get(&object_key).await.expect("检查缓存失败");
         assert!(cached_after.is_some(), "本地缓存应存在");
-        let (_, cached_etag2) = cached_after.unwrap();
+        let cached_etag2 = cached_after.unwrap();
         assert_eq!(cached_etag2, new_etag, "本地缓存的 etag 未更新");
 
         // 验证本地缓存文件解密后的内容是否正确

@@ -18,15 +18,14 @@ mod lfc_tests {
 
         cache.save_bytes(key, data).await.unwrap();
 
-        let (size, md5) = cache.get(key).await.unwrap().unwrap();
-        assert_eq!(size, data.len() as u64);
+        let md5 = cache.get(key).await.unwrap().unwrap();
         assert_eq!(md5, md5_hex(data));
 
         let retrieved = cache.get_data(key).await.unwrap();
         assert_eq!(retrieved, data);
 
         // 测试 get_stream
-        let stream = cache.get_stream(key).await.unwrap();
+        let stream = cache.get_stream(key, None).await.unwrap();
         let collected = collect_data(stream).await.unwrap();
         assert_eq!(collected, data);
 
@@ -52,8 +51,7 @@ mod lfc_tests {
         handle.finalize().await.unwrap();
 
         // 验证缓存
-        let (size, md5) = lfc.get(key).await.expect("获取失败").unwrap();
-        assert_eq!(size, full_data.len() as u64);
+        let md5 = lfc.get(key).await.expect("获取失败").unwrap();
         assert_eq!(md5, md5_hex(full_data));
     }
 

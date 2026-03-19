@@ -34,7 +34,6 @@ impl ObjectMetadata {
         &self.etag
     }
 
-    #[cfg(test)]
     pub fn size(&self) -> u64 {
         self.size
     }

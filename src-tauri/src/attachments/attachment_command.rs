@@ -161,7 +161,6 @@ pub async fn cmd_add_image_attachment_from_camera(
 /// # Arguments
 /// * `id` - 日记 ID
 /// * `filename` - 附件 ID
-/// * `encrypted` - 是否需要加密
 /// # Returns
 /// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
 #[tauri::command]
@@ -171,7 +170,6 @@ pub fn cmd_toggle_attachment_encryption(
     event: Channel<AttachmentProcessEvent>,
     id: String,
     filename: String,
-    encrypted: bool,
 ) -> Result<String, String> {
     let three_state = state.three_state()?;
     state.task_pool().spawn(async move {
@@ -180,7 +178,6 @@ pub fn cmd_toggle_attachment_encryption(
             Arc::new(event),
             &id,
             filename,
-            encrypted,
         )
         .await;
     })

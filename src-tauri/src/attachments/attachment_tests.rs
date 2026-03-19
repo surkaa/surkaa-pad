@@ -180,7 +180,6 @@ mod tests {
             Arc::new(tx),
             &diary_id,
             filename.to_string(),
-            true, // 开启加密
         )
         .await;
 
@@ -199,7 +198,6 @@ mod tests {
             Arc::new(tx),
             &diary_id,
             filename.to_string(),
-            false, // 关闭加密
         )
         .await;
 
@@ -220,7 +218,9 @@ mod tests {
         assert_eq!(downloaded_bytes, raw_data, "转换后的文件内容与原始数据不符");
 
         // 清理
-        delete_diary(&cache, &lfc, &client, &diary_id).await.unwrap();
+        delete_diary(&cache, &lfc, &client, &diary_id)
+            .await
+            .unwrap();
     }
 
     #[serial]
@@ -316,6 +316,95 @@ mod tests {
         assert_eq!(final_img.height(), 10);
 
         // 清理
-        delete_diary(&cache, &lfc, &client, &diary_id).await.unwrap();
+        delete_diary(&cache, &lfc, &client, &diary_id)
+            .await
+            .unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_attachment_local_cache_lifecycle() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = Crypto::from_env();
+        let client = OssClient::from_env();
+        let lfc = LocalFileCache::new_test();
+
+        // 预置数据：初始化日记主体
+        let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "附件缓存生命周期测试")
+            .await
+            .unwrap();
+        let diary_id = summary.id;
+
+        let raw_data = b"cache payload test".to_vec();
+        let size = raw_data.len() as u64;
+        let stream = create_mock_stream(raw_data.clone(), size as usize);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
+
+        // 上传附件并测试缓存是否生成
+        add_attachment(
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            Arc::new(tx),
+            &diary_id,
+            false,
+            size,
+            "text/plain".to_string(),
+            stream,
+        )
+        .await;
+
+        let mut filename = String::new();
+        while let Some(event) = rx.recv().await {
+            if let AttachmentProcessEvent::Completed(m, _) = event {
+                filename = m.filename;
+                break;
+            }
+        }
+        assert!(!filename.is_empty(), "附件上传未完成");
+
+        let key = remote_attachments_key(&diary_id, &filename);
+
+        // 验证缓存是否存在以及数据内容
+        let cached = lfc.get(&key).await.unwrap();
+        assert!(cached.is_some(), "附件上传后应该被正确缓存");
+        let cached_data = lfc.get_data(&key).await.unwrap();
+        assert_eq!(cached_data, raw_data, "本地缓存内容与上传的原始数据不一致");
+
+        // 触发 toggle_attachment_encryption，验证缓存是否被正确替换
+        let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
+        toggle_attachment_encryption(
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            Arc::new(tx2),
+            &diary_id,
+            filename.clone(),
+        )
+        .await;
+
+        while let Some(event) = rx2.recv().await {
+            if let AttachmentProcessEvent::Completed(_, _) = event {
+                break;
+            }
+        }
+
+        // 验证切换加密后缓存内容已经发生变化（由于加入了加密，内容不可能与原文相同）
+        let new_cached_data = lfc.get_data(&key).await.unwrap();
+        assert_ne!(
+            new_cached_data, raw_data,
+            "切换加密后，本地缓存的载荷应该发生变化"
+        );
+
+        // 删除附件，验证缓存被清空
+        delete_attachment(&cache, &lfc, &crypto, &client, &diary_id, filename)
+            .await
+            .unwrap();
+        let cached_after_delete = lfc.get(&key).await.unwrap();
+        assert!(
+            cached_after_delete.is_none(),
+            "附件删除后，关联的本地缓存应该被一并清除"
+        );
+
+        // 清理日记
+        delete_diary(&cache, &lfc, &client, &diary_id)
+            .await
+            .unwrap();
     }
 }

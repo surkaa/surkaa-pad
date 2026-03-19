@@ -1,8 +1,10 @@
+use tokio::io::AsyncReadExt;
+use std::io::SeekFrom;
 use crate::stream::ByteStream;
 use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
 
@@ -114,39 +116,50 @@ impl LocalFileCache {
     }
 
     /// 获取指定 key 的数据文件大小和 MD5 值
-    pub async fn get(&self, key: &str) -> Result<Option<(u64, String)>, String> {
+    pub async fn get(&self, key: &str) -> Result<Option<String>, String> {
         let (data_path, md5_path) = self.get_path(key);
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
         if data_exists && md5_exists {
-            let size = tokio::fs::metadata(&data_path)
-                .await
-                .map_err(|e| format!("无法获取数据文件元信息: {}", e))?
-                .len();
-
             let md5 = tokio::fs::read_to_string(&md5_path)
                 .await
                 .map_err(|e| format!("无法读取 MD5 文件: {}", e))?
                 .trim()
                 .to_string();
 
-            Ok(Some((size, md5)))
+            Ok(Some(md5))
         } else {
             Ok(None)
         }
     }
 
     /// 根据key直接返回完整的数据流
-    pub async fn get_stream(&self, key: &str) -> Result<ByteStream, String> {
+    pub async fn get_stream(&self, key: &str, range: Option<(u64, u64)>) -> Result<ByteStream, String> {
         let (data_path, md5_path) = self.get_path(key);
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
         if data_exists && md5_exists {
-            let tokio_file = tokio::fs::File::open(&data_path)
+            let mut tokio_file = tokio::fs::File::open(&data_path)
                 .await
                 .map_err(|e| format!("无法打开数据文件: {}", e))?;
-            let stream = ReaderStream::new(tokio_file);
-            Ok(Box::pin(stream))
+            if let Some((start, end)) = range {
+                // 将文件指针移动到 start 的位置
+                tokio_file.seek(SeekFrom::Start(start))
+                    .await
+                    .map_err(|e| format!("无法定位文件指针: {}", e))?;
+
+                // 计算需要读取的字节数
+                let limit = end.saturating_sub(start).saturating_add(1);
+
+                // 限制读取长度并转换为流
+                let limited_reader = tokio_file.take(limit);
+                let stream = ReaderStream::new(limited_reader);
+
+                Ok(Box::pin(stream))
+            } else {
+                let stream = ReaderStream::new(tokio_file);
+                Ok(Box::pin(stream))
+            }
         } else {
             Err("缓存不存在".to_string())
         }

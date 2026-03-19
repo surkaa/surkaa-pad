@@ -6,7 +6,7 @@ import {ExtensionContext, EXTENSIONS, MenuButton} from "./extension.ts";
 export function useContextMenu(
     extensionCtx: ExtensionContext,
     handleInput: () => void,
-    toggleAttachmentEncryption: (filename: string, encrypted: boolean) => Promise<void>
+    toggleAttachmentEncryption: (filename: string) => Promise<void>
 ) {
     const $q = useQuasar();
     const currentPlatform = platform();
@@ -34,7 +34,7 @@ export function useContextMenu(
             action: async t => {
                 console.log('点击了转换附件按钮，目标元素：', t);
                 try {
-                    await toggleAttachmentEncryption(filename, !encrypted);
+                    await toggleAttachmentEncryption(filename);
                 } catch (e) {
                     console.error('转换附件失败:', e);
                     return;

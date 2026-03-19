@@ -13,7 +13,7 @@ const {modelValue, diarySummary, attachmentMap} = defineProps<{
 }>();
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
-  (e: 'toggleAttachmentEncryption', filename: string, encrypted: boolean): Promise<void>;
+  (e: 'toggleAttachmentEncryption', filename: string): Promise<void>;
   (e: 'rotateAttachment', filename: string, rotation: number): void;
   (e: 'pasteAttachments', files: File[]): void; // 上传完成后外部手动调用插入dom节点
   (e: 'showImage', src: string): void
@@ -55,7 +55,7 @@ const extensionCtx: ExtensionContext = {
 const {handleEditorContextMenu} = useContextMenu(
     extensionCtx,
     handleInput,
-    (filename, encrypted) => emit('toggleAttachmentEncryption', filename, encrypted)
+    (filename) => emit('toggleAttachmentEncryption', filename)
 );
 const {insertMediaNode, insertFileNode} = useDomInsert(editor);
 
