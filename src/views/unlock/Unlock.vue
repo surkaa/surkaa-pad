@@ -47,7 +47,7 @@ import {useQuasar} from "quasar";
 import {useTimeoutStore} from "../../stores/timeout.ts";
 import {useConfigStore} from "../../stores/config.ts";
 import {commands} from "../../bindings.ts";
-import {biometricCipher} from "../../../../Forks/tauri-plugins-workspace/plugins/biometric";
+import {biometricCipher} from "@tauri-apps/plugin-biometric";
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);

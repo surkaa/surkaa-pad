@@ -103,7 +103,7 @@ import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from "quasar";
 import {useConfigStore} from "../../stores/config.ts";
 import {commands} from "../../bindings.ts";
-import {biometricCipher} from "../../../../Forks/tauri-plugins-workspace/plugins/biometric";
+import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import {DEFAULT_THEME, ThemeType} from "../../types.ts";
 import {UnlistenFn} from "@tauri-apps/api/event";
 
