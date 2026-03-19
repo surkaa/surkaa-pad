@@ -101,7 +101,7 @@ import {exportLogFile} from "../../utils";
 import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from "quasar";
 import {useConfigStore} from "../../stores/config.ts";
-import {biometricCipher} from "../../../../Forks/tauri-plugins-workspace/plugins/biometric";
+import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import api from "../../utils/api.ts";
 
 const $q = useQuasar();
