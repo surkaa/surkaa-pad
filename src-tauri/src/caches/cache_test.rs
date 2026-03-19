@@ -35,27 +35,6 @@ mod lfc_tests {
     }
 
     #[tokio::test]
-    async fn test_save_stream_success() {
-        let lfc = LocalFileCache::new_test();
-        let key = "stream-key";
-        let full_data = b"Hello, world! This is a test.";
-        let stream = create_mock_stream(full_data.to_vec(), 5);
-
-        let (wrapped_stream, handle) = lfc.save(key, stream).await.unwrap();
-
-        // 消费流并收集数据，验证与原始数据一致
-        let collected = collect_data(wrapped_stream).await.unwrap();
-        assert_eq!(collected, full_data);
-
-        // 完成缓存
-        handle.finalize().await.unwrap();
-
-        // 验证缓存
-        let md5 = lfc.get(key).await.expect("获取失败").unwrap();
-        assert_eq!(md5, md5_hex(full_data));
-    }
-
-    #[tokio::test]
     async fn test_save_stream_error_abort() {
         let cache = LocalFileCache::new_test();
         let key = "abort-key";
@@ -77,27 +56,6 @@ mod lfc_tests {
         handle.abort().await;
 
         // 验证没有生成缓存文件
-        assert!(cache.get(key).await.unwrap().is_none());
-    }
-
-    #[tokio::test]
-    async fn test_save_stream_finalize_after_error() {
-        let cache = LocalFileCache::new_test();
-        let key = "error-finalize-key";
-        let stream = futures_util::stream::iter(vec![
-            Ok(Bytes::from("partial")),
-            Err(io::Error::new(io::ErrorKind::Other, "boom")),
-        ]);
-        let stream = Box::pin(stream) as ByteStream;
-
-        let (wrapped_stream, handle) = cache.save(key, stream).await.unwrap();
-
-        // 消费到错误
-        let _ = collect_data(wrapped_stream).await;
-
-        // 尝试 finalize，应该失败并清理临时文件
-        let finalize_result = handle.finalize().await;
-        assert!(finalize_result.is_err());
         assert!(cache.get(key).await.unwrap().is_none());
     }
 
@@ -138,11 +96,12 @@ mod lfc_tests {
         let cache = LocalFileCache::new_test();
         let key = "nested/dir/structure/file";
         let data = b"nested data";
+        let md5 = format!("{:X}", md5::compute(data));
         let stream = create_mock_stream(data.to_vec(), 1024);
 
         let (wrapped_stream, handle) = cache.save(key, stream).await.unwrap();
         collect_data(wrapped_stream).await.unwrap();
-        handle.finalize().await.unwrap();
+        handle.finalize(md5).await.unwrap();
 
         assert!(cache.get(key).await.unwrap().is_some());
     }

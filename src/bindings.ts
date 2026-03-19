@@ -270,7 +270,7 @@ async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEven
  */
 async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_toggle_attachment_encryption", { event, id, filename, encrypted }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_toggle_attachment_encryption", { event, id, filename }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

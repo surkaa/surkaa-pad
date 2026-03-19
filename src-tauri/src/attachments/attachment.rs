@@ -103,9 +103,9 @@ pub async fn add_attachment(
 
             // 执行上传
             match client.upload(&key, size, wrapped_stream, &mimetype).await {
-                Ok(_) => {
-                    // 上传成功，固化本地缓存 TODO 直接使用云端返回的ETag
-                    let _ = handle.finalize().await;
+                Ok(etag) => {
+                    // 上传成功，固化本地缓存
+                    let _ = handle.finalize(etag).await;
                     Ok(AttachmentMeta {
                         filename: filename.clone(),
                         mimetype,
@@ -228,8 +228,8 @@ pub async fn toggle_attachment_encryption(
             .upload(&key, size, wrapped_stream, &old_meta.mimetype)
             .await
         {
-            Ok(_) => {
-                let _ = handle.finalize().await;
+            Ok(etag) => {
+                let _ = handle.finalize(etag).await;
             }
             Err(e) => {
                 handle.abort().await;
@@ -344,8 +344,8 @@ pub async fn rotate_image_attachment(
             .upload(&key, new_size, wrapped_stream, &old_meta.mimetype)
             .await
         {
-            Ok(_) => {
-                let _ = handle.finalize().await;
+            Ok(etag) => {
+                let _ = handle.finalize(etag).await;
             }
             Err(e) => {
                 handle.abort().await;

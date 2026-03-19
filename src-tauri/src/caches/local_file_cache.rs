@@ -4,6 +4,7 @@ use crate::stream::ByteStream;
 use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tauri_plugin_log::log::{debug};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
@@ -22,7 +23,7 @@ pub struct SaveHandle {
 impl SaveHandle {
     /// 完成缓存：同步文件、重命名、写入 MD5
     /// 如果流过程中发生过错误，则会删除临时文件并返回错误
-    pub async fn finalize(self) -> Result<(), String> {
+    pub async fn finalize(self, md5: String) -> Result<(), String> {
         let mut guard = self.state.lock().await;
         if guard.finalized {
             return Err("Already finalized".to_string());
@@ -34,14 +35,12 @@ impl SaveHandle {
             return Err("Error occurred during streaming, cache not saved".to_string());
         }
 
-        if let (Some(file), Some(context)) = (guard.file.take(), guard.context.take()) {
+        if let Some(file) = guard.file.take() {
             file.sync_all().await.map_err(|e| e.to_string())?;
             tokio::fs::rename(&guard.tmp_path, &guard.data_path)
                 .await
                 .map_err(|e| e.to_string())?;
 
-            // 计算 MD5
-            let md5 = format!("{:X}", context.finalize());
             tokio::fs::write(&guard.md5_path, &md5)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -64,7 +63,6 @@ impl SaveHandle {
 
 struct WriterState {
     file: Option<tokio::fs::File>,
-    context: Option<md5::Context>,
     tmp_path: PathBuf,
     data_path: PathBuf,
     md5_path: PathBuf,
@@ -198,7 +196,7 @@ impl LocalFileCache {
     }
 
     /// 流式保存：返回包装后的流和完成句柄
-    /// 消费流时数据会同时写入临时文件并计算 MD5
+    /// 消费流时数据会同时写入临时文件
     /// 流结束后必须调用 `handle.finalize()` 或 `handle.abort()`
     pub async fn save(
         &self,
@@ -215,7 +213,6 @@ impl LocalFileCache {
 
         let state = Arc::new(Mutex::new(WriterState {
             file: Some(file),
-            context: Some(md5::Context::new()),
             tmp_path,
             data_path,
             md5_path,
@@ -240,13 +237,10 @@ impl LocalFileCache {
                         match chunk_result {
                             Ok(chunk) => {
                                 if let Some(file) = guard.file.as_mut() {
+                                    debug!(">>> 准备将 {} 字节写入本地缓存...", chunk.len());
                                     if let Err(e) = file.write_all(&chunk).await {
                                         guard.error_occurred = true;
                                         return Err(e);
-                                    }
-                                    // 使用 context 的可变引用更新 MD5
-                                    if let Some(context) = guard.context.as_mut() {
-                                        context.consume(&chunk);
                                     }
                                     Ok(chunk)
                                 } else {
