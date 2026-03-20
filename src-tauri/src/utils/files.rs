@@ -127,9 +127,3 @@ fn open_file(uri_string: &str) -> io::Result<File> {
 
     Ok(file)
 }
-
-/// 在 IOS 未实现
-#[cfg(target_os = "ios")]
-fn open_file(path: &str) -> io::Result<()> {
-    todo!()
-}

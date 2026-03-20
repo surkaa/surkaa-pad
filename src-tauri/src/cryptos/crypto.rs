@@ -10,7 +10,7 @@ use argon2::password_hash::SaltString;
 use argon2::{Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
 use bytes::Bytes;
 use futures_util::StreamExt;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, RwLock};
 use zeroize::Zeroize;
 
 impl std::ops::Deref for DerivedKey {
@@ -20,21 +20,15 @@ impl std::ops::Deref for DerivedKey {
     }
 }
 
-struct InnerCrypto {
-    dek: OnceLock<DerivedKey>,
-}
-
 #[derive(Clone)]
 pub struct Crypto {
-    inner: Arc<InnerCrypto>,
+    inner: Arc<RwLock<Option<DerivedKey>>>,
 }
 
 impl Crypto {
     pub fn new() -> Self {
         Crypto {
-            inner: Arc::new(InnerCrypto {
-                dek: OnceLock::new(),
-            }),
+            inner: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -55,7 +49,8 @@ impl Crypto {
             return Err("密文长度不足以包含 nonce".to_string());
         }
         let (nonce_bytes, ciphertext) = encrypted.split_at(NONCE_LEN);
-        let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
+        let guard = self.inner.read().map_err(|_| "锁状态异常".to_string())?;
+        let dek = guard.as_ref().ok_or("未派生密钥".to_string())?;
         let cipher =
             Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|e| format!("无效的密钥: {:?}", e))?;
 
@@ -70,7 +65,8 @@ impl Crypto {
 
     /// 使用CTR流式加密包装流
     pub fn encrypt_streaming(&self, stream: ByteStream) -> Result<(ByteStream, Vec<u8>), String> {
-        let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
+        let guard = self.inner.read().map_err(|_| "锁状态异常".to_string())?;
+        let dek = guard.as_ref().ok_or("未派生密钥".to_string())?;
 
         // 生成随机NONCE
         let mut nonce = [0u8; CTR_NONCE_LEN];
@@ -90,7 +86,8 @@ impl Crypto {
         nonce: &[u8],
         start_offset: u64,
     ) -> Result<ByteStream, String> {
-        let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
+        let guard = self.inner.read().map_err(|_| "锁状态异常".to_string())?;
+        let dek = guard.as_ref().ok_or("未派生密钥".to_string())?;
 
         if nonce.len() != CTR_NONCE_LEN {
             return Err("NONCE 长度错误".to_string());
@@ -108,7 +105,8 @@ impl Crypto {
 
     /// 使用提供的派生密钥对给定数据进行加密。
     pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, String> {
-        let dek = self.inner.dek.get().ok_or("未派生密钥".to_string())?;
+        let guard = self.inner.read().map_err(|_| "锁状态异常".to_string())?;
+        let dek = guard.as_ref().ok_or("未派生密钥".to_string())?;
         let cipher =
             Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|e| format!("无效的密钥: {:?}", e))?;
 
@@ -148,7 +146,12 @@ impl Crypto {
             let mut dek_array = [0u8; KEY_LEN];
             dek_array.copy_from_slice(dek.as_bytes());
             let derived_key = DerivedKey(dek_array);
-            let _ = self.inner.dek.set(derived_key);
+
+            // 使用写锁进行覆盖赋值
+            if let Ok(mut guard) = self.inner.write() {
+                *guard = Some(derived_key);
+            }
+
             let dek_string = hex::encode(dek_array);
             dek_array.zeroize();
             Ok(dek_string)
@@ -167,7 +170,12 @@ impl Crypto {
         let mut dek_array = [0u8; KEY_LEN];
         dek_array.copy_from_slice(&dek_bytes);
         let derived_key = DerivedKey(dek_array);
-        let _ = self.inner.dek.set(derived_key);
+
+        // 使用写锁进行覆盖赋值
+        if let Ok(mut guard) = self.inner.write() {
+            *guard = Some(derived_key);
+        }
+
         dek_array.zeroize();
         Ok(())
     }

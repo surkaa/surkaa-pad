@@ -137,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import {onMounted, ref} from "vue";
+import {nextTick, onMounted, ref} from "vue";
 import {OssConfigType} from "../../types.ts";
 import {useRouter} from "vue-router";
 import {getName, getVersion} from "@tauri-apps/api/app";
@@ -148,6 +148,13 @@ import {useConfigStore} from "../../stores/config.ts";
 import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
+import {platform} from "@tauri-apps/plugin-os";
+
+
+const $q = useQuasar();
+const configStore = useConfigStore();
+const {setTimeoutForCloseApp} = useTimeoutStore();
+const router = useRouter();
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
@@ -163,11 +170,7 @@ const masterPassword = ref<string>('');
 const loading = ref<boolean>(false);
 const version = ref('0.0.0');
 const appName = ref('App Name');
-
-const $q = useQuasar();
-const configStore = useConfigStore();
-const {setTimeoutForCloseApp} = useTimeoutStore();
-const router = useRouter();
+const isAndroid = platform() === 'android';
 
 async function saveConfigAndLogin() {
   if (loading.value) return;
@@ -260,7 +263,7 @@ async function unlock() {
     }
 
     console.log('Unlock Successful');
-    await setTimeoutForCloseApp();
+    setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
   } catch (e) {
     $q.notify({type: "negative", message: `解锁失败: ${formatError(e)}`});
@@ -278,6 +281,8 @@ async function confirmReset() {
 }
 
 async function tryBiometricUnlock() {
+  if (loading.value) return;
+  loading.value = true;
   try {
     const dataToDecrypt = await configStore.getNormalConfig('biometric_dek');
     if (!dataToDecrypt) {
@@ -294,10 +299,12 @@ async function tryBiometricUnlock() {
     }
 
     console.log('Biometric Unlock Successful');
-    await setTimeoutForCloseApp();
+    setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
   } catch (e) {
-    $q.notify({type: 'negative', message: `生物识别解锁失败: ${formatError(e)}`});
+    console.warn(`生物识别未成功或被取消: ${formatError(e)}`);
+  } finally {
+    loading.value = false;
   }
 }
 
@@ -308,7 +315,8 @@ onMounted(async () => {
   if (ec) {
     pipeline.value = 'login';
     encryptedConfig.value = ec;
-    if (await configStore.getNormalConfig('biometric_enabled')) {
+    if (isAndroid && await configStore.getNormalConfig('biometric_enabled')) {
+      await nextTick(); // 等待加载完成再请求生物解锁
       await tryBiometricUnlock();
     }
   } else {

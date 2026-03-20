@@ -137,14 +137,10 @@ pub async fn cmd_add_image_attachment_from_camera(
         let binary_data = STANDARD.decode(base64_data).map_err(|e| e.to_string())?;
         let len = binary_data.len();
         let stream = create_mock_stream(binary_data, len);
-        let cache = cache.inner().clone();
-        let crypto = crypto.inner().clone();
-        let client = client.get_client()?;
+        let three = state.three_state()?;
         state.task_pool().spawn(async move {
             add_attachment(
-                cache,
-                crypto,
-                client,
+                three,
                 Arc::new(event),
                 &id,
                 encrypted,

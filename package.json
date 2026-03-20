@@ -12,7 +12,7 @@
     "tauri:msi:dev": "tauri dev --config ./src-tauri/tauri.dev.json",
     "tauri:msi:build": "tauri build",
     "tauri:android:dev": "tauri android dev --config ./src-tauri/tauri.android-dev.json",
-    "build:android:build": "tauri android build --target aarch64 --apk true --aab true"
+    "tauri:android:build": "tauri android build --target aarch64 --apk true"
   },
   "dependencies": {
     "@quasar/extras": "^1.17.0",
