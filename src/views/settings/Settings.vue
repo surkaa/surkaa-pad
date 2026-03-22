@@ -152,6 +152,7 @@ function cancelBiometric() {
 async function handleReset() {
   if (await confirm('确定要重置OssClient配置吗？此操作不可撤销。重置后将自动重启应用')) {
     await configStore.deleteConfig('encrypted_oss_config', 'biometric_dek', 'biometric_enabled');
+    await api.cmdCleanCacheFile();
     $q.notify('配置已重置, 即将自动重启');
     setTimeout(relaunch, 1000);
   }

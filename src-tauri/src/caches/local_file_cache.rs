@@ -3,7 +3,6 @@ use futures_util::StreamExt;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri_plugin_log::log::debug;
 use tokio::io::AsyncReadExt;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::Mutex;
@@ -242,7 +241,6 @@ impl LocalFileCache {
                         match chunk_result {
                             Ok(chunk) => {
                                 if let Some(file) = guard.file.as_mut() {
-                                    debug!(">>> 准备将 {} 字节写入本地缓存...", chunk.len());
                                     if let Err(e) = file.write_all(&chunk).await {
                                         guard.error_occurred = true;
                                         return Err(e);
@@ -288,7 +286,6 @@ impl LocalFileCache {
         // 写入数据
         while let Some(chunk) = stream.next().await {
             if let Ok(chunk) = chunk {
-                debug!(">>> 准备将 {} 字节写入本地缓存...", chunk.len());
                 if let Err(e) = file.write_all(&chunk).await {
                     let _ = tokio::fs::remove_file(&tmp_path).await;
                     return Err(format!("写入数据文件失败: {}", e));
@@ -325,5 +322,14 @@ impl LocalFileCache {
         } else {
             Err("缓存不存在".to_string())
         }
+    }
+
+    /// 删除所有缓存
+    pub async fn delete_all(&self) -> Result<(), String> {
+        // 直接删除整个缓存目录并重新创建
+        if self.cache_dir.exists() {
+            let _ = tokio::fs::remove_file(self.cache_dir.as_ref()).await;
+        }
+        Ok(())
     }
 }
