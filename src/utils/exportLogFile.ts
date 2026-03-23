@@ -15,7 +15,7 @@ export async function exportLogFile() {
 
         const savePath = await save({
             title: "导出系统日志",
-            defaultPath: `${name}-export-${new Date().getDate()}.text`,
+            defaultPath: `${name}-export-${new Date().getDate()}.txt`,
             filters: [{name: "Log", extensions: ["log"]}]
         });
 
