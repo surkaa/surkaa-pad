@@ -13,6 +13,7 @@ import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useDataStore} from "../../stores/data.ts";
 import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
+import {Extension, ExtensionContext, MenuButton} from "../../components/editor/extension.ts";
 
 const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
@@ -35,6 +36,17 @@ const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, live
 const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaAction;
 
 const {deleteAttachment} = useDataStore();
+
+function defaultButtons(ext: Extension, el: HTMLElement, ctx: ExtensionContext): MenuButton[] {
+  if (!ext.getFilename) return [];
+  const filename = ext.getFilename(el);
+  if (!filename) return [];
+  const encrypted = ext.isEncrypted ? ext.isEncrypted(el, ctx) : false;
+  return [{
+    label: `转成${encrypted ? '普通' : '加密'}附件`,
+    action: async () => await mediaAction.toggleAttachmentEncryption(filename)
+  }];
+}
 
 function openDiaryDetail() {
   if (!diary.value) {
@@ -129,7 +141,7 @@ onActivated(async () => {
         v-model="diaryContent"
         :diarySummary="diary"
         :attachmentMap="attachmentMap"
-        @toggleAttachmentEncryption="mediaAction.toggleAttachmentEncryption"
+        :defaultButtons="defaultButtons"
         @rotateAttachment="mediaAction.rotateAttachment"
         @pasteAttachments="mediaAction.pasteAttachments"
         @showImage="showImage"
@@ -167,7 +179,8 @@ onActivated(async () => {
           <q-item clickable v-ripple @click="() => {deleteDiary(); showMenu = false}">
             <q-item-section>删除</q-item-section>
           </q-item>
-          <q-item :disable="diary == undefined" clickable v-ripple @click="() => {mediaAction.cachingAttachment(diary!.attachments.map(att => att.filename)); showMenu = false}">
+          <q-item :disable="diary == undefined" clickable v-ripple
+                  @click="() => {mediaAction.cachingAttachment(diary!.attachments.map(att => att.filename)); showMenu = false}">
             <q-item-section>缓存所有附件到本地</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="showMenu = false">

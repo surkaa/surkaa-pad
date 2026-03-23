@@ -1,12 +1,12 @@
 import {Menu, MenuItem} from '@tauri-apps/api/menu';
 import {platform} from '@tauri-apps/plugin-os';
 import {useQuasar} from 'quasar';
-import {ExtensionContext, EXTENSIONS, MenuButton} from "./extension.ts";
+import {Extension, ExtensionContext, EXTENSIONS, MenuButton} from "./extension.ts";
 
 export function useContextMenu(
     extensionCtx: ExtensionContext,
     handleInput: () => void,
-    toggleAttachmentEncryption: (filename: string) => Promise<void>
+    defaultButtons: MenuButton[] | ((ext: Extension, el: HTMLElement, ctx: ExtensionContext) => MenuButton[]),
 ) {
     const $q = useQuasar();
     const currentPlatform = platform();
@@ -28,19 +28,7 @@ export function useContextMenu(
             console.error("无法获取附件文件名，无法判断是否显示转换按钮");
             return;
         }
-        const encrypted = handler.isEncrypted ? handler.isEncrypted(target, extensionCtx) : false;
-        const buttons: MenuButton[] = [{
-            label: `转成${encrypted ? '普通' : '加密'}附件`,
-            action: async t => {
-                console.log('点击了转换附件按钮，目标元素：', t);
-                try {
-                    await toggleAttachmentEncryption(filename);
-                } catch (e) {
-                    console.error('转换附件失败:', e);
-                    return;
-                }
-            }
-        }];
+        const buttons = typeof defaultButtons === 'function' ? defaultButtons(handler, target, extensionCtx) : defaultButtons;
         handler.onContextmenu && buttons.push(...handler.onContextmenu(e, target, extensionCtx));
         if (!(buttons && buttons.length > 0)) {
             return;

@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import {nextTick, onMounted, ref, watch} from "vue";
 import {DiarySummary} from "../bindings.ts";
-import {ExtensionContext, EXTENSIONS} from "./editor/extension.ts";
+import {Extension, ExtensionContext, EXTENSIONS, MenuButton} from "./editor/extension.ts";
 import {useContextMenu} from "./editor/useContextMenu.ts";
 import {useScroll, useStorage} from "@vueuse/core";
 import {useDomInsert} from "./editor/useDomInsert.ts";
 
-const {modelValue, diarySummary, attachmentMap} = defineProps<{
+const {modelValue, diarySummary, attachmentMap, defaultButtons} = defineProps<{
   modelValue: string;
   diarySummary?: DiarySummary;
   attachmentMap: Record<string, string>;
+  defaultButtons: MenuButton[] | ((ext: Extension, el: HTMLElement, ctx: ExtensionContext) => MenuButton[])
 }>();
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
@@ -55,7 +56,7 @@ const extensionCtx: ExtensionContext = {
 const {handleEditorContextMenu} = useContextMenu(
     extensionCtx,
     handleInput,
-    (filename) => emit('toggleAttachmentEncryption', filename)
+    defaultButtons
 );
 const {insertMediaNode, insertFileNode} = useDomInsert(editor);
 
