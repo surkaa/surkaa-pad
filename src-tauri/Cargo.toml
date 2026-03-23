@@ -73,9 +73,6 @@ image = "0.25.9"
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-biometric = { path = "../../Forks/tauri-plugins-workspace/plugins/biometric" }
 tauri-plugin-native-camera = "0.1.0"
-jni = "0.21.1"
-ndk-context = "0.1.1"
-libc = "0.2.178"
 
 [dev-dependencies]
 # 临时文件夹

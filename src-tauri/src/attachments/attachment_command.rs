@@ -6,12 +6,13 @@ use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::diaries::get_diary;
 use crate::state::AppState;
 use crate::stream::create_mock_stream;
-use crate::utils::{file_mimetype, file_size, file_to_stream, open_access_str_file};
+use crate::utils::{file_mimetype, file_size, file_to_stream};
+use std::str::FromStr;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_fs::{FsExt, OpenOptions};
+use tauri_plugin_fs::{FilePath, FsExt, OpenOptions};
 
 /// 给日记添加附件
 /// # Arguments
@@ -23,6 +24,7 @@ use tauri_plugin_fs::{FsExt, OpenOptions};
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_add_attachment(
+    app_handle: AppHandle,
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
@@ -30,8 +32,13 @@ pub fn cmd_add_attachment(
     encrypted: bool,
 ) -> Result<String, String> {
     let four_states = state.four_states()?;
-    let file = open_access_str_file(&access_str)
-        .map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
+    let fp = FilePath::from_str(&access_str).map_err(|e| format!("无效的文件路径: {}", e))?;
+    let mut option = OpenOptions::new();
+    option.read(true);
+    let file = app_handle
+        .fs()
+        .open(fp, option)
+        .map_err(|e| format!("无法打开文件: {}", e))?;
     let size = file_size(&file)?;
     let (mimetype, file) = file_mimetype(file)?;
     let stream = file_to_stream(file);
