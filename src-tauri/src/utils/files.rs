@@ -1,8 +1,6 @@
-use crate::stream::ByteStream;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Seek};
-use tokio_util::io::ReaderStream;
 
 pub fn file_size(file: &File) -> Result<u64, String> {
     let metadata = file
@@ -28,9 +26,4 @@ pub fn file_mimetype(mut file: File) -> Result<(String, File), String> {
         .map_err(|e| format!("无法重置文件指针: {}", e))?;
 
     Ok((mimetype, file))
-}
-
-pub fn file_to_stream(file: File) -> ByteStream {
-    let tokio_file = tokio::fs::File::from_std(file);
-    Box::pin(ReaderStream::new(tokio_file))
 }
