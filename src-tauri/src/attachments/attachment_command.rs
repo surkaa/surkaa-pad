@@ -3,6 +3,7 @@ use crate::attachments::attachment::{
     save_decrypt_attachment, toggle_attachment_encryption,
 };
 use crate::attachments::attachment_types::AttachmentProcessEvent;
+use crate::diaries::get_diary;
 use crate::state::AppState;
 use crate::stream::create_mock_stream;
 use crate::utils::{file_mimetype, file_size, file_to_stream, open_access_str_file};
@@ -126,7 +127,7 @@ pub async fn cmd_delete_attachment(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_add_image_attachment_from_camera(
-    app: tauri::AppHandle,
+    app: AppHandle,
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
@@ -240,25 +241,47 @@ pub fn cmd_caching_attachment(
 /// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub fn cmd_save_decrypt_attachment(
+pub async fn cmd_save_decrypt_attachment(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
     filename: String,
 ) -> Result<String, String> {
-    let four_states = state.four_states()?;
+    let (crypto, cache, lfc, client) = state.four_states()?;
+    let diary = get_diary(&cache, &lfc, &crypto, &client, &id).await?;
+    let attachment = diary
+        .attachments
+        .iter()
+        .find(|a| a.filename == filename)
+        .ok_or_else(|| "附件不存在".to_string())?
+        .clone();
+
+    let ext = infer::get_from_mime(&attachment.mimetype)
+        .map(|t| t.extension())
+        .unwrap_or("");
+
     let filepath = app_handle
         .dialog()
         .file()
+        .set_file_name(format!("{}.{}", attachment.filename, ext))
         .blocking_pick_file()
         .ok_or("未选择".to_string())?;
+
     let file = match filepath {
         FilePath::Url(uri) => open_access_str_file(&uri.to_string()),
         FilePath::Path(pb) => File::open(pb),
     };
     let file = file.map_err(|e| e.to_string())?;
     state.task_pool().spawn(async move {
-        save_decrypt_attachment(four_states, Arc::new(event), id, filename, file).await;
+        save_decrypt_attachment(
+            (crypto, cache, lfc, client),
+            Arc::new(event),
+            id,
+            filename,
+            attachment,
+            file,
+        )
+        .await;
     })
 }

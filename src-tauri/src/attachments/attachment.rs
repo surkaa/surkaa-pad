@@ -418,23 +418,16 @@ pub async fn caching_attachment(
 }
 
 pub async fn save_decrypt_attachment(
-    (crypto, cache, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
+    (crypto, _, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: String,
     filename: String,
+    attachment: AttachmentMeta,
     mut file: File,
 ) {
     let event_res_clone = event.clone();
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async move {
-        let diary = get_diary(&cache, &lfc, &crypto, &client, &id).await?;
-        let attachment = diary
-            .attachments
-            .iter()
-            .find(|a| a.filename == filename)
-            .ok_or_else(|| "附件不存在".to_string())?
-            .clone();
-
         let key = remote_attachments_key(&id, &filename);
         let (stream, size) = get_attachment_stream(&key, &lfc, &client, None).await?;
         let event_clone = event.clone();
