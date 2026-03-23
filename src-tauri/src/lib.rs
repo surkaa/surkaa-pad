@@ -12,7 +12,7 @@ mod utils;
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
     cmd_delete_attachment, cmd_rotate_image_attachment, cmd_toggle_attachment_encryption,
-    cmd_caching_attachment
+    cmd_caching_attachment, cmd_save_decrypt_attachment
 };
 use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
 use crate::caches::cache_command::cmd_clean_cache_file;
@@ -72,6 +72,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_toggle_attachment_encryption,
             cmd_rotate_image_attachment,
             cmd_caching_attachment,
+            cmd_save_decrypt_attachment,
             // 其他
             cmd_cancel_task,
             cmd_clean_cache_file,

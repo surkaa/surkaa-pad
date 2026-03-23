@@ -1,11 +1,17 @@
-use crate::attachments::attachment::{add_attachment, caching_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption};
+use crate::attachments::attachment::{
+    add_attachment, caching_attachment, delete_attachment, rotate_image_attachment,
+    save_decrypt_attachment, toggle_attachment_encryption,
+};
 use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::state::AppState;
 use crate::stream::create_mock_stream;
 use crate::utils::{file_mimetype, file_size, file_to_stream, open_access_str_file};
+use std::fs::File;
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_fs::FilePath;
 
 /// 给日记添加附件
 /// # Arguments
@@ -24,7 +30,8 @@ pub fn cmd_add_attachment(
     encrypted: bool,
 ) -> Result<String, String> {
     let four_states = state.four_states()?;
-    let file = open_access_str_file(&access_str).map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
+    let file = open_access_str_file(&access_str)
+        .map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
     let size = file_size(&file)?;
     let (mimetype, file) = file_mimetype(file)?;
     let stream = file_to_stream(file);
@@ -222,5 +229,36 @@ pub fn cmd_caching_attachment(
     let client = state.get_client()?;
     state.task_pool().spawn(async move {
         caching_attachment(&lfc, &client, Arc::new(event), &id, &filename).await;
+    })
+}
+
+/// 让用户选择一个位置保存附近明文
+/// # Arguments
+/// * `id` - 日记 ID
+/// * `filename` - 附件 ID
+/// # Returns
+/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_save_decrypt_attachment(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    event: Channel<AttachmentProcessEvent>,
+    id: String,
+    filename: String,
+) -> Result<String, String> {
+    let four_states = state.four_states()?;
+    let filepath = app_handle
+        .dialog()
+        .file()
+        .blocking_pick_file()
+        .ok_or("未选择".to_string())?;
+    let file = match filepath {
+        FilePath::Url(uri) => open_access_str_file(&uri.to_string()),
+        FilePath::Path(pb) => File::open(pb),
+    };
+    let file = file.map_err(|e| e.to_string())?;
+    state.task_pool().spawn(async move {
+        save_decrypt_attachment(four_states, Arc::new(event), id, filename, file).await;
     })
 }

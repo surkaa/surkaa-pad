@@ -12,8 +12,10 @@ use crate::utils::message_sender::MessageSender;
 use dashmap::DashMap;
 use image::ImageFormat;
 use std::collections::HashSet;
-use std::io::Cursor;
+use std::fs::File;
+use std::io::{Cursor, Write};
 use std::sync::{Arc, LazyLock};
+use futures_util::StreamExt;
 use tokio::sync::Mutex;
 
 // 添加附件的锁
@@ -411,6 +413,57 @@ pub async fn caching_attachment(
         }
         Err(e) => {
             let _ = event.send(AttachmentProcessEvent::Error(e.clone()));
+        }
+    }
+}
+
+pub async fn save_decrypt_attachment(
+    (crypto, cache, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
+    id: String,
+    filename: String,
+    mut file: File,
+) {
+    let event_res_clone = event.clone();
+    let _ = event.send(AttachmentProcessEvent::Started);
+    let logic = async move {
+        let diary = get_diary(&cache, &lfc, &crypto, &client, &id).await?;
+        let attachment = diary
+            .attachments
+            .iter()
+            .find(|a| a.filename == filename)
+            .ok_or_else(|| "附件不存在".to_string())?
+            .clone();
+
+        let key = remote_attachments_key(&id, &filename);
+        let (stream, size) = get_attachment_stream(&key, &lfc, &client, None).await?;
+        let event_clone = event.clone();
+        let stream = tracker_stream(size, stream, move |p| {
+            let _ = event_clone.send(AttachmentProcessEvent::Progress(p));
+        });
+
+        let mut stream = if attachment.encrypted {
+            crypto.decrypt_streaming(stream, &attachment.nonce, 0)?
+        } else {
+            stream
+        };
+
+        while let Some(chunk) = stream.next().await {
+            if let Ok(chunk) = chunk {
+                file.write_all(&chunk)
+                    .map_err(|e| format!("写入文件失败:{}", e))?;
+            } else {
+                return Err("下载文件失败".to_string());
+            }
+        }
+        Ok::<(), String>(())
+    };
+    match logic.await {
+        Err(e) => {
+            let _ = event_res_clone.send(AttachmentProcessEvent::Error(e));
+        }
+        Ok(_) => {
+            let _ = event_res_clone.send(AttachmentProcessEvent::CompletedWithoutData);
         }
     }
 }
