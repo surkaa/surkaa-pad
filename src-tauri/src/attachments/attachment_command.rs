@@ -7,12 +7,11 @@ use crate::diaries::get_diary;
 use crate::state::AppState;
 use crate::stream::create_mock_stream;
 use crate::utils::{file_mimetype, file_size, file_to_stream, open_access_str_file};
-use std::fs::File;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_fs::FilePath;
+use tauri_plugin_fs::{FsExt, OpenOptions};
 
 /// 给日记添加附件
 /// # Arguments
@@ -265,14 +264,16 @@ pub async fn cmd_save_decrypt_attachment(
         .dialog()
         .file()
         .set_file_name(format!("{}.{}", attachment.filename, ext))
-        .blocking_pick_file()
+        .blocking_save_file()
         .ok_or("未选择".to_string())?;
 
-    let file = match filepath {
-        FilePath::Url(uri) => open_access_str_file(&uri.to_string()),
-        FilePath::Path(pb) => File::open(pb),
-    };
-    let file = file.map_err(|e| e.to_string())?;
+    let mut option = OpenOptions::new();
+    option.write(true).truncate(true).create(true);
+    let file = app_handle
+        .fs()
+        .open(filepath, option)
+        .map_err(|e| e.to_string())?;
+
     state.task_pool().spawn(async move {
         save_decrypt_attachment(
             (crypto, cache, lfc, client),
