@@ -45,6 +45,9 @@ function defaultButtons(ext: Extension, el: HTMLElement, ctx: ExtensionContext):
   return [{
     label: `转成${encrypted ? '普通' : '加密'}附件`,
     action: async () => await mediaAction.toggleAttachmentEncryption(filename)
+  }, {
+    label: '保存到本地',
+    action: async () => await mediaAction.saveDecryptAttachment(filename)
   }];
 }
 

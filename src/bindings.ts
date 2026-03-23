@@ -309,6 +309,22 @@ async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: str
 }
 },
 /**
+ * 让用户选择一个位置保存附近明文
+ * # Arguments
+ * * `id` - 日记 ID
+ * * `filename` - 附件 ID
+ * # Returns
+ * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ */
+async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_save_decrypt_attachment", { event, id, filename }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 取消任务
  * # Arguments
  * * `cancel_token` - 任务取消令牌

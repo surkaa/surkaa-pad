@@ -245,6 +245,48 @@ export function useMediaAction(
         }
     }
 
+    // TODO 整合三个函数的功能saveDecryptAttachment rotateAttachment toggleAttachmentEncryption
+    async function saveDecryptAttachment(filename: string) {
+        if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
+            console.log(`无法获取日记ID或文件名，无法执行保存。diaryId: ${diaryId.value}, filename: ${filename}`);
+            $q.notify({type: 'negative', message: '无法获取日记ID或文件名，无法执行保存'});
+            return;
+        }
+        uploadTaskMap.value = {};
+        editorDomRef.value?.focus();
+
+        const key = uuidv4();
+        uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
+
+        const event = createUploadChannel(key, (meta, url) => {
+            console.log('保存完成:', filename, meta.encrypted, url);
+            dataStore.updateAttachment(diaryId.value, meta);
+            if (!editorContentRef.value) {
+                console.error('编辑器内容引用未定义，无法更新媒体链接');
+                $q.notify({type: 'negative', message: '编辑器内容引用未定义，无法更新媒体链接'});
+                return;
+            }
+            const res = editorContentRef.value.updateSrc(filename, url);
+            if (!res) {
+                $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
+            }
+        });
+
+        try {
+            const cancelRes = await api.cmdSaveDecryptAttachment(
+                event,
+                diaryId.value,
+                filename
+            );
+            showUploadDialog.value = true;
+            cancelTokens.add(cancelRes);
+            console.log('保存附件命令已发送，取消令牌:', cancelRes);
+        } catch (e) {
+            uploadTaskMap.value[key].status = 'error';
+            $q.notify({type: 'negative', message: formatError(e)});
+        }
+    }
+
     async function pasteAttachments(files: File[]) {
         if (!editorContentRef.value) {
             console.error('编辑器内容引用未定义，无法插入媒体节点');
@@ -369,6 +411,7 @@ export function useMediaAction(
                 }
             }
         },
+        saveDecryptAttachment,
         toggleAttachmentEncryption,
         rotateAttachment,
         pasteAttachments,
