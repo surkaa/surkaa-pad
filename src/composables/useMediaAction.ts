@@ -128,7 +128,7 @@ export function useMediaAction(
         editorDomRef.value?.focus();
     }
 
-    const genericBatchUpload = async (encrypted: boolean, extensions: string[], nodeType?: MediaType, pickerMode?: PickerMode) => {
+    async function genericBatchUpload(encrypted: boolean, extensions: string[], nodeType?: MediaType, pickerMode?: PickerMode) {
         const currentRange = editorContentRef.value?.captureRange() || null;
         if (beforeClick()) return;
         const accessStrArr = await open({
@@ -155,51 +155,47 @@ export function useMediaAction(
         );
         showUploadDialog.value = true;
         await Promise.allSettled(uploads);
-    };
+    }
 
     async function toggleAttachmentEncryption(filename: string) {
-        return new Promise<void>((resolve, reject) => {
-            if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
-                console.log(`无法获取日记ID或文件名，无法执行转换。diaryId: ${diaryId.value}, filename: ${filename}`);
-                $q.notify({type: 'negative', message: '无法获取日记ID或文件名，无法执行转换'});
-                reject(new Error('Invalid diary ID or filename'));
+        if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
+            console.log(`无法获取日记ID或文件名，无法执行转换。diaryId: ${diaryId.value}, filename: ${filename}`);
+            $q.notify({type: 'negative', message: '无法获取日记ID或文件名，无法执行转换'});
+            return;
+        }
+        uploadTaskMap.value = {};
+        editorDomRef.value?.focus();
+
+        const key = uuidv4();
+        uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
+
+        const event = createUploadChannel(key, (meta, url) => {
+            console.log('转换完成:', filename, meta.encrypted, url);
+            dataStore.updateAttachment(diaryId.value, meta);
+            if (!editorContentRef.value) {
+                console.error('编辑器内容引用未定义，无法更新媒体链接');
+                $q.notify({type: 'negative', message: '编辑器内容引用未定义，无法更新媒体链接'});
                 return;
             }
-            uploadTaskMap.value = {};
-            editorDomRef.value?.focus();
+            const res = editorContentRef.value.updateSrc(filename, url);
+            if (!res) {
+                $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
+            }
+        });
 
-            const key = uuidv4();
-            uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
-
-            const event = createUploadChannel(key, (meta, url) => {
-                console.log('转换完成:', filename, meta.encrypted, url);
-                dataStore.updateAttachment(diaryId.value, meta);
-                if (!editorContentRef.value) {
-                    console.error('编辑器内容引用未定义，无法更新媒体链接');
-                    $q.notify({type: 'negative', message: '编辑器内容引用未定义，无法更新媒体链接'});
-                    resolve();
-                    return;
-                }
-                const res = editorContentRef.value.updateSrc(filename, url);
-                if (!res) {
-                    $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
-                }
-                resolve();
-            });
-            api.cmdToggleAttachmentEncryption(
+        try {
+            const cancelRes = await api.cmdToggleAttachmentEncryption(
                 event,
                 diaryId.value,
                 filename
-            ).then(cancelRes => {
-                showUploadDialog.value = true;
-                cancelTokens.add(cancelRes);
-                console.log('转换附件命令已发送，取消令牌:', cancelRes);
-            }).catch(e => {
-                $q.notify({type: 'negative', message: formatError(e)});
-                reject(new Error(e));
-            });
-            console.log('发送转换附件命令，等待结果...');
-        });
+            );
+            showUploadDialog.value = true;
+            cancelTokens.add(cancelRes);
+            console.log('转换附件命令已发送，取消令牌:', cancelRes);
+        } catch (e) {
+            uploadTaskMap.value[key].status = 'error';
+            $q.notify({type: 'negative', message: formatError(e)});
+        }
     }
 
     async function rotateAttachment(filename: string, rotation: number) {
