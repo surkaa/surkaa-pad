@@ -23,11 +23,11 @@ pub fn cmd_add_attachment(
     access_str: String,
     encrypted: bool,
 ) -> Result<String, String> {
-    let three_state = state.three_state()?;
+    let four_states = state.four_states()?;
     let (file, mimetype, stream) = open_file_stream(access_str)?;
     state.task_pool().spawn(async move {
         add_attachment(
-            three_state,
+            four_states,
             Arc::new(event),
             &id,
             encrypted,
@@ -57,7 +57,7 @@ pub fn cmd_add_attachment_memory(
     mimetype: String,
     encrypted: bool,
 ) -> Result<String, String> {
-    let three_state = state.three_state()?;
+    let four_states = state.four_states()?;
     let len = data.len();
     let mimetype = if mimetype.is_empty() {
         let end = std::cmp::min(data.len(), 128);
@@ -70,7 +70,7 @@ pub fn cmd_add_attachment_memory(
     let stream = create_mock_stream(data, len);
     state.task_pool().spawn(async move {
         add_attachment(
-            three_state,
+            four_states,
             Arc::new(event),
             &id,
             encrypted,
@@ -137,7 +137,7 @@ pub async fn cmd_add_image_attachment_from_camera(
         let binary_data = STANDARD.decode(base64_data).map_err(|e| e.to_string())?;
         let len = binary_data.len();
         let stream = create_mock_stream(binary_data, len);
-        let three = state.three_state()?;
+        let three = state.four_states()?;
         state.task_pool().spawn(async move {
             add_attachment(
                 three,
@@ -173,9 +173,9 @@ pub fn cmd_toggle_attachment_encryption(
     id: String,
     filename: String,
 ) -> Result<String, String> {
-    let three_state = state.three_state()?;
+    let four_states = state.four_states()?;
     state.task_pool().spawn(async move {
-        toggle_attachment_encryption(three_state, Arc::new(event), &id, filename).await;
+        toggle_attachment_encryption(four_states, Arc::new(event), &id, filename).await;
     })
 }
 
@@ -195,9 +195,9 @@ pub fn cmd_rotate_image_attachment(
     filename: String,
     rotation: i32,
 ) -> Result<String, String> {
-    let three_state = state.three_state()?;
+    let four_states = state.four_states()?;
     state.task_pool().spawn(async move {
-        rotate_image_attachment(three_state, Arc::new(event), &id, filename, rotation).await;
+        rotate_image_attachment(four_states, Arc::new(event), &id, filename, rotation).await;
     })
 }
 
