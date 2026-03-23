@@ -174,7 +174,7 @@ defineExpose({
   editor,
   updateSrc(id: string, newUrl: string) {
     if (!editor.value) return false;
-    const el = editor.value.querySelector(`img[data-id="${id}"]`);
+    const el = editor.value.querySelector(`[data-id="${id}"]`);
     if (!el) return false;
     if (el instanceof HTMLMediaElement) {
       el.src = newUrl;
