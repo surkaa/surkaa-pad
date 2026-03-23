@@ -2,7 +2,7 @@ use crate::attachments::attachment::{add_attachment, caching_attachment, delete_
 use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::state::AppState;
 use crate::stream::create_mock_stream;
-use crate::utils::open_file_stream;
+use crate::utils::{file_mimetype, file_size, file_to_stream, open_access_str_file};
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -24,14 +24,17 @@ pub fn cmd_add_attachment(
     encrypted: bool,
 ) -> Result<String, String> {
     let four_states = state.four_states()?;
-    let (file, mimetype, stream) = open_file_stream(access_str)?;
+    let file = open_access_str_file(&access_str).map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
+    let size = file_size(&file)?;
+    let (mimetype, file) = file_mimetype(file)?;
+    let stream = file_to_stream(file);
     state.task_pool().spawn(async move {
         add_attachment(
             four_states,
             Arc::new(event),
             &id,
             encrypted,
-            file,
+            size,
             mimetype,
             stream,
         )
@@ -124,8 +127,8 @@ pub async fn cmd_add_image_attachment_from_camera(
 ) -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
-        use base64::Engine;
         use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
         use tauri_plugin_native_camera::NativeCameraExt;
         const MIMETYPE: &str = "image/jpeg";
 

@@ -4,13 +4,14 @@ use std::io;
 use std::io::{Read, Seek};
 use tokio_util::io::ReaderStream;
 
-pub fn open_file_stream(access_str: String) -> Result<(u64, String, ByteStream), String> {
-    let mut file =
-        open_file(&access_str).map_err(|e| format!("无法打开文件{}:{}", access_str, e))?;
+pub fn file_size(file: &File) -> Result<u64, String> {
     let metadata = file
         .metadata()
         .map_err(|e| format!("无法获取文件元数据: {}", e))?;
-    let file_size = metadata.len();
+    Ok(metadata.len())
+}
+
+pub fn file_mimetype(mut file: File) -> Result<(String, File), String> {
     let mut buffer = [0; 128];
     let n = file
         .read(&mut buffer)
@@ -26,21 +27,24 @@ pub fn open_file_stream(access_str: String) -> Result<(u64, String, ByteStream),
     file.seek(io::SeekFrom::Start(0))
         .map_err(|e| format!("无法重置文件指针: {}", e))?;
 
+    Ok((mimetype, file))
+}
+
+pub fn file_to_stream(file: File) -> ByteStream {
     let tokio_file = tokio::fs::File::from_std(file);
-    let stream = ReaderStream::new(tokio_file);
-    Ok((file_size, mimetype, Box::pin(stream)))
+    Box::pin(ReaderStream::new(tokio_file))
 }
 
 /// 在 Windows 上直接打开路径
 #[cfg(target_os = "windows")]
-fn open_file(path: &str) -> io::Result<File> {
+pub fn open_access_str_file(path: &str) -> io::Result<File> {
     let path = std::path::PathBuf::from(path);
     File::open(path)
 }
 
 /// 在 Android 上通过 ContentResolver 获取文件描述符
 #[cfg(target_os = "android")]
-fn open_file(uri_string: &str) -> io::Result<File> {
+pub fn open_access_str_file(uri_string: &str) -> io::Result<File> {
     use std::os::unix::io::FromRawFd;
 
     // 获取 Android Context
