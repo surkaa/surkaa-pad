@@ -138,14 +138,14 @@ async function confirmEnableBiometric() {
   if (!verifyPassword.value) return;
   loading.value = true;
   try {
-    const dataToEncrypt = await api.cmdUnlock(verifyPassword.value);
+    const dataToEncrypt = await api.cmdValidPassword(verifyPassword.value);
     const response = await biometricCipher('请验证生物识别以启用快速解锁', {dataToEncrypt});
     await configStore.saveNormalConfig('biometric_enabled', true);
     await configStore.saveNormalConfig('biometric_dek', response.data);
     $q.notify('生物识别已成功开启');
     showPasswordVerify.value = false;
   } catch (err: any) {
-    $q.notify(`验证失败: ${err.message || err}`);
+    $q.notify({type: 'negative', message: formatError(err)});
   } finally {
     loading.value = false;
   }

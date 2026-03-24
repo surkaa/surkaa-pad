@@ -38,7 +38,7 @@ impl Crypto {
         let password = std::env::var("TEST_PASSWORD").expect("TEST_PASSWORD 未设置");
         let salt = std::env::var("TEST_SALT").expect("TEST_PASSWORD 未设置");
         let crypto = Crypto::new();
-        let _ = crypto.derive_dek(password, salt).expect("派生密钥失败");
+        crypto.derive_dek(password, &salt).expect("派生密钥失败");
         crypto
     }
 
@@ -122,41 +122,31 @@ impl Crypto {
     }
 
     /// 从给定的密码和盐中推导出数据加密密钥（DEK）
-    pub fn derive_dek(&self, mut password: String, salt: String) -> Result<String, String> {
-        let params = ParamsBuilder::new()
-            .t_cost(2)
-            .m_cost(MEMORY_COST_KIB)
-            .p_cost(4)
-            .output_len(KEY_LEN)
-            .build()
-            .map_err(|e| format!("参数错误:{}", e))?;
+    pub fn derive_dek(&self, password: String, salt: &str) -> Result<(), String> {
+        let derived_key = derive_key(password, salt)?;
 
-        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+        // 使用写锁进行覆盖赋值
+        if let Ok(mut guard) = self.inner.write() {
+            *guard = Some(derived_key);
+        }
+        Ok(())
+    }
 
-        let salt = SaltString::from_b64(salt.as_str()).map_err(|e| format!("非法盐:{}", e))?;
+    /// 验证密码获取加密密钥
+    pub fn valid_password(&self, password: String, salt: &str) -> Result<String, String> {
+        let derived_key = derive_key(password, salt)?;
 
-        let hash = argon2
-            .hash_password(password.as_bytes(), &salt)
-            .map_err(|e| format!("派生失败:{}", e))?;
+        // 获取读锁，错误直接返回
+        let guard = self.inner.read().map_err(|_| "锁状态异常".to_string())?;
 
-        password.zeroize();
+        // 取出已存储的密钥引用
+        let stored_key = guard.as_ref().ok_or("Crypto未初始化".to_string())?;
 
-        let dek = hash.hash.ok_or("无法提取哈希值".to_string())?;
-        if dek.as_bytes().len() == KEY_LEN {
-            let mut dek_array = [0u8; KEY_LEN];
-            dek_array.copy_from_slice(dek.as_bytes());
-            let derived_key = DerivedKey(dek_array);
-
-            // 使用写锁进行覆盖赋值
-            if let Ok(mut guard) = self.inner.write() {
-                *guard = Some(derived_key);
-            }
-
-            let dek_string = hex::encode(dek_array);
-            dek_array.zeroize();
-            Ok(dek_string)
+        // 比较内部字节数组
+        if derived_key.0 == stored_key.0 {
+            Ok(hex::encode(derived_key.0))
         } else {
-            Err("派生的密钥长度不正确".to_string())
+            Err("密码错误".to_string())
         }
     }
 
@@ -179,6 +169,32 @@ impl Crypto {
         dek_array.zeroize();
         Ok(())
     }
+}
+
+/// 派生密钥
+fn derive_key(password: String, salt: &str) -> Result<DerivedKey, String> {
+    let params = ParamsBuilder::new()
+        .t_cost(2)
+        .m_cost(MEMORY_COST_KIB)
+        .p_cost(4)
+        .output_len(KEY_LEN)
+        .build()
+        .map_err(|e| format!("参数错误:{}", e))?;
+
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let salt = SaltString::from_b64(salt).map_err(|e| format!("非法盐:{}", e))?;
+    let hash = argon2
+        .hash_password(password.as_bytes(), &salt)
+        .map_err(|e| format!("派生失败:{}", e))?;
+
+    let dek = hash.hash.ok_or("无法提取哈希值".to_string())?;
+    if dek.as_bytes().len() != KEY_LEN {
+        return Err("派生的密钥长度不正确".to_string());
+    }
+
+    let mut dek_array = [0u8; KEY_LEN];
+    dek_array.copy_from_slice(dek.as_bytes());
+    Ok(DerivedKey(dek_array))
 }
 
 fn ctr_stream_cipher(stream: ByteStream, mut cipher: Aes256Ctr) -> ByteStream {

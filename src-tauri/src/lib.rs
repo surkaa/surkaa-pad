@@ -11,14 +11,15 @@ mod utils;
 
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
-    cmd_delete_attachment, cmd_rotate_image_attachment, cmd_toggle_attachment_encryption,
-    cmd_caching_attachment, cmd_save_decrypt_attachment
+    cmd_caching_attachment, cmd_delete_attachment, cmd_rotate_image_attachment,
+    cmd_save_decrypt_attachment, cmd_toggle_attachment_encryption,
 };
 use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
 use crate::caches::cache_command::{cmd_clean_cache_file, cmd_clean_unused_file};
 use crate::caches::LOCAL_FILE_CACHE_FILENAME;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_encrypt_info, cmd_unlock,
+    cmd_valid_password,
 };
 use crate::diaries::diary_command::{
     cmd_delete_diary, cmd_get_diary_content, cmd_get_diary_summary, cmd_page_diary_ids,
@@ -52,6 +53,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_unlock,
             cmd_encrypt_data,
             cmd_decrypt_data,
+            cmd_valid_password,
             cmd_biometric_unlock,
             cmd_encrypt_info,
             // 客户端初始化

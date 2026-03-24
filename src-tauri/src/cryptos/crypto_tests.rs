@@ -20,9 +20,9 @@ mod tests {
 
         // 计算派生密钥所需要的时间
         let start_time = std::time::Instant::now();
-        let dek_string = crypto.derive_dek(password, salt).expect("派生密钥失败");
+        crypto.derive_dek(password, &salt).expect("派生密钥失败");
         let duration = start_time.elapsed();
-        println!("派生 DEK 用时: {:?}, 密钥字符串: {}", duration, dek_string);
+        println!("派生 DEK 用时: {:?}", duration);
 
         let data = b"The quick brown fox jumps over the lazy dog".repeat(10000);
         dbg!(&data.len());
@@ -124,7 +124,7 @@ mod tests {
         let crypto = Crypto::new();
         let password = "offset_test_password".to_string();
         let salt = STANDARD.encode("offset_test_salt").replace("=", "");
-        crypto.derive_dek(password, salt).expect("派生密钥失败");
+        crypto.derive_dek(password, &salt).expect("派生密钥失败");
 
         // 生成约 2MB  多的随机数据
         let data_size = 2 * 1024 * 1024 + 123;

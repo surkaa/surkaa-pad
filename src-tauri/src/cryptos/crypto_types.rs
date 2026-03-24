@@ -14,6 +14,8 @@ pub const MEMORY_COST_KIB: u32 = 1024;
 #[cfg(not(debug_assertions))]
 pub const MEMORY_COST_KIB: u32 = 256 * 1024;
 
+pub const DERIVE_SALT: &str = "NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg";
+
 // 定义 AES-256-CTR 类型 (128BE代表128位大端序计数器)
 pub type Aes256Ctr = ctr::Ctr128BE<aes::Aes256>;
 

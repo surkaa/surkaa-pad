@@ -1,5 +1,5 @@
 use tauri::State;
-use crate::cryptos::crypto_types::MEMORY_COST_KIB;
+use crate::cryptos::crypto_types::{DERIVE_SALT, MEMORY_COST_KIB};
 use crate::state::AppState;
 
 /// 解锁加密管理器
@@ -12,10 +12,27 @@ use crate::state::AppState;
 pub async fn cmd_unlock(
     state: State<'_, AppState>,
     master_password: String,
-) -> Result<String, String> {
+) -> Result<(), String> {
     state.crypto().derive_dek(
         master_password,
-        "NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg".to_string(),
+        DERIVE_SALT,
+    )
+}
+
+/// 验证密码获取密钥
+/// # Arguments
+/// * `master_password` - 主密码
+/// # Returns
+/// * `Result<String, String>` - 成功时返回数据加密密钥，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_valid_password(
+    state: State<'_, AppState>,
+    master_password: String,
+) -> Result<String, String> {
+    state.crypto().valid_password(
+        master_password,
+        DERIVE_SALT,
     )
 }
 

@@ -14,7 +14,7 @@ export const commands = {
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdUnlock(masterPassword: string) : Promise<Result<string, string>> {
+async cmdUnlock(masterPassword: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_unlock", { masterPassword }) };
 } catch (e) {
@@ -47,6 +47,21 @@ async cmdEncryptData(data: string) : Promise<Result<number[], string>> {
 async cmdDecryptData(encrypted: number[]) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_decrypt_data", { encrypted }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 验证密码获取密钥
+ * # Arguments
+ * * `master_password` - 主密码
+ * # Returns
+ * * `Result<String, String>` - 成功时返回数据加密密钥，失败时返回错误信息
+ */
+async cmdValidPassword(masterPassword: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_valid_password", { masterPassword }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
