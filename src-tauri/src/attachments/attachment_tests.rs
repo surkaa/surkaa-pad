@@ -23,7 +23,9 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let lfc = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let lfc = LocalFileCache::new(path);
 
         // 0. 判断是是否为空
         let (ids, _) = page_diary_ids(&client, None)
@@ -146,7 +148,9 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let lfc = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let lfc = LocalFileCache::new(path);
 
         // 预置数据：初始化日记
         let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "加密切换测试")
@@ -229,7 +233,9 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let lfc = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let lfc = LocalFileCache::new(path);
 
         // 准备环境：保存日记并上传一张原始图片
         let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "图片旋转测试")
@@ -330,7 +336,9 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let lfc = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let lfc = LocalFileCache::new(path);
 
         // 预置数据：初始化日记主体
         let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "附件缓存生命周期测试")

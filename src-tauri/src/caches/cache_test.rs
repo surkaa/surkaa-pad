@@ -12,7 +12,9 @@ mod lfc_tests {
 
     #[tokio::test]
     async fn test_save_bytes_and_get() {
-        let cache = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let cache = LocalFileCache::new(path);
         let key = "test-key";
         let data = b"hello world";
 
@@ -36,7 +38,9 @@ mod lfc_tests {
 
     #[tokio::test]
     async fn test_save_stream_error_abort() {
-        let cache = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let cache = LocalFileCache::new(path);
         let key = "abort-key";
         // 创建一个会出错的流：第一个块正常，第二个块返回错误
         let stream = futures_util::stream::iter(vec![
@@ -61,14 +65,19 @@ mod lfc_tests {
 
     #[tokio::test]
     async fn test_delete_nonexistent_key() {
-        let cache = LocalFileCache::new_test();
-        cache.delete("ghost").await; // 不应 panic
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let cache = LocalFileCache::new(path);
+        cache.delete("ghost").await;
+        assert!(cache.get("ghost").await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn test_concurrent_save() {
         use std::sync::Arc;
-        let cache = Arc::new(LocalFileCache::new_test());
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let cache = Arc::new(LocalFileCache::new(path));
         let key1 = "key1";
         let key2 = "key2";
         let data1 = b"data1";
@@ -93,7 +102,9 @@ mod lfc_tests {
 
     #[tokio::test]
     async fn test_save_stream_parent_dir_creation() {
-        let cache = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let cache = LocalFileCache::new(path);
         let key = "nested/dir/structure/file";
         let data = b"nested data";
         let md5 = format!("{:X}", md5::compute(data));

@@ -81,17 +81,6 @@ impl LocalFileCache {
         }
     }
 
-    #[cfg(test)]
-    pub fn new_test() -> Self {
-        let path = tempfile::tempdir()
-            .expect("无法创建临时目录")
-            .path()
-            .to_path_buf();
-        Self {
-            cache_dir: Arc::new(path),
-        }
-    }
-
     fn get_path(&self, key: &str) -> (PathBuf, PathBuf) {
         let path = self.cache_dir.join(key);
         let path_full = path.extension().unwrap_or_default().to_string_lossy();

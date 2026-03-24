@@ -19,7 +19,9 @@ mod diary_tests {
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
         let cache = DiaryMemoryCache::new();
-        let lfc = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let lfc = LocalFileCache::new(path);
 
         // 判断为空，确保测试环境干净
         let (objects, _) = client.list("", None).await.expect("未能列出对象");
@@ -82,7 +84,9 @@ mod diary_tests {
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
         let cache = DiaryMemoryCache::new();
-        let lfc = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let lfc = LocalFileCache::new(path);
 
         // 保存第一篇日记
         let content1 = "Original content for cache test.";
@@ -178,7 +182,9 @@ mod diary_list_tests {
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
         let cache = DiaryMemoryCache::new();
-        let lfc = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let lfc = LocalFileCache::new(path);
 
         // 确保是空的测试环境
         let (ids, _) = page_diary_ids(&client, None)
@@ -308,7 +314,9 @@ mod diary_search_tests {
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
         let cache = DiaryMemoryCache::new();
-        let lfc = LocalFileCache::new_test();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let lfc = LocalFileCache::new(path);
 
         // 确保是空的测试环境
         let (ids, _) = page_diary_ids(&client, None)
