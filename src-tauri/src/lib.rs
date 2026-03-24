@@ -15,7 +15,7 @@ use crate::attachments::attachment_command::{
     cmd_caching_attachment, cmd_save_decrypt_attachment
 };
 use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
-use crate::caches::cache_command::cmd_clean_cache_file;
+use crate::caches::cache_command::{cmd_clean_cache_file, cmd_clean_unused_file};
 use crate::caches::LOCAL_FILE_CACHE_FILENAME;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
@@ -76,6 +76,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             // 其他
             cmd_cancel_task,
             cmd_clean_cache_file,
+            cmd_clean_unused_file,
         ]);
 
     #[cfg(debug_assertions)]

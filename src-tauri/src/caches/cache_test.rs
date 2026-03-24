@@ -116,4 +116,67 @@ mod lfc_tests {
 
         assert!(cache.get(key).await.unwrap().is_some());
     }
+
+    #[tokio::test]
+    async fn test_delete_all() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        println!("temp dir: {:?}", temp_dir);
+        let cache = LocalFileCache::new(path);
+        let key1 = "key1";
+        let key2 = "key2";
+        let data1 = b"data1";
+        let data2 = b"data2";
+
+        cache.save_bytes(key1, data1).await.unwrap();
+        cache.save_bytes(key2, data2).await.unwrap();
+
+        // 确认缓存存在
+        assert!(cache.get(key1).await.unwrap().is_some());
+        assert!(cache.get(key2).await.unwrap().is_some());
+
+        // 删除所有缓存
+        cache.delete_all().await.unwrap();
+
+        // 验证缓存已清除
+        assert!(cache.get(key1).await.unwrap().is_none());
+        assert!(cache.get(key2).await.unwrap().is_none());
+
+        // 验证可以继续保存新缓存
+        cache.save_bytes("new-key", b"new data").await.unwrap();
+        assert!(cache.get("new-key").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_get_all() {
+        use std::collections::HashMap;
+
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let cache = LocalFileCache::new(path);
+        let entries: Vec<(&str, &[u8])> = vec![
+            ("a", b"data_a"),
+            ("b/c", b"data_bc"),
+            ("d/e/f", b"data_def"),
+            ("g", b"data_g"),
+        ];
+
+        let mut expected = HashMap::new();
+        for (key, data) in &entries {
+            cache.save_bytes(key, data).await.unwrap();
+            expected.insert(key.to_string(), md5_hex(data));
+        }
+
+        let all = cache.get_all().await.unwrap();
+        assert_eq!(all.len(), entries.len());
+
+        for (key, md5) in all {
+            assert_eq!(expected.get(&key), Some(&md5), "Key: {}", key);
+        }
+
+        // 测试空缓存
+        cache.delete_all().await.unwrap();
+        let empty = cache.get_all().await.unwrap();
+        assert!(empty.is_empty());
+    }
 }

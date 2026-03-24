@@ -330,4 +330,53 @@ impl LocalFileCache {
         }
         Ok(())
     }
+
+    /// 获取所有缓存文件信息(Key, Md5)
+    pub async fn get_all(&self) -> Result<Vec<(String, String)>, String> {
+        let mut results = Vec::new();
+        let mut stack = vec![self.cache_dir.as_ref().to_path_buf()];
+
+        while let Some(dir) = stack.pop() {
+            let mut read_dir = tokio::fs::read_dir(&dir)
+                .await
+                .map_err(|e| format!("无法读取目录 {}: {}", dir.display(), e))?;
+
+            while let Some(entry) = read_dir.next_entry().await.map_err(|e| e.to_string())? {
+                let file_type = entry.file_type().await.map_err(|e| e.to_string())?;
+                #[cfg(debug_assertions)]
+                println!("{:?}, filetype: {}", entry.path(), file_type.is_file());
+                if file_type.is_dir() {
+                    stack.push(entry.path());
+                    continue;
+                }
+                let path = entry.path();
+                let file_name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .ok_or("无法解析文件名")?;
+                if !file_name.ends_with(DATA_FILE_SUFFIX) {
+                    continue;
+                }
+                // 获取相对路径
+                let relative = path
+                    .strip_prefix(&self.cache_dir.as_path())
+                    .map_err(|e| format!("路径错误: {}", e))?;
+                let key_with_sep = relative
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                if let Some(key) = key_with_sep.strip_suffix(DATA_FILE_SUFFIX) {
+                    let md5_path = self.cache_dir.join(format!("{}{}", key, MD5_FILE_SUFFIX));
+                    if md5_path.exists() {
+                        if let Ok(md5) = tokio::fs::read_to_string(&md5_path).await {
+                            results.push((key.to_string(), md5.trim().to_string()));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(results)
+    }
 }
