@@ -54,6 +54,12 @@
               <q-icon name="chevron_right" class="desc-text"/>
             </q-item-section>
           </q-item>
+          <q-item clickable v-ripple @click="cleanUnusedFile">
+            <q-item-section class="label-text text-weight-medium">清除过期缓存</q-item-section>
+            <q-item-section side>
+              <q-icon name="chevron_right" class="desc-text"/>
+            </q-item-section>
+          </q-item>
           <q-item clickable v-ripple @click="handleReset">
             <q-item-section class="text-negative text-weight-medium">重置应用配置</q-item-section>
             <q-item-section side>
@@ -103,6 +109,7 @@ import {useQuasar} from "quasar";
 import {useConfigStore} from "../../stores/config.ts";
 import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import api from "../../utils/api.ts";
+import {formatError} from "../../utils/formatError.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -155,6 +162,15 @@ async function handleReset() {
     await api.cmdCleanCacheFile();
     $q.notify('配置已重置, 即将自动重启');
     setTimeout(relaunch, 1000);
+  }
+}
+
+async function cleanUnusedFile() {
+  try {
+    const deleted = await api.cmdCleanUnusedFile();
+    $q.notify({type: 'positive', message: `清除了${deleted.length}个缓存文件`});
+  } catch (e) {
+    $q.notify({type: 'negative', message: formatError(e)});
   }
 }
 
