@@ -82,10 +82,8 @@ impl LocalFileCache {
     }
 
     fn get_path(&self, key: &str) -> (PathBuf, PathBuf) {
-        let path = self.cache_dir.join(key);
-        let path_full = path.extension().unwrap_or_default().to_string_lossy();
-        let data_path = path.with_extension(format!("{}{}", &path_full, DATA_FILE_SUFFIX));
-        let md5_path = path.with_extension(format!("{}{}", &path_full, MD5_FILE_SUFFIX));
+        let data_path = self.cache_dir.join(format!("{}{}", key, DATA_FILE_SUFFIX));
+        let md5_path = self.cache_dir.join(format!("{}{}", key, MD5_FILE_SUFFIX));
         (data_path, md5_path)
     }
 
