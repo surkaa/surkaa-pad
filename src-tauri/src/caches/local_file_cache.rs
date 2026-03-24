@@ -313,9 +313,20 @@ impl LocalFileCache {
 
     /// 删除所有缓存
     pub async fn delete_all(&self) -> Result<(), String> {
-        // 直接删除整个缓存目录并重新创建
-        if self.cache_dir.exists() {
-            let _ = tokio::fs::remove_file(self.cache_dir.as_ref()).await;
+        let mut read_dir = tokio::fs::read_dir(self.cache_dir.as_path())
+            .await
+            .map_err(|e| e.to_string())?; // TODO 统一项目中的Error
+        while let Some(entry) = read_dir.next_entry().await.map_err(|e| e.to_string())? {
+            let file_type = entry.file_type().await.map_err(|e| e.to_string())?;
+            if file_type.is_dir() {
+                tokio::fs::remove_dir_all(entry.path())
+                    .await
+                    .map_err(|e| e.to_string())?;
+            } else {
+                tokio::fs::remove_file(entry.path())
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
         }
         Ok(())
     }
