@@ -82,3 +82,9 @@ export function formatBytes(bytes?: number): string {
     }
     return `${size.toFixed(0)} ${units[index]}`;
 }
+
+export function formatKiB(kibibytes?: number): string {
+    if (kibibytes === undefined || kibibytes === null) return 'N/A';
+    const bytes = kibibytes * 1024; // 将KiB转换为Bytes
+    return formatBytes(bytes); // 使用formatBytes函数格式化
+}

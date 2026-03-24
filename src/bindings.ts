@@ -68,6 +68,17 @@ async cmdBiometricUnlock(dek: string) : Promise<Result<null, string>> {
 }
 },
 /**
+ * 获取加密配置
+ */
+async cmdEncryptInfo() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_encrypt_info") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 初始化 OSS 客户端
  * # Arguments
  * * `akid` - 访问密钥 ID

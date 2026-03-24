@@ -7,6 +7,10 @@
           <img alt="app-logo" class="app-logo" src="/app-icon.png"/>
           <div class="text-h5 text-weight-bold">{{ appName }}</div>
           <div class="text-subtitle1 text-weight-regular version-text">{{ version }}</div>
+          <div class="text-subtitle2 version-text" style="opacity: 0.4">
+            <q-icon name="security" size="14px" class="q-mr-xs" />
+            {{ formatKiB(encryptedMemoryCost) }}
+          </div>
         </div>
       </q-card-section>
 
@@ -149,7 +153,7 @@ import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {platform} from "@tauri-apps/plugin-os";
-
+import {formatKiB} from "../../utils";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -170,6 +174,7 @@ const masterPassword = ref<string>('');
 const loading = ref<boolean>(false);
 const version = ref('0.0.0');
 const appName = ref('App Name');
+const encryptedMemoryCost = ref(0);
 const isAndroid = platform() === 'android';
 
 async function saveConfigAndLogin() {
@@ -311,6 +316,7 @@ async function tryBiometricUnlock() {
 onMounted(async () => {
   version.value = await getVersion();
   appName.value = await getName();
+  encryptedMemoryCost.value = await api.cmdEncryptInfo();
   const ec = await configStore.getNormalConfig('encrypted_oss_config');
   if (ec) {
     pipeline.value = 'login';

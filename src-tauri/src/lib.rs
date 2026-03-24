@@ -18,7 +18,7 @@ use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
 use crate::caches::cache_command::{cmd_clean_cache_file, cmd_clean_unused_file};
 use crate::caches::LOCAL_FILE_CACHE_FILENAME;
 use crate::cryptos::crypto_command::{
-    cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_unlock,
+    cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_encrypt_info, cmd_unlock,
 };
 use crate::diaries::diary_command::{
     cmd_delete_diary, cmd_get_diary_content, cmd_get_diary_summary, cmd_page_diary_ids,
@@ -53,6 +53,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_encrypt_data,
             cmd_decrypt_data,
             cmd_biometric_unlock,
+            cmd_encrypt_info,
             // 客户端初始化
             cmd_init_oss_client,
             // 日记基本操作

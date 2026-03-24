@@ -1,4 +1,5 @@
 use tauri::State;
+use crate::cryptos::crypto_types::MEMORY_COST_KIB;
 use crate::state::AppState;
 
 /// 解锁加密管理器
@@ -54,4 +55,11 @@ pub async fn cmd_decrypt_data(
     let decrypted_bytes = state.crypto().decrypt(&encrypted)?;
     let decrypted_string = String::from_utf8(decrypted_bytes).map_err(|e| e.to_string())?;
     Ok(decrypted_string)
+}
+
+/// 获取加密配置
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_encrypt_info() -> Result<u32, String> {
+    Ok(MEMORY_COST_KIB)
 }
