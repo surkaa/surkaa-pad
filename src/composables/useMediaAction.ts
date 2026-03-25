@@ -128,13 +128,13 @@ export function useMediaAction(
         editorDomRef.value?.focus();
     }
 
-    async function genericBatchUpload(encrypted: boolean, extensions: string[], nodeType?: MediaType, pickerMode?: PickerMode) {
+    async function genericBatchUpload(encrypted: boolean, extensions?: string[], nodeType?: MediaType, pickerMode?: PickerMode) {
         const currentRange = editorContentRef.value?.captureRange() || null;
         if (beforeClick()) return;
         const accessStrArr = await open({
             multiple: true,
             pickerMode: pickerMode,
-            filters: [{name: pickerMode || 'filter file', extensions}]
+            filters: extensions ? [{name: pickerMode || 'filter file', extensions}] : undefined
         });
         console.log('选中文件:', accessStrArr);
         if (!accessStrArr) return;
@@ -393,7 +393,7 @@ export function useMediaAction(
         },
         insertAudio: () => genericBatchUpload(false, ['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
         insertVideo: () => genericBatchUpload(false, ['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video', "video"),
-        insertFile: async () => genericBatchUpload(true, ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'zip', 'rar']),
+        insertFile: async () => genericBatchUpload(true),
         cachingAttachment: async (filenames: string[]) => {
             if (!filenames.length) return;
             showUploadDialog.value = true;
