@@ -1,7 +1,4 @@
-use crate::attachments::attachment::{
-    add_attachment, caching_attachment, delete_attachment, rotate_image_attachment,
-    save_decrypt_attachment, toggle_attachment_encryption,
-};
+use crate::attachments::attachment::{add_attachment, caching_attachment, delete_attachment, rotate_image_attachment, save_decrypt_attachment, toggle_attachment_encryption, update_attachment_filename};
 use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::diaries::get_diary;
 use crate::state::AppState;
@@ -285,11 +282,34 @@ pub async fn cmd_save_decrypt_attachment(
         save_decrypt_attachment(
             (crypto, cache, lfc, client),
             Arc::new(event),
-            id,
+            &id,
             filename,
             attachment,
             file,
         )
         .await;
     })
+}
+
+/// 重命名附件
+/// # Arguments
+/// * `id` - 日记 ID
+/// * `old_filename` - 旧附件 ID
+/// * `new_filename` - 新附件 ID
+/// # Returns
+/// * `Result<(), String>` - 成功时返回null，失败时返回错误信息
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_update_attachment_filename(
+    state: State<'_, AppState>,
+    id: String,
+    old_filename: String,
+    new_filename: String,
+) -> Result<(), String> {
+    update_attachment_filename(
+        state.four_states()?,
+        &id,
+        old_filename,
+        new_filename
+    ).await
 }

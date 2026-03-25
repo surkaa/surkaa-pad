@@ -11,8 +11,6 @@ use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;
 use serde_json::from_slice;
 
-
-
 pub async fn save_diary(
     cache: &DiaryMemoryCache,
     lfc: &LocalFileCache,
@@ -196,6 +194,35 @@ pub async fn update_diary_attachment(
     diary.updated = Utc::now().timestamp_millis();
     update_diary(cache, lfc, crypto, client, &diary).await?;
     Ok(())
+}
+
+pub async fn update_diary_attachment_filename(
+    cache: &DiaryMemoryCache,
+    lfc: &LocalFileCache,
+    crypto: &Crypto,
+    client: &OssClient,
+    id: &str,
+    old_filename: &str,
+    new_filename: &str,
+) -> Result<(), String> {
+    let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
+    if let Some(att) = diary
+        .attachments
+        .iter_mut()
+        .find(|att| att.filename == old_filename)
+    {
+        att.filename = new_filename.to_string();
+        // 更新 diary.content
+        diary.content = diary.content.replace(
+            &format!("{}]]", old_filename),
+            &format!("{}]]", new_filename),
+        );
+        diary.updated = Utc::now().timestamp_millis();
+        update_diary(cache, lfc, crypto, client, &diary).await?;
+        Ok(())
+    } else {
+        Err("未找到指定的附件".to_string())
+    }
 }
 
 pub async fn delete_diary_attachment(

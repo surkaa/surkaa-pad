@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::attachments::attachment::{
-        add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption,
-    };
+    use crate::attachments::attachment::{add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption, update_attachment_filename};
     use crate::attachments::attachment_types::AttachmentProcessEvent;
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::Crypto;
@@ -417,5 +415,62 @@ mod tests {
         delete_diary(&cache, &lfc, &client, &diary_id)
             .await
             .unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_attachment_rename() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = Crypto::from_env();
+        let client = OssClient::from_env();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().to_path_buf();
+        let lfc = LocalFileCache::new(path);
+        let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "test-content")
+            .await
+            .expect("初始化日记失败");
+        let diary_id = summary.id;
+        let raw_data = b"cache payload test".to_vec();
+        let size = raw_data.len() as u64;
+        let stream = create_mock_stream(raw_data.clone(), size as usize);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
+        add_attachment(
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            Arc::new(tx),
+            &diary_id,
+            false,
+            size,
+            "text/plain".to_string(),
+            stream,
+        ).await;
+        let mut filename = None;
+        while let Some(event) = rx.recv().await {
+            match event {
+                AttachmentProcessEvent::Started => {}
+                AttachmentProcessEvent::Progress(_) => {}
+                AttachmentProcessEvent::Completed(m, _) => filename = Some(m.filename),
+                AttachmentProcessEvent::CompletedWithoutData => {}
+                AttachmentProcessEvent::Error(e) => panic!("添加附件失败: {}", e)
+            }
+        }
+        assert!(filename.is_some(), "附件上传未完成");
+        let new_filename = "test";
+        // 更名
+        update_attachment_filename(
+            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &diary_id,
+            filename.unwrap(),
+            new_filename.to_string(),
+        ).await.expect("附件更名失败");
+        // 检查
+        let diary = get_diary(&cache, &lfc, &crypto, &client, &diary_id)
+            .await
+            .expect("获取日记失败");
+        let meta = diary.attachments.first().unwrap();
+        assert_eq!(meta.filename, new_filename, "附件更名后元数据未更新");
+        // 清理
+        delete_diary(&cache, &lfc, &client, &diary_id)
+            .await
+            .expect("测试结束时清理日记失败");
     }
 }

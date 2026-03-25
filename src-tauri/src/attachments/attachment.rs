@@ -3,19 +3,21 @@ use crate::attachments::{get_full_attachment_url, AttachmentMeta};
 use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
 use crate::cryptos::Crypto;
-use crate::diaries::{delete_diary_attachment, get_diary, update_diary_attachment};
+use crate::diaries::{
+    delete_diary_attachment, get_diary, update_diary_attachment, update_diary_attachment_filename,
+};
 use crate::object::OssClient;
 use crate::storages::remote_attachments_key;
 use crate::stream::ByteStream;
 use crate::stream::{collect_data, create_mock_stream, tracker_stream};
 use crate::utils::message_sender::MessageSender;
 use dashmap::DashMap;
+use futures_util::StreamExt;
 use image::ImageFormat;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use std::sync::{Arc, LazyLock};
-use futures_util::StreamExt;
 use tokio::sync::Mutex;
 
 // 添加附件的锁
@@ -420,7 +422,7 @@ pub async fn caching_attachment(
 pub async fn save_decrypt_attachment(
     (crypto, _, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: String,
+    id: &str,
     filename: String,
     attachment: AttachmentMeta,
     mut file: File,
@@ -428,7 +430,7 @@ pub async fn save_decrypt_attachment(
     let event_res_clone = event.clone();
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async move {
-        let key = remote_attachments_key(&id, &filename);
+        let key = remote_attachments_key(id, &filename);
         let (stream, size) = get_attachment_stream(&key, &lfc, &client, None).await?;
         let event_clone = event.clone();
         let stream = tracker_stream(size, stream, move |p| {
@@ -459,4 +461,38 @@ pub async fn save_decrypt_attachment(
             let _ = event_res_clone.send(AttachmentProcessEvent::CompletedWithoutData);
         }
     }
+}
+
+pub async fn update_attachment_filename(
+    (crypto, cache, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
+    id: &str,
+    old_filename: String,
+    new_filename: String,
+) -> Result<(), String> {
+    let diary = get_diary(&cache, &lfc, &crypto, &client, &id).await?;
+
+    // 确认存在那个附件
+    if !diary.attachments.iter().any(|a| a.filename == old_filename) {
+        return Err("原附件不存在".to_string());
+    }
+
+    // 更新远端存储的 key
+    let old_key = remote_attachments_key(&id, &old_filename);
+    let new_key = remote_attachments_key(&id, &new_filename);
+
+    // 先复制一份新的对象
+    client.rename(&old_key, &new_key).await?;
+
+    update_diary_attachment_filename(
+        &cache,
+        &lfc,
+        &crypto,
+        &client,
+        &id,
+        &old_filename,
+        &new_filename,
+    )
+    .await?;
+
+    Ok(())
 }
