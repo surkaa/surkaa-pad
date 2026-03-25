@@ -86,9 +86,14 @@ async fn process_attachment(
     // Slice Pattern Matching 路由硬解
     let path = request.uri().path().trim_start_matches('/');
     let segments: Vec<&str> = path.split('/').collect();
-    let [id, filename] = segments.as_slice() else {
+    let [id, encoded_filename] = segments.as_slice() else {
         return Err(ProtocolError::BadRequest("Invalid URI path structure"));
     };
+
+    // 对 filename 进行 URL 解码，处理中文或特殊字符
+    let filename = urlencoding::decode(encoded_filename)
+        .map_err(|_| ProtocolError::BadRequest("Invalid URL encoding in filename"))?
+        .into_owned();
 
     let diary = get_diary(&cache, &lfc, &crypto, &client, id)
         .await
@@ -97,7 +102,8 @@ async fn process_attachment(
     let attachment = diary
         .attachments
         .iter()
-        .find(|a| a.filename == *filename)
+        // 使用解码后的原始文件名进行匹配
+        .find(|a| a.filename == filename)
         .ok_or(ProtocolError::NotFound("attachment"))?;
 
     if attachment.algorithm == Gcm {
@@ -127,7 +133,7 @@ async fn process_attachment(
         None => (0, file_size.saturating_sub(1), false),
     };
 
-    let key = remote_attachments_key(id, filename);
+    let key = remote_attachments_key(id, &filename);
     let (stream, len) = get_attachment_stream(&key, &lfc, &client, Some((start, end)))
         .await
         .map_err(|e| ProtocolError::Internal(e.to_string()))?;
@@ -176,11 +182,14 @@ pub fn get_full_attachment_url(
     attachment: &AttachmentMeta,
     client: &OssClient,
 ) -> Result<String, String> {
+    // 对文件名进行 URL Encode
+    let encoded_filename = urlencoding::encode(&attachment.filename);
+
     if attachment.encrypted {
         let timestamp = Utc::now().timestamp();
         Ok(format!(
             "http://{}.localhost/{}/{}?t={}",
-            PROTOCOL_NAME, id, &attachment.filename, timestamp
+            PROTOCOL_NAME, id, encoded_filename, timestamp
         ))
     } else {
         // TODO 考虑针对未加密的附件也尝试访问缓存
