@@ -16,6 +16,7 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
   (e: 'toggleAttachmentEncryption', filename: string): Promise<void>;
   (e: 'rotateAttachment', filename: string, rotation: number): void;
+  (e: 'renameAttachment', filename: string, cb: (newFilename: string) => void): void;
   (e: 'pasteAttachments', files: File[]): void; // 上传完成后外部手动调用插入dom节点
   (e: 'showImage', src: string): void
 }>();
@@ -49,6 +50,8 @@ const extensionCtx: ExtensionContext = {
   emit(event, ...args) {
     if (event === 'rotateAttachment') {
       emit('rotateAttachment', args[0], args[1]);
+    } else if (event === 'renameAttachment') {
+      emit('renameAttachment', args[0], args[1]); // TODO 增加类型约束
     }
   }
 }

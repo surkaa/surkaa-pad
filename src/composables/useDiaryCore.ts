@@ -114,6 +114,11 @@ export function useDiaryCore() {
         });
     }
 
+    function updateContent(newContent: string) {
+        if (diaryContent.value === newContent) return;
+        diaryContent.value = newContent;
+    }
+
     // 监听日记内容的变化
     watch(diaryContent, (newValue, oldValue) => {
         // 如果还没加载完，或者值根本没变，则不触发保存
@@ -181,6 +186,7 @@ export function useDiaryCore() {
         unusedAttachments,
         isDelBack,
         loadDiaryInfo,
-        deleteDiary
+        deleteDiary,
+        updateContent
     };
 }

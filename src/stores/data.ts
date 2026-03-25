@@ -45,6 +45,16 @@ export const useDataStore = defineStore('data', () => {
         }
     }
 
+    function updateAttachmentFilename(diaryId: string, oldFilename: string, newFilename: string) {
+        const summary = diarySummaries.value[diaryId];
+        if (summary) {
+            const attachmentIndex = summary.attachments.findIndex(att => att.filename === oldFilename);
+            if (attachmentIndex !== -1) {
+                summary.attachments[attachmentIndex].filename = newFilename;
+            }
+        }
+    }
+
     function deleteAttachment(diaryId: string, filenames: string[]) {
         const summary = diarySummaries.value[diaryId];
         if (summary) {
@@ -62,6 +72,7 @@ export const useDataStore = defineStore('data', () => {
         insertNewDiary,
         deleteSummary,
         updateAttachment,
+        updateAttachmentFilename,
         deleteAttachment,
     }
 });

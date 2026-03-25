@@ -40,5 +40,23 @@ export const FileExtension: Extension<HTMLDivElement> = {
         console.log(`Attachment: ${att?.filename}`);
     },
 
-    getFilename: (node) => node.dataset.id
+    getFilename: (node) => node.dataset.id,
+
+    onContextmenu: (_, node, ctx) => {
+        const filename = node.dataset.id;
+        if (!filename) {
+            console.error(`无法打开附件菜单，缺少 data-id`);
+            return [];
+        }
+        return [{
+            label: '重命名附件',
+            action: (el) => ctx.emit('renameAttachment', filename, (newFilename: string) => {
+                // 更新DOM显示的文件
+                const span = el.querySelector('.file-name');
+                if (span) {
+                    span.textContent = newFilename;
+                }
+            })
+        }];
+    }
 }

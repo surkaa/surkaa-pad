@@ -14,15 +14,20 @@ import {useDataStore} from "../../stores/data.ts";
 import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
 import {Extension, ExtensionContext, MenuButton} from "../../components/editor/extension.ts";
+import {formatError} from "../../utils/formatError.ts";
 
 const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
+const showRenameDialog = ref(false);
+const oldFilename = ref('');
+const newFilename = ref('');
+let renameCb: ((newFilename: string) => void) | null = null;
 
 const {
   diaryId, diary, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
-  loadDiaryInfo, deleteDiary
+  loadDiaryInfo, deleteDiary, updateContent
 } = useDiaryCore();
 
 // UI交互
@@ -35,7 +40,7 @@ const {
 const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, liveEditorRef);
 const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaAction;
 
-const {deleteAttachment} = useDataStore();
+const {deleteAttachment, updateAttachmentFilename} = useDataStore();
 
 function defaultButtons(ext: Extension, el: HTMLElement, ctx: ExtensionContext): MenuButton[] {
   if (!ext.getFilename) return [];
@@ -78,6 +83,33 @@ function showImage(src: string) {
     component: ImagePreview,
     componentProps: {src}
   })
+}
+
+function renameAttachment(filename: string, cb: (newFilename: string) => void) {
+  showRenameDialog.value = true;
+  oldFilename.value = filename;
+  newFilename.value = filename;
+  renameCb = cb;
+}
+
+async function handleRenameAttachment() {
+  if (!newFilename.value || oldFilename.value === newFilename.value) {
+    showRenameDialog.value = false;
+    return;
+  }
+  try {
+    await api.cmdUpdateAttachmentFilename(
+        diaryId.value,
+        oldFilename.value,
+        newFilename.value,
+    );
+    updateAttachmentFilename(diaryId.value, oldFilename.value, newFilename.value);
+    updateContent(diaryContent.value.replace(`${oldFilename.value}]]`, `${newFilename.value}]]`)); // TODO 这里应该算作是编辑器的逻辑
+    showRenameDialog.value = false;
+    renameCb?.(newFilename.value);
+  } catch (e) {
+    $q.notify({type: 'negative', message: formatError(e)});
+  }
 }
 
 defineOptions({name: 'DiaryDetail'});
@@ -146,6 +178,7 @@ onActivated(async () => {
         :attachmentMap="attachmentMap"
         :defaultButtons="defaultButtons"
         @rotateAttachment="mediaAction.rotateAttachment"
+        @renameAttachment="renameAttachment"
         @pasteAttachments="mediaAction.pasteAttachments"
         @showImage="showImage"
         style="width: 100%; flex: 1; padding: 16px"
@@ -225,6 +258,7 @@ onActivated(async () => {
       </q-card>
     </q-dialog>
 
+    <!-- 上传操作不允许关闭，在完成之前 -->
     <q-dialog v-model="showUploadDialog" persistent>
       <q-card style="min-width: 300px; max-width: 500px">
         <q-card-section class="row items-center q-pb-none">
@@ -261,6 +295,24 @@ onActivated(async () => {
               v-close-popup
               :disable="!isUploading"
           />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="showRenameDialog" persistent>
+      <q-card style="min-width: 300px; max-width: 500px">
+        <q-card-section class="row items-center q-pb-none">
+          <div class="text-h6">重命名附件</div>
+        </q-card-section>
+
+        <q-card-section class="q-pt-md">
+          <q-input v-model="newFilename" label="新文件名" autofocus/>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat label="取消" color="primary" v-close-popup/>
+          <q-btn unelevated label="重命名" color="primary" :disable="!newFilename || newFilename === oldFilename"
+                 @click="handleRenameAttachment"/>
         </q-card-actions>
       </q-card>
     </q-dialog>
