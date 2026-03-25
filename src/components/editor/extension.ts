@@ -47,7 +47,7 @@ export interface Extension<N extends HTMLElement = HTMLElement> {
     // 上下文菜单 (windows右键/android长按) -> 返回要显示的菜单按钮列表
     onContextmenu?: (e: MouseEvent, node: N, ctx: ExtensionContext) => MenuButton<N>[];
 
-    // 是否是加密了的附件
+    // 是否是加密了的附件 TODO 这应该算是日记的逻辑
     isEncrypted?: (node: N, ctx: ExtensionContext) => boolean;
 
     // 获取附件的文件名
