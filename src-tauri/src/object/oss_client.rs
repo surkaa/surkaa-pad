@@ -60,6 +60,64 @@ impl OssClient {
         )
     }
 
+    /// 构建针对 CopyObject 的专属签名请求头
+    fn build_copy_headers(
+        &self,
+        method: &Method,
+        path: &str,       // 目标新文件的 key
+        source_key: &str, // 原文件的 key
+    ) -> Result<HeaderMap, String> {
+        let date = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+
+        let copy_source = format!("/{}/{}", self.inner.bucket, source_key);
+        let encoded_copy_source = copy_source
+            .split('/')
+            .map(|s| urlencoding::encode(s).into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+
+        let canonicalized_oss_headers = format!(
+            "x-oss-copy-source:{}\nx-oss-forbid-overwrite:true\n",
+            encoded_copy_source
+        );
+        let canonicalized_resource = format!("/{}/{}", self.inner.bucket, path);
+
+        let string_to_sign = format!(
+            "{}\n\n\n{}\n{}{}",
+            method.as_str(),
+            date,
+            canonicalized_oss_headers,
+            canonicalized_resource
+        );
+
+        // HMAC-SHA1 签名
+        type HmacSha1 = Hmac<Sha1>;
+        let mut mac = HmacSha1::new_from_slice(self.inner.sakey.as_bytes())
+            .map_err(|e| format!("非法长度{}", e))?;
+        mac.update(string_to_sign.as_bytes());
+        let signature = STANDARD.encode(mac.finalize().into_bytes());
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            DATE,
+            HeaderValue::from_str(&date).map_err(|e| format!("未能创建date头:{}", e))?,
+        );
+        headers.insert(
+            "x-oss-copy-source",
+            HeaderValue::from_str(&encoded_copy_source)
+                .map_err(|e| format!("未能创建copy-source头:{}", e))?,
+        );
+        // 显式禁止同名文件覆盖写
+        headers.insert("x-oss-forbid-overwrite", HeaderValue::from_static("true"));
+        headers.insert(
+            "Authorization",
+            HeaderValue::from_str(&format!("OSS {}:{}", self.inner.akid, signature))
+                .map_err(|e| format!("未能创建authorization头:{}", e))?,
+        );
+
+        Ok(headers)
+    }
+
     /// 构建签名请求头
     fn build_headers(
         &self,
@@ -103,6 +161,52 @@ impl OssClient {
         );
 
         Ok(headers)
+    }
+
+    /// 重命名文件 (CopyObject + DeleteObject)
+    pub async fn rename(&self, old_key: &str, new_key: &str) -> Result<(), String> {
+        // 判断是否存在同名文件
+        // 尝试获取元数据，如果能成功获取到，说明目标文件已存在
+        if self.get_metadata(new_key).await.is_ok() {
+            return Err("已有同名文件".to_string());
+        }
+
+        // 调用 CopyObject 拷贝文件
+        let url = self.get_url(new_key, "");
+        let mut headers = self.build_copy_headers(&Method::PUT, new_key, old_key)?;
+
+        // CopyObject 请求不带 Body，但需要显式设置 Content-Length: 0，否则底层 reqwest 会挂起
+        headers.insert(reqwest::header::CONTENT_LENGTH, HeaderValue::from_static("0"));
+
+        let resp = self
+            .inner
+            .http_client
+            .put(url)
+            .headers(headers)
+            .send()
+            .await
+            .map_err(|e| format!("CopyObject请求发送失败:{}", e))?;
+
+        if !resp.status().is_success() {
+            // 如果服务端返回 409 Conflict，也是说明同名文件已被占用 (由于 x-oss-forbid-overwrite 触发)
+            if resp.status() == tauri::http::StatusCode::CONFLICT {
+                return Err("已有同名文件".to_string());
+            }
+            let status = resp.status();
+            let err_text = resp.text().await.unwrap_or_default();
+            return Err(format!(
+                "重命名(拷贝阶段)失败 状态码:{} 详情:{}",
+                status,
+                err_text
+            ));
+        }
+
+        // 删除原对象
+        self.delete(old_key)
+            .await
+            .map_err(|e| format!("重命名(删除原文件阶段)失败: {}", e))?;
+
+        Ok(())
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/putobject

@@ -2,7 +2,7 @@
 mod tests {
     use crate::object::object_types::STREAM_MINE_TYPE;
     use crate::object::OssClient;
-    use crate::stream::{create_mock_stream, ByteStream};
+    use crate::stream::{collect_data, create_mock_stream, ByteStream};
     use bytes::Bytes;
     use chrono::Utc;
     use futures_util::stream::iter;
@@ -278,5 +278,33 @@ mod tests {
         assert_eq!(&stream_etag, &md5, "返回的 ETag 应该是内容的 MD5 值");
         client.delete(test_key).await.expect("删除失败");
         assert_empty(&client, "测试后对象存储应为空").await;
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_rename() {
+        let client = OssClient::from_env();
+        let test_key = "rename.txt";
+        let test_content = b"Hello OSS Renamed Test".to_vec();
+        assert_empty(&client, "测试开始前对象存储应为空").await;
+        client.upload_bytes(test_key, &test_content.to_vec()).await.expect("上传测试文件失败");
+        let new_key = "renamed.txt";
+        client.rename(test_key, new_key).await.expect("重命名失败");
+        // 确认旧键不存在
+        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
+        assert!(next_token.is_none(), "不应有续页");
+        assert!(!objects.iter().any(|obj| obj.key() == test_key), "旧键仍然存在");
+        // 新键存在且内容正确
+        let (download_stream, _) = client.download(new_key, None).await.expect("下载失败");
+        let downloaded_data = collect_data(download_stream).await.expect("接收下载流失败");
+        assert_eq!(test_content, downloaded_data);
+        // 上传另一个对象测试不允许有同名对象的重命名
+        client.upload_bytes(test_key, &test_content.to_vec()).await.expect("上传测试文件失败");
+        let rename_result = client.rename(test_key, new_key).await;
+        assert!(rename_result.is_err(), "重命名到已存在的键应该失败");
+        // 清理
+        client.delete(new_key).await.expect("删除失败");
+        client.delete(test_key).await.expect("删除失败");
+        assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 }
