@@ -112,7 +112,7 @@ function parseHtmlToSource(html: string): string {
 }
 
 function handleInput() {
-  if (!editor.value) return;
+  if (!editor.value) return; // TODO 让扩展调用这个方法是不是就能更新？
   emit('update:modelValue', parseHtmlToSource(editor.value.innerHTML));
 }
 
@@ -178,6 +178,7 @@ defineExpose({
   editor,
   updateSrc(id: string, newUrl: string) {
     if (!editor.value) return false;
+    // TODO 针对附件转加密方式解决 未找到对应的附件元素，无法更新链接
     const el = editor.value.querySelector(`[data-id="${id}"]`);
     if (!el) return false;
     if (el instanceof HTMLMediaElement) {
