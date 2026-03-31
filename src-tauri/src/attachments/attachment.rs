@@ -111,7 +111,7 @@ pub async fn add_attachment(
             match client.upload(&key, size, wrapped_stream, &mimetype).await {
                 Ok(etag) => {
                     // 上传成功，固化本地缓存
-                    let _ = handle.finalize(etag).await;
+                    let _ = handle.finalize(&etag).await;
                     Ok(AttachmentMeta {
                         filename: filename.clone(),
                         mimetype,
@@ -235,7 +235,7 @@ pub async fn toggle_attachment_encryption(
             .await
         {
             Ok(etag) => {
-                let _ = handle.finalize(etag).await;
+                let _ = handle.finalize(&etag).await;
             }
             Err(e) => {
                 handle.abort().await;
@@ -351,7 +351,7 @@ pub async fn rotate_image_attachment(
             .await
         {
             Ok(etag) => {
-                let _ = handle.finalize(etag).await;
+                let _ = handle.finalize(&etag).await;
             }
             Err(e) => {
                 handle.abort().await;
