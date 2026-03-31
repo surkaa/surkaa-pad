@@ -201,86 +201,6 @@ export function useMediaAction(
         }
     }
 
-    // 保存解密附件
-    async function saveDecryptAttachment(filename: string) {
-        await performAttachmentOperation(
-            filename,
-            '保存解密附件',
-            api.cmdSaveDecryptAttachment
-        );
-    }
-
-    // 切换附件加密状态
-    async function toggleAttachmentEncryption(filename: string) {
-        await performAttachmentOperation(
-            filename,
-            '切换附件加密',
-            api.cmdToggleAttachmentEncryption
-        );
-    }
-
-    // 旋转图片附件
-    async function rotateAttachment(filename: string, rotation: number) {
-        // 验证旋转角度
-        if ([90, 180, -90].indexOf(rotation) === -1) {
-            console.log(`无效的旋转角度: ${rotation}`);
-            $q.notify({type: 'negative', message: '无效的旋转角度'});
-            return;
-        }
-
-        await performAttachmentOperation(
-            filename,
-            '旋转图片',
-            api.cmdRotateImageAttachment,
-            rotation
-        );
-    }
-
-    async function pasteAttachments(files: File[]) {
-        if (!editorContentRef.value) {
-            console.error('编辑器内容引用未定义，无法插入媒体节点');
-            return;
-        }
-        console.log('粘贴的文件列表:', files.length);
-        const currentRange = editorContentRef.value?.captureRange() || null;
-        showUploadDialog.value = true;
-        uploadTaskMap.value = {};
-        const uploads = Array.from(files).map(file => {
-            return new Promise<void>((resolve) => {
-                const reader = new FileReader();
-                reader.onload = async () => {
-                    const arrayBuffer = reader.result as ArrayBuffer;
-                    const uint8Array = new Uint8Array(arrayBuffer);
-                    await uploadMemoryAttachment(file.name, uint8Array, file.type, false, (att, url) => {
-                        if (!editorContentRef.value) {
-                            console.error('编辑器内容引用未定义，无法插入媒体节点');
-                            return;
-                        }
-                        if (file.type.startsWith('image/')) {
-                            currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                            editorContentRef.value.insertMediaNode('img', url, att.filename, currentRange);
-                        } else if (file.type.startsWith('audio/')) {
-                            currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                            editorContentRef.value.insertMediaNode('audio', url, att.filename, currentRange);
-                        } else if (file.type.startsWith('video/')) {
-                            currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                            editorContentRef.value.insertMediaNode('video', url, att.filename, currentRange);
-                        } else {
-                            editorContentRef.value.insertFileNode(att.filename, formatBytes(att.size), currentRange);
-                        }
-                        resolve();
-                    });
-                };
-                reader.onerror = () => {
-                    $q.notify({type: 'negative', message: `${file.name} 读取失败`});
-                    resolve();
-                };
-                reader.readAsArrayBuffer(file);
-            });
-        });
-        await Promise.allSettled(uploads);
-    }
-
     onUnmounted(async () => {
         if (cancelTokens.size === 0) return;
 
@@ -360,9 +280,77 @@ export function useMediaAction(
                 }
             }
         },
-        saveDecryptAttachment,
-        toggleAttachmentEncryption,
-        rotateAttachment,
-        pasteAttachments,
+        // 保存解密附件
+        saveDecryptAttachment: async (filename: string) => await performAttachmentOperation(
+            filename,
+            '保存解密附件',
+            api.cmdSaveDecryptAttachment
+        ),
+        // 切换附件加密状态
+        toggleAttachmentEncryption: async (filename: string) => await performAttachmentOperation(
+            filename,
+            '切换附件加密',
+            api.cmdToggleAttachmentEncryption
+        ),
+        // 旋转图片附件
+        async rotateAttachment(filename: string, rotation: number) {
+            // 验证旋转角度
+            if ([90, 180, -90].indexOf(rotation) === -1) {
+                console.log(`无效的旋转角度: ${rotation}`);
+                $q.notify({type: 'negative', message: '无效的旋转角度'});
+                return;
+            }
+
+            await performAttachmentOperation(
+                filename,
+                '旋转图片',
+                api.cmdRotateImageAttachment,
+                rotation
+            );
+        },
+        async pasteAttachments(files: File[]) {
+            if (!editorContentRef.value) {
+                console.error('编辑器内容引用未定义，无法插入媒体节点');
+                return;
+            }
+            console.log('粘贴的文件列表:', files.length);
+            const currentRange = editorContentRef.value?.captureRange() || null;
+            showUploadDialog.value = true;
+            uploadTaskMap.value = {};
+            const uploads = Array.from(files).map(file => {
+                return new Promise<void>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = async () => {
+                        const arrayBuffer = reader.result as ArrayBuffer;
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        await uploadMemoryAttachment(file.name, uint8Array, file.type, false, (att, url) => {
+                            if (!editorContentRef.value) {
+                                console.error('编辑器内容引用未定义，无法插入媒体节点');
+                                return;
+                            }
+                            if (file.type.startsWith('image/')) {
+                                currentDiaryAttachmentUrlMap.value[att.filename] = url;
+                                editorContentRef.value.insertMediaNode('img', url, att.filename, currentRange);
+                            } else if (file.type.startsWith('audio/')) {
+                                currentDiaryAttachmentUrlMap.value[att.filename] = url;
+                                editorContentRef.value.insertMediaNode('audio', url, att.filename, currentRange);
+                            } else if (file.type.startsWith('video/')) {
+                                currentDiaryAttachmentUrlMap.value[att.filename] = url;
+                                editorContentRef.value.insertMediaNode('video', url, att.filename, currentRange);
+                            } else {
+                                editorContentRef.value.insertFileNode(att.filename, formatBytes(att.size), currentRange);
+                            }
+                            resolve();
+                        });
+                    };
+                    reader.onerror = () => {
+                        $q.notify({type: 'negative', message: `${file.name} 读取失败`});
+                        resolve();
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            });
+            await Promise.allSettled(uploads);
+        },
     };
 }
