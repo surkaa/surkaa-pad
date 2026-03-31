@@ -157,12 +157,19 @@ export function useMediaAction(
         await Promise.allSettled(uploads);
     }
 
-    async function toggleAttachmentEncryption(filename: string) {
+    async function performAttachmentOperation<Args extends any[]>(
+        filename: string,
+        operationName: string,
+        apiCall: (event: Channel<AttachmentProcessEvent>, diaryId: string, filename: string, ...args: Args) => Promise<string>,
+        ...apiArgs: Args
+    ) {
+        // 验证日记ID和文件名
         if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
-            console.log(`无法获取日记ID或文件名，无法执行转换。diaryId: ${diaryId.value}, filename: ${filename}`);
-            $q.notify({type: 'negative', message: '无法获取日记ID或文件名，无法执行转换'});
+            console.log(`无法获取日记ID或文件名，无法执行${operationName}。diaryId: ${diaryId.value}, filename: ${filename}`);
+            $q.notify({type: 'negative', message: `无法获取日记ID或文件名，无法执行${operationName}`});
             return;
         }
+
         uploadTaskMap.value = {};
         editorDomRef.value?.focus();
 
@@ -170,7 +177,7 @@ export function useMediaAction(
         uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
 
         const event = createUploadChannel(key, (meta, url) => {
-            console.log('转换完成:', filename, meta.encrypted, url);
+            console.log(`${operationName}完成:`, filename, meta.encrypted, url);
             dataStore.updateAttachment(diaryId.value, meta);
             if (!editorContentRef.value) {
                 console.error('编辑器内容引用未定义，无法更新媒体链接');
@@ -184,107 +191,49 @@ export function useMediaAction(
         });
 
         try {
-            const cancelRes = await api.cmdToggleAttachmentEncryption(
-                event,
-                diaryId.value,
-                filename
-            );
+            const cancelRes = await apiCall(event, diaryId.value, filename, ...apiArgs);
             showUploadDialog.value = true;
             cancelTokens.add(cancelRes);
-            console.log('转换附件命令已发送，取消令牌:', cancelRes);
+            console.log(`${operationName}命令已发送，取消令牌:`, cancelRes);
         } catch (e) {
             uploadTaskMap.value[key].status = 'error';
             $q.notify({type: 'negative', message: formatError(e)});
         }
     }
 
+    // 保存解密附件
+    async function saveDecryptAttachment(filename: string) {
+        await performAttachmentOperation(
+            filename,
+            '保存解密附件',
+            api.cmdSaveDecryptAttachment
+        );
+    }
+
+    // 切换附件加密状态
+    async function toggleAttachmentEncryption(filename: string) {
+        await performAttachmentOperation(
+            filename,
+            '切换附件加密',
+            api.cmdToggleAttachmentEncryption
+        );
+    }
+
+    // 旋转图片附件
     async function rotateAttachment(filename: string, rotation: number) {
-        if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
-            console.log(`无法获取日记ID或文件名，无法执行旋转。diaryId: ${diaryId.value}, filename: ${filename}`);
-            $q.notify({type: 'negative', message: '无法获取日记ID或文件名，无法执行旋转'});
-            return;
-        }
+        // 验证旋转角度
         if ([90, 180, -90].indexOf(rotation) === -1) {
             console.log(`无效的旋转角度: ${rotation}`);
             $q.notify({type: 'negative', message: '无效的旋转角度'});
             return;
         }
-        uploadTaskMap.value = {};
-        editorDomRef.value?.focus();
-        const key = uuidv4();
-        uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
 
-        const event = createUploadChannel(key, (meta, url) => {
-            console.log('旋转完成:', filename, url);
-            dataStore.updateAttachment(diaryId.value, meta);
-            if (!editorContentRef.value) {
-                console.error('编辑器内容引用未定义，无法更新媒体链接');
-                $q.notify({type: 'negative', message: '编辑器内容引用未定义，无法更新媒体链接'});
-                return;
-            }
-            const res = editorContentRef.value.updateSrc(filename, url);
-            if (!res) {
-                $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
-            }
-        });
-
-        try {
-            const cancelToken = await api.cmdRotateImageAttachment(
-                event,
-                diaryId.value,
-                filename,
-                rotation
-            );
-            showUploadDialog.value = true;
-            cancelTokens.add(cancelToken);
-            console.log('发送旋转图片命令，等待结果...');
-        } catch (e) {
-            uploadTaskMap.value[key].status = 'error';
-            $q.notify({type: 'negative', message: formatError(e)});
-            console.error('旋转图片失败:', e);
-        }
-    }
-
-    // TODO 整合三个函数的功能saveDecryptAttachment rotateAttachment toggleAttachmentEncryption
-    async function saveDecryptAttachment(filename: string) {
-        if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
-            console.log(`无法获取日记ID或文件名，无法执行保存。diaryId: ${diaryId.value}, filename: ${filename}`);
-            $q.notify({type: 'negative', message: '无法获取日记ID或文件名，无法执行保存'});
-            return;
-        }
-        uploadTaskMap.value = {};
-        editorDomRef.value?.focus();
-
-        const key = uuidv4();
-        uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
-
-        const event = createUploadChannel(key, (meta, url) => {
-            console.log('保存完成:', filename, meta.encrypted, url);
-            dataStore.updateAttachment(diaryId.value, meta);
-            if (!editorContentRef.value) {
-                console.error('编辑器内容引用未定义，无法更新媒体链接');
-                $q.notify({type: 'negative', message: '编辑器内容引用未定义，无法更新媒体链接'});
-                return;
-            }
-            const res = editorContentRef.value.updateSrc(filename, url);
-            if (!res) {
-                $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
-            }
-        });
-
-        try {
-            const cancelRes = await api.cmdSaveDecryptAttachment(
-                event,
-                diaryId.value,
-                filename
-            );
-            showUploadDialog.value = true;
-            cancelTokens.add(cancelRes);
-            console.log('保存附件命令已发送，取消令牌:', cancelRes);
-        } catch (e) {
-            uploadTaskMap.value[key].status = 'error';
-            $q.notify({type: 'negative', message: formatError(e)});
-        }
+        await performAttachmentOperation(
+            filename,
+            '旋转图片',
+            api.cmdRotateImageAttachment,
+            rotation
+        );
     }
 
     async function pasteAttachments(files: File[]) {
