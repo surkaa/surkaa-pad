@@ -20,6 +20,10 @@ export interface UploadTask {
 
 type OnAttachmentProcessSuccess = (meta: AttachmentMeta, url: string) => void;
 
+const PHOTO_TYPES = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+const AUDIO_TYPES = ['mp3', 'wav', 'ogg', 'flac', 'aac'];
+const VIDEO_TYPES = ['mp4', 'avi', 'mov', 'mkv', 'webm'];
+
 export function useMediaAction(
     diaryId: Ref<string>,
     editorDomRef: Ref<HTMLElement | undefined>,
@@ -235,7 +239,7 @@ export function useMediaAction(
                 editorContentRef.value.insertMediaNode('audio', url, att.filename, currentRange);
             });
         },
-        insertPhoto: () => genericBatchUpload(true, ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'], 'img', "image"),
+        insertPhoto: () => genericBatchUpload(true, PHOTO_TYPES, 'img', "image"),
         takePhoto: async () => {
             const currentRange = editorContentRef.value?.captureRange() || null;
             if (beforeClick()) return;
@@ -260,8 +264,8 @@ export function useMediaAction(
             if (beforeClick()) return;
             showAudioDrawer.value = true;
         },
-        insertAudio: () => genericBatchUpload(false, ['mp3', 'wav', 'ogg', 'flac', 'aac'], 'audio'),
-        insertVideo: () => genericBatchUpload(false, ['mp4', 'avi', 'mov', 'mkv', 'webm'], 'video', "video"),
+        insertAudio: () => genericBatchUpload(false, AUDIO_TYPES, 'audio'),
+        insertVideo: () => genericBatchUpload(false, VIDEO_TYPES, 'video', "video"),
         insertFile: async () => genericBatchUpload(true),
         cachingAttachment: async (filenames: string[]) => {
             if (!filenames.length) return;
