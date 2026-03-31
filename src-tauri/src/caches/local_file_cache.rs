@@ -22,7 +22,7 @@ pub struct SaveHandle {
 impl SaveHandle {
     /// 完成缓存：同步文件、重命名、写入 MD5
     /// 如果流过程中发生过错误，则会删除临时文件并返回错误
-    pub async fn finalize(self, md5: String) -> Result<(), String> {
+    pub async fn finalize(self, md5: &str) -> Result<(), String> {
         let mut guard = self.state.lock().await;
         if guard.finalized {
             return Err("Already finalized".to_string());
@@ -40,7 +40,7 @@ impl SaveHandle {
                 .await
                 .map_err(|e| e.to_string())?;
 
-            tokio::fs::write(&guard.md5_path, &md5)
+            tokio::fs::write(&guard.md5_path, md5)
                 .await
                 .map_err(|e| e.to_string())?;
 

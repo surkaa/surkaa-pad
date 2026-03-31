@@ -101,7 +101,7 @@ mod lfc_tests {
 
         let (wrapped_stream, handle) = cache.save(key, stream).await.unwrap();
         collect_data(wrapped_stream).await.unwrap();
-        handle.finalize(md5).await.unwrap();
+        handle.finalize(&md5).await.unwrap();
 
         assert!(cache.get(key).await.unwrap().is_some());
     }

@@ -10,12 +10,12 @@ use crate::stream::ByteStream;
 use crate::stream::{collect_data, create_mock_stream, tracker_stream};
 use crate::utils::message_sender::MessageSender;
 use dashmap::DashMap;
+use futures_util::StreamExt;
 use image::ImageFormat;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use std::sync::{Arc, LazyLock};
-use futures_util::StreamExt;
 use tokio::sync::Mutex;
 
 // 添加附件的锁
@@ -109,7 +109,7 @@ pub async fn add_attachment(
             match client.upload(&key, size, wrapped_stream, &mimetype).await {
                 Ok(etag) => {
                     // 上传成功，固化本地缓存
-                    let _ = handle.finalize(etag).await;
+                    let _ = handle.finalize(&etag).await;
                     Ok(AttachmentMeta {
                         filename: filename.clone(),
                         mimetype,
@@ -233,7 +233,7 @@ pub async fn toggle_attachment_encryption(
             .await
         {
             Ok(etag) => {
-                let _ = handle.finalize(etag).await;
+                let _ = handle.finalize(&etag).await;
             }
             Err(e) => {
                 handle.abort().await;
@@ -349,7 +349,7 @@ pub async fn rotate_image_attachment(
             .await
         {
             Ok(etag) => {
-                let _ = handle.finalize(etag).await;
+                let _ = handle.finalize(&etag).await;
             }
             Err(e) => {
                 handle.abort().await;
