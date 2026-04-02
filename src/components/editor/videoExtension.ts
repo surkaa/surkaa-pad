@@ -26,6 +26,9 @@ function serialize(node: HTMLElement) {
 }
 
 function onClick(_e: MouseEvent, node: HTMLVideoElement, _ctx: ExtensionContext) {
+    if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+    }
     console.log('点击了视频：', node);
 }
 

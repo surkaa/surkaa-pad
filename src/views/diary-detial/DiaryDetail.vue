@@ -217,7 +217,7 @@ onActivated(async () => {
         @recorded="mediaAction.handleAudioRecorded"
     />
 
-    <q-dialog v-model="showMenu" position="bottom">
+    <q-dialog no-refocus v-model="showMenu" position="bottom">
       <q-card class="action-sheet-card">
         <q-list padding class="text-center">
           <q-item clickable v-ripple @click="showDiarySource">
@@ -237,7 +237,7 @@ onActivated(async () => {
       </q-card>
     </q-dialog>
 
-    <q-dialog v-model="showDetailDialog">
+    <q-dialog no-refocus v-model="showDetailDialog">
       <q-card style="min-width: 350px; max-width: 90vw;">
         <q-card-section class="row items-center q-pb-none">
           <div class="text-h6">{{ diary?.title }} - 详情</div>
@@ -270,7 +270,7 @@ onActivated(async () => {
     </q-dialog>
 
     <!-- 上传操作不允许关闭，在完成之前 -->
-    <q-dialog v-model="showUploadDialog" persistent>
+    <q-dialog no-refocus v-model="showUploadDialog" persistent>
       <q-card style="min-width: 300px; max-width: 500px">
         <q-card-section class="row items-center q-pb-none">
           <div class="text-h6">文件处理中</div>
@@ -310,7 +310,7 @@ onActivated(async () => {
       </q-card>
     </q-dialog>
 
-    <q-dialog v-model="showRenameDialog" persistent>
+    <q-dialog no-refocus v-model="showRenameDialog" persistent>
       <q-card style="min-width: 300px; max-width: 500px">
         <q-card-section class="row items-center q-pb-none">
           <div class="text-h6">重命名附件</div>

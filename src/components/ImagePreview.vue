@@ -1,5 +1,6 @@
 <template>
   <q-dialog
+      no-refocus
       ref="dialogRef"
       @hide="onDialogHide"
       maximized
