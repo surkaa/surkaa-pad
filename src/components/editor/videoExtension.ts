@@ -25,12 +25,5 @@ export const VideoExtension: Extension<HTMLVideoElement> = {
         console.log('点击了视频：', node);
     },
 
-    isEncrypted: (node, ctx) => {
-        const filename = node.dataset.id;
-        if (!filename) return false;
-        const attachment = ctx.getAttachment(filename);
-        return attachment ? attachment.encrypted : false;
-    },
-
     getFilename: (node) => node.dataset.id
 }

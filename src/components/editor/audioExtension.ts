@@ -25,12 +25,5 @@ export const AudioExtension: Extension<HTMLAudioElement> = {
         console.log('点击了音频：', node);
     },
 
-    isEncrypted: (node, ctx) => {
-        const filename = node.dataset.id;
-        if (!filename) return false;
-        const attachment = ctx.getAttachment(filename);
-        return attachment ? attachment.encrypted : false;
-    },
-
     getFilename: (node) => node.dataset.id
 }

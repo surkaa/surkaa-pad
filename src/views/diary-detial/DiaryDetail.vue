@@ -13,7 +13,7 @@ import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useDataStore} from "../../stores/data.ts";
 import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
-import {Extension, ExtensionContext, MenuButton} from "../../components/editor/extension.ts";
+import {Extension, MenuButton} from "../../components/editor/extension.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {replaceAttachmentMark} from "../../components/editor/utils.ts";
 
@@ -43,13 +43,14 @@ const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaActio
 
 const {deleteAttachment, updateAttachmentFilename} = useDataStore();
 
-function defaultButtons(ext: Extension, el: HTMLElement, ctx: ExtensionContext): MenuButton[] {
+function defaultButtons(ext: Extension, el: HTMLElement): MenuButton[] {
   if (!ext.getFilename) return [];
   const filename = ext.getFilename(el);
   if (!filename) return [];
-  const encrypted = ext.isEncrypted ? ext.isEncrypted(el, ctx) : false;
+  const attachment = diary.value?.attachments.find(att => att.filename === filename);
+  if (!attachment) return [];
   return [{
-    label: `转成${encrypted ? '普通' : '加密'}附件`,
+    label: `转成${attachment.encrypted ? '普通' : '加密'}附件`,
     action: async () => await mediaAction.toggleAttachmentEncryption(filename)
   }, {
     label: '保存到本地',
