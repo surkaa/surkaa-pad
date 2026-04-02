@@ -190,7 +190,7 @@ export function useMediaAction(
             }
             const res = editorContentRef.value.updateSrc(filename, url);
             if (!res) {
-                $q.notify({type: 'negative', message: '未找到对应的附件元素，无法更新链接'});
+                console.warn('未找到对应的附件元素，无法更新链接:', filename);
             }
         });
 
