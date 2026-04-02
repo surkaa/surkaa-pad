@@ -66,5 +66,5 @@ function onContextmenu(_: MouseEvent, node: HTMLDivElement, ctx: ExtensionContex
 
 export const FileExtension: Extension<HTMLDivElement> = {
     name: "file",
-    match, getMark, hasMark, toHtml, serialize, onClick, onContextmenu,
+    match, getMark, hasMark, toHtml, serialize, onClick, onContextmenu, getFilename
 }
