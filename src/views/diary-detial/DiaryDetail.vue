@@ -15,6 +15,7 @@ import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
 import {Extension, ExtensionContext, MenuButton} from "../../components/editor/extension.ts";
 import {formatError} from "../../utils/formatError.ts";
+import {replaceAttachmentMark} from "../../components/editor/utils.ts";
 
 const $q = useQuasar();
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
@@ -98,13 +99,19 @@ async function handleRenameAttachment() {
     return;
   }
   try {
+    const newContent = replaceAttachmentMark(diaryContent.value, oldFilename.value, newFilename.value);
+    if (newContent == null) {
+      $q.notify({type: 'negative', message: `重命名失败，请去掉新文件名的特殊字符：'[[' 或 ']]'`});
+      return;
+    }
     await api.cmdUpdateAttachmentFilename(
         diaryId.value,
         oldFilename.value,
         newFilename.value,
+        newContent
     );
     updateAttachmentFilename(diaryId.value, oldFilename.value, newFilename.value);
-    updateContent(diaryContent.value.replace(`${oldFilename.value}]]`, `${newFilename.value}]]`)); // TODO 这里应该算作是编辑器的逻辑
+    updateContent(newContent);
     showRenameDialog.value = false;
     renameCb?.(newFilename.value);
   } catch (e) {
