@@ -1,16 +1,24 @@
 <script setup lang="ts">
 import {nextTick, onMounted, ref, watch} from "vue";
 import {DiarySummary} from "../bindings.ts";
-import {Extension, ExtensionContext, ExtensionEvents, EXTENSIONS, MenuButton} from "./editor/extension.ts";
+import {
+  Extension,
+  ExtensionConfig,
+  ExtensionContext,
+  ExtensionEvents,
+  EXTENSIONS,
+  MenuButton
+} from "./editor/extension.ts";
 import {useContextMenu} from "./editor/useContextMenu.ts";
 import {useScroll, useStorage} from "@vueuse/core";
-import {useDomInsert} from "./editor/useDomInsert.ts";
+import {MediaType, useDomInsert} from "./editor/useDomInsert.ts";
 
 const props = defineProps<{
   modelValue: string;
   diarySummary?: DiarySummary;
   attachmentMap: Record<string, string>;
   defaultButtons: MenuButton[] | ((ext: Extension, el: HTMLElement, ctx: ExtensionContext) => MenuButton[]);
+  extensionConfig: ExtensionConfig
   // 接收外部传入的事件处理器！(Partial 表示允许不传满所有事件)
   extensionHandlers?: Partial<ExtensionEvents>;
 }>();
@@ -47,6 +55,7 @@ const extensionCtx: ExtensionContext = {
   gotoPreview(src) {
     emit('showImage', src);
   },
+  getConfig: () => props.extensionConfig,
   emit<E extends keyof ExtensionEvents>(event: E, ...args: Parameters<ExtensionEvents[E]>) {
     const handler = props.extensionHandlers?.[event];
     if (handler) {
@@ -195,7 +204,17 @@ defineExpose({
     const sel = window.getSelection();
     return sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
   },
-  insertMediaNode,
+  async insertMediaNode(nodeType: MediaType, url: string, filename: string, range: Range | null) {
+    if (!editor.value) return;
+    let datasets: Record<string, string> | undefined = undefined;
+    for (const ext of EXTENSIONS) {
+      if (ext.configInsert) {
+        datasets = ext.configInsert(props.extensionConfig);
+        break;
+      }
+    }
+    insertMediaNode(nodeType, url, filename, range, datasets);
+  },
   insertFileNode,
   undo: () => document.execCommand('undo'),
   redo: () => document.execCommand('redo'),

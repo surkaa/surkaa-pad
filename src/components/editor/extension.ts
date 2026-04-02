@@ -4,6 +4,7 @@ import {AudioExtension} from "./audioExtension.ts";
 import {VideoExtension} from "./videoExtension.ts";
 import {BaseExtension} from "./baseExtension.ts";
 import {FileExtension} from "./fileExtension.ts";
+import {DatasetConfig} from "./useDomInsert.ts";
 
 // 定义菜单按钮的数据结构
 export interface MenuButton<N = HTMLElement> {
@@ -17,11 +18,16 @@ export interface ExtensionEvents {
     renameAttachment: (filename: string, cb: (newFilename: string) => void) => void;
 }
 
+export type ExtensionConfig = {
+    defaultImageSizeIsSmall: boolean | (() => boolean)
+}
+
 export interface ExtensionContext {
     getDiaryId(): string;
     getAttachment(filename: string): AttachmentMeta | null;
     getAttachmentUrl(filename: string): string | null;
     gotoPreview(src: string): void;
+    getConfig(): ExtensionConfig;
     emit: <E extends keyof ExtensionEvents>(eventName: E, ...args: Parameters<ExtensionEvents[E]>) => void;
 }
 
@@ -54,6 +60,9 @@ export interface Extension<N extends HTMLElement = HTMLElement> {
 
     // 获取附件的文件名
     getFilename?: (node: N) => string | undefined;
+
+    // 处理配置信息
+    configInsert?: (config: ExtensionConfig) => DatasetConfig;
 }
 
 export const EXTENSIONS: Extension<any>[] = [

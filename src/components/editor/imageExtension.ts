@@ -1,5 +1,6 @@
-import {Extension, ExtensionContext, MenuButton} from "./extension.ts";
+import {Extension, ExtensionConfig, ExtensionContext, MenuButton} from "./extension.ts";
 import {getFilename} from "./utils.ts";
+import {DatasetConfig} from "./useDomInsert.ts";
 
 function match(node: HTMLImageElement) {
     return node.nodeName === 'IMG';
@@ -92,7 +93,20 @@ function onContextmenu(_e: MouseEvent, imgNode: HTMLImageElement, ctx: Extension
     }];
 }
 
+function configInsert(config: ExtensionConfig): DatasetConfig {
+    if (
+        (typeof config.defaultImageSizeIsSmall === 'boolean' && config.defaultImageSizeIsSmall)
+        || (typeof config.defaultImageSizeIsSmall == 'function' && config.defaultImageSizeIsSmall())
+    ) {
+        return {
+            'size': 'small'
+        }
+    } else {
+        return {};
+    }
+}
+
 export const ImageExtension: Extension<HTMLImageElement> = {
     name: "image",
-    match, getMark, hasMark, toHtml, serialize, onClick, onContextmenu, getFilename
+    match, getMark, hasMark, toHtml, serialize, onClick, onContextmenu, getFilename, configInsert
 }

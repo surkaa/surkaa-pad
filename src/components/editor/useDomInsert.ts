@@ -1,13 +1,14 @@
 import {Ref} from "vue";
 
 export type MediaType = 'img' | 'video' | 'audio';
+export type DatasetConfig = Record<string, string>;
 
 export const useDomInsert = (editorRef: Ref<HTMLElement | undefined>) => {
 
     /**
      * 插入通用文件节点 (原子节点)
      */
-    const insertFileNode = (filename: string, filesizeText: string, range: Range | null) => {
+    function insertFileNode(filename: string, filesizeText: string, range: Range | null) {
         if (!editorRef.value) return;
 
         const el = document.createElement('div');
@@ -18,33 +19,39 @@ export const useDomInsert = (editorRef: Ref<HTMLElement | undefined>) => {
         el.innerHTML = `<div class="file-title"><span class="file-icon">📎</span><span class="file-name">${filename}</span></div><span class="file-size">${filesizeText}</span>`;
 
         insertBlockNode(editorRef.value, el, range);
-    };
+    }
 
     /**
      * DOM 节点插入器
      */
-    const insertMediaNode = (nodeType: MediaType, url: string, filename: string, range: Range | null) => {
+    function insertMediaNode(nodeType: MediaType, url: string, filename: string, range: Range | null, dataset?: DatasetConfig) {
         if (!editorRef.value) return;
 
         const el = document.createElement(nodeType);
         el.src = url;
         el.dataset.id = filename;
 
+        if (dataset) {
+            for (const key in dataset) {
+                el.dataset[key] = dataset[key];
+            }
+        }
+
         if (nodeType !== 'img') {
             (el as HTMLMediaElement).controls = true;
         }
 
         insertBlockNode(editorRef.value, el, range);
-    };
+    }
 
     /**
      * 在编辑器中安全插入一个块级元素
      */
-    const insertBlockNode = (
+    function insertBlockNode(
         editor: HTMLElement,
         mediaNode: HTMLElement,
         savedRange?: Range | null
-    ): Range => {
+    ): Range {
         const selection = window.getSelection();
         // 优先使用传入的固化选区
         const range = savedRange || (selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null);
@@ -108,16 +115,15 @@ export const useDomInsert = (editorRef: Ref<HTMLElement | undefined>) => {
         editor.dispatchEvent(new Event('input', {bubbles: true}));
         // 返回新的 Range，为连续多图插入提供上下文
         return setCursorTo(nextBlock);
-    };
+    }
 
-    const createEmptyParagraph = () => {
+    function createEmptyParagraph() {
         const div = document.createElement('div');
         div.innerHTML = '<br>';
         return div;
-    };
+    }
 
-    // 改造原有的 setCursorTo 使其返回 Range 对象
-    const setCursorTo = (node: Node): Range => {
+    function setCursorTo(node: Node): Range {
         const range = document.createRange();
         const selection = window.getSelection();
 
@@ -127,7 +133,7 @@ export const useDomInsert = (editorRef: Ref<HTMLElement | undefined>) => {
         selection?.removeAllRanges();
         selection?.addRange(range);
         return range;
-    };
+    }
 
     return {
         insertFileNode,

@@ -13,11 +13,14 @@ import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useDataStore} from "../../stores/data.ts";
 import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
-import {Extension, ExtensionEvents, MenuButton} from "../../components/editor/extension.ts";
+import {Extension, ExtensionConfig, ExtensionEvents, MenuButton} from "../../components/editor/extension.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {replaceAttachmentMark} from "../../components/editor/utils.ts";
+import {useConfigStore} from "../../stores/config.ts";
 
 const $q = useQuasar();
+const configStore = useConfigStore();
+
 const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
@@ -42,6 +45,11 @@ const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, live
 const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaAction;
 
 const {deleteAttachment, updateAttachmentFilename} = useDataStore();
+const defaultImageSizeIsSmall =  configStore.useTauriConfig('default_image_size_is_small');
+
+const extensionConfig: ExtensionConfig = {
+  defaultImageSizeIsSmall: () => defaultImageSizeIsSmall.value,
+}
 
 const extensionHandlers: Partial<ExtensionEvents> = {
   renameAttachment, rotateAttachment: mediaAction.rotateAttachment
@@ -189,6 +197,7 @@ onActivated(async () => {
         :diarySummary="diary"
         :attachmentMap="attachmentMap"
         :defaultButtons="defaultButtons"
+        :extensionConfig="extensionConfig"
         :extensionHandlers="extensionHandlers"
         @pasteAttachments="mediaAction.pasteAttachments"
         @showImage="showImage"

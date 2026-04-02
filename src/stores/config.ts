@@ -11,12 +11,14 @@ type ConfigMap = {
     "biometric_enabled": boolean;
     "biometric_dek": string | null;
     "encrypted_oss_config": number[] | null;
+    "default_image_size_is_small": boolean;
 };
 const DEFAULT_CONFIG = {
     "app-theme": DEFAULT_THEME,
     "biometric_enabled": false,
     "biometric_dek": null,
     "encrypted_oss_config": null,
+    "default_image_size_is_small": false
 } satisfies ConfigMap;
 
 type ConfigKey = keyof ConfigMap;

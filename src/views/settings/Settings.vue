@@ -20,6 +20,20 @@
               ]"
             />
           </q-card-section>
+          <q-separator/>
+          <q-list>
+            <q-item tag="label" v-ripple>
+              <q-item-section>
+                <q-item-label class="label-text text-weight-medium">默认使用小图</q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-toggle
+                    v-model="defaultImageSize"
+                    color="primary"
+                />
+              </q-item-section>
+            </q-item>
+          </q-list>
         </q-card>
       </div>
 
@@ -119,6 +133,7 @@ const verifyPassword = ref('');
 const loading = ref(false);
 const theme = configStore.useTauriConfig('app-theme');
 const biometricEnable = configStore.useTauriConfig('biometric_enabled');
+const defaultImageSize = configStore.useTauriConfig('default_image_size_is_small');
 const isAndroid = ref(platform() === 'android');
 
 // 接收 Quasar v-model 抛出的 boolean
