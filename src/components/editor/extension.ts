@@ -13,8 +13,8 @@ export interface MenuButton<N = HTMLElement> {
 }
 
 export interface ExtensionEvents {
-    rotateAttachment: [filename: string, rotation: number];
-    renameAttachment: [filename: string, cb: (newFilename: string) => void];
+    rotateAttachment: (filename: string, rotation: number) => void;
+    renameAttachment: (filename: string, cb: (newFilename: string) => void) => void;
 }
 
 export interface ExtensionContext {
@@ -22,7 +22,7 @@ export interface ExtensionContext {
     getAttachment(filename: string): AttachmentMeta | null;
     getAttachmentUrl(filename: string): string | null;
     gotoPreview(src: string): void;
-    emit: <E extends keyof ExtensionEvents>(eventName: E, ...args: ExtensionEvents[E]) => void;
+    emit: <E extends keyof ExtensionEvents>(eventName: E, ...args: Parameters<ExtensionEvents[E]>) => void;
 }
 
 export interface Extension<N extends HTMLElement = HTMLElement> {

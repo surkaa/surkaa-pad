@@ -10,13 +10,13 @@ const props = defineProps<{
   modelValue: string;
   diarySummary?: DiarySummary;
   attachmentMap: Record<string, string>;
-  defaultButtons: MenuButton[] | ((ext: Extension, el: HTMLElement, ctx: ExtensionContext) => MenuButton[])
+  defaultButtons: MenuButton[] | ((ext: Extension, el: HTMLElement, ctx: ExtensionContext) => MenuButton[]);
+  // 接收外部传入的事件处理器！(Partial 表示允许不传满所有事件)
+  extensionHandlers?: Partial<ExtensionEvents>;
 }>();
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
   (e: 'toggleAttachmentEncryption', filename: string): Promise<void>;
-  (e: 'rotateAttachment', filename: string, rotation: number): void;
-  (e: 'renameAttachment', filename: string, cb: (newFilename: string) => void): void;
   (e: 'pasteAttachments', files: File[]): void; // 上传完成后外部手动调用插入dom节点
   (e: 'showImage', src: string): void
 }>();
@@ -47,14 +47,12 @@ const extensionCtx: ExtensionContext = {
   gotoPreview(src) {
     emit('showImage', src);
   },
-  emit<E extends keyof ExtensionEvents>(event: E, ...args: ExtensionEvents[E]) {
-    if (event === 'rotateAttachment') {
-      // 明确解构并断言类型
-      const [filename, rotation] = args as ExtensionEvents['rotateAttachment'];
-      emit('rotateAttachment', filename, rotation);
-    } else if (event === 'renameAttachment') {
-      const [filename, cb] = args as ExtensionEvents['renameAttachment'];
-      emit('renameAttachment', filename, cb);
+  emit<E extends keyof ExtensionEvents>(event: E, ...args: Parameters<ExtensionEvents[E]>) {
+    const handler = props.extensionHandlers?.[event];
+    if (handler) {
+      (handler as any)(...args);
+    } else {
+      console.warn(`[LiveRichEditor] 扩展触发了事件 '${event}'，但外部未提供处理器。`);
     }
   }
 }

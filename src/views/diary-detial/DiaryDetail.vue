@@ -13,7 +13,7 @@ import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useDataStore} from "../../stores/data.ts";
 import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
-import {Extension, MenuButton} from "../../components/editor/extension.ts";
+import {Extension, ExtensionEvents, MenuButton} from "../../components/editor/extension.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {replaceAttachmentMark} from "../../components/editor/utils.ts";
 
@@ -42,6 +42,10 @@ const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, live
 const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaAction;
 
 const {deleteAttachment, updateAttachmentFilename} = useDataStore();
+
+const extensionHandlers: Partial<ExtensionEvents> = {
+  renameAttachment, rotateAttachment: mediaAction.rotateAttachment
+}
 
 function defaultButtons(ext: Extension, el: HTMLElement): MenuButton[] {
   if (!ext.getFilename) return [];
@@ -185,8 +189,7 @@ onActivated(async () => {
         :diarySummary="diary"
         :attachmentMap="attachmentMap"
         :defaultButtons="defaultButtons"
-        @rotateAttachment="mediaAction.rotateAttachment"
-        @renameAttachment="renameAttachment"
+        :extensionHandlers="extensionHandlers"
         @pasteAttachments="mediaAction.pasteAttachments"
         @showImage="showImage"
         style="width: 100%; flex: 1; padding: 16px"
