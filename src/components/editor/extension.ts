@@ -33,7 +33,7 @@ export interface Extension<N extends HTMLElement = HTMLElement> {
     toHtml?: (md: string, ctx: ExtensionContext) => string;
 
     // 交互钩子: 判断一个节点是否属于该插件
-    match?: (node: Node) => boolean;
+    match?: (node: N) => boolean;
 
     // 获取标记
     getMark?: (filename: string) => string;

@@ -1,3 +1,7 @@
+export function getFilename(node: HTMLElement) {
+    return node.dataset.id;
+}
+
 export function replaceAttachmentMark(content: string, oldFilename: string, newFilename: string): string | null {
     // 新文件名不能包含 [[ 或者 ]]
     if (newFilename.indexOf('[[') !== -1 || newFilename.indexOf(']]') !== -1) {

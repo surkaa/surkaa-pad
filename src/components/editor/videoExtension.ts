@@ -1,29 +1,35 @@
-import {Extension} from "./extension.ts";
+import {Extension, ExtensionContext} from "./extension.ts";
+import {getFilename} from "./utils.ts";
 
-export const VideoExtension: Extension<HTMLVideoElement> = {
-    name: "video",
+function match(node: HTMLVideoElement) {
+    return node.nodeName === 'VIDEO';
+}
 
-    match: (node) => node.nodeName === 'VIDEO',
+function getMark(filename: string) {
+    return `[[VID:${filename}]]`;
+}
 
-    getMark: (filename) => `[[VID:${filename}]]`,
-
-    toHtml: (source, ctx) => source.replace(/\[\[VID:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, _configStr) => {
+function toHtml(source: string, ctx: ExtensionContext) {
+    return source.replace(/\[\[VID:([^|\]]+)(?:\|([^]]*))?]]/gi, (_match, filename, _configStr) => {
         const src = ctx.getAttachmentUrl(filename);
         if (!src) {
             console.error(`无法找到视频附件：${filename}`);
             return '';
         }
         return `<video controls src="${src}" data-id="${filename}"></video>`;
-    }),
+    });
+}
 
-    serialize: (node: HTMLElement) => {
-        const filename = node.dataset.id;
-        return filename ? `[[VID:${filename}]]` : '';
-    },
+function serialize(node: HTMLElement) {
+    const filename = getFilename(node);
+    return filename ? `[[VID:${filename}]]` : '';
+}
 
-    onClick: (_e, node, _ctx) => {
-        console.log('点击了视频：', node);
-    },
+function onClick(_e: MouseEvent, node: HTMLVideoElement, _ctx: ExtensionContext) {
+    console.log('点击了视频：', node);
+}
 
-    getFilename: (node) => node.dataset.id
+export const VideoExtension: Extension<HTMLVideoElement> = {
+    name: "video",
+    match, getMark, toHtml, serialize, onClick, getFilename
 }
