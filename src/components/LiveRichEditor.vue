@@ -6,7 +6,7 @@ import {useContextMenu} from "./editor/useContextMenu.ts";
 import {useScroll, useStorage} from "@vueuse/core";
 import {useDomInsert} from "./editor/useDomInsert.ts";
 
-const {modelValue, diarySummary, attachmentMap, defaultButtons} = defineProps<{
+const props = defineProps<{
   modelValue: string;
   diarySummary?: DiarySummary;
   attachmentMap: Record<string, string>;
@@ -23,7 +23,7 @@ const emit = defineEmits<{
 
 const editor = ref<HTMLDivElement>();
 
-const storageY = useStorage(`scroll-y-${diarySummary?.id}`, 0, sessionStorage);
+const storageY = useStorage(`scroll-y-${props.diarySummary?.id}`, 0, sessionStorage);
 const {y} = useScroll(editor, {
   behavior: 'smooth',
   onScroll() {
@@ -32,17 +32,17 @@ const {y} = useScroll(editor, {
 });
 
 const extensionCtx: ExtensionContext = {
-  getDiaryId: () => diarySummary?.id || '',
+  getDiaryId: () => props.diarySummary?.id || '',
   getAttachment: (filename) => {
-    if (!diarySummary) return null;
+    if (!props.diarySummary) return null;
     // 纯函数查询，不要在这里做任何 emit 或副作用
-    return diarySummary.attachments.find(att => att.filename === filename) || null;
+    return props.diarySummary.attachments.find(att => att.filename === filename) || null;
   },
   getAttachmentUrl: (filename) => {
-    if (!diarySummary) return null;
-    const att = diarySummary.attachments.find(att => att.filename === filename);
-    if (!att || !attachmentMap[att.filename]) return null;
-    return attachmentMap[att.filename];
+    if (!props.diarySummary) return null;
+    const att = props.diarySummary.attachments.find(att => att.filename === filename);
+    if (!att || !props.attachmentMap[att.filename]) return null;
+    return props.attachmentMap[att.filename];
   },
   gotoPreview(src) {
     emit('showImage', src);
@@ -62,7 +62,7 @@ const extensionCtx: ExtensionContext = {
 const {handleEditorContextMenu} = useContextMenu(
     extensionCtx,
     handleInput,
-    defaultButtons
+    props.defaultButtons
 );
 const {insertMediaNode, insertFileNode} = useDomInsert(editor);
 
@@ -211,14 +211,14 @@ onMounted(async () => {
     console.log('Editor element not found after nextTick');
     return;
   }
-  tryUpdateHtml(editor.value, modelValue);
+  tryUpdateHtml(editor.value, props.modelValue);
   await nextTick();
   if (storageY.value > 0) {
     editor.value.scrollTop = storageY.value;
   }
 });
 
-watch(() => modelValue, (newVal) => {
+watch(() => props.modelValue, (newVal) => {
   if (!editor.value) return;
   tryUpdateHtml(editor.value, newVal);
 });
