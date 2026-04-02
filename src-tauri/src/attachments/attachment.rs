@@ -468,6 +468,7 @@ pub async fn update_attachment_filename(
     id: &str,
     old_filename: String,
     new_filename: String,
+    new_content: String,
 ) -> Result<(), String> {
     let diary = get_diary(&cache, &lfc, &crypto, &client, &id).await?;
 
@@ -489,8 +490,9 @@ pub async fn update_attachment_filename(
         &crypto,
         &client,
         &id,
-        &old_filename,
-        &new_filename,
+        old_filename,
+        new_filename,
+        new_content,
     )
     .await?;
 

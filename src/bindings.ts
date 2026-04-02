@@ -356,12 +356,13 @@ async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
  * * `id` - 日记 ID
  * * `old_filename` - 旧附件 ID
  * * `new_filename` - 新附件 ID
+ * * `new_content`  - 新的完整内容
  * # Returns
  * * `Result<(), String>` - 成功时返回null，失败时返回错误信息
  */
-async cmdUpdateAttachmentFilename(id: string, oldFilename: string, newFilename: string) : Promise<Result<null, string>> {
+async cmdUpdateAttachmentFilename(id: string, oldFilename: string, newFilename: string, newContent: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_update_attachment_filename", { id, oldFilename, newFilename }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_update_attachment_filename", { id, oldFilename, newFilename, newContent }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

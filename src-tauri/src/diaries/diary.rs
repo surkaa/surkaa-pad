@@ -202,8 +202,9 @@ pub async fn update_diary_attachment_filename(
     crypto: &Crypto,
     client: &OssClient,
     id: &str,
-    old_filename: &str,
-    new_filename: &str,
+    old_filename: String,
+    new_filename: String,
+    new_content: String,
 ) -> Result<(), String> {
     let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
     if let Some(att) = diary
@@ -211,12 +212,9 @@ pub async fn update_diary_attachment_filename(
         .iter_mut()
         .find(|att| att.filename == old_filename)
     {
-        att.filename = new_filename.to_string();
+        att.filename = new_filename;
         // 更新 diary.content
-        diary.content = diary.content.replace(
-            &format!("{}]]", old_filename),
-            &format!("{}]]", new_filename),
-        );
+        diary.content = new_content;
         diary.updated = Utc::now().timestamp_millis();
         update_diary(cache, lfc, crypto, client, &diary).await?;
         Ok(())
