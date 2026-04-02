@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {nextTick, onMounted, ref, watch} from "vue";
 import {DiarySummary} from "../bindings.ts";
-import {Extension, ExtensionContext, EXTENSIONS, MenuButton} from "./editor/extension.ts";
+import {Extension, ExtensionContext, ExtensionEvents, EXTENSIONS, MenuButton} from "./editor/extension.ts";
 import {useContextMenu} from "./editor/useContextMenu.ts";
 import {useScroll, useStorage} from "@vueuse/core";
 import {useDomInsert} from "./editor/useDomInsert.ts";
@@ -47,11 +47,14 @@ const extensionCtx: ExtensionContext = {
   gotoPreview(src) {
     emit('showImage', src);
   },
-  emit(event, ...args) {
+  emit<E extends keyof ExtensionEvents>(event: E, ...args: ExtensionEvents[E]) {
     if (event === 'rotateAttachment') {
-      emit('rotateAttachment', args[0], args[1]);
+      // 明确解构并断言类型
+      const [filename, rotation] = args as ExtensionEvents['rotateAttachment'];
+      emit('rotateAttachment', filename, rotation);
     } else if (event === 'renameAttachment') {
-      emit('renameAttachment', args[0], args[1]); // TODO 增加类型约束
+      const [filename, cb] = args as ExtensionEvents['renameAttachment'];
+      emit('renameAttachment', filename, cb);
     }
   }
 }

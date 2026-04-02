@@ -12,12 +12,17 @@ export interface MenuButton<N = HTMLElement> {
     action: (target: N) => void;
 }
 
+export interface ExtensionEvents {
+    rotateAttachment: [filename: string, rotation: number];
+    renameAttachment: [filename: string, cb: (newFilename: string) => void];
+}
+
 export interface ExtensionContext {
     getDiaryId(): string;
     getAttachment(filename: string): AttachmentMeta | null;
     getAttachmentUrl(filename: string): string | null;
     gotoPreview(src: string): void;
-    emit: (eventName: string, ...args: any[]) => void;
+    emit: <E extends keyof ExtensionEvents>(eventName: E, ...args: ExtensionEvents[E]) => void;
 }
 
 export interface Extension<N extends HTMLElement = HTMLElement> {
