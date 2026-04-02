@@ -19,6 +19,7 @@ const or = ref(false);
 const savedScrollTop = ref(0);
 const scrollContainer = ref<HTMLElement | null>(null);
 const cancelToken = ref<string>();
+const searchTotal = ref(0);
 
 // 激活状态
 const isActivating = ref(true);
@@ -38,9 +39,11 @@ async function searchHandle() {
   event.onmessage = msg => {
     switch (msg.event) {
       case "match":
+        searchTotal.value = searchTotal.value + 1;
         diarySummaries.value.push(msg.data);
         break;
       case "unmatch":
+        searchTotal.value = searchTotal.value + 1;
         console.log('收到unmatch事件，id：', msg.data);
         break;
       case "finished":
@@ -54,6 +57,7 @@ async function searchHandle() {
     }
   };
   try {
+    searchTotal.value = 0;
     cancelToken.value = await api.cmdSearchDiaries(event, keyword.value, or.value);
     console.log('搜索中，取消令牌：', cancelToken.value);
   } catch (e) {
@@ -114,8 +118,8 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <Teleport v-if="isActivating" defer to="#footer-content">
-      <span>共搜索到 {{ diarySummaries.length }} 个日记</span>
+    <Teleport v-if="isActivating && searchTotal" defer to="#footer-content">
+      <span>共搜索到 {{ diarySummaries.length }} / {{ searchTotal }} 个日记</span>
     </Teleport>
   </div>
 </template>
