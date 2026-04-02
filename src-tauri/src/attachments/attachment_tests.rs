@@ -461,6 +461,7 @@ mod tests {
             &diary_id,
             filename.unwrap(),
             new_filename.to_string(),
+            summary.title.to_string()
         ).await.expect("附件更名失败");
         // 检查
         let diary = get_diary(&cache, &lfc, &crypto, &client, &diary_id)
