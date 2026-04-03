@@ -1,8 +1,8 @@
 import {Extension, ExtensionContext} from "./extension.ts";
 import {getFilename} from "./utils.ts";
 
-function match(node: HTMLVideoElement) {
-    return node.nodeName === 'VIDEO';
+function match(node: Node) {
+    return node.nodeName === 'VIDEO' && (node as HTMLElement).hasAttribute('data-id');
 }
 
 function getMark(filename: string) {

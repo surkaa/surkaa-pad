@@ -2,8 +2,8 @@ import {Extension, ExtensionConfig, ExtensionContext, MenuButton} from "./extens
 import {getFilename} from "./utils.ts";
 import {DatasetConfig} from "./useDomInsert.ts";
 
-function match(node: HTMLImageElement) {
-    return node.nodeName === 'IMG';
+function match(node: Node) {
+    return node.nodeName === 'IMG' && (node as HTMLElement).hasAttribute('data-id');
 }
 
 function getMark(filename: string) {

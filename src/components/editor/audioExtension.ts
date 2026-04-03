@@ -1,8 +1,8 @@
 import {Extension, ExtensionContext} from "./extension.ts";
 import {getFilename} from "./utils.ts";
 
-function match(node: HTMLAudioElement) {
-    return node.nodeName === 'AUDIO';
+function match(node: Node) {
+    return node.nodeName === 'AUDIO' && (node as HTMLElement).hasAttribute('data-id');
 }
 
 function getMark(filename: string) {

@@ -3,7 +3,7 @@ import {formatBytes} from "../../utils";
 import {getFilename} from "./utils.ts";
 
 // 根据固定的 class 识别文件节点
-function match(node: HTMLDivElement) {
+function match(node: Node) {
     return node.nodeName === 'DIV' && (node as HTMLElement).classList.contains('editor-file-attachment');
 }
 
