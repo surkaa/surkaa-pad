@@ -27,6 +27,7 @@ const showDetailDialog = ref(false);
 const showRenameDialog = ref(false);
 const oldFilename = ref('');
 const newFilename = ref('');
+const pinnedDiaryIds = configStore.useTauriConfig('pinned_diary_ids');
 let renameCb: ((newFilename: string) => void) | null = null;
 
 const {
@@ -132,6 +133,27 @@ async function handleRenameAttachment() {
   }
 }
 
+async function pinnedDiary() {
+  if (pinnedDiaryIds.value.includes(diaryId.value)) {
+    $q.notify({type: 'info', message: '该日记已经置顶了'});
+    return;
+  }
+  pinnedDiaryIds.value = [...pinnedDiaryIds.value, diaryId.value];
+  $q.notify({type: 'positive', message: '已置顶该日记'});
+  showMenu.value = false;
+}
+
+async function unpinnedDiary() {
+  const idx = pinnedDiaryIds.value.indexOf(diaryId.value);
+  if (idx == -1) {
+    $q.notify({type: 'info', message: '该日记未曾置顶'});
+    return;
+  }
+  pinnedDiaryIds.value = pinnedDiaryIds.value.filter(id => id !== diaryId.value);
+  $q.notify({type: 'positive', message: '已取消置顶该日记'});
+  showMenu.value = false;
+}
+
 defineOptions({name: 'DiaryDetail'});
 
 onBeforeRouteLeave((_to, _from, next) => {
@@ -229,6 +251,12 @@ onActivated(async () => {
     <q-dialog no-refocus v-model="showMenu" position="bottom">
       <q-card class="action-sheet-card">
         <q-list padding class="text-center">
+          <q-item v-if="!pinnedDiaryIds.includes(diaryId)" clickable v-ripple @click="pinnedDiary">
+            <q-item-section>置顶该日记</q-item-section>
+          </q-item>
+          <q-item v-else clickable v-ripple @click="unpinnedDiary">
+            <q-item-section>取消置顶该日记</q-item-section>
+          </q-item>
           <q-item clickable v-ripple @click="showDiarySource">
             <q-item-section>展示源码</q-item-section>
           </q-item>

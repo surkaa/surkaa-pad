@@ -5,6 +5,7 @@ import {AttachmentMeta, DiarySummary} from "../bindings.ts";
 
 const {diary} = defineProps<{
   diary: DiarySummary | null;
+  pinned?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -58,11 +59,12 @@ function getAttachmentInfo(attachments?: AttachmentMeta[]) {
     <div class="card-header">
       <div class="date-group">
         <div class="date-primary">
+          <span v-if="pinned && diary" class="pinned-icon q-mr-sm" title="已置顶">📌</span>
           <svg viewBox="0 0 24 24" width="14" height="14" v-if="diary">
             <path
                 d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z"/>
           </svg>
-          <span v-if="diary">{{ formatTimestamp(diary.created) }}</span>
+          <span class="q-ml-sm" v-if="diary">{{ formatTimestamp(diary.created) }}</span>
           <div v-else class="skeleton-bar w-120"></div>
         </div>
         <span class="date-updated" v-if="diary?.updated && diary?.created && (diary.updated > diary.created)">

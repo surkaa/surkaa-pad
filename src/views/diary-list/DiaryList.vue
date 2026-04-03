@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {nextTick, onActivated, onDeactivated, ref} from "vue";
+import {computed, nextTick, onActivated, onDeactivated, ref, watch} from "vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
 import {useScroll} from "@vueuse/core";
@@ -8,6 +8,7 @@ import {storeToRefs} from "pinia";
 import {useTimeoutStore} from "../../stores/timeout.ts";
 import {useOpenDiaryDetail} from "../../composables/useOpenDiaryDetail.ts";
 import api from "../../utils/api.ts";
+import {useConfigStore} from "../../stores/config.ts";
 
 const timeoutStore = useTimeoutStore();
 const dataStore = useDataStore();
@@ -17,6 +18,8 @@ const {
   withAttachments
 } = storeToRefs(dataStore);
 const {openDiary} = useOpenDiaryDetail();
+const configStore = useConfigStore();
+const pinnedDiaryIds = configStore.useTauriConfig('pinned_diary_ids');
 const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
@@ -27,6 +30,38 @@ const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
 
 // 激活状态
 const isActivating = ref(true);
+
+const sortedDiaryIds = computed(() => {
+  const pinned: string[] = [];
+  const unpinned: string[] = [];
+
+  // 遍历当前的 diaryIds，按是否置顶分发到两个数组中
+  diaryIds.value.forEach(id => {
+    if (pinnedDiaryIds.value.includes(id)) {
+      pinned.push(id);
+    } else {
+      unpinned.push(id);
+    }
+  });
+
+  // 返回拼接后的数组：置顶在前，未置顶在后
+  return [...pinned, ...unpinned];
+});
+
+watch(pinnedDiaryIds, (newPinnedIds) => {
+  if (!newPinnedIds) return;
+
+  newPinnedIds.forEach(id => {
+    if (!diaryIds.value.includes(id)) {
+      if (diarySummaries.value[id] === undefined) {
+        // 初始化占位，供骨架屏使用
+        diarySummaries.value[id] = null;
+      }
+      // 加入底层列表，sortedDiaryIds 会自动将它提到最前面
+      diaryIds.value.push(id);
+    }
+  });
+}, { immediate: true });
 
 // 获取单个日记的摘要
 async function loadDiarySummer(id: string) {
@@ -119,9 +154,10 @@ onDeactivated(() => {
             :offset="250"
         >
           <DiarySummaryCard
-              v-for="id in diaryIds"
+              v-for="id in sortedDiaryIds"
               :key="id"
               :diary="diarySummaries[id]"
+              :pinned="pinnedDiaryIds.includes(id)"
               @click="openDiary(id)"
               @visible="handleCardVisible(id)"
           />
