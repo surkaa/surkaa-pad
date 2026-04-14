@@ -123,7 +123,7 @@ export function useMediaAction(
 
     function beforeClick() {
         if (!diaryId.value) {
-            $q.notify({type: 'warning', message: '请先创建日记才能使用录音功能'});
+            $q.notify({type: 'warning', message: '请先创建日记才能使用此功能'});
             return true;
         }
         if (showPanel.value) showPanel.value = false;
