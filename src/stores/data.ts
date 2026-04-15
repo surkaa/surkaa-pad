@@ -1,10 +1,12 @@
 import {defineStore} from "pinia";
 import {computed, ref} from "vue";
 import {AttachmentMeta, DiarySummary} from "../bindings.ts";
+import {useConfigStore} from "./config.ts";
 
 export const useDataStore = defineStore('data', () => {
     const diaryIds = ref<string[]>([]);
     const diarySummaries = ref<Record<string, DiarySummary | null>>({});
+    const pinnedDiaryIds = useConfigStore().useTauriConfig('pinned_diary_ids');
 
     // 当前正在编辑的日记ID，空字符串表示新建
     const currentId = ref<string>("");
@@ -30,6 +32,11 @@ export const useDataStore = defineStore('data', () => {
         const index = diaryIds.value.indexOf(diaryId);
         if (index !== -1) {
             diaryIds.value.splice(index, 1);
+        }
+        // 尝试从pinnedDiaryIds中删除
+        const pinnedIndex = pinnedDiaryIds.value.indexOf(diaryId);
+        if (pinnedIndex !== -1) {
+            pinnedDiaryIds.value = [...pinnedDiaryIds.value.slice(0, pinnedIndex), ...pinnedDiaryIds.value.slice(pinnedIndex + 1)];
         }
     }
 
