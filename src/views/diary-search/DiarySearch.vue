@@ -98,7 +98,7 @@ onUnmounted(() => {
 <template>
   <div id="diary-search">
     <Teleport v-if="isActivating" defer to="#header-actions">
-      <q-input dense v-model="keyword" placeholder="输入关键词搜索" @keyup.enter="searchHandle" class="full-width">
+      <q-input dense autofocus v-model="keyword" placeholder="输入关键词搜索" @keyup.enter="searchHandle" class="full-width">
         <template #prepend v-if="keyword.indexOf(' ') != -1">
           <q-badge transparent :label="or ? 'OR' : 'AND'"/>
         </template>
