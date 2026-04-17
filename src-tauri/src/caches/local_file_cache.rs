@@ -212,46 +212,49 @@ impl LocalFileCache {
         }));
 
         // 包装原始流
-        let wrapped_stream = {
-            let state = state.clone();
-            stream
-                .then(move |chunk_result| {
-                    let state = state.clone();
-                    async move {
-                        let mut guard = state.lock().await;
-                        if guard.finalized {
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                "Stream already finalized",
-                            ));
-                        }
-                        match chunk_result {
-                            Ok(chunk) => {
-                                if let Some(file) = guard.file.as_mut() {
-                                    if let Err(e) = file.write_all(&chunk).await {
-                                        guard.error_occurred = true;
-                                        return Err(e);
-                                    }
-                                    Ok(chunk)
-                                } else {
-                                    guard.error_occurred = true;
-                                    Err(std::io::Error::new(
+        let state_clone = state.clone();
+        let wrapped_stream: ByteStream = Box::pin(
+            stream.then(move |chunk_result| {
+                let state = state_clone.clone();
+                async move {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            let mut file = {
+                                let mut guard = state.lock().await;
+                                if guard.finalized {
+                                    return Err(std::io::Error::new(
                                         std::io::ErrorKind::Other,
-                                        "File closed",
-                                    ))
+                                        "Stream finalized",
+                                    ));
                                 }
-                            }
-                            Err(e) => {
+                                guard.file.take().ok_or_else(|| {
+                                    std::io::Error::new(std::io::ErrorKind::Other, "File closed")
+                                })?
+                            };
+
+                            let write_res = file.write_all(&chunk).await;
+
+                            let mut guard = state.lock().await;
+                            if let Err(e) = write_res {
                                 guard.error_occurred = true;
-                                Err(e)
+                                guard.file = Some(file);
+                                return Err(e);
                             }
+                            guard.file = Some(file);
+
+                            Ok(chunk)
+                        }
+                        Err(e) => {
+                            let mut guard = state.lock().await;
+                            guard.error_occurred = true;
+                            Err(e)
                         }
                     }
-                })
-                .boxed()
-        };
+                }
+            }),
+        );
 
-        Ok((Box::pin(wrapped_stream), SaveHandle { state }))
+        Ok((wrapped_stream, SaveHandle { state }))
     }
 
     /// 流式直接存储数据

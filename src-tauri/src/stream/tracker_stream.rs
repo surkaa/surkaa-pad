@@ -8,7 +8,7 @@ use futures_util::StreamExt;
 /// * `progress_update` - 一个回调函数，进度更新时调用，最多调用100次，参数是当前进度百分比（0-100）
 pub fn tracker_stream<F>(len: u64, stream: ByteStream, progress_update: F) -> ByteStream
 where
-    F: Fn(u8) + Send + 'static,
+    F: Fn(u8) + Send + Sync + 'static,
 {
     // 记录累计已上传的字节数
     let mut uploaded = 0u64;
