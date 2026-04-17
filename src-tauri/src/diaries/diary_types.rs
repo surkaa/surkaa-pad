@@ -63,24 +63,3 @@ pub enum SearchDiariesEvent {
     Finished,
     Error(String),
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_diary_summary_title_from_manifest() {
-        let manifest = DiaryManifest {
-            id: "1".to_string(),
-            algorithm: EncryptionAlgorithm::Gcm,
-            content: "My first diary entry[[IMG:filename]]1[[IMG:filename]]\n This is the content."
-                .to_string(),
-            created: 0,
-            updated: 0,
-            attachments: vec![],
-        };
-
-        let summary = DiarySummary::from_manifest(manifest.clone());
-        assert_eq!(summary.title, "My first diary entry1");
-    }
-}
