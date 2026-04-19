@@ -24,6 +24,7 @@ const PHOTO_TYPES = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
 const AUDIO_TYPES = ['mp3', 'wav', 'ogg', 'flac', 'aac'];
 const VIDEO_TYPES = ['mp4', 'avi', 'mov', 'mkv', 'webm'];
 
+// TODO 给那个弹窗增加取消功能、显示错误的功能，同时禁用页面返回避免直接取消。
 export function useMediaAction(
     diaryId: Ref<string>,
     editorDomRef: Ref<HTMLElement | undefined>,
