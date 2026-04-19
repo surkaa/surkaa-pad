@@ -1,45 +1,43 @@
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
-use chrono::Utc;
-use futures_util::TryStreamExt;
-use hmac::{Hmac, Mac};
-use sha1::Sha1;
-use std::io::Error;
-use std::sync::Arc;
-
-use crate::object::object_types::{
-    AliyunListObjectsResult, AliyunObjectSummary, ObjectMetadata,
-    ATTACHMENT_URL_EXPIRATION_SECONDS, STREAM_MINE_TYPE,
-};
 use crate::object::NextToken;
 use crate::stream::ByteStream;
-use tauri::http::header::{CONTENT_TYPE, DATE};
-use tauri::http::{HeaderMap, HeaderValue, Method};
-
-pub struct OssClientInner {
-    endpoint: String,
-    akid: String,
-    sakey: String,
-    bucket: String,
-    http_client: reqwest::Client,
-}
+use futures_util::TryStreamExt;
+use s3::types::{HeadObjectOutput, Object};
+use s3::{Auth, Client, Credentials};
 
 #[derive(Clone)]
 pub struct OssClient {
-    inner: Arc<OssClientInner>,
+    client: Client,
+    bucket: String,
 }
 
 impl OssClient {
-    pub fn new(endpoint: String, akid: String, sakey: String, bucket: String) -> Self {
-        Self {
-            inner: Arc::new(OssClientInner {
-                endpoint,
-                akid,
-                sakey,
-                bucket,
-                http_client: reqwest::Client::new(),
-            }),
-        }
+    pub fn new(
+        endpoint: String,
+        akid: String,
+        sakey: String,
+        bucket: String,
+        region: String,
+    ) -> Result<Self, String> {
+        let endpoint_url = if endpoint.starts_with("http") {
+            endpoint
+        } else {
+            format!("https://{}", endpoint)
+        };
+
+        let auth = Auth::Static(Credentials {
+            access_key_id: akid,
+            secret_access_key: sakey,
+            session_token: None,
+        });
+
+        let client = Client::builder(&endpoint_url)
+            .unwrap()
+            .region(&region)
+            .auth(auth)
+            .build()
+            .map_err(|e| format!("创建 S3 client 失败:{}", e))?;
+
+        Ok(Self { client, bucket })
     }
 
     #[cfg(test)]
@@ -49,163 +47,29 @@ impl OssClient {
         let sakey = std::env::var("ALIYUN_SECRET").expect("请配置ALIYUN_SECRET");
         let bucket = std::env::var("ALIYUN_BUCKET_NAME").expect("请配置ALIYUN_BUCKET_NAME");
         let endpoint = std::env::var("ALIYUN_ENDPOINT").expect("请配置ALIYUN_ENDPOINT");
-        Self::new(endpoint, akid, sakey, bucket)
-    }
-
-    /// 构建完整的对象 URL
-    fn get_url(&self, path: &str, query: &str) -> String {
-        format!(
-            "https://{}.{}/{}?{}",
-            self.inner.bucket, self.inner.endpoint, path, query
-        )
-    }
-
-    /// 构建针对 CopyObject 的专属签名请求头
-    fn build_copy_headers(
-        &self,
-        method: &Method,
-        path: &str,       // 目标新文件的 key
-        source_key: &str, // 原文件的 key
-    ) -> Result<HeaderMap, String> {
-        let date = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-
-        let copy_source = format!("/{}/{}", self.inner.bucket, source_key);
-        let encoded_copy_source = copy_source
-            .split('/')
-            .map(|s| urlencoding::encode(s).into_owned())
-            .collect::<Vec<_>>()
-            .join("/");
-
-        let canonicalized_oss_headers = format!(
-            "x-oss-copy-source:{}\nx-oss-forbid-overwrite:true\n",
-            encoded_copy_source
-        );
-        let canonicalized_resource = format!("/{}/{}", self.inner.bucket, path);
-
-        let string_to_sign = format!(
-            "{}\n\n\n{}\n{}{}",
-            method.as_str(),
-            date,
-            canonicalized_oss_headers,
-            canonicalized_resource
-        );
-
-        // HMAC-SHA1 签名
-        type HmacSha1 = Hmac<Sha1>;
-        let mut mac = HmacSha1::new_from_slice(self.inner.sakey.as_bytes())
-            .map_err(|e| format!("非法长度{}", e))?;
-        mac.update(string_to_sign.as_bytes());
-        let signature = STANDARD.encode(mac.finalize().into_bytes());
-
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            DATE,
-            HeaderValue::from_str(&date).map_err(|e| format!("未能创建date头:{}", e))?,
-        );
-        headers.insert(
-            "x-oss-copy-source",
-            HeaderValue::from_str(&encoded_copy_source)
-                .map_err(|e| format!("未能创建copy-source头:{}", e))?,
-        );
-        // 显式禁止同名文件覆盖写
-        headers.insert("x-oss-forbid-overwrite", HeaderValue::from_static("true"));
-        headers.insert(
-            "Authorization",
-            HeaderValue::from_str(&format!("OSS {}:{}", self.inner.akid, signature))
-                .map_err(|e| format!("未能创建authorization头:{}", e))?,
-        );
-
-        Ok(headers)
-    }
-
-    /// 构建签名请求头
-    fn build_headers(
-        &self,
-        method: &Method,
-        path: &str,
-        content_type: &str,
-    ) -> Result<HeaderMap, String> {
-        let date = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-
-        // 签名字符串构造: VERB + \n + Content-MD5(可选) + \n + Content-Type + \n + Date + \n + CanonicalizedResource
-        let canonicalized_resource = format!("/{}/{}", self.inner.bucket, path);
-        let string_to_sign = format!(
-            "{}\n\n{}\n{}\n{}",
-            method.as_str(),
-            content_type,
-            date,
-            canonicalized_resource
-        );
-
-        // HMAC-SHA1 签名
-        type HmacSha1 = Hmac<Sha1>;
-        let mut mac = HmacSha1::new_from_slice(self.inner.sakey.as_bytes())
-            .map_err(|e| format!("非法长度{}", e))?;
-        mac.update(string_to_sign.as_bytes());
-        let signature = STANDARD.encode(mac.finalize().into_bytes());
-
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            DATE,
-            HeaderValue::from_str(&date).map_err(|e| format!("未能创建date头:{}", e))?,
-        );
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_str(content_type)
-                .map_err(|e| format!("未能创建content-type头:{}", e))?,
-        );
-        headers.insert(
-            "Authorization",
-            HeaderValue::from_str(&format!("OSS {}:{}", self.inner.akid, signature))
-                .map_err(|e| format!("未能创建authorization头:{}", e))?,
-        );
-
-        Ok(headers)
+        let region = std::env::var("ALIYUN_REGION").expect("请配置ALIYUN_REGION");
+        Self::new(endpoint, akid, sakey, bucket, region).expect("创建 S3 client 失败")
     }
 
     /// 重命名文件 (CopyObject + DeleteObject)
     pub async fn rename(&self, old_key: &str, new_key: &str) -> Result<(), String> {
-        // 判断是否存在同名文件
-        // 尝试获取元数据，如果能成功获取到，说明目标文件已存在
-        if self.get_metadata(new_key).await.is_ok() {
-            return Err("已有同名文件".to_string());
+        // 确保不存在新的键
+        let res = self.client.objects().head(&self.bucket, new_key).send().await;
+        if let Ok(res) = res {
+            return Err(format!("新的键 {} 已存在, ETag: {}", new_key, res.etag.unwrap_or_default()));
         }
-
-        // 调用 CopyObject 拷贝文件
-        let url = self.get_url(new_key, "");
-        let mut headers = self.build_copy_headers(&Method::PUT, new_key, old_key)?;
-
-        // CopyObject 请求不带 Body，但需要显式设置 Content-Length: 0，否则底层 reqwest 会挂起
-        headers.insert(reqwest::header::CONTENT_LENGTH, HeaderValue::from_static("0"));
-
-        let resp = self
-            .inner
-            .http_client
-            .put(url)
-            .headers(headers)
+        self.client
+            .objects()
+            .copy(&self.bucket, old_key, &self.bucket, new_key)
             .send()
             .await
-            .map_err(|e| format!("CopyObject请求发送失败:{}", e))?;
-
-        if !resp.status().is_success() {
-            // 如果服务端返回 409 Conflict，也是说明同名文件已被占用 (由于 x-oss-forbid-overwrite 触发)
-            if resp.status() == tauri::http::StatusCode::CONFLICT {
-                return Err("已有同名文件".to_string());
-            }
-            let status = resp.status();
-            let err_text = resp.text().await.unwrap_or_default();
-            return Err(format!(
-                "重命名(拷贝阶段)失败 状态码:{} 详情:{}",
-                status,
-                err_text
-            ));
-        }
-
-        // 删除原对象
-        self.delete(old_key)
+            .map_err(|e| e.to_string())?;
+        self.client
+            .objects()
+            .delete(&self.bucket, old_key)
+            .send()
             .await
-            .map_err(|e| format!("重命名(删除原文件阶段)失败: {}", e))?;
-
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -217,159 +81,80 @@ impl OssClient {
         stream: ByteStream,
         mimetype: &str,
     ) -> Result<String, String> {
-        let url = self.get_url(key, "");
-        let mut headers = self.build_headers(&Method::PUT, key, mimetype)?;
-        // 显式设置 Content-Length
-        headers.insert(reqwest::header::CONTENT_LENGTH, len.into());
-
-        let stream_reader = reqwest::Body::wrap_stream(stream);
-
         let resp = self
-            .inner
-            .http_client
-            .put(url)
-            .headers(headers)
-            .body(stream_reader)
+            .client
+            .objects()
+            .put(&self.bucket, key)
+            .body_stream_sized(stream, len)
+            .content_type(mimetype)
             .send()
             .await
-            .map_err(|e| format!("请求失败:{}", e))?;
-
-        if resp.status().is_success() {
-            let etag = resp
-                .headers()
-                .get("Etag")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.replace("\"", ""))
-                .unwrap_or_default();
-            Ok(etag)
-        } else {
-            Err(format!("上传失败 状态码:{}", resp.status()))
-        }
+            .map_err(|e| e.to_string())?;
+        Ok(resp.etag.unwrap_or_default().trim_matches('"').to_string())
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/putobject
     pub async fn upload_bytes(&self, key: &str, data: &[u8]) -> Result<String, String> {
-        let url = self.get_url(key, "");
-        let mut headers = self.build_headers(&Method::PUT, key, STREAM_MINE_TYPE)?;
-        // 显式设置 Content-Length
-        let len = data.len();
-        headers.insert(reqwest::header::CONTENT_LENGTH, len.into());
-
         let resp = self
-            .inner
-            .http_client
-            .put(url)
-            .headers(headers)
-            .body(data.to_owned())
+            .client
+            .objects()
+            .put(&self.bucket, key)
+            .body_bytes(data.to_vec())
+            .content_length(data.len() as u64)
             .send()
             .await
-            .map_err(|e| format!("请求失败:{}", e))?;
-
-        if resp.status().is_success() {
-            let etag = resp
-                .headers()
-                .get("ETag")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.replace("\"", ""))
-                .unwrap_or_default();
-            Ok(etag)
-        } else {
-            Err(format!("上传字节失败 状态码:{}", resp.status()))
-        }
+            .map_err(|e| e.to_string())?;
+        Ok(resp.etag.unwrap_or_default().trim_matches('"').to_string())
     }
 
     pub async fn delete(&self, key: &str) -> Result<(), String> {
-        let url = self.get_url(key, "");
-        let headers = self.build_headers(&Method::DELETE, key, "")?;
-
-        let resp = self
-            .inner
-            .http_client
-            .delete(url)
-            .headers(headers)
+        self.client
+            .objects()
+            .delete(&self.bucket, key)
             .send()
             .await
-            .map_err(|e| format!("请求失败:{}", e))?;
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
 
-        if resp.status().is_success() {
-            Ok(())
-        } else {
-            Err(format!("删除失败 {}", resp.status()))
+    async fn list_all_keys(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let mut keys = Vec::new();
+        let mut token = None;
+        loop {
+            let (objs, next_token) = self.list(prefix, token).await?;
+            keys.extend(objs.into_iter().map(|m| m.key));
+            token = next_token;
+            if token.is_none() {
+                break;
+            }
         }
+        Ok(keys)
     }
 
     pub async fn delete_with_prefix(&self, prefix: &str) -> Result<Vec<String>, String> {
-        // 列出所有匹配的对象
-        let mut next_token: Option<String> = None;
-        let mut needs_deletion = Vec::new();
-        loop {
-            let (objects, nt) = self.list(prefix, next_token).await?;
-            for obj in objects {
-                needs_deletion.push(obj.key().to_string());
-            }
-            if nt.is_none() {
-                break;
-            }
-            next_token = nt;
+        let keys = self.list_all_keys(prefix).await?;
+        if keys.is_empty() {
+            return Ok(vec![]);
         }
-        // 逐个删除对象
-        for key in &needs_deletion {
-            self.delete(key).await?;
-        }
-        Ok(needs_deletion)
-    }
-
-    pub async fn get_metadata(&self, key: &str) -> Result<ObjectMetadata, String> {
-        let url = self.get_url(key, "");
-        let headers = self.build_headers(&Method::HEAD, key, "")?;
-
-        let resp = self
-            .inner
-            .http_client
-            .head(url)
-            .headers(headers)
+        self.client
+            .objects()
+            .delete_objects(&self.bucket)
+            .objects(keys.clone())
             .send()
             .await
-            .map_err(|e| format!("请求失败:{}", e))?;
+            .map_err(|e| e.to_string())?;
+        Ok(keys)
+    }
 
-        if !resp.status().is_success() {
-            return Err(format!(
-                "获取元信息失败 status:{}, key:{}",
-                resp.status(),
-                &key
-            ));
-        }
-
-        let last_modified_str = resp
-            .headers()
-            .get("Last-Modified")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        let last_modified = chrono::DateTime::parse_from_rfc2822(last_modified_str)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now());
-
-        let etag: String = resp
-            .headers()
-            .get("ETag")
-            .ok_or("响应缺少ETag头".to_string())?
-            .to_str()
-            .map_err(|e| format!("无法解析ETag头: {}", e))?
-            .replace("\"", "");
-
-        let size = resp
-            .headers()
-            .get("Content-Length")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-
-        Ok(ObjectMetadata::new(
-            key.to_string(),
-            size,
-            last_modified,
-            etag,
-        ))
+    pub async fn get_metadata(&self, key: &str) -> Result<HeadObjectOutput, String> {
+        let resp = self
+            .client
+            .objects()
+            .head(&self.bucket, key)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(resp)
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/listobjects-v2
@@ -377,50 +162,13 @@ impl OssClient {
         &self,
         prefix: &str,
         next_token: NextToken,
-    ) -> Result<(Vec<ObjectMetadata>, NextToken), String> {
-        // 构造基础查询参数
-        #[cfg(not(debug_assertions))]
-        let mut query_params = format!("list-type=2&prefix={}&max-keys=1000", prefix);
-        #[cfg(debug_assertions)] // 测试环境下单页为10个，方便测试分页逻辑
-        let mut query_params = format!("list-type=2&prefix={}&max-keys=10", prefix);
-
-        // 处理签名路径
-        // 注意：OSS 要求 continuation-token 必须出现在签名字符串的 CanonicalizedResource 中
-        let mut sign_path = String::new();
+    ) -> Result<(Vec<Object>, NextToken), String> {
+        let mut req = self.client.objects().list_v2(&self.bucket).prefix(prefix);
         if let Some(token) = next_token {
-            let token_kv = format!("continuation-token={}", token);
-            query_params.push_str(&format!("&{}", token_kv));
-            sign_path.push_str(&format!("?{}", token_kv));
+            req = req.continuation_token(token);
         }
-
-        // 构造完整 URL
-        let url = self.get_url("", &query_params);
-
-        let headers = self.build_headers(&Method::GET, &sign_path, "")?;
-
-        let resp = self
-            .inner
-            .http_client
-            .get(url)
-            .headers(headers)
-            .send()
-            .await
-            .map_err(|e| format!("未能发送列表请求到阿里云 OSS: {}", e))?;
-        let xml_content = resp
-            .text()
-            .await
-            .map_err(|e| format!("未能读取列表响应内容: {}", e))?;
-        let aliyun_result = AliyunListObjectsResult::from_xml(xml_content)
-            .map_err(|e| format!("未能解析列表响应 XML: {}", e))?;
-
-        let next_token = aliyun_result.next_continuation_token;
-
-        let objects = aliyun_result
-            .contents
-            .into_iter()
-            .map(AliyunObjectSummary::into)
-            .collect();
-        Ok((objects, next_token))
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        Ok((resp.contents, resp.next_continuation_token))
     }
 
     pub async fn download(
@@ -428,105 +176,39 @@ impl OssClient {
         key: &str,
         range: Option<(u64, u64)>,
     ) -> Result<(ByteStream, u64), String> {
-        let url = self.get_url(key, "");
-        let mut headers = self.build_headers(&Method::GET, key, "")?;
-
-        // 1. 如果传入了 range，构建并插入标准的 HTTP Range 请求头
+        let mut req = self.client.objects().get(&self.bucket, key);
         if let Some((start, end)) = range {
-            let range_val = format!("bytes={}-{}", start, end);
-            headers.insert(
-                reqwest::header::RANGE,
-                HeaderValue::from_str(&range_val).map_err(|e| format!("未能创建Range头: {}", e))?,
-            );
+            req = req.range_bytes(start, end);
         }
-
-        let resp = self
-            .inner
-            .http_client
-            .get(url)
-            .headers(headers)
-            .send()
-            .await
-            .map_err(|e| format!("请求失败:{}", e))?;
-
-        if !resp.status().is_success() {
-            return Err(format!("下载失败 {}, key:{}", resp.status(), &key));
-        }
-
-        let len = resp
-            .headers()
-            .get("Content-Length")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-
-        let stream = resp.bytes_stream().map_err(Error::other);
-
-        Ok((Box::pin(stream), len))
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        let content_len = resp.content_length;
+        let stream = resp.body.map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+        });
+        Ok((Box::pin(stream), content_len.expect("content_len is None")))
     }
 
     pub async fn download_bytes(&self, key: &str) -> Result<Vec<u8>, String> {
-        let url = self.get_url(key, "");
-        let headers = self.build_headers(&Method::GET, key, "")?;
-
-        let resp = self
-            .inner
-            .http_client
-            .get(url)
-            .headers(headers)
-            .send()
-            .await
-            .map_err(|e| format!("请求失败:{}", e))?;
-
-        if !resp.status().is_success() {
-            return Err(format!("下载失败 {}, key:{}", resp.status(), &key));
+        let (mut stream, _) = self.download(key, None).await?;
+        let mut data = Vec::new();
+        while let Some(chunk) = stream.try_next().await.map_err(|e| e.to_string())? {
+            data.extend_from_slice(&chunk);
         }
-
-        let data = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("读取响应数据失败: {}", e))?
-            .to_vec();
-
         Ok(data)
     }
 
-    /// 生成预签名 URL（Direct URL），允许外部直接访问私有对象
     pub fn direct_url(&self, key: &str) -> Result<String, String> {
-        // 计算过期时间（当前时间 + 有效秒数）
-        let expires = Utc::now().timestamp() + ATTACHMENT_URL_EXPIRATION_SECONDS;
-
-        // 构造签名字符串 (CanonicalizedResource)
-        let canonicalized_resource = format!("/{}/{}", self.inner.bucket, key);
-        let string_to_sign = format!(
-            "{}\n\n\n{}\n{}",
-            Method::GET.as_str(),
-            expires,
-            canonicalized_resource
-        );
-
-        // HMAC-SHA1 签名
-        type HmacSha1 = Hmac<Sha1>;
-        let mut mac = HmacSha1::new_from_slice(self.inner.sakey.as_bytes())
-            .map_err(|e| format!("Key 长度非法: {}", e))?;
-        mac.update(string_to_sign.as_bytes());
-
-        let signature = STANDARD.encode(mac.finalize().into_bytes());
-
-        // 对签名进行 URL 编码
-        let encoded_signature = urlencoding::encode(&signature);
-
-        // 拼接最终 URL
-        let url = format!(
-            "https://{}.{}/{}?OSSAccessKeyId={}&Expires={}&Signature={}",
-            self.inner.bucket,
-            self.inner.endpoint,
-            key,
-            self.inner.akid,
-            expires,
-            encoded_signature
-        );
-
+        let url = self
+            .client
+            .objects()
+            .presign_get(&self.bucket, key)
+            .expires_in(std::time::Duration::from_secs(3600))
+            .build()
+            .map_err(|e| e.to_string())?
+            .url
+            .to_string();
         Ok(url)
     }
 }
+
+
