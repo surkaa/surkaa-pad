@@ -19,7 +19,7 @@ pub fn file_mimetype(mut file: File) -> Result<(String, File), String> {
     }
     let mimetype = infer::get(&buffer[..n])
         .map(|t| t.mime_type().to_string())
-        .ok_or_else(|| "无法判断文件类型".to_string())?;
+        .unwrap_or_default(); // TODO 允许手动更改mimetype
 
     // 重置文件指针到开头
     file.seek(io::SeekFrom::Start(0))
