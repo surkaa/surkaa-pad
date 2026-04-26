@@ -2,6 +2,7 @@ mod attachments;
 mod caches;
 mod cryptos;
 mod diaries;
+mod error;
 mod object;
 mod state;
 mod storages;
