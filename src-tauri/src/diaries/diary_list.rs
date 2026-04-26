@@ -17,7 +17,7 @@ pub async fn page_diary_ids(
         .map_err(|e| format!("获取列表失败:{}", e))?;
     let mut ids: Vec<String> = Vec::with_capacity(objects.len());
     for obj in objects {
-        if let Some(id) = diary_id_from_manifest_key(obj.key()) {
+        if let Some(id) = diary_id_from_manifest_key(&obj.key) {
             ids.push(id);
         }
     }

@@ -39,8 +39,8 @@ pub async fn get_attachment_stream(
             .get_metadata(key)
             .await
             .map_err(|e| format!("未能获取附件元数据: {}", e))?;
-        if metadata.etag() == etag {
-            Ok((lfc.get_stream(key, range).await?, metadata.size()))
+        if metadata.etag.as_deref() == Some(&etag) {
+            Ok((lfc.get_stream(key, range).await?, metadata.content_length.unwrap_or(0)))
         } else {
             // 删除本地过期的缓存
             lfc.delete(key).await;
@@ -393,7 +393,7 @@ pub async fn caching_attachment(
     let logic = async {
         let metadata = client.get_metadata(&key).await?;
         if let Some(etag) = lfc.get(&key).await? {
-            if metadata.etag() == etag {
+            if metadata.etag.as_deref() == Some(&etag) {
                 let _ = event.send(AttachmentProcessEvent::CompletedWithoutData);
                 return Ok(());
             }
@@ -404,7 +404,7 @@ pub async fn caching_attachment(
         let stream = tracker_stream(len, stream, move |progress| {
             let _ = ec.send(AttachmentProcessEvent::Progress(progress));
         });
-        lfc.direct_save_with_md5(&key, metadata.etag(), stream)
+        lfc.direct_save_with_md5(&key, &metadata.etag.unwrap_or_default(), stream)
             .await?;
 
         Ok::<(), String>(())

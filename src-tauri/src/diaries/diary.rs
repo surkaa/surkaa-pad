@@ -67,21 +67,21 @@ pub async fn get_diary(
 
     // 检查内存缓存
     if let Some((diary, etag)) = cache.get(id) {
-        if etag == metadata.etag() {
+        if metadata.etag.as_deref() == Some(&etag) {
             return Ok(diary.clone());
         }
     }
 
     // 检查文件缓存
     if let Some(etag) = lfc.get(&object_key).await? {
-        if etag == metadata.etag() {
+        if metadata.etag.as_deref() == Some(&etag) {
             let cache_bytes = lfc.get_data(&object_key).await?;
             let manifest_bytes = crypto.decrypt(&cache_bytes)?;
             // 反序列化 JSON
             let manifest: DiaryManifest =
                 from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
             // 更新缓存
-            cache.insert(id, manifest.clone(), metadata.etag().to_string());
+            cache.insert(id, manifest.clone(), metadata.etag.clone().unwrap_or_default());
             return Ok(manifest);
         } else {
             lfc.delete(&object_key).await;
@@ -100,7 +100,7 @@ pub async fn get_diary(
         from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
 
     // 更新内存缓存
-    cache.insert(id, manifest.clone(), metadata.etag().to_string());
+    cache.insert(id, manifest.clone(), metadata.etag.clone().unwrap_or_default());
     // 更新本地文件缓存
     lfc.save_bytes(&object_key, &encrypted_data).await?;
 

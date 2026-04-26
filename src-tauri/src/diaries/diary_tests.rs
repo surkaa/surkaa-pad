@@ -101,7 +101,7 @@ mod diary_tests {
             .get_metadata(&object_key)
             .await
             .expect("获取元数据失败");
-        let etag1 = metadata.etag().to_string();
+        let etag1 = metadata.etag.unwrap_or_default().to_string();
 
         // 验证本地缓存已生成
         let cached = lfc.get(&object_key).await.expect("检查缓存失败");

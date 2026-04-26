@@ -80,18 +80,17 @@ mod tests {
 
         // 获取元数据
         let metadata = client.get_metadata(key).await.expect("获取元数据失败");
-        assert_eq!(metadata.key(), key);
-        assert_eq!(metadata.size(), file_size);
-        assert_eq!(metadata.etag(), md5_etag);
-        let now = Utc::now();
-        assert!(metadata.last_modified() <= now);
-        assert!(metadata.last_modified() >= now - chrono::Duration::seconds(10));
+        assert_eq!(metadata.content_length, Some(file_size));
+        assert_eq!(metadata.etag.as_deref(), Some(md5_etag.as_str()));
 
         // 列出对象
         let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), 1, "应列出一个对象");
-        assert_eq!(objects[0], metadata, "列出的元数据应匹配获取的元数据");
+        let obj = &objects[0];
+        assert_eq!(obj.key, key);
+        assert_eq!(obj.size, file_size);
+        assert_eq!(obj.etag.as_deref(), Some(md5_etag.as_str()));
 
         // 下载对象
         let (mut download_stream, _) = client.download(key, None).await.expect("下载失败");
@@ -167,7 +166,7 @@ mod tests {
         let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
         assert_eq!(objects.len(), 3, "应列出三个对象");
-        let keys: Vec<String> = objects.iter().map(|obj| obj.key().to_string()).collect();
+        let keys: Vec<String> = objects.iter().map(|obj| obj.key.clone()).collect();
         assert!(keys.contains(&"folder/test1.txt".to_string()));
         assert!(keys.contains(&"folder/test2.txt".to_string()));
         assert!(keys.contains(&"folder/subfolder/test3.txt".to_string()));
@@ -293,7 +292,7 @@ mod tests {
         // 确认旧键不存在
         let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
-        assert!(!objects.iter().any(|obj| obj.key() == test_key), "旧键仍然存在");
+        assert!(!objects.iter().any(|obj| obj.key == test_key), "旧键仍然存在");
         // 新键存在且内容正确
         let (download_stream, _) = client.download(new_key, None).await.expect("下载失败");
         let downloaded_data = collect_data(download_stream).await.expect("接收下载流失败");

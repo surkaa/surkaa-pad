@@ -41,7 +41,7 @@ impl AppState {
         bucket: String,
     ) -> Result<(), String> {
         // 创建 OssClient
-        let client = OssClient::new(endpoint, akid, sakey, bucket)?;
+        let client = OssClient::new(endpoint, akid, sakey, bucket, "oss-cn-hangzhou".to_string())?;
         // 测试 client 是否可用
         let _ = client.list("", None).await?;
         // 存储 client
