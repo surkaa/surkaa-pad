@@ -1,16 +1,17 @@
 use std::collections::{HashMap};
+use crate::error::AppError;
 use crate::state::AppState;
 use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_clean_cache_file(state: State<'_, AppState>) -> Result<(), String> {
-    state.local_file_cache().delete_all().await
+pub async fn cmd_clean_cache_file(state: State<'_, AppState>) -> Result<(), AppError> {
+    Ok(state.local_file_cache().delete_all().await?)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_clean_unused_file(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+pub async fn cmd_clean_unused_file(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
     let client = state.get_client()?;
     // 列出所有匹配的对象
     let mut next_token: Option<String> = None;

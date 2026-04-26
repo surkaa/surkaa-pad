@@ -2,7 +2,7 @@ use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::Crypto;
 use crate::diaries::diary_list::page_diary_ids;
 use crate::diaries::diary_types::{DiarySummary, SearchDiariesEvent};
-use crate::diaries::get_diary;
+use crate::diaries::{get_diary, DiaryError};
 use crate::object::{NextToken, OssClient};
 use crate::utils::message_sender::MessageSender;
 use std::sync::Arc;
@@ -39,13 +39,13 @@ pub async fn search_diaries(
                         kc.iter().all(|keyword| content.contains(keyword))
                     };
 
-                    ecc.send(if is_match {
+                    let _ = ecc.send(if is_match {
                         SearchDiariesEvent::Match(DiarySummary::from_manifest(diary))
                     } else {
                         SearchDiariesEvent::Unmatch(diary.id)
-                    })?;
+                    });
 
-                    Ok::<(), String>(())
+                    Ok::<(), DiaryError>(())
                 }
             });
 
@@ -60,10 +60,10 @@ pub async fn search_diaries(
             nt = next_token;
         }
 
-        Ok::<(), String>(())
+        Ok::<(), DiaryError>(())
     };
 
     if let Err(e) = logic.await {
-        let _ = ec.send(SearchDiariesEvent::Error(e));
+        let _ = ec.send(SearchDiariesEvent::Error(e.to_string()));
     }
 }

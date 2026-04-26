@@ -1,5 +1,5 @@
 use crate::attachments::attachment_types::AttachmentProcessEvent;
-use crate::attachments::{get_full_attachment_url, AttachmentMeta};
+use crate::attachments::{get_full_attachment_url, AttachmentError, AttachmentMeta};
 use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
 use crate::cryptos::Crypto;
@@ -32,13 +32,12 @@ pub async fn get_attachment_stream(
     lfc: &LocalFileCache,
     client: &OssClient,
     range: Option<(u64, u64)>,
-) -> Result<(ByteStream, u64), String> {
+) -> Result<(ByteStream, u64), AttachmentError> {
     if let Some(etag) = lfc.get(key).await? {
         // 本地有缓存就判断是否是最新的
         let metadata = client
             .get_metadata(key)
-            .await
-            .map_err(|e| format!("未能获取附件元数据: {}", e))?;
+            .await?;
         if metadata.etag.as_deref() == Some(&etag) {
             Ok((lfc.get_stream(key, range).await?, metadata.content_length.unwrap_or(0)))
         } else {
@@ -72,7 +71,9 @@ pub async fn add_attachment(
         // 加锁获取模拟状态并执行 MEX 算法
         let allocated_id = {
             let mut pending_ids = alloc_state.lock().await;
-            let diary = get_diary(&cache, &lfc, &crypto, &client, id).await?;
+            let diary = get_diary(&cache, &lfc, &crypto, &client, id)
+                .await
+                .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
             // 提取已落盘的附件序号
             let existing_ids: HashSet<u32> = diary
@@ -85,7 +86,7 @@ pub async fn add_attachment(
             let new_id = (1..).find(|i| !existing_ids.contains(i) && !pending_ids.contains(i));
             let new_id = match new_id {
                 Some(id) => id,
-                None => return Err("无法分配新的附件 ID".to_string()),
+                None => return Err(AttachmentError::IdAssignmentFailed),
             };
 
             // 登记到模拟状态中，防止其他并发任务抢占
@@ -124,12 +125,12 @@ pub async fn add_attachment(
                 Err(e) => {
                     // 上传失败，丢弃本地缓存临时文件
                     handle.abort().await;
-                    Err(e)
+                    Err(AttachmentError::Object(e))
                 }
             }
         };
 
-        let upload_result: Result<AttachmentMeta, String> = upload_task.await;
+        let upload_result: Result<AttachmentMeta, AttachmentError> = upload_task.await;
 
         // 重新加锁，清理模拟状态并提交 Manifest
         let mut pending_ids = alloc_state.lock().await;
@@ -140,16 +141,18 @@ pub async fn add_attachment(
         let attachment = upload_result?;
 
         // 更新 Manifest
-        update_diary_attachment(&cache, &lfc, &crypto, &client, id, attachment.clone()).await?;
+        update_diary_attachment(&cache, &lfc, &crypto, &client, id, attachment.clone())
+            .await
+            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
         let url = get_full_attachment_url(id, &attachment, &client)?;
 
-        Ok::<(AttachmentMeta, String), String>((attachment, url))
+        Ok::<(AttachmentMeta, String), AttachmentError>((attachment, url))
     };
 
     match logic.await {
         Err(e) => {
-            let _ = event.send(AttachmentProcessEvent::Error(e));
+            let _ = event.send(AttachmentProcessEvent::Error(e.to_string()));
         }
         Ok((attachment, url)) => {
             let _ = event.send(AttachmentProcessEvent::Completed(attachment, url));
@@ -164,18 +167,17 @@ pub async fn delete_attachment(
     client: &OssClient,
     id: &str,
     filename: String,
-) -> Result<(), String> {
+) -> Result<(), AttachmentError> {
     let delete_lock = DELETE_LOCKS.entry(id.to_string()).or_default().clone();
     let _guard = delete_lock.lock().await;
 
-    delete_diary_attachment(cache, lfc, crypto, client, id, &filename).await?;
+    delete_diary_attachment(cache, lfc, crypto, client, id, &filename)
+        .await
+        .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
     // 删除远端附件对象
     let attachment_key = remote_attachments_key(id, &filename);
-    client
-        .delete(&attachment_key)
-        .await
-        .map_err(|e| format!("Failed to delete attachment: {}", e))?;
+    client.delete(&attachment_key).await?;
 
     // 删除本地缓存文件
     lfc.delete(&attachment_key).await;
@@ -193,12 +195,14 @@ pub async fn toggle_attachment_encryption(
 
     let logic = async {
         // 获取当前附件信息
-        let diary = get_diary(&cache, &lfc, &crypto, &client, id).await?;
+        let diary = get_diary(&cache, &lfc, &crypto, &client, id)
+            .await
+            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
         let old_meta = diary
             .attachments
             .iter()
             .find(|a| a.filename == filename)
-            .ok_or_else(|| "附件不存在".to_string())?
+            .ok_or_else(|| AttachmentError::InvalidOperation("附件不存在".to_string()))?
             .clone();
 
         // 我们需要反转当前的加密状态
@@ -218,7 +222,7 @@ pub async fn toggle_attachment_encryption(
             let (encrypted_stream, nonce) = crypto.encrypt_streaming(raw_stream)?;
             (encrypted_stream, nonce)
         } else {
-            return Err("无效的转换状态".to_string());
+            return Err(AttachmentError::InvalidOperation("无效的转换状态".to_string()));
         };
 
         // 包装进度追踪
@@ -239,7 +243,7 @@ pub async fn toggle_attachment_encryption(
             }
             Err(e) => {
                 handle.abort().await;
-                return Err(e);
+                return Err(AttachmentError::Object(e));
             }
         }
 
@@ -248,7 +252,9 @@ pub async fn toggle_attachment_encryption(
         new_meta.encrypted = encrypted;
         new_meta.nonce = new_nonce;
 
-        update_diary_attachment(&cache, &lfc, &crypto, &client, id, new_meta.clone()).await?;
+        update_diary_attachment(&cache, &lfc, &crypto, &client, id, new_meta.clone())
+            .await
+            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
         let url = get_full_attachment_url(id, &new_meta, &client)?;
         Ok((new_meta, url))
@@ -259,7 +265,7 @@ pub async fn toggle_attachment_encryption(
             let _ = event.send(AttachmentProcessEvent::Completed(meta, url));
         }
         Err(e) => {
-            let _ = event.send(AttachmentProcessEvent::Error(e));
+            let _ = event.send(AttachmentProcessEvent::Error(e.to_string()));
         }
     }
 }
@@ -276,20 +282,26 @@ pub async fn rotate_image_attachment(
     let logic = async {
         // 检测 rotation 参数是否合法
         if ![90, -90, 180].contains(&rotation) {
-            return Err("不支持的旋转角度，仅支持 90, -90, 180".to_string());
+            return Err(AttachmentError::InvalidOperation(
+                "不支持的旋转角度，仅支持 90, -90, 180".to_string(),
+            ));
         }
         // 获取元数据
-        let diary = get_diary(&cache, &lfc, &crypto, &client, id).await?;
+        let diary = get_diary(&cache, &lfc, &crypto, &client, id)
+            .await
+            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
         let old_meta = diary
             .attachments
             .iter()
             .find(|a| a.filename == filename)
-            .ok_or_else(|| "附件不存在".to_string())?
+            .ok_or_else(|| AttachmentError::InvalidOperation("附件不存在".to_string()))?
             .clone();
 
         // 验证 MIME 类型是否为图片
         if !old_meta.mimetype.starts_with("image/") {
-            return Err("附件不是图片，无法旋转".to_string());
+            return Err(AttachmentError::InvalidOperation(
+                "附件不是图片，无法旋转".to_string(),
+            ));
         }
 
         let key = remote_attachments_key(id, &filename);
@@ -307,13 +319,18 @@ pub async fn rotate_image_attachment(
         let buffer = collect_data(stream).await?;
 
         // 使用 image 库处理旋转
-        let img = image::load_from_memory(&buffer).map_err(|e| format!("图片解码失败: {}", e))?;
+        let img = image::load_from_memory(&buffer)
+            .map_err(|e| AttachmentError::ImageProcessingFailed(format!("图片解码失败: {}", e)))?;
 
         let rotated_img = match rotation {
             90 => img.rotate90(),
             180 => img.rotate180(),
             -90 => img.rotate270(),
-            _ => return Err("不支持的旋转角度，仅支持 90, 180, -90".to_string()),
+            _ => {
+                return Err(AttachmentError::InvalidOperation(
+                    "不支持的旋转角度，仅支持 90, 180, -90".to_string(),
+                ))
+            }
         };
 
         // 4. 将旋转后的图片编码回字节流
@@ -327,7 +344,7 @@ pub async fn rotate_image_attachment(
 
         rotated_img
             .write_to(&mut Cursor::new(&mut output_buffer), format)
-            .map_err(|e| format!("图片编码失败: {}", e))?;
+            .map_err(|e| AttachmentError::ImageProcessingFailed(format!("图片编码失败: {}", e)))?;
 
         let new_size = output_buffer.len() as u64;
 
@@ -355,7 +372,7 @@ pub async fn rotate_image_attachment(
             }
             Err(e) => {
                 handle.abort().await;
-                return Err(e);
+                return Err(AttachmentError::Object(e));
             }
         }
 
@@ -365,7 +382,9 @@ pub async fn rotate_image_attachment(
         new_meta.nonce = new_nonce;
         new_meta.encrypted = is_encrypted;
 
-        update_diary_attachment(&cache, &lfc, &crypto, &client, id, new_meta.clone()).await?;
+        update_diary_attachment(&cache, &lfc, &crypto, &client, id, new_meta.clone())
+            .await
+            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
         let url = get_full_attachment_url(id, &new_meta, &client)?;
         Ok((new_meta, url))
@@ -376,7 +395,7 @@ pub async fn rotate_image_attachment(
             let _ = event.send(AttachmentProcessEvent::Completed(meta, url));
         }
         Err(e) => {
-            let _ = event.send(AttachmentProcessEvent::Error(e));
+            let _ = event.send(AttachmentProcessEvent::Error(e.to_string()));
         }
     }
 }
@@ -407,14 +426,14 @@ pub async fn caching_attachment(
         lfc.direct_save_with_md5(&key, &metadata.etag.unwrap_or_default(), stream)
             .await?;
 
-        Ok::<(), String>(())
+        Ok::<(), AttachmentError>(())
     };
     match logic.await {
         Ok(()) => {
             let _ = event.send(AttachmentProcessEvent::CompletedWithoutData);
         }
         Err(e) => {
-            let _ = event.send(AttachmentProcessEvent::Error(e.clone()));
+            let _ = event.send(AttachmentProcessEvent::Error(e.to_string()));
         }
     }
 }
@@ -446,16 +465,16 @@ pub async fn save_decrypt_attachment(
         while let Some(chunk) = stream.next().await {
             if let Ok(chunk) = chunk {
                 file.write_all(&chunk)
-                    .map_err(|e| format!("写入文件失败:{}", e))?;
+                    .map_err(|e| AttachmentError::FileOperationFailed(format!("写入文件失败:{}", e)))?;
             } else {
-                return Err("下载文件失败".to_string());
+                return Err(AttachmentError::FileOperationFailed("下载文件失败".to_string()));
             }
         }
-        Ok::<(), String>(())
+        Ok::<(), AttachmentError>(())
     };
     match logic.await {
         Err(e) => {
-            let _ = event_res_clone.send(AttachmentProcessEvent::Error(e));
+            let _ = event_res_clone.send(AttachmentProcessEvent::Error(e.to_string()));
         }
         Ok(_) => {
             let _ = event_res_clone.send(AttachmentProcessEvent::CompletedWithoutData);
@@ -469,12 +488,14 @@ pub async fn update_attachment_filename(
     old_filename: String,
     new_filename: String,
     new_content: String,
-) -> Result<(), String> {
-    let diary = get_diary(&cache, &lfc, &crypto, &client, &id).await?;
+) -> Result<(), AttachmentError> {
+    let diary = get_diary(&cache, &lfc, &crypto, &client, &id)
+        .await
+        .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
     // 确认存在那个附件
     if !diary.attachments.iter().any(|a| a.filename == old_filename) {
-        return Err("原附件不存在".to_string());
+        return Err(AttachmentError::InvalidOperation("原附件不存在".to_string()));
     }
 
     // 更新远端存储的 key
@@ -494,7 +515,8 @@ pub async fn update_attachment_filename(
         new_filename,
         new_content,
     )
-    .await?;
+    .await
+    .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
     Ok(())
 }

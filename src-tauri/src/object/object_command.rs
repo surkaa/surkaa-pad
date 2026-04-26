@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::state::AppState;
 use tauri::State;
 
@@ -17,9 +18,8 @@ pub async fn cmd_init_oss_client(
     aks: String,
     bucket: String,
     endpoint: String,
-) -> Result<(), String> {
-    state
+) -> Result<(), AppError> {
+    Ok(state
         .initialize(akid, aks, endpoint, bucket)
-        .await
-        .map_err(|e| e.to_string())
+        .await?)
 }

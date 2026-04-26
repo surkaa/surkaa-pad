@@ -1,6 +1,7 @@
 use crate::attachments::attachment::{add_attachment, caching_attachment, delete_attachment, rotate_image_attachment, save_decrypt_attachment, toggle_attachment_encryption, update_attachment_filename};
 use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::diaries::get_diary;
+use crate::error::AppError;
 use crate::state::AppState;
 use crate::stream::{create_mock_stream, file_to_stream};
 use crate::utils::{file_mimetype, file_size};
@@ -27,19 +28,20 @@ pub fn cmd_add_attachment(
     id: String,
     access_str: String,
     encrypted: bool,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let four_states = state.four_states()?;
-    let fp = FilePath::from_str(&access_str).map_err(|e| format!("无效的文件路径: {}", e))?;
+    let fp = FilePath::from_str(&access_str)
+        .map_err(|e| AppError { error_type: "io".into(), message: format!("无效的文件路径: {}", e) })?;
     let mut option = OpenOptions::new();
     option.read(true);
     let file = app_handle
         .fs()
         .open(fp, option)
-        .map_err(|e| format!("无法打开文件: {}", e))?;
+        .map_err(|e| AppError { error_type: "io".into(), message: format!("无法打开文件: {}", e) })?;
     let size = file_size(&file)?;
     let (mimetype, file) = file_mimetype(file)?;
     let stream = file_to_stream(file);
-    state.task_pool().spawn(async move {
+    Ok(state.task_pool().spawn(async move {
         add_attachment(
             four_states,
             Arc::new(event),
@@ -50,7 +52,7 @@ pub fn cmd_add_attachment(
             stream,
         )
         .await;
-    })
+    })?)
 }
 
 /// 直接传字节数据给日记添加附件
@@ -70,7 +72,7 @@ pub fn cmd_add_attachment_memory(
     data: Vec<u8>,
     mimetype: String,
     encrypted: bool,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let four_states = state.four_states()?;
     let len = data.len();
     let mimetype = if mimetype.is_empty() {
@@ -82,7 +84,7 @@ pub fn cmd_add_attachment_memory(
         mimetype
     };
     let stream = create_mock_stream(data, len);
-    state.task_pool().spawn(async move {
+    Ok(state.task_pool().spawn(async move {
         add_attachment(
             four_states,
             Arc::new(event),
@@ -93,7 +95,7 @@ pub fn cmd_add_attachment_memory(
             stream,
         )
         .await;
-    })
+    })?)
 }
 
 /// 删除日记的附件
@@ -108,9 +110,9 @@ pub async fn cmd_delete_attachment(
     state: State<'_, AppState>,
     id: &str,
     filename: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let client = state.get_client()?;
-    delete_attachment(
+    Ok(delete_attachment(
         &state.diary_cache(),
         &state.local_file_cache(),
         &state.crypto(),
@@ -118,7 +120,7 @@ pub async fn cmd_delete_attachment(
         id,
         filename,
     )
-    .await
+    .await?)
 }
 
 /// 拍摄图片来添加
@@ -135,7 +137,7 @@ pub async fn cmd_add_image_attachment_from_camera(
     event: Channel<AttachmentProcessEvent>,
     id: String,
     encrypted: bool,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     #[cfg(target_os = "android")]
     {
         use base64::engine::general_purpose::STANDARD;
@@ -146,13 +148,15 @@ pub async fn cmd_add_image_attachment_from_camera(
         let result = app
             .native_camera()
             .take_picture()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| AppError { error_type: "camera".into(), message: e.to_string() })?;
         let base64_data = result.image_data;
-        let binary_data = STANDARD.decode(base64_data).map_err(|e| e.to_string())?;
+        let binary_data = STANDARD
+            .decode(base64_data)
+            .map_err(|e| AppError { error_type: "base64".into(), message: e.to_string() })?;
         let len = binary_data.len();
         let stream = create_mock_stream(binary_data, len);
         let three = state.four_states()?;
-        state.task_pool().spawn(async move {
+        Ok(state.task_pool().spawn(async move {
             add_attachment(
                 three,
                 Arc::new(event),
@@ -163,13 +167,13 @@ pub async fn cmd_add_image_attachment_from_camera(
                 stream,
             )
             .await;
-        })
+        })?)
     }
     #[cfg(not(target_os = "android"))]
     {
         // 简单使用一下参数避免编译器警告
         let _ = (app, state, event, id, encrypted);
-        Err("拍照功能仅在 Android 上可用".to_string())
+        Err(AppError { error_type: "platform".into(), message: "拍照功能仅在 Android 上可用".into() })
     }
 }
 
@@ -186,11 +190,11 @@ pub fn cmd_toggle_attachment_encryption(
     event: Channel<AttachmentProcessEvent>,
     id: String,
     filename: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let four_states = state.four_states()?;
-    state.task_pool().spawn(async move {
+    Ok(state.task_pool().spawn(async move {
         toggle_attachment_encryption(four_states, Arc::new(event), &id, filename).await;
-    })
+    })?)
 }
 
 /// 旋转图片附件 顺时针90度、逆时针90度和180度
@@ -208,11 +212,11 @@ pub fn cmd_rotate_image_attachment(
     id: String,
     filename: String,
     rotation: i32,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let four_states = state.four_states()?;
-    state.task_pool().spawn(async move {
+    Ok(state.task_pool().spawn(async move {
         rotate_image_attachment(four_states, Arc::new(event), &id, filename, rotation).await;
-    })
+    })?)
 }
 
 /// 主动缓存云端附件到本地
@@ -228,12 +232,12 @@ pub fn cmd_caching_attachment(
     event: Channel<AttachmentProcessEvent>,
     id: String,
     filename: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let lfc = state.local_file_cache();
     let client = state.get_client()?;
-    state.task_pool().spawn(async move {
+    Ok(state.task_pool().spawn(async move {
         caching_attachment(&lfc, &client, Arc::new(event), &id, &filename).await;
-    })
+    })?)
 }
 
 /// 让用户选择一个位置保存附近明文
@@ -250,14 +254,14 @@ pub async fn cmd_save_decrypt_attachment(
     event: Channel<AttachmentProcessEvent>,
     id: String,
     filename: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let (crypto, cache, lfc, client) = state.four_states()?;
     let diary = get_diary(&cache, &lfc, &crypto, &client, &id).await?;
     let attachment = diary
         .attachments
         .iter()
         .find(|a| a.filename == filename)
-        .ok_or_else(|| "附件不存在".to_string())?
+        .ok_or_else(|| AppError { error_type: "attachment".into(), message: "附件不存在".into() })?
         .clone();
 
     let ext = infer::get_from_mime(&attachment.mimetype)
@@ -269,16 +273,15 @@ pub async fn cmd_save_decrypt_attachment(
         .file()
         .set_file_name(format!("{}.{}", attachment.filename, ext))
         .blocking_save_file()
-        .ok_or("未选择".to_string())?;
+        .ok_or_else(|| AppError { error_type: "user".into(), message: "未选择".into() })?;
 
     let mut option = OpenOptions::new();
     option.write(true).truncate(true).create(true);
     let file = app_handle
         .fs()
-        .open(filepath, option)
-        .map_err(|e| e.to_string())?;
+        .open(filepath, option)?;
 
-    state.task_pool().spawn(async move {
+    Ok(state.task_pool().spawn(async move {
         save_decrypt_attachment(
             (crypto, cache, lfc, client),
             Arc::new(event),
@@ -288,7 +291,7 @@ pub async fn cmd_save_decrypt_attachment(
             file,
         )
         .await;
-    })
+    })?)
 }
 
 /// 重命名附件
@@ -307,12 +310,12 @@ pub async fn cmd_update_attachment_filename(
     old_filename: String,
     new_filename: String,
     new_content: String,
-) -> Result<(), String> {
-    update_attachment_filename(
+) -> Result<(), AppError> {
+    Ok(update_attachment_filename(
         state.four_states()?,
         &id,
         old_filename,
         new_filename,
         new_content
-    ).await
+    ).await?)
 }

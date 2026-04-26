@@ -6,7 +6,7 @@ use crate::attachments::AttachmentMeta;
 use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
 use crate::diaries::diary_types::DiarySummary;
-use crate::diaries::DiaryManifest;
+use crate::diaries::{DiaryError, DiaryManifest};
 use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;
 use serde_json::from_slice;
@@ -17,7 +17,7 @@ pub async fn save_diary(
     crypto: &Crypto,
     client: &OssClient,
     content: &str,
-) -> Result<(DiarySummary, String), String> {
+) -> Result<(DiarySummary, String), DiaryError> {
     let id = generate_descending_id();
     // 创建一个简单的 manifest
     let manifest = DiaryManifest {
@@ -30,8 +30,7 @@ pub async fn save_diary(
     };
 
     // 序列化为 JSON
-    let manifest_json = serde_json::to_vec(&manifest)
-        .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+    let manifest_json = serde_json::to_vec(&manifest)?;
 
     // 加密 manifest
     let encrypted_manifest = crypto.encrypt(&manifest_json)?;
@@ -40,8 +39,7 @@ pub async fn save_diary(
     let object_key = remote_manifest_key(&id);
     let etag = client
         .upload_bytes(&object_key, &encrypted_manifest)
-        .await
-        .map_err(|e| format!("Failed to upload manifest: {}", e))?;
+        .await?;
 
     // 保存到内存缓存中
     cache.insert(&id, manifest.clone(), etag);
@@ -58,9 +56,9 @@ pub async fn get_diary(
     crypto: &Crypto,
     client: &OssClient,
     id: &str,
-) -> Result<DiaryManifest, String> {
+) -> Result<DiaryManifest, DiaryError> {
     if id.is_empty() {
-        return Err("ID不能为空".to_string());
+        return Err(DiaryError::EmptyId);
     }
     let object_key = remote_manifest_key(id);
     let metadata = client.get_metadata(&object_key).await?;
@@ -78,8 +76,7 @@ pub async fn get_diary(
             let cache_bytes = lfc.get_data(&object_key).await?;
             let manifest_bytes = crypto.decrypt(&cache_bytes)?;
             // 反序列化 JSON
-            let manifest: DiaryManifest =
-                from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
+            let manifest: DiaryManifest = from_slice(&manifest_bytes)?;
             // 更新缓存
             cache.insert(id, manifest.clone(), metadata.etag.clone().unwrap_or_default());
             return Ok(manifest);
@@ -90,14 +87,12 @@ pub async fn get_diary(
 
     let encrypted_data = client
         .download_bytes(&object_key)
-        .await
-        .map_err(|e| format!("未能下载加密清单用于缓存: {}", e))?;
+        .await?;
 
     let manifest_bytes = crypto.decrypt(&encrypted_data)?;
 
     // 反序列化 JSON
-    let manifest: DiaryManifest =
-        from_slice(&manifest_bytes).map_err(|e| format!("未能解析manifest:{}", e))?;
+    let manifest: DiaryManifest = from_slice(&manifest_bytes)?;
 
     // 更新内存缓存
     cache.insert(id, manifest.clone(), metadata.etag.clone().unwrap_or_default());
@@ -112,7 +107,7 @@ pub async fn delete_diary(
     lfc: &LocalFileCache,
     client: &OssClient,
     id: &str,
-) -> Result<(), String> {
+) -> Result<(), DiaryError> {
     client.delete_with_prefix(id).await?;
 
     // 删除缓存
@@ -130,9 +125,9 @@ async fn update_diary(
     crypto: &Crypto,
     client: &OssClient,
     diary: &DiaryManifest,
-) -> Result<(), String> {
+) -> Result<(), DiaryError> {
     // 序列化为 JSON
-    let manifest_json = serde_json::to_vec(&diary).map_err(|e| format!("未能序列化日记: {}", e))?;
+    let manifest_json = serde_json::to_vec(&diary)?;
 
     // 加密 manifest
     let encrypted_manifest = crypto.encrypt(&manifest_json)?;
@@ -141,8 +136,7 @@ async fn update_diary(
     let object_key = remote_manifest_key(&diary.id);
     let etag = client
         .upload_bytes(&object_key, &encrypted_manifest)
-        .await
-        .map_err(|e| format!("Failed to upload updated manifest: {}", e))?;
+        .await?;
 
     // 更新缓存
     cache.insert(&diary.id, diary.clone(), etag);
@@ -159,7 +153,7 @@ pub async fn update_diary_content_only(
     client: &OssClient,
     id: &str,
     new_content: &str,
-) -> Result<DiarySummary, String> {
+) -> Result<DiarySummary, DiaryError> {
     // 先获取现有的 manifest
     let mut manifest = get_diary(cache, lfc, crypto, client, id).await?;
 
@@ -179,7 +173,7 @@ pub async fn update_diary_attachment(
     client: &OssClient,
     id: &str,
     new_attachment: AttachmentMeta,
-) -> Result<(), String> {
+) -> Result<(), DiaryError> {
     let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
     // 判断是否已存在同名附件，若存在则替换，否则添加
     if let Some(existing) = diary
@@ -205,7 +199,7 @@ pub async fn update_diary_attachment_filename(
     old_filename: String,
     new_filename: String,
     new_content: String,
-) -> Result<(), String> {
+) -> Result<(), DiaryError> {
     let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
     if let Some(att) = diary
         .attachments
@@ -219,7 +213,7 @@ pub async fn update_diary_attachment_filename(
         update_diary(cache, lfc, crypto, client, &diary).await?;
         Ok(())
     } else {
-        Err("未找到指定的附件".to_string())
+        Err(DiaryError::AttachmentNotFound(old_filename))
     }
 }
 
@@ -230,7 +224,7 @@ pub async fn delete_diary_attachment(
     client: &OssClient,
     id: &str,
     filename: &str,
-) -> Result<(), String> {
+) -> Result<(), DiaryError> {
     let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
     diary.attachments.retain(|att| att.filename != filename);
     diary.updated = Utc::now().timestamp_millis();

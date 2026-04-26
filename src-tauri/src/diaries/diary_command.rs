@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::object::NextToken;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,15 +21,15 @@ use tauri::State;
 pub async fn cmd_save_diary(
     state: State<'_, AppState>,
     content: &str,
-) -> Result<(DiarySummary, String), String> {
-    save_diary(
+) -> Result<(DiarySummary, String), AppError> {
+    Ok(save_diary(
         &state.diary_cache(),
         &state.local_file_cache(),
         &state.crypto(),
         &state.get_client()?,
         content,
     )
-    .await
+    .await?)
 }
 
 /// 删除日记及其所有附件
@@ -38,8 +39,8 @@ pub async fn cmd_save_diary(
 /// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), String> {
-    delete_diary(&state.diary_cache(), &state.local_file_cache(), &state.get_client()?, id).await
+pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), AppError> {
+    Ok(delete_diary(&state.diary_cache(), &state.local_file_cache(), &state.get_client()?, id).await?)
 }
 
 /// 更新日记的内容
@@ -54,8 +55,8 @@ pub async fn cmd_update_diary_content_only(
     state: State<'_, AppState>,
     id: &str,
     new_content: &str,
-) -> Result<DiarySummary, String> {
-    update_diary_content_only(
+) -> Result<DiarySummary, AppError> {
+    Ok(update_diary_content_only(
         &state.diary_cache(),
         &state.local_file_cache(),
         &state.crypto(),
@@ -63,7 +64,7 @@ pub async fn cmd_update_diary_content_only(
         id,
         new_content,
     )
-    .await
+    .await?)
 }
 
 /// 分页列出diary主键列表
@@ -77,8 +78,8 @@ pub async fn cmd_update_diary_content_only(
 pub async fn cmd_page_diary_ids(
     state: State<'_, AppState>,
     next_token: NextToken,
-) -> Result<(Vec<String>, NextToken), String> {
-    page_diary_ids(&state.get_client()?, next_token).await
+) -> Result<(Vec<String>, NextToken), AppError> {
+    Ok(page_diary_ids(&state.get_client()?, next_token).await?)
 }
 
 /// 获取日记Summary
@@ -91,15 +92,15 @@ pub async fn cmd_page_diary_ids(
 pub async fn cmd_get_diary_summary(
     state: State<'_, AppState>,
     id: &str,
-) -> Result<DiarySummary, String> {
-    get_diary_summary(
+) -> Result<DiarySummary, AppError> {
+    Ok(get_diary_summary(
         &state.diary_cache(),
         &state.local_file_cache(),
         &state.crypto(),
         &state.get_client()?,
         id,
     )
-    .await
+    .await?)
 }
 
 /// 获取日记内容
@@ -112,15 +113,15 @@ pub async fn cmd_get_diary_summary(
 pub async fn cmd_get_diary_content(
     state: State<'_, AppState>,
     id: &str,
-) -> Result<(String, HashMap<String, String>), String> {
-    get_diary_content(
+) -> Result<(String, HashMap<String, String>), AppError> {
+    Ok(get_diary_content(
         &state.diary_cache(),
         &state.local_file_cache(),
         &state.crypto(),
         &state.get_client()?,
         id,
     )
-    .await
+    .await?)
 }
 
 /// 搜索日记
@@ -135,13 +136,13 @@ pub fn cmd_search_diaries(
     event: Channel<SearchDiariesEvent>,
     keyword: String,
     or: bool,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let cache = state.diary_cache();
     let lfc = state.local_file_cache();
     let crypto = state.crypto();
     let client = state.get_client()?;
     let event = event.clone();
-    state.task_pool().spawn(async move {
+    Ok(state.task_pool().spawn(async move {
         search_diaries(&cache, &lfc, &crypto, &client, Arc::new(event), keyword, or).await;
-    })
+    })?)
 }

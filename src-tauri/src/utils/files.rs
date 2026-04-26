@@ -9,6 +9,15 @@ pub enum UtilsError {
     EmptyFile,
 }
 
+impl From<UtilsError> for crate::error::AppError {
+    fn from(e: UtilsError) -> Self {
+        crate::error::AppError {
+            error_type: "utils".into(),
+            message: e.to_string(),
+        }
+    }
+}
+
 pub fn file_size(file: &File) -> Result<u64, io::Error> {
     let metadata = file.metadata()?;
     Ok(metadata.len())

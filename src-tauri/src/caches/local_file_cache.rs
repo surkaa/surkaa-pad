@@ -294,8 +294,8 @@ impl LocalFileCache {
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
         if data_exists && md5_exists {
-            tokio::fs::read(&data_path)
-                .await?
+            Ok(tokio::fs::read(&data_path)
+                .await?)
         } else {
             Err(CacheError::NotFound)
         }

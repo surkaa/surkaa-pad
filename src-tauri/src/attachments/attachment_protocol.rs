@@ -1,8 +1,9 @@
 use crate::attachments::attachment::get_attachment_stream;
-use crate::attachments::AttachmentMeta;
+use crate::attachments::{AttachmentError, AttachmentMeta};
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
-use crate::diaries::get_diary;
-use crate::object::OssClient;
+use crate::cryptos::CryptoError;
+use crate::diaries::{get_diary, DiaryError};
+use crate::object::{ObjectError, OssClient};
 use crate::state::AppState;
 use crate::storages::remote_attachments_key;
 use crate::stream::collect_data_with_capacity;
@@ -32,6 +33,7 @@ enum ProtocolError {
 
 impl ProtocolError {
     fn into_response(self) -> Response<Vec<u8>> {
+
         let (status, msg) = match self {
             Self::BadRequest(m) => (StatusCode::BAD_REQUEST, m.to_string()),
             Self::Forbidden(m) => (StatusCode::FORBIDDEN, m.to_string()),
@@ -50,6 +52,22 @@ impl ProtocolError {
             .body(msg.into_bytes())
             .unwrap_or_default()
     }
+}
+
+impl From<DiaryError> for ProtocolError {
+    fn from(e: DiaryError) -> Self { ProtocolError::Internal(e.to_string()) }
+}
+impl From<CryptoError> for ProtocolError {
+    fn from(e: CryptoError) -> Self { ProtocolError::Internal(e.to_string()) }
+}
+impl From<AttachmentError> for ProtocolError {
+    fn from(e: AttachmentError) -> Self { ProtocolError::Internal(e.to_string()) }
+}
+impl From<ObjectError> for ProtocolError {
+    fn from(e: ObjectError) -> Self { ProtocolError::Internal(e.to_string()) }
+}
+impl From<std::io::Error> for ProtocolError {
+    fn from(e: std::io::Error) -> Self { ProtocolError::Internal(e.to_string()) }
 }
 
 pub fn attachment_protocol(
@@ -95,9 +113,7 @@ async fn process_attachment(
         .map_err(|_| ProtocolError::BadRequest("Invalid URL encoding in filename"))?
         .into_owned();
 
-    let diary = get_diary(&cache, &lfc, &crypto, &client, id)
-        .await
-        .map_err(|e| ProtocolError::Internal(e.to_string()))?;
+    let diary = get_diary(&cache, &lfc, &crypto, &client, id).await?;
 
     let attachment = diary
         .attachments
@@ -134,23 +150,17 @@ async fn process_attachment(
     };
 
     let key = remote_attachments_key(id, &filename);
-    let (stream, len) = get_attachment_stream(&key, &lfc, &client, Some((start, end)))
-        .await
-        .map_err(|e| ProtocolError::Internal(e.to_string()))?;
+    let (stream, len) = get_attachment_stream(&key, &lfc, &client, Some((start, end))).await?;
 
     let stream = if attachment.encrypted {
-        crypto
-            .decrypt_streaming(stream, &attachment.nonce, start)
-            .map_err(|e| ProtocolError::Internal(e.to_string()))?
+        crypto.decrypt_streaming(stream, &attachment.nonce, start)?
     } else {
         stream
     };
 
     // 消费 Stream，将其收集到内存中的 Vec<u8>
     // 因为这只是整个文件中的一个 Range Chunk（切片），所以放进内存是安全的
-    let data = collect_data_with_capacity(stream, len as usize)
-        .await
-        .map_err(|e| ProtocolError::Internal(e.to_string()))?;
+    let data = collect_data_with_capacity(stream, len as usize).await?;
 
     let status = if is_range {
         StatusCode::PARTIAL_CONTENT
@@ -181,7 +191,7 @@ pub fn get_full_attachment_url(
     id: &str,
     attachment: &AttachmentMeta,
     client: &OssClient,
-) -> Result<String, String> {
+) -> Result<String, ObjectError> {
     // 对文件名进行 URL Encode
     let encoded_filename = urlencoding::encode(&attachment.filename);
 
@@ -194,9 +204,7 @@ pub fn get_full_attachment_url(
     } else {
         // TODO 考虑针对未加密的附件也尝试访问缓存
         let key = remote_attachments_key(id, &attachment.filename);
-        let url = client
-            .direct_url(&key)
-            .map_err(|e| format!("生成附件URL失败:{}", e))?;
+        let url = client.direct_url(&key)?;
         Ok(url)
     }
 }
