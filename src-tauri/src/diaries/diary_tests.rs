@@ -431,9 +431,7 @@ mod diary_search_tests {
 
 #[cfg(test)]
 mod diary_migration_tests {
-    use crate::diaries::diary_migration::{
-        default_registry, get_version, migrate_manifest_bytes,
-    };
+    use crate::diaries::diary_migration::{get_version, migrate_manifest_bytes};
     use serde_json::Value;
 
     #[test]
@@ -449,35 +447,89 @@ mod diary_migration_tests {
     }
 
     #[test]
-    fn test_no_migration_needed() {
-        let json_bytes = br#"{"id":"test","version":1,"content":"hello"}"#;
+    fn test_no_migration_needed_when_already_current() {
+        let json_bytes =
+            br#"{"id":"test","version":2,"content":"hello","attachments":[]}"#;
         let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
         assert!(!migrated);
         assert!(new_bytes.is_none());
     }
 
     #[test]
-    fn test_missing_version_no_migration_when_current_is_1() {
-        let json_bytes = br#"{"id":"test","content":"hello"}"#;
-        let (migrated, _) = migrate_manifest_bytes(json_bytes).unwrap();
-        assert!(!migrated);
-    }
-
-    #[test]
-    fn test_version_received_greater_than_current() {
+    fn test_version_greater_than_current_no_downgrade() {
         let mut json = serde_json::json!({"id": "test", "content": "hello"});
-        json["version"] = Value::Number(2.into());
+        json["version"] = Value::Number(3.into());
         let bytes = serde_json::to_vec(&json).unwrap();
         let (migrated, _) = migrate_manifest_bytes(&bytes).unwrap();
         assert!(!migrated);
     }
 
     #[test]
-    fn test_migration_registry_empty_noop() {
-        let registry = default_registry();
-        let mut json = serde_json::json!({"id": "test", "version": 0});
-        let result = registry.migrate(&mut json).unwrap();
-        assert!(!result);
-        assert_eq!(get_version(&json), 0);
+    fn test_v1_no_attachments_migrates_to_v2() {
+        // V1 diary: no version field → version=1, no etag on attachments
+        let json_bytes = br#"{"id":"test","content":"hello","attachments":[]}"#;
+        let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
+        assert!(migrated);
+
+        let json: Value = serde_json::from_slice(&new_bytes.unwrap()).unwrap();
+        assert_eq!(get_version(&json), 2);
+    }
+
+    #[test]
+    fn test_v1_attachments_get_etag_null() {
+        let json_bytes = br#"{
+            "id": "test",
+            "content": "hello",
+            "attachments": [
+                {
+                    "filename": "1",
+                    "mimetype": "image/png",
+                    "size": 1024,
+                    "encrypted": true,
+                    "nonce": [],
+                    "algorithm": "AES-256-CTR"
+                },
+                {
+                    "filename": "2",
+                    "mimetype": "audio/mp3",
+                    "size": 2048,
+                    "encrypted": false,
+                    "nonce": [],
+                    "algorithm": "AES-256-CTR"
+                }
+            ]
+        }"#;
+        let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
+        assert!(migrated);
+
+        let json: Value = serde_json::from_slice(&new_bytes.unwrap()).unwrap();
+        assert_eq!(get_version(&json), 2);
+        let attachments = json["attachments"].as_array().unwrap();
+        assert_eq!(attachments.len(), 2);
+        for att in attachments {
+            assert_eq!(att["etag"], Value::Null);
+        }
+    }
+
+    #[test]
+    fn test_v2_attachments_with_etag_not_rewritten() {
+        let json_bytes = br#"{
+            "id": "test",
+            "version": 2,
+            "content": "hello",
+            "attachments": [
+                {
+                    "filename": "1",
+                    "mimetype": "image/png",
+                    "size": 1024,
+                    "encrypted": true,
+                    "nonce": [],
+                    "algorithm": "AES-256-CTR",
+                    "etag": "abc123"
+                }
+            ]
+        }"#;
+        let (migrated, _) = migrate_manifest_bytes(json_bytes).unwrap();
+        assert!(!migrated);
     }
 }

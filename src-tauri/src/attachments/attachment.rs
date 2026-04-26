@@ -120,6 +120,7 @@ pub async fn add_attachment(
                         nonce,
                         encrypted,
                         algorithm: Ctr,
+                        etag: Some(etag),
                     })
                 }
                 Err(e) => {
@@ -234,23 +235,25 @@ pub async fn toggle_attachment_encryption(
         // 将新的状态包装进 lfc 缓存流并上传
         let (wrapped_stream, handle) = lfc.save(&key, tracked_stream).await?;
 
-        match client
+        let new_etag = match client
             .upload(&key, size, wrapped_stream, &old_meta.mimetype)
             .await
         {
             Ok(etag) => {
                 let _ = handle.finalize(&etag).await;
+                etag
             }
             Err(e) => {
                 handle.abort().await;
                 return Err(AttachmentError::Object(e));
             }
-        }
+        };
 
         // 构造新的元数据并更新 Manifest
         let mut new_meta = old_meta.clone();
         new_meta.encrypted = encrypted;
         new_meta.nonce = new_nonce;
+        new_meta.etag = Some(new_etag);
 
         update_diary_attachment(&cache, &lfc, &crypto, &client, id, new_meta.clone())
             .await
@@ -363,24 +366,26 @@ pub async fn rotate_image_attachment(
 
         // 更新上传并缓存
         let (wrapped_stream, handle) = lfc.save(&key, upload_stream).await?;
-        match client
+        let new_etag = match client
             .upload(&key, new_size, wrapped_stream, &old_meta.mimetype)
             .await
         {
             Ok(etag) => {
                 let _ = handle.finalize(&etag).await;
+                etag
             }
             Err(e) => {
                 handle.abort().await;
                 return Err(AttachmentError::Object(e));
             }
-        }
+        };
 
         // 更新元数据
         let mut new_meta = old_meta.clone();
         new_meta.size = new_size;
         new_meta.nonce = new_nonce;
         new_meta.encrypted = is_encrypted;
+        new_meta.etag = Some(new_etag);
 
         update_diary_attachment(&cache, &lfc, &crypto, &client, id, new_meta.clone())
             .await

@@ -2,7 +2,7 @@ use crate::diaries::DiaryError;
 use serde_json::Value;
 
 /// 代码当前支持的 schema 版本
-pub const CURRENT_VERSION: u32 = 1;
+pub const CURRENT_VERSION: u32 = 2;
 
 /// 单个迁移步骤：将 JSON 从 V(n) 转换为 V(n+1)
 pub trait DiaryMigration: Send + Sync {
@@ -52,9 +52,28 @@ pub fn get_version(json: &Value) -> u32 {
         .unwrap_or(1) as u32
 }
 
+/// V1 → V2: 为每个附件添加 etag 字段
+struct V1ToV2Migration;
+
+impl DiaryMigration for V1ToV2Migration {
+    fn source_version(&self) -> u32 { 1 }
+    fn migrate_json(&self, json: &mut Value) -> Result<(), DiaryError> {
+        if let Some(attachments) = json.get_mut("attachments").and_then(|v| v.as_array_mut()) {
+            for att in attachments {
+                if att.get("etag").is_none() {
+                    att["etag"] = Value::Null;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// 构建包含所有已知迁移步骤的注册表
 pub fn default_registry() -> MigrationRegistry {
-    MigrationRegistry::new()
+    let mut reg = MigrationRegistry::new();
+    reg.register(Box::new(V1ToV2Migration));
+    reg
 }
 
 /// 便利函数：迁移 JSON 字节，返回（是否发生迁移, 新版 JSON 字节）

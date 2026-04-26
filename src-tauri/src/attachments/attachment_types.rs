@@ -30,5 +30,6 @@ pub struct AttachmentMeta {
     pub encrypted: bool,
     pub nonce: Vec<u8>, // 用于加密该文件的独立 IV
     pub algorithm: EncryptionAlgorithm,
-    // TODO 是否需要直接在这存储ETag？
+    #[serde(default)]
+    pub etag: Option<String>,
 }
