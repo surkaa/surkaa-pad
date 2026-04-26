@@ -45,7 +45,7 @@ impl MigrationRegistry {
 }
 
 /// 从 JSON 值中读取 version 字段，缺省返回 1
-fn get_version(json: &Value) -> u32 {
+pub fn get_version(json: &Value) -> u32 {
     json.get("version")
         .and_then(|v| v.as_u64())
         .unwrap_or(1) as u32
@@ -65,57 +65,5 @@ pub fn migrate_manifest_bytes(manifest_bytes: &[u8]) -> Result<(bool, Option<Vec
         Ok((true, Some(new_bytes)))
     } else {
         Ok((false, None))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_version_missing_field() {
-        let json = serde_json::json!({"id": "test"});
-        assert_eq!(get_version(&json), 1);
-    }
-
-    #[test]
-    fn test_get_version_explicit() {
-        let json = serde_json::json!({"id": "test", "version": 2});
-        assert_eq!(get_version(&json), 2);
-    }
-
-    #[test]
-    fn test_no_migration_needed() {
-        let json_bytes = br#"{"id":"test","version":1,"content":"hello"}"#;
-        let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
-        assert!(!migrated);
-        assert!(new_bytes.is_none());
-    }
-
-    #[test]
-    fn test_missing_version_no_migration_when_current_is_1() {
-        let json_bytes = br#"{"id":"test","content":"hello"}"#;
-        let (migrated, _) = migrate_manifest_bytes(json_bytes).unwrap();
-        assert!(!migrated);
-    }
-
-    #[test]
-    fn test_version_received_greater_than_current() {
-        let mut json = serde_json::json!({"id": "test", "content": "hello"});
-        json["version"] = Value::Number(2.into());
-        let bytes = serde_json::to_vec(&json).unwrap();
-        let (migrated, _) = migrate_manifest_bytes(&bytes).unwrap();
-        assert!(!migrated);
-    }
-
-    #[test]
-    fn test_migration_registry_empty_noop() {
-        let registry = default_registry();
-        let mut json = serde_json::json!({"id": "test", "version": 0});
-        // version 0 never happens in practice but engine should not crash,
-        // and since no migration steps exist, nothing changes
-        let result = registry.migrate(&mut json).unwrap();
-        assert!(!result);
-        assert_eq!(get_version(&json), 0);
     }
 }

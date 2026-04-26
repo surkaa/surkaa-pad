@@ -428,3 +428,56 @@ mod diary_search_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod diary_migration_tests {
+    use crate::diaries::diary_migration::{
+        default_registry, get_version, migrate_manifest_bytes,
+    };
+    use serde_json::Value;
+
+    #[test]
+    fn test_get_version_missing_field() {
+        let json = serde_json::json!({"id": "test"});
+        assert_eq!(get_version(&json), 1);
+    }
+
+    #[test]
+    fn test_get_version_explicit() {
+        let json = serde_json::json!({"id": "test", "version": 2});
+        assert_eq!(get_version(&json), 2);
+    }
+
+    #[test]
+    fn test_no_migration_needed() {
+        let json_bytes = br#"{"id":"test","version":1,"content":"hello"}"#;
+        let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
+        assert!(!migrated);
+        assert!(new_bytes.is_none());
+    }
+
+    #[test]
+    fn test_missing_version_no_migration_when_current_is_1() {
+        let json_bytes = br#"{"id":"test","content":"hello"}"#;
+        let (migrated, _) = migrate_manifest_bytes(json_bytes).unwrap();
+        assert!(!migrated);
+    }
+
+    #[test]
+    fn test_version_received_greater_than_current() {
+        let mut json = serde_json::json!({"id": "test", "content": "hello"});
+        json["version"] = Value::Number(2.into());
+        let bytes = serde_json::to_vec(&json).unwrap();
+        let (migrated, _) = migrate_manifest_bytes(&bytes).unwrap();
+        assert!(!migrated);
+    }
+
+    #[test]
+    fn test_migration_registry_empty_noop() {
+        let registry = default_registry();
+        let mut json = serde_json::json!({"id": "test", "version": 0});
+        let result = registry.migrate(&mut json).unwrap();
+        assert!(!result);
+        assert_eq!(get_version(&json), 0);
+    }
+}
