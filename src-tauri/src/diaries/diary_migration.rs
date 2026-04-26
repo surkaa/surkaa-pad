@@ -22,6 +22,7 @@ impl MigrationRegistry {
         Self { steps: Vec::new() }
     }
 
+    #[allow(dead_code)]
     pub fn register(&mut self, step: Box<dyn DiaryMigration>) {
         self.steps.push(step);
     }

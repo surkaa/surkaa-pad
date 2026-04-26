@@ -4,7 +4,7 @@ mod tests {
     use crate::object::OssClient;
     use crate::stream::{collect_data, create_mock_stream, ByteStream};
     use bytes::Bytes;
-    use chrono::Utc;
+
     use futures_util::stream::iter;
     use futures_util::TryStreamExt;
     use serial_test::serial;
