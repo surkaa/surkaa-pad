@@ -78,9 +78,7 @@ pub async fn get_diary(
             let cache_bytes = lfc.get_data(&object_key).await?;
             let manifest_bytes = crypto.decrypt(&cache_bytes)?;
             // 迁移钩子：JSON 层面版本升级
-            let (migrated, new_bytes) = migrate_manifest_bytes(&manifest_bytes)?;
-            if migrated {
-                let new_bytes = new_bytes.unwrap();
+            if let (true, Some(new_bytes)) = migrate_manifest_bytes(&manifest_bytes)? {
                 let re_encrypted = crypto.encrypt(&new_bytes)?;
                 let new_etag = client.upload_bytes(&object_key, &re_encrypted).await?;
                 lfc.save_bytes(&object_key, &re_encrypted).await?;
@@ -105,9 +103,7 @@ pub async fn get_diary(
     let manifest_bytes = crypto.decrypt(&encrypted_data)?;
 
     // 迁移钩子：JSON 层面版本升级
-    let (migrated, new_bytes) = migrate_manifest_bytes(&manifest_bytes)?;
-    if migrated {
-        let new_bytes = new_bytes.unwrap();
+    if let (true, Some(new_bytes)) = migrate_manifest_bytes(&manifest_bytes)? {
         let re_encrypted = crypto.encrypt(&new_bytes)?;
         let new_etag = client.upload_bytes(&object_key, &re_encrypted).await?;
         lfc.save_bytes(&object_key, &re_encrypted).await?;
