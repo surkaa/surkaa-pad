@@ -6,6 +6,7 @@ use crate::attachments::AttachmentMeta;
 use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
 use crate::diaries::diary_types::DiarySummary;
+use crate::diaries::diary_migration::{migrate_manifest_bytes, CURRENT_VERSION};
 use crate::diaries::{DiaryError, DiaryManifest};
 use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;
@@ -27,6 +28,7 @@ pub async fn save_diary(
         created: Utc::now().timestamp_millis(),
         updated: Utc::now().timestamp_millis(),
         attachments: Vec::new(),
+        version: CURRENT_VERSION,
     };
 
     // 序列化为 JSON
@@ -75,6 +77,17 @@ pub async fn get_diary(
         if metadata.etag.as_deref() == Some(&etag) {
             let cache_bytes = lfc.get_data(&object_key).await?;
             let manifest_bytes = crypto.decrypt(&cache_bytes)?;
+            // 迁移钩子：JSON 层面版本升级
+            let (migrated, new_bytes) = migrate_manifest_bytes(&manifest_bytes)?;
+            if migrated {
+                let new_bytes = new_bytes.unwrap();
+                let re_encrypted = crypto.encrypt(&new_bytes)?;
+                let new_etag = client.upload_bytes(&object_key, &re_encrypted).await?;
+                lfc.save_bytes(&object_key, &re_encrypted).await?;
+                let manifest: DiaryManifest = from_slice(&new_bytes)?;
+                cache.insert(id, manifest.clone(), new_etag);
+                return Ok(manifest);
+            }
             // 反序列化 JSON
             let manifest: DiaryManifest = from_slice(&manifest_bytes)?;
             // 更新缓存
@@ -90,6 +103,18 @@ pub async fn get_diary(
         .await?;
 
     let manifest_bytes = crypto.decrypt(&encrypted_data)?;
+
+    // 迁移钩子：JSON 层面版本升级
+    let (migrated, new_bytes) = migrate_manifest_bytes(&manifest_bytes)?;
+    if migrated {
+        let new_bytes = new_bytes.unwrap();
+        let re_encrypted = crypto.encrypt(&new_bytes)?;
+        let new_etag = client.upload_bytes(&object_key, &re_encrypted).await?;
+        lfc.save_bytes(&object_key, &re_encrypted).await?;
+        let manifest: DiaryManifest = from_slice(&new_bytes)?;
+        cache.insert(id, manifest.clone(), new_etag);
+        return Ok(manifest);
+    }
 
     // 反序列化 JSON
     let manifest: DiaryManifest = from_slice(&manifest_bytes)?;
