@@ -1,8 +1,26 @@
 use crate::object::NextToken;
 use crate::stream::ByteStream;
+use bytes::Bytes;
+use futures::StreamExt;
 use futures_util::TryStreamExt;
 use s3::types::{HeadObjectOutput, Object};
 use s3::{Auth, Client, Credentials};
+
+/// 将项目的 ByteStream（无 Sync）适配为 s3 crate 上传要求的格式（需要 Sync）
+fn to_s3_upload_stream(
+    stream: ByteStream,
+) -> impl futures::Stream<Item = Result<Bytes, std::io::Error>> + Send + Sync + 'static {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(8);
+    tokio::spawn(async move {
+        futures::pin_mut!(stream);
+        while let Some(item) = stream.next().await {
+            if tx.send(item).await.is_err() {
+                break;
+            }
+        }
+    });
+    tokio_stream::wrappers::ReceiverStream::new(rx)
+}
 
 #[derive(Clone)]
 pub struct OssClient {
@@ -81,11 +99,12 @@ impl OssClient {
         stream: ByteStream,
         mimetype: &str,
     ) -> Result<String, String> {
+        let s3_stream = to_s3_upload_stream(stream);
         let resp = self
             .client
             .objects()
             .put(&self.bucket, key)
-            .body_stream_sized(stream, len)
+            .body_stream_sized(s3_stream, len)
             .content_type(mimetype)
             .send()
             .await
@@ -147,13 +166,14 @@ impl OssClient {
     }
 
     pub async fn get_metadata(&self, key: &str) -> Result<HeadObjectOutput, String> {
-        let resp = self
+        let mut resp = self
             .client
             .objects()
             .head(&self.bucket, key)
             .send()
             .await
             .map_err(|e| e.to_string())?;
+        resp.etag = resp.etag.map(|e| e.trim_matches('"').to_string());
         Ok(resp)
     }
 
@@ -167,7 +187,16 @@ impl OssClient {
         if let Some(token) = next_token {
             req = req.continuation_token(token);
         }
-        let resp = req.send().await.map_err(|e| e.to_string())?;
+        #[cfg(debug_assertions)]
+        {
+            req = req.max_keys(10);
+        }
+        let mut resp = req.send().await.map_err(|e| e.to_string())?;
+        for obj in &mut resp.contents {
+            if let Some(ref mut etag) = obj.etag {
+                *etag = etag.trim_matches('"').to_string();
+            }
+        }
         Ok((resp.contents, resp.next_continuation_token))
     }
 
