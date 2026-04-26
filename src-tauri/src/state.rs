@@ -60,7 +60,7 @@ impl AppState {
     ) -> Result<(), StateError> {
         // 创建 OssClient
         let client = OssClient::new(endpoint, akid, sakey, bucket, "oss-cn-hangzhou".to_string())
-            .map_err(|e| StateError::ClientNotInitialized)?;
+            .map_err(|_| StateError::ClientNotInitialized)?;
         // 测试 client 是否可用
         let _ = client.list("", None).await.map_err(|_| StateError::ClientNotInitialized)?;
         // 存储 client

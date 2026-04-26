@@ -279,7 +279,11 @@ pub async fn cmd_save_decrypt_attachment(
     option.write(true).truncate(true).create(true);
     let file = app_handle
         .fs()
-        .open(filepath, option)?;
+        .open(filepath, option)
+        .map_err(|e| AppError {
+            error_type: "io".into(),
+            message: e.to_string(),
+        })?;
 
     Ok(state.task_pool().spawn(async move {
         save_decrypt_attachment(

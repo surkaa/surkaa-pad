@@ -14,7 +14,7 @@ export const commands = {
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdUnlock(masterPassword: string) : Promise<Result<null, string>> {
+async cmdUnlock(masterPassword: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_unlock", { masterPassword }) };
 } catch (e) {
@@ -29,7 +29,7 @@ async cmdUnlock(masterPassword: string) : Promise<Result<null, string>> {
  * # Returns
  * * `Result<Vec<u8>, String>` - 成功时返回密文（包含nonce在首），失败时返回错误信息
  */
-async cmdEncryptData(data: string) : Promise<Result<number[], string>> {
+async cmdEncryptData(data: string) : Promise<Result<number[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_encrypt_data", { data }) };
 } catch (e) {
@@ -44,7 +44,7 @@ async cmdEncryptData(data: string) : Promise<Result<number[], string>> {
  * # Returns
  * * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
  */
-async cmdDecryptData(encrypted: number[]) : Promise<Result<string, string>> {
+async cmdDecryptData(encrypted: number[]) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_decrypt_data", { encrypted }) };
 } catch (e) {
@@ -59,7 +59,7 @@ async cmdDecryptData(encrypted: number[]) : Promise<Result<string, string>> {
  * # Returns
  * * `Result<String, String>` - 成功时返回数据加密密钥，失败时返回错误信息
  */
-async cmdValidPassword(masterPassword: string) : Promise<Result<string, string>> {
+async cmdValidPassword(masterPassword: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_valid_password", { masterPassword }) };
 } catch (e) {
@@ -74,7 +74,7 @@ async cmdValidPassword(masterPassword: string) : Promise<Result<string, string>>
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdBiometricUnlock(dek: string) : Promise<Result<null, string>> {
+async cmdBiometricUnlock(dek: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_biometric_unlock", { dek }) };
 } catch (e) {
@@ -85,7 +85,7 @@ async cmdBiometricUnlock(dek: string) : Promise<Result<null, string>> {
 /**
  * 获取加密配置
  */
-async cmdEncryptInfo() : Promise<Result<number, string>> {
+async cmdEncryptInfo() : Promise<Result<number, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_encrypt_info") };
 } catch (e) {
@@ -103,7 +103,7 @@ async cmdEncryptInfo() : Promise<Result<number, string>> {
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdInitOssClient(akid: string, aks: string, bucket: string, endpoint: string) : Promise<Result<null, string>> {
+async cmdInitOssClient(akid: string, aks: string, bucket: string, endpoint: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_init_oss_client", { akid, aks, bucket, endpoint }) };
 } catch (e) {
@@ -118,7 +118,7 @@ async cmdInitOssClient(akid: string, aks: string, bucket: string, endpoint: stri
  * # Returns
  * * `Result<(DiarySummary, String), String>` - 成功时返回日记 Summary 和日记 ID，失败时返回错误信息
  */
-async cmdSaveDiary(content: string) : Promise<Result<[DiarySummary, string], string>> {
+async cmdSaveDiary(content: string) : Promise<Result<[DiarySummary, string], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_save_diary", { content }) };
 } catch (e) {
@@ -134,7 +134,7 @@ async cmdSaveDiary(content: string) : Promise<Result<[DiarySummary, string], str
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdUpdateDiaryContentOnly(id: string, newContent: string) : Promise<Result<DiarySummary, string>> {
+async cmdUpdateDiaryContentOnly(id: string, newContent: string) : Promise<Result<DiarySummary, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_update_diary_content_only", { id, newContent }) };
 } catch (e) {
@@ -149,7 +149,7 @@ async cmdUpdateDiaryContentOnly(id: string, newContent: string) : Promise<Result
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdDeleteDiary(id: string) : Promise<Result<null, string>> {
+async cmdDeleteDiary(id: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_delete_diary", { id }) };
 } catch (e) {
@@ -165,7 +165,7 @@ async cmdDeleteDiary(id: string) : Promise<Result<null, string>> {
  * # Returns
  * * `Vec<String>` - diary主键列表
  */
-async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], string | null], string>> {
+async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], string | null], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_page_diary_ids", { nextToken }) };
 } catch (e) {
@@ -180,7 +180,7 @@ async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], stri
  * # Returns
  * * `Result<DiarySummary, String>` - 成功时返回日记 Summary，失败时返回错误信息
  */
-async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, string>> {
+async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_summary", { id }) };
 } catch (e) {
@@ -195,7 +195,7 @@ async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, string>> {
  * # Returns
  * * `Result<(String, HashMap<String, String>), String>` - 成功时返回日记内容和附件filename->src Map，失败时返回错误信息
  */
-async cmdGetDiaryContent(id: string) : Promise<Result<[string, Partial<{ [key in string]: string }>], string>> {
+async cmdGetDiaryContent(id: string) : Promise<Result<[string, Partial<{ [key in string]: string }>], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_content", { id }) };
 } catch (e) {
@@ -210,7 +210,7 @@ async cmdGetDiaryContent(id: string) : Promise<Result<[string, Partial<{ [key in
  * # Returns
  * * `Result<String, String>` - 成功时返回搜索任务token，可用于取消搜索任务，失败时返回错误信息
  */
-async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string, or: boolean) : Promise<Result<string, string>> {
+async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string, or: boolean) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_search_diaries", { event, keyword, or }) };
 } catch (e) {
@@ -227,7 +227,7 @@ async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, accessStr: string, encrypted: boolean) : Promise<Result<string, string>> {
+async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, accessStr: string, encrypted: boolean) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment", { event, id, accessStr, encrypted }) };
 } catch (e) {
@@ -245,7 +245,7 @@ async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string,
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, data: number[], mimetype: string, encrypted: boolean) : Promise<Result<string, string>> {
+async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, data: number[], mimetype: string, encrypted: boolean) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment_memory", { event, id, data, mimetype, encrypted }) };
 } catch (e) {
@@ -261,7 +261,7 @@ async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: s
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdDeleteAttachment(id: string, filename: string) : Promise<Result<null, string>> {
+async cmdDeleteAttachment(id: string, filename: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_delete_attachment", { id, filename }) };
 } catch (e) {
@@ -277,7 +277,7 @@ async cmdDeleteAttachment(id: string, filename: string) : Promise<Result<null, s
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, encrypted: boolean) : Promise<Result<string, string>> {
+async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, encrypted: boolean) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_add_image_attachment_from_camera", { event, id, encrypted }) };
 } catch (e) {
@@ -293,7 +293,7 @@ async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEven
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, string>> {
+async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_toggle_attachment_encryption", { event, id, filename }) };
 } catch (e) {
@@ -310,7 +310,7 @@ async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string, rotation: number) : Promise<Result<string, string>> {
+async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string, rotation: number) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_rotate_image_attachment", { event, id, filename, rotation }) };
 } catch (e) {
@@ -326,7 +326,7 @@ async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, string>> {
+async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_caching_attachment", { event, id, filename }) };
 } catch (e) {
@@ -342,7 +342,7 @@ async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: str
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, string>> {
+async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_save_decrypt_attachment", { event, id, filename }) };
 } catch (e) {
@@ -360,7 +360,7 @@ async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
  * # Returns
  * * `Result<(), String>` - 成功时返回null，失败时返回错误信息
  */
-async cmdUpdateAttachmentFilename(id: string, oldFilename: string, newFilename: string, newContent: string) : Promise<Result<null, string>> {
+async cmdUpdateAttachmentFilename(id: string, oldFilename: string, newFilename: string, newContent: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_update_attachment_filename", { id, oldFilename, newFilename, newContent }) };
 } catch (e) {
@@ -370,12 +370,8 @@ async cmdUpdateAttachmentFilename(id: string, oldFilename: string, newFilename: 
 },
 /**
  * 取消任务
- * # Arguments
- * * `cancel_token` - 任务取消令牌
- * # Returns
- * * `Result<bool, String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, string>> {
+async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_cancel_task", { cancelToken }) };
 } catch (e) {
@@ -383,7 +379,7 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async cmdCleanCacheFile() : Promise<Result<null, string>> {
+async cmdCleanCacheFile() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_clean_cache_file") };
 } catch (e) {
@@ -391,7 +387,7 @@ async cmdCleanCacheFile() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async cmdCleanUnusedFile() : Promise<Result<string[], string>> {
+async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_clean_unused_file") };
 } catch (e) {
@@ -411,6 +407,7 @@ async cmdCleanUnusedFile() : Promise<Result<string[], string>> {
 
 /** user-defined types **/
 
+export type AppError = { error_type: string; message: string }
 export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm }
 export type AttachmentProcessEvent = { event: "started" } | 
 /**

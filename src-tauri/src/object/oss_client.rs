@@ -50,7 +50,7 @@ impl OssClient {
         });
 
         let client = Client::builder(&endpoint_url)
-            .unwrap()
+            .map_err(|e| ObjectError::CreateFailed(e.to_string()))?
             .region(&region)
             .auth(auth)
             .build()
@@ -215,7 +215,9 @@ impl OssClient {
         let stream = resp.body.map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
         });
-        Ok((Box::pin(stream), content_len.expect("content_len is None")))
+        let content_len = content_len
+            .ok_or_else(|| ObjectError::OperationFailed("missing content length".into()))?;
+        Ok((Box::pin(stream), content_len))
     }
 
     pub async fn download_bytes(&self, key: &str) -> Result<Vec<u8>, ObjectError> {
