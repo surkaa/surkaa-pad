@@ -5,6 +5,8 @@ use specta::Type;
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
+const fn default_version() -> u32 { 1 }
+
 pub struct DiaryManifest {
     pub id: String,
     pub algorithm: EncryptionAlgorithm, // 加密算法名称
@@ -14,6 +16,8 @@ pub struct DiaryManifest {
     #[specta(type = f64)]
     pub updated: i64,
     pub attachments: Vec<AttachmentMeta>, // 附件列表
+    #[serde(default = "default_version")]
+    pub version: u32,
 }
 
 impl DiaryManifest {

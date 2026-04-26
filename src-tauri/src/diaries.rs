@@ -2,6 +2,7 @@ mod diary;
 pub mod diary_command;
 mod diary_error;
 mod diary_list;
+mod diary_migration;
 mod diary_search;
 mod diary_types;
 
