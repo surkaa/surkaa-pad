@@ -1,3 +1,4 @@
+use crate::caches::CacheError;
 use crate::stream::ByteStream;
 use futures_util::StreamExt;
 use std::io::SeekFrom;
@@ -22,31 +23,29 @@ pub struct SaveHandle {
 impl SaveHandle {
     /// 完成缓存：同步文件、重命名、写入 MD5
     /// 如果流过程中发生过错误，则会删除临时文件并返回错误
-    pub async fn finalize(self, md5: &str) -> Result<(), String> {
+    pub async fn finalize(self, md5: &str) -> Result<(), CacheError> {
         let mut guard = self.state.lock().await;
         if guard.finalized {
-            return Err("Already finalized".to_string());
+            return Err(CacheError::AlreadyFinalized);
         }
         guard.finalized = true;
 
         if guard.error_occurred {
             let _ = tokio::fs::remove_file(&guard.tmp_path).await;
-            return Err("Error occurred during streaming, cache not saved".to_string());
+            return Err(CacheError::StreamError);
         }
 
         if let Some(file) = guard.file.take() {
-            file.sync_all().await.map_err(|e| e.to_string())?;
+            file.sync_all().await?;
             tokio::fs::rename(&guard.tmp_path, &guard.data_path)
-                .await
-                .map_err(|e| e.to_string())?;
+                .await?;
 
             tokio::fs::write(&guard.md5_path, md5)
-                .await
-                .map_err(|e| e.to_string())?;
+                .await?;
 
             Ok(())
         } else {
-            Err("file or context missing".to_string())
+            Err(CacheError::FileOrContextMissing)
         }
     }
 
@@ -88,26 +87,24 @@ impl LocalFileCache {
     }
 
     /// 确保存储文件的父目录存在
-    async fn ensure_parent_dir(path: &Path) -> Result<(), String> {
+    async fn ensure_parent_dir(path: &Path) -> Result<(), CacheError> {
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(|e| format!("无法创建父目录: {}", e))?;
+                    .await?;
             }
         }
         Ok(())
     }
 
     /// 获取指定 key 的数据文件大小和 MD5 值
-    pub async fn get(&self, key: &str) -> Result<Option<String>, String> {
+    pub async fn get(&self, key: &str) -> Result<Option<String>, CacheError> {
         let (data_path, md5_path) = self.get_path(key);
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
         if data_exists && md5_exists {
             let md5 = tokio::fs::read_to_string(&md5_path)
-                .await
-                .map_err(|e| format!("无法读取 MD5 文件: {}", e))?
+                .await?
                 .trim()
                 .to_string();
 
@@ -122,20 +119,18 @@ impl LocalFileCache {
         &self,
         key: &str,
         range: Option<(u64, u64)>,
-    ) -> Result<ByteStream, String> {
+    ) -> Result<ByteStream, CacheError> {
         let (data_path, md5_path) = self.get_path(key);
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
         if data_exists && md5_exists {
             let mut tokio_file = tokio::fs::File::open(&data_path)
-                .await
-                .map_err(|e| format!("无法打开数据文件: {}", e))?;
+                .await?;
             if let Some((start, end)) = range {
                 // 将文件指针移动到 start 的位置
                 tokio_file
                     .seek(SeekFrom::Start(start))
-                    .await
-                    .map_err(|e| format!("无法定位文件指针: {}", e))?;
+                    .await?;
 
                 // 计算需要读取的字节数
                 let limit = end.saturating_sub(start).saturating_add(1);
@@ -150,7 +145,7 @@ impl LocalFileCache {
                 Ok(Box::pin(stream))
             }
         } else {
-            Err("缓存不存在".to_string())
+            Err(CacheError::NotFound)
         }
     }
 
@@ -162,7 +157,7 @@ impl LocalFileCache {
     }
 
     /// 直接保存数据文件并计算
-    pub async fn save_bytes(&self, key: &str, data: &[u8]) -> Result<(), String> {
+    pub async fn save_bytes(&self, key: &str, data: &[u8]) -> Result<(), CacheError> {
         let (data_path, md5_path) = self.get_path(key);
         Self::ensure_parent_dir(&data_path).await?;
 
@@ -170,18 +165,15 @@ impl LocalFileCache {
 
         // 异步写入临时文件
         tokio::fs::write(&tmp_path, data)
-            .await
-            .map_err(|e| format!("无法保存数据文件: {}", e))?;
+            .await?;
 
         // 原子重命名
         tokio::fs::rename(&tmp_path, &data_path)
-            .await
-            .map_err(|e| format!("数据文件重命名失败: {}", e))?;
+            .await?;
 
         let md5 = format!("{:X}", md5::compute(data));
         tokio::fs::write(&md5_path, &md5)
-            .await
-            .map_err(|e| format!("无法保存 MD5 文件: {}", e))?;
+            .await?;
 
         Ok(())
     }
@@ -193,14 +185,13 @@ impl LocalFileCache {
         &self,
         key: &str,
         stream: ByteStream,
-    ) -> Result<(ByteStream, SaveHandle), String> {
+    ) -> Result<(ByteStream, SaveHandle), CacheError> {
         let (data_path, md5_path) = self.get_path(key);
         Self::ensure_parent_dir(&data_path).await?;
 
         let tmp_path = data_path.with_extension(format!("{}{}", DATA_FILE_SUFFIX, TMP_FILE_SUFFIX));
         let file = tokio::fs::File::create(&tmp_path)
-            .await
-            .map_err(|e| format!("无法创建数据文件: {}", e))?;
+            .await?;
 
         let state = Arc::new(Mutex::new(WriterState {
             file: Some(file),
@@ -263,89 +254,81 @@ impl LocalFileCache {
         key: &str,
         md5: &str,
         mut stream: ByteStream,
-    ) -> Result<(), String> {
+    ) -> Result<(), CacheError> {
         let (data_path, md5_path) = self.get_path(key);
         Self::ensure_parent_dir(&data_path).await?;
 
         // 创建临时文件
         let tmp_path = data_path.with_extension(format!("{}{}", DATA_FILE_SUFFIX, TMP_FILE_SUFFIX));
         let mut file = tokio::fs::File::create(&tmp_path)
-            .await
-            .map_err(|e| format!("无法创建数据文件: {}", e))?;
+            .await?;
 
         // 写入数据
         while let Some(chunk) = stream.next().await {
             if let Ok(chunk) = chunk {
                 if let Err(e) = file.write_all(&chunk).await {
                     let _ = tokio::fs::remove_file(&tmp_path).await;
-                    return Err(format!("写入数据文件失败: {}", e));
+                    return Err(CacheError::Io(e));
                 }
             } else {
                 let _ = tokio::fs::remove_file(&tmp_path).await;
-                return Err("读取输入流失败".to_string());
+                return Err(CacheError::StreamError);
             }
         }
 
-        file.sync_all().await.map_err(|e| e.to_string())?;
+        file.sync_all().await?;
         // 重命名
         tokio::fs::rename(&tmp_path, &data_path)
-            .await
-            .map_err(|e| format!("数据文件重命名失败: {}", e))?;
+            .await?;
 
         // 写入md5
         tokio::fs::write(&md5_path, &md5)
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
 
         Ok(())
     }
 
     /// 根据key直接返回完整的数据
-    pub async fn get_data(&self, key: &str) -> Result<Vec<u8>, String> {
+    pub async fn get_data(&self, key: &str) -> Result<Vec<u8>, CacheError> {
         let (data_path, md5_path) = self.get_path(key);
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
         if data_exists && md5_exists {
             tokio::fs::read(&data_path)
-                .await
-                .map_err(|e| format!("无法读取数据文件: {}", e))
+                .await?
         } else {
-            Err("缓存不存在".to_string())
+            Err(CacheError::NotFound)
         }
     }
 
     /// 删除所有缓存
-    pub async fn delete_all(&self) -> Result<(), String> {
+    pub async fn delete_all(&self) -> Result<(), CacheError> {
         let mut read_dir = tokio::fs::read_dir(self.cache_dir.as_path())
-            .await
-            .map_err(|e| e.to_string())?; // TODO 统一项目中的Error
-        while let Some(entry) = read_dir.next_entry().await.map_err(|e| e.to_string())? {
-            let file_type = entry.file_type().await.map_err(|e| e.to_string())?;
+            .await?;
+        while let Some(entry) = read_dir.next_entry().await? {
+            let file_type = entry.file_type().await?;
             if file_type.is_dir() {
                 tokio::fs::remove_dir_all(entry.path())
-                    .await
-                    .map_err(|e| e.to_string())?;
+                    .await?;
             } else {
                 tokio::fs::remove_file(entry.path())
-                    .await
-                    .map_err(|e| e.to_string())?;
+                    .await?;
             }
         }
         Ok(())
     }
 
     /// 获取所有缓存文件信息(Key, Md5)
-    pub async fn get_all(&self) -> Result<Vec<(String, String)>, String> {
+    pub async fn get_all(&self) -> Result<Vec<(String, String)>, CacheError> {
         let mut results = Vec::new();
         let mut stack = vec![self.cache_dir.as_ref().to_path_buf()];
 
         while let Some(dir) = stack.pop() {
             let mut read_dir = tokio::fs::read_dir(&dir)
-                .await
-                .map_err(|e| format!("无法读取目录 {}: {}", dir.display(), e))?;
+                .await?;
 
-            while let Some(entry) = read_dir.next_entry().await.map_err(|e| e.to_string())? {
-                let file_type = entry.file_type().await.map_err(|e| e.to_string())?;
+            while let Some(entry) = read_dir.next_entry().await? {
+                let file_type = entry.file_type().await?;
                 #[cfg(debug_assertions)]
                 println!("{:?}, filetype: {}", entry.path(), file_type.is_file());
                 if file_type.is_dir() {
@@ -356,14 +339,14 @@ impl LocalFileCache {
                 let file_name = path
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .ok_or("无法解析文件名")?;
+                    .ok_or(CacheError::InvalidFilename)?;
                 if !file_name.ends_with(DATA_FILE_SUFFIX) {
                     continue;
                 }
                 // 获取相对路径
                 let relative = path
                     .strip_prefix(&self.cache_dir.as_path())
-                    .map_err(|e| format!("路径错误: {}", e))?;
+                    .map_err(|e| CacheError::PathError(e.to_string()))?;
                 let key_with_sep = relative
                     .components()
                     .map(|c| c.as_os_str().to_string_lossy())

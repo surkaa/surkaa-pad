@@ -1,3 +1,4 @@
+use crate::tasks::TaskError;
 use crate::utils::id_generate::generate_descending_id;
 use std::collections::HashMap;
 use std::future::Future;
@@ -18,7 +19,7 @@ impl TaskPool {
     }
 
     /// 接收一个异步任务并直接执行
-    pub fn spawn<F>(&self, task: F) -> Result<String, String>
+    pub fn spawn<F>(&self, task: F) -> Result<String, TaskError>
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -38,7 +39,7 @@ impl TaskPool {
         };
 
         // 获取锁 (必须在 spawn 之前获取，防止竞态条件)
-        let mut guard = self.tasks.lock().map_err(|e| format!("锁中毒: {}", e))?;
+        let mut guard = self.tasks.lock().map_err(|e| TaskError::LockPoisoned(e.to_string()))?;
 
         // 启动任务
         let handle = tauri::async_runtime::spawn(wrapped_task);
@@ -50,8 +51,8 @@ impl TaskPool {
     }
 
     /// 取消任务
-    pub fn cancel(&self, cancel_token: &str) -> Result<bool, String> {
-        let mut guard = self.tasks.lock().map_err(|e| format!("锁中毒: {}", e))?;
+    pub fn cancel(&self, cancel_token: &str) -> Result<bool, TaskError> {
+        let mut guard = self.tasks.lock().map_err(|e| TaskError::LockPoisoned(e.to_string()))?;
 
         if let Some(handle) = guard.remove(cancel_token) {
             // 取消该任务

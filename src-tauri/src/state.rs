@@ -14,6 +14,24 @@ pub struct AppState {
     task_pool: TaskPool,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum StateError {
+    #[error("OSS client not initialized")]
+    ClientNotInitialized,
+
+    #[error("OSS client already initialized")]
+    ClientAlreadyInitialized,
+}
+
+impl From<StateError> for crate::error::AppError {
+    fn from(e: StateError) -> Self {
+        crate::error::AppError {
+            error_type: "state".into(),
+            message: e.to_string(),
+        }
+    }
+}
+
 impl AppState {
     pub fn new(path: PathBuf) -> Self {
         let crypto = Crypto::new();
@@ -39,23 +57,24 @@ impl AppState {
         sakey: String,
         endpoint: String,
         bucket: String,
-    ) -> Result<(), String> {
+    ) -> Result<(), StateError> {
         // 创建 OssClient
-        let client = OssClient::new(endpoint, akid, sakey, bucket, "oss-cn-hangzhou".to_string())?;
+        let client = OssClient::new(endpoint, akid, sakey, bucket, "oss-cn-hangzhou".to_string())
+            .map_err(|e| StateError::ClientNotInitialized)?;
         // 测试 client 是否可用
-        let _ = client.list("", None).await?;
+        let _ = client.list("", None).await.map_err(|_| StateError::ClientNotInitialized)?;
         // 存储 client
         self.oss_client_lock
             .set(client)
-            .map_err(|_| String::from("OssClient 已初始化"))?;
+            .map_err(|_| StateError::ClientAlreadyInitialized)?;
         Ok(())
     }
 
-    pub fn get_client(&self) -> Result<OssClient, String> {
+    pub fn get_client(&self) -> Result<OssClient, StateError> {
         self.oss_client_lock
             .get()
             .cloned()
-            .ok_or(String::from("OssClient 未初始化"))
+            .ok_or(StateError::ClientNotInitialized)
     }
 
     pub fn diary_cache(&self) -> DiaryMemoryCache {
@@ -70,7 +89,7 @@ impl AppState {
         self.task_pool.clone()
     }
 
-    pub fn four_states(&self) -> Result<(Crypto, DiaryMemoryCache, LocalFileCache, OssClient), String> {
+    pub fn four_states(&self) -> Result<(Crypto, DiaryMemoryCache, LocalFileCache, OssClient), StateError> {
         Ok((
             self.crypto.clone(),
             self.diary_cache.clone(),
