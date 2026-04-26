@@ -3,10 +3,10 @@ use crate::cryptos::crypto_types::EncryptionAlgorithm;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-// Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
-#[derive(Deserialize, Serialize, Clone, Debug, Type)]
 const fn default_version() -> u32 { 1 }
 
+// Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
+#[derive(Deserialize, Serialize, Clone, Debug, Type)]
 pub struct DiaryManifest {
     pub id: String,
     pub algorithm: EncryptionAlgorithm, // 加密算法名称

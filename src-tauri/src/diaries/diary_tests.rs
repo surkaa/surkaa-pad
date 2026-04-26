@@ -3,6 +3,7 @@ mod diary_tests {
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
+    use crate::diaries::diary_migration::CURRENT_VERSION;
     use crate::diaries::diary_types::DiaryManifest;
     use crate::diaries::{delete_diary, get_diary, save_diary, update_diary_content_only};
     use crate::object::OssClient;
@@ -118,6 +119,7 @@ mod diary_tests {
             created: summary.created,
             updated: Utc::now().timestamp_millis(),
             attachments: Vec::new(),
+            version: CURRENT_VERSION,
         };
         let manifest_json = to_vec(&modified_manifest).expect("序列化失败");
         let encrypted_modified = crypto.encrypt(&manifest_json).expect("加密失败");

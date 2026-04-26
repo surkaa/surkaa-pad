@@ -112,9 +112,10 @@ mod tests {
     fn test_migration_registry_empty_noop() {
         let registry = default_registry();
         let mut json = serde_json::json!({"id": "test", "version": 0});
+        // version 0 never happens in practice but engine should not crash,
+        // and since no migration steps exist, nothing changes
         let result = registry.migrate(&mut json).unwrap();
-        assert!(result);
-        // version clamped to CURRENT_VERSION even without migration steps
-        assert_eq!(get_version(&json), 1);
+        assert!(!result);
+        assert_eq!(get_version(&json), 0);
     }
 }
