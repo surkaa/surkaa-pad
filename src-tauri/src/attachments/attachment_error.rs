@@ -2,12 +2,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AttachmentError {
-    #[error("Attachment not found")]
-    NotFound,
-
-    #[error("Deletion failed: {0}")]
-    DeleteFailed(String),
-
     #[error("ID assignment failed")]
     IdAssignmentFailed,
 
@@ -19,9 +13,6 @@ pub enum AttachmentError {
 
     #[error("File operation failed: {0}")]
     FileOperationFailed(String),
-
-    #[error("Platform limitation: {0}")]
-    PlatformLimitation(String),
 
     #[error("Object storage error: {0}")]
     Object(#[from] crate::object::ObjectError),
@@ -35,8 +26,6 @@ pub enum AttachmentError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("{0}")]
-    Other(String),
 }
 
 impl From<AttachmentError> for crate::error::AppError {

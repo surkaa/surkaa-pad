@@ -74,7 +74,7 @@ impl OssClient {
     pub async fn rename(&self, old_key: &str, new_key: &str) -> Result<(), ObjectError> {
         // 确保不存在新的键
         let res = self.client.objects().head(&self.bucket, new_key).send().await;
-        if let Ok(res) = res {
+        if let Ok(_res) = res {
             return Err(ObjectError::KeyAlreadyExists(new_key.to_string()));
         }
         self.client
