@@ -18,7 +18,7 @@ pub async fn cmd_clean_unused_file(state: State<'_, AppState>) -> Result<Vec<Str
     loop {
         let (objects, nt) = client.list("", next_token).await?;
         for object in objects {
-            remote_objs.insert(object.key().to_string(), object);
+            remote_objs.insert(object.key.clone(), object);
         }
         if nt.is_none() {
             break;
@@ -29,7 +29,7 @@ pub async fn cmd_clean_unused_file(state: State<'_, AppState>) -> Result<Vec<Str
     let mut need_deletion = Vec::new();
     for (key, md5) in all_files {
         if let Some(obj) = remote_objs.get(&key) {
-            if obj.etag() != md5 {
+            if obj.etag.as_deref() != Some(&md5) {
                 need_deletion.push(key);
             }
         } else {
