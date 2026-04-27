@@ -1,6 +1,6 @@
 use crate::diaries::DiaryError;
-use log::{debug, info};
 use serde_json::Value;
+use tauri_plugin_log::log;
 
 /// 代码当前支持的 schema 版本
 pub const CURRENT_VERSION: u32 = 2;
@@ -48,14 +48,14 @@ impl MigrationRegistry {
     pub fn migrate(&self, json: &mut Value) -> Result<bool, DiaryError> {
         let version = get_version(json);
         if version >= CURRENT_VERSION {
-            debug!("Manifest version {version} already current (latest {CURRENT_VERSION}), skip migration");
+            log::debug!("Manifest version {version} already current (latest {CURRENT_VERSION}), skip migration");
             return Ok(false);
         }
         let before = version;
         for step in &self.steps {
             let current = get_version(json);
             if current == step.source_version() {
-                info!(
+                log::info!(
                     "Migrating manifest: V{} → V{}",
                     current,
                     step.source_version() + 1
@@ -66,7 +66,7 @@ impl MigrationRegistry {
         }
         let after = get_version(json);
         if after != before {
-            info!("Manifest migration complete: V{before} → V{after}");
+            log::info!("Manifest migration complete: V{before} → V{after}");
         }
         Ok(after != before)
     }
@@ -96,7 +96,7 @@ impl DiaryMigration for V1ToV2Migration {
                 }
             }
         }
-        debug!("V1→V2: 为 {count} 个附件注入 etag 字段");
+        log::debug!("V1→V2: 为 {count} 个附件注入 etag 字段");
         Ok(())
     }
 

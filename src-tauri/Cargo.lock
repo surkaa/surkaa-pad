@@ -5320,7 +5320,6 @@ dependencies = [
  "http-range-header",
  "image",
  "infer 0.21.0",
- "log",
  "md5",
  "quick-xml 0.39.2",
  "reqwest 0.12.28",
