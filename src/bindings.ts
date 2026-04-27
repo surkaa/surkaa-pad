@@ -408,7 +408,7 @@ async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
 /** user-defined types **/
 
 export type AppError = { error_type: string; message: string }
-export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm }
+export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm; etag?: string | null }
 export type AttachmentProcessEvent = { event: "started" } | 
 /**
  * 0-100 的上传进度百分比

@@ -431,8 +431,12 @@ mod diary_search_tests {
 
 #[cfg(test)]
 mod diary_migration_tests {
-    use crate::diaries::diary_migration::{get_version, migrate_manifest_bytes};
+    use crate::diaries::diary_migration::{
+        default_registry, get_version, migrate_manifest_bytes,
+    };
     use serde_json::Value;
+
+    // ---- 基础工具函数 ----
 
     #[test]
     fn test_get_version_missing_field() {
@@ -445,6 +449,8 @@ mod diary_migration_tests {
         let json = serde_json::json!({"id": "test", "version": 2});
         assert_eq!(get_version(&json), 2);
     }
+
+    // ---- 边界情况 ----
 
     #[test]
     fn test_no_migration_needed_when_already_current() {
@@ -464,72 +470,44 @@ mod diary_migration_tests {
         assert!(!migrated);
     }
 
-    #[test]
-    fn test_v1_no_attachments_migrates_to_v2() {
-        // V1 diary: no version field → version=1, no etag on attachments
-        let json_bytes = br#"{"id":"test","content":"hello","attachments":[]}"#;
-        let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
-        assert!(migrated);
+    // ---- 各迁移步骤独立验证 ----
 
-        let json: Value = serde_json::from_slice(&new_bytes.unwrap()).unwrap();
-        assert_eq!(get_version(&json), 2);
+    #[test]
+    fn test_v1_to_v2_individual() {
+        let registry = default_registry();
+        let step = &registry.steps()[0];
+
+        let mut json = step.test_input();
+        assert_eq!(get_version(&json), 1); // 无显式 version 字段
+
+        let migrated = registry.migrate(&mut json).unwrap();
+        assert!(migrated);
+        step.test_verify(&json);
     }
 
-    #[test]
-    fn test_v1_attachments_get_etag_null() {
-        let json_bytes = br#"{
-            "id": "test",
-            "content": "hello",
-            "attachments": [
-                {
-                    "filename": "1",
-                    "mimetype": "image/png",
-                    "size": 1024,
-                    "encrypted": true,
-                    "nonce": [],
-                    "algorithm": "AES-256-CTR"
-                },
-                {
-                    "filename": "2",
-                    "mimetype": "audio/mp3",
-                    "size": 2048,
-                    "encrypted": false,
-                    "nonce": [],
-                    "algorithm": "AES-256-CTR"
-                }
-            ]
-        }"#;
-        let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
-        assert!(migrated);
+    // ---- 端到端迁移链 ----
 
-        let json: Value = serde_json::from_slice(&new_bytes.unwrap()).unwrap();
-        assert_eq!(get_version(&json), 2);
-        let attachments = json["attachments"].as_array().unwrap();
-        assert_eq!(attachments.len(), 2);
-        for att in attachments {
-            assert_eq!(att["etag"], Value::Null);
+    #[test]
+    fn test_e2e_migration_chain() {
+        // 从 V1 数据出发，经过所有注册的迁移步骤
+        let registry = default_registry();
+        assert!(!registry.steps().is_empty(), "至少应有一个迁移步骤");
+
+        // 用第一个迁移步骤的 test_input 作为起点
+        let mut json = registry.steps()[0].test_input();
+
+        for step in registry.steps() {
+            let current = get_version(&json);
+            assert_eq!(
+                current,
+                step.source_version(),
+                "迁移链断裂：期望源版本 {}，实际版本 {}",
+                step.source_version(),
+                current
+            );
+            step.migrate_json(&mut json).unwrap();
+            json["version"] = Value::Number((step.source_version() + 1).into());
+            step.test_verify(&json);
         }
-    }
-
-    #[test]
-    fn test_v2_attachments_with_etag_not_rewritten() {
-        let json_bytes = br#"{
-            "id": "test",
-            "version": 2,
-            "content": "hello",
-            "attachments": [
-                {
-                    "filename": "1",
-                    "mimetype": "image/png",
-                    "size": 1024,
-                    "encrypted": true,
-                    "nonce": [],
-                    "algorithm": "AES-256-CTR",
-                    "etag": "abc123"
-                }
-            ]
-        }"#;
-        let (migrated, _) = migrate_manifest_bytes(json_bytes).unwrap();
-        assert!(!migrated);
     }
 }
