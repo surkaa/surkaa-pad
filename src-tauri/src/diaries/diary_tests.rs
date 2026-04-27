@@ -432,7 +432,7 @@ mod diary_search_tests {
 #[cfg(test)]
 mod diary_migration_tests {
     use crate::diaries::diary_migration::{
-        default_registry, get_version, migrate_manifest_bytes,
+        default_registry, get_version, migrate_manifest_bytes, CURRENT_VERSION,
     };
     use serde_json::Value;
 
@@ -470,44 +470,37 @@ mod diary_migration_tests {
         assert!(!migrated);
     }
 
-    // ---- 各迁移步骤独立验证 ----
+    // ---- 各迁移步骤统一测试：test_input → 转换为最新版本 ----
 
     #[test]
-    fn test_v1_to_v2_individual() {
-        let registry = default_registry();
-        let step = &registry.steps()[0];
-
-        let mut json = step.test_input();
-        assert_eq!(get_version(&json), 1); // 无显式 version 字段
-
-        let migrated = registry.migrate(&mut json).unwrap();
-        assert!(migrated);
-        step.test_verify(&json);
-    }
-
-    // ---- 端到端迁移链 ----
-
-    #[test]
-    fn test_e2e_migration_chain() {
-        // 从 V1 数据出发，经过所有注册的迁移步骤
+    fn test_each_step_input_migrates_to_latest() {
         let registry = default_registry();
         assert!(!registry.steps().is_empty(), "至少应有一个迁移步骤");
 
-        // 用第一个迁移步骤的 test_input 作为起点
-        let mut json = registry.steps()[0].test_input();
-
         for step in registry.steps() {
-            let current = get_version(&json);
+            let json = step.test_input();
             assert_eq!(
-                current,
+                get_version(&json),
                 step.source_version(),
-                "迁移链断裂：期望源版本 {}，实际版本 {}",
-                step.source_version(),
-                current
+                "test_input 版本应为源版本 {}",
+                step.source_version()
             );
-            step.migrate_json(&mut json).unwrap();
-            json["version"] = Value::Number((step.source_version() + 1).into());
-            step.test_verify(&json);
+
+            // 序列化后通过完整迁移管道升级到最新版本
+            let bytes = serde_json::to_vec(&json).unwrap();
+            let (migrated, new_bytes) = migrate_manifest_bytes(&bytes).unwrap();
+            assert!(migrated, "V{} 数据应触发迁移", step.source_version());
+
+            let result: Value = serde_json::from_slice(&new_bytes.unwrap()).unwrap();
+            assert_eq!(
+                get_version(&result),
+                CURRENT_VERSION,
+                "V{} 迁移后应达到 CURRENT_VERSION",
+                step.source_version()
+            );
+
+            // 验证迁移后的数据符合该步骤的预期
+            step.test_verify(&result);
         }
     }
 }

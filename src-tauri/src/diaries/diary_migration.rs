@@ -13,14 +13,14 @@ pub trait DiaryMigration: Send + Sync {
     fn migrate_json(&self, json: &mut Value) -> Result<(), DiaryError>;
 
     /// [测试辅助] 构造源版本的测试输入 JSON
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn test_input(&self) -> Value {
         let mut json = Value::Object(serde_json::Map::new());
         json["version"] = Value::Number(self.source_version().into());
         json
     }
     /// [测试辅助] 验证迁移后的 JSON 是否符合预期，失败时 panic
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn test_verify(&self, _json: &Value) {}
 }
 
@@ -100,6 +100,7 @@ impl DiaryMigration for V1ToV2Migration {
         Ok(())
     }
 
+    #[cfg(test)]
     fn test_input(&self) -> Value {
         serde_json::json!({
             "id": "test-v1",
@@ -125,6 +126,7 @@ impl DiaryMigration for V1ToV2Migration {
         })
     }
 
+    #[cfg(test)]
     fn test_verify(&self, json: &Value) {
         assert_eq!(get_version(json), 2);
         let attachments = json["attachments"].as_array().expect("attachments should be array");
