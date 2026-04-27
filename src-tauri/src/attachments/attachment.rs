@@ -32,16 +32,19 @@ pub async fn get_attachment_stream(
     lfc: &LocalFileCache,
     client: &OssClient,
     range: Option<(u64, u64)>,
+    known_etag: Option<&str>,
 ) -> Result<(ByteStream, u64), AttachmentError> {
-    if let Some(etag) = lfc.get(key).await? {
-        // 本地有缓存就判断是否是最新的
+    if let Some(cached_etag) = lfc.get(key).await? {
+        // 如果已知 etag 与本地缓存匹配，直接使用缓存，省去 HEAD 请求
+        if known_etag.is_some_and(|k| k == cached_etag) {
+            return Ok((lfc.get_stream(key, range).await?, 0));
+        }
         let metadata = client
             .get_metadata(key)
             .await?;
-        if metadata.etag.as_deref() == Some(&etag) {
+        if metadata.etag.as_deref() == Some(&cached_etag) {
             Ok((lfc.get_stream(key, range).await?, metadata.content_length.unwrap_or(0)))
         } else {
-            // 删除本地过期的缓存
             lfc.delete(key).await;
             Ok(client.download(key, range).await?)
         }
@@ -211,7 +214,8 @@ pub async fn toggle_attachment_encryption(
         let key = remote_attachments_key(id, &filename);
 
         // 下载原始数据：优先尝试从本地缓存获取
-        let (raw_stream, size) = get_attachment_stream(&key, &lfc, &client, None).await?;
+        let (raw_stream, _size) = get_attachment_stream(&key, &lfc, &client, None, old_meta.etag.as_deref()).await?;
+        let size = old_meta.size;
 
         // 处理流转换
         let (processed_stream, new_nonce) = if old_meta.encrypted && !encrypted {
@@ -310,7 +314,7 @@ pub async fn rotate_image_attachment(
         let key = remote_attachments_key(id, &filename);
 
         // 下载并解密原始数据：优先尝试从本地缓存获取
-        let (raw_stream, _size) = get_attachment_stream(&key, &lfc, &client, None).await?;
+        let (raw_stream, _size) = get_attachment_stream(&key, &lfc, &client, None, old_meta.etag.as_deref()).await?;
 
         let stream = if old_meta.encrypted {
             crypto.decrypt_streaming(raw_stream, &old_meta.nonce, 0)?
@@ -455,9 +459,9 @@ pub async fn save_decrypt_attachment(
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async move {
         let key = remote_attachments_key(id, &filename);
-        let (stream, size) = get_attachment_stream(&key, &lfc, &client, None).await?;
+        let (stream, _size) = get_attachment_stream(&key, &lfc, &client, None, attachment.etag.as_deref()).await?;
         let event_clone = event.clone();
-        let stream = tracker_stream(size, stream, move |p| {
+        let stream = tracker_stream(attachment.size, stream, move |p| {
             let _ = event_clone.send(AttachmentProcessEvent::Progress(p));
         });
 
