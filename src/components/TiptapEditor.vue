@@ -86,14 +86,6 @@ watch(() => props.modelValue, (newVal) => {
   }
 })
 
-watch(() => props.attachmentMap, () => {
-  if (!editor.value) return
-  editor.value.commands.setContent(markdownToHtml(
-    htmlToMarkdown(editor.value.getHTML()),
-    props.attachmentMap
-  ))
-}, { deep: true })
-
 // --- Click handler (image preview) ---
 
 function findAttachmentNode(el: HTMLElement | null): { type: string; filename: string; el: HTMLElement } | null {
