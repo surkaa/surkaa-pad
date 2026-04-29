@@ -120,15 +120,16 @@ export function useMediaAction(
         }
     }
 
-    function beforeClick() {
+    function beforeClick(opts?: { skipFocus?: boolean }) {
         if (!diaryId.value) {
             $q.notify({type: 'warning', message: '请先创建日记才能使用此功能'});
             return true;
         }
         if (showPanel.value) showPanel.value = false;
-        // 清除旧任务
         uploadTaskMap.value = {};
-        editorDomRef.value?.focus();
+        if (!opts?.skipFocus) {
+            editorDomRef.value?.focus();
+        }
     }
 
     async function genericBatchUpload(encrypted: boolean, extensions?: string[], nodeType?: string, pickerMode?: PickerMode) {
@@ -261,7 +262,7 @@ export function useMediaAction(
             }
         },
         audioRecording: () => {
-            if (beforeClick()) return;
+            if (beforeClick({ skipFocus: true })) return;
             showAudioDrawer.value = true;
         },
         insertAudio: () => genericBatchUpload(false, AUDIO_TYPES, 'audio'),
