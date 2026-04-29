@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> 生成时间：2026-04-27 | Git: `30d3ebd`
+> 生成时间：2026-04-29 | Git: `6ec1a7c`
 
 ## 项目概述
 
@@ -40,7 +40,7 @@ pnpm tsc                        # 仅类型检查 (vue-tsc --noEmit)
   - `data.ts` — 日记列表 ID、摘要缓存、当前编辑状态的内存存储。
 - **Tauri 绑定** (`src/bindings.ts`): 由 tauri-specta 从 Rust 命令签名自动生成，**请勿手动编辑**。仅 Windows 调试构建时自动重新导出。
 - **API 包装** (`src/utils/api.ts`): 解包 tauri-specta 的 `Result<T, E>` 类型——错误时 throw，成功时返回数据。
-- **编辑器** (`src/components/editor/`): 手动实现的富文本编辑器，通过自定义扩展节点支持图片、视频、音频、通用文件等附件类型的内联展示。
+- **编辑器** (`src/components/editor/`): 基于 Tiptap/ProseMirror 的富文本编辑器（`TiptapEditor.vue`），通过自定义 Node 扩展（`tiptap-extensions/`）支持图片、视频、音频、文件等附件内联展示。HTML ↔ Markdown 双向转换由 `markdownConverter.ts` 处理，附件以 `[[TYPE:filename]]` 标记语法存储在 Markdown 中。
 
 ### 后端 (`src-tauri/src/`)
 
@@ -74,6 +74,8 @@ pnpm tsc                        # 仅类型检查 (vue-tsc --noEmit)
 
 ### 关键设计
 
+- **Tiptap 编辑器** (`TiptapEditor.vue`): 基于 Tiptap/ProseMirror，使用 `StarterKit` + 自定义 Node 扩展。附件 URL 直接存储为节点 `src` 属性（而非通过外部 Storage 间接查找），`updateSrc()` 通过 `tr.setNodeMarkup` 精确更新单个节点属性。编辑内容通过 `onUpdate` → `htmlToMarkdown` → `emit('update:modelValue')` 同步到父组件。附件 map 变化不再触发全文重渲染。
+- **Markdown 转换** (`markdownConverter.ts`): HTML 端到 Markdown 存储端双向转换。附件以 `[[TYPE:filename|config]]` 语法嵌入 Markdown。转换逻辑有 50 个单元测试覆盖。
 - **URI Scheme 协议** (`attachment_protocol.rs`): 前端请求 `http://attachment.localhost/{diary_id}/{filename}`，协议处理器从 OSS/缓存获取数据并流式解密后返回。支持 HTTP Range 请求（最大单次 1MB），适用于视频拖动播放。
 - **etag 缓存校验**: 读取日记时先 HEAD 请求获取远程 etag，与内存缓存和本地文件缓存比对，命中则跳过下载。详见 `diaries/diary.rs:get_diary()`。
 - **迁移系统**: `DiaryManifest` 含 `version` 字段，`MigrationRegistry` 按版本顺序链式注册迁移步骤（当前 V2）。
@@ -84,7 +86,7 @@ pnpm tsc                        # 仅类型检查 (vue-tsc --noEmit)
 ### 测试要求
 
 - **能写测试就写测试**。任何涉及逻辑判断、边界条件、数据处理、加解密、缓存校验的代码都应该有对应的测试用例。
-- 前端用 Vitest，测试文件放在 `__test__/` 目录下（如 `src/components/editor/__test__/utils.spec.ts`）。
+- 前端用 Vitest + happy-dom（DOM 环境），测试文件放在 `__test__/` 目录下。需 DOM 的测试在文件顶部加 `// @vitest-environment happy-dom` 指令。
 - 后端 Rust 测试放在各模块的 `*_tests.rs` 文件中，或通过 `#[cfg(test)]` 内嵌在模块内。
 - 写完测试后务必跑一遍确认通过：前端 `pnpm vitest -- run`，后端 `cargo test`。
 - 部分 Rust 测试需要阿里云 OSS 凭证，需在 `src-tauri/` 下配置 `.env` 文件（`ALIYUN_KEY`、`ALIYUN_SECRET`、`ALIYUN_BUCKET_NAME`、`ALIYUN_ENDPOINT`、`ALIYUN_REGION`），并使用 `serial_test` 控制互斥执行。
