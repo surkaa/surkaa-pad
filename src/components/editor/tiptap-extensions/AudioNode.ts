@@ -1,6 +1,6 @@
-import { Node, mergeAttributes } from '@tiptap/core'
+import { Node, mergeAttributes } from '@tiptap/vue-3'
 
-declare module '@tiptap/core' {
+declare module '@tiptap/vue-3' {
   interface Commands<ReturnType> {
     audioNode: {
       insertAudio: (attrs: { id: string }) => ReturnType
@@ -34,9 +34,9 @@ export const AudioNode = Node.create({
   },
 
   renderHTML({ node }) {
-    const storage = this.editor.storage.attachmentStorage as {
-      attachmentMap: Record<string, string>
-    } | undefined
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const storage = (this.editor!.storage as Record<string, any>).attachmentStorage as
+      { attachmentMap: Record<string, string> } | undefined
     return [
       'audio',
       mergeAttributes({

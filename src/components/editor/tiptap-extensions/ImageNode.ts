@@ -1,6 +1,6 @@
-import { Node, mergeAttributes } from '@tiptap/core'
+import { Node, mergeAttributes } from '@tiptap/vue-3'
 
-declare module '@tiptap/core' {
+declare module '@tiptap/vue-3' {
   interface Commands<ReturnType> {
     imageNode: {
       insertImage: (attrs: { id: string; size?: string }) => ReturnType
@@ -46,9 +46,9 @@ export const ImageNode = Node.create<ImageNodeOptions>({
   },
 
   renderHTML({ node }) {
-    const storage = this.editor.storage.attachmentStorage as {
-      attachmentMap: Record<string, string>
-    } | undefined
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const storage = (this.editor!.storage as Record<string, any>).attachmentStorage as
+      { attachmentMap: Record<string, string> } | undefined
     const url = storage?.attachmentMap[node.attrs.id] || ''
     const attrs: Record<string, string> = {
       src: url,

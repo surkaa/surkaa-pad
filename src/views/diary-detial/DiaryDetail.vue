@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {nextTick, onActivated, onMounted, ref} from "vue";
+import {nextTick, onActivated, onMounted, ref, watch} from "vue";
 import TiptapEditor from "../../components/TiptapEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
@@ -94,7 +94,7 @@ async function handleRenameAttachment() {
   try {
     // 替换 Markdown 中所有附件的 filename 引用
     const re = new RegExp(`\\[\\[(IMG|VID|AUD|FILE):${escapeRegExp(oldFilename.value)}(\\|[^\\]]*)?\\]\\]`, 'g');
-    const newContent = diaryContent.value.replace(re, (match, type, config) => {
+    const newContent = diaryContent.value.replace(re, (_match, type, config) => {
       return config ? `[[${type}:${newFilename.value}${config}]]` : `[[${type}:${newFilename.value}]]`;
     });
     await api.cmdUpdateAttachmentFilename(

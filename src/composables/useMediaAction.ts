@@ -230,7 +230,7 @@ export function useMediaAction(
 
             const virtualName = `Audio_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
 
-            await uploadMemoryAttachment(virtualName, data, mimetype, true, (att, url) => {
+            await uploadMemoryAttachment(virtualName, data, mimetype, true, (att, _url) => {
                 if (!editorContentRef.value) {
                     console.error('编辑器内容引用未定义，无法插入音频节点');
                     return;
@@ -243,7 +243,7 @@ export function useMediaAction(
             if (beforeClick()) return;
             const key = uuidv4();
             uploadTaskMap.value[key] = {filename: 'take photo', progress: 0, status: 'pending'};
-            const event = createUploadChannel(key, (meta, url) => {
+            const event = createUploadChannel(key, (meta, _url) => {
                 if (!editorContentRef.value) {
                     console.error('编辑器内容引用未定义，无法插入图片节点');
                     return;

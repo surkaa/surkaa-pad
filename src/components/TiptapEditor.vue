@@ -17,7 +17,6 @@ import {
   AudioNode,
   FileNode,
 } from './editor/tiptap-extensions'
-import { formatBytes } from '../utils/format'
 
 const props = defineProps<{
   modelValue: string
@@ -74,7 +73,7 @@ const editor = useEditor({
     attributes: {
       class: 'tiptap-editor',
     },
-    handlePaste: (view, event) => {
+    handlePaste: (_view, event) => {
       const files = event.clipboardData?.files
       if (files && files.length > 0) {
         event.preventDefault()
@@ -93,11 +92,13 @@ const editor = useEditor({
 
 function updateAttachmentStorage() {
   if (!editor.value) return
-  const storage = editor.value.storage.attachmentStorage as {
-    attachmentMap: Record<string, string>
-    getAttachment: (filename: string) => ReturnType<typeof getAttachmentMeta>
+  const storage = editor.value.storage as unknown as {
+    attachmentStorage: {
+      attachmentMap: Record<string, string>
+      getAttachment: (filename: string) => ReturnType<typeof getAttachmentMeta>
+    }
   }
-  storage.attachmentMap = props.attachmentMap
+  storage.attachmentStorage.attachmentMap = props.attachmentMap
 }
 
 watch(() => props.modelValue, (newVal) => {
@@ -105,14 +106,14 @@ watch(() => props.modelValue, (newVal) => {
   const currentMd = htmlToMarkdown(editor.value.getHTML())
   if (newVal !== currentMd) {
     updateAttachmentStorage()
-    editor.value.commands.setContent(markdownToHtml(newVal, props.attachmentMap), false)
+    editor.value.commands.setContent(markdownToHtml(newVal, props.attachmentMap))
   }
 })
 
 watch(() => props.attachmentMap, () => {
   if (!editor.value) return
   updateAttachmentStorage()
-  editor.value.commands.setContent(editor.value.getHTML(), false)
+  editor.value.commands.setContent(editor.value.getHTML())
 }, { deep: true })
 
 // --- Click handler (image preview) ---
@@ -241,17 +242,17 @@ onBeforeUnmount(() => {
 
 defineExpose({
   editor,
-  insertImage: (id: string) => editor.value?.chain().focus().insertImage({ id }).run(),
-  insertVideo: (id: string) => editor.value?.chain().focus().insertVideo({ id }).run(),
-  insertAudio: (id: string) => editor.value?.chain().focus().insertAudio({ id }).run(),
-  insertFile: (id: string) => editor.value?.chain().focus().insertFile({ id }).run(),
+  insertImage: (id: string) => (editor.value?.chain().focus() as any).insertImage({ id }).run(),
+  insertVideo: (id: string) => (editor.value?.chain().focus() as any).insertVideo({ id }).run(),
+  insertAudio: (id: string) => (editor.value?.chain().focus() as any).insertAudio({ id }).run(),
+  insertFile: (id: string) => (editor.value?.chain().focus() as any).insertFile({ id }).run(),
   updateSrc(filename: string, newUrl: string) {
     if (!editor.value) return false
-    const storage = editor.value.storage.attachmentStorage as {
-      attachmentMap: Record<string, string>
+    const storage = editor.value.storage as unknown as {
+      attachmentStorage: { attachmentMap: Record<string, string> }
     }
-    storage.attachmentMap[filename] = newUrl
-    editor.value.commands.setContent(editor.value.getHTML(), false)
+    storage.attachmentStorage.attachmentMap[filename] = newUrl
+    editor.value.commands.setContent(editor.value.getHTML())
     return true
   },
   undo: () => editor.value?.chain().undo().run(),

@@ -1,4 +1,4 @@
-import { Extension } from '@tiptap/core'
+import { Extension } from '@tiptap/vue-3'
 import type { AttachmentMeta } from '../../../bindings'
 
 export interface AttachmentStorageOptions {
