@@ -1,7 +1,6 @@
 import {computed, nextTick, onActivated, onDeactivated, onUnmounted, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
-import {EXTENSIONS} from "../components/editor/extension.ts";
 import {useDataStore} from "../stores/data.ts";
 import {storeToRefs} from "pinia";
 import {CloseRequestedEvent, getCurrentWindow} from "@tauri-apps/api/window";
@@ -31,23 +30,16 @@ export function useDiaryCore() {
     const unusedAttachments = computed(() => {
         if (!currentDiary.value) return [];
 
-        return currentDiary.value.attachments.filter(attachment => {
-            let isReferenced = false;
-            for (const ext of EXTENSIONS) {
-                // 使用之前修复的正则校验
-                if (ext.hasMark && ext.hasMark(diaryContent.value, attachment.filename)) {
-                    isReferenced = true;
-                    break;
-                } else if (ext.getMark) {
-                    const mark = ext.getMark(attachment.filename);
-                    if (diaryContent.value.includes(mark)) {
-                        isReferenced = true;
-                        break;
-                    }
-                }
-            }
-            return !isReferenced;
-        });
+        const referencedIds = new Set<string>();
+        const re = /\[\[(?:IMG|VID|AUD|FILE):([^\]|]+)(?:\|[^\]]*)?\]\]/g;
+        let match: RegExpExecArray | null;
+        while ((match = re.exec(diaryContent.value)) !== null) {
+            referencedIds.add(match[1]);
+        }
+
+        return currentDiary.value.attachments.filter(
+            attachment => !referencedIds.has(attachment.filename)
+        );
     });
 
     async function loadDiaryInfo() {

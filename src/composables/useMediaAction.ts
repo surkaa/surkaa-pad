@@ -2,13 +2,11 @@ import {Channel} from "@tauri-apps/api/core";
 import {AttachmentMeta, AttachmentProcessEvent} from "../bindings.ts";
 import {computed, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
-import {formatBytes} from "../utils";
 import {useQuasar} from "quasar";
 import {v4 as uuidv4} from "uuid";
 import {useDataStore} from "../stores/data.ts";
 import {storeToRefs} from "pinia";
-import {MediaType} from "../components/editor/useDomInsert.ts";
-import LiveRichEditor from "../components/LiveRichEditor.vue";
+import TiptapEditor from "../components/TiptapEditor.vue";
 import api from "../utils/api.ts";
 import {formatError} from "../utils/formatError.ts";
 
@@ -29,7 +27,7 @@ export function useMediaAction(
     diaryId: Ref<string>,
     editorDomRef: Ref<HTMLElement | undefined>,
     showPanel: Ref<boolean>,
-    editorContentRef: Ref<InstanceType<typeof LiveRichEditor> | undefined>
+    editorContentRef: Ref<InstanceType<typeof TiptapEditor> | undefined>
 ) {
     const $q = useQuasar();
     const dataStore = useDataStore();
@@ -133,8 +131,7 @@ export function useMediaAction(
         editorDomRef.value?.focus();
     }
 
-    async function genericBatchUpload(encrypted: boolean, extensions?: string[], nodeType?: MediaType, pickerMode?: PickerMode) {
-        const currentRange = editorContentRef.value?.captureRange() || null;
+    async function genericBatchUpload(encrypted: boolean, extensions?: string[], nodeType?: string, pickerMode?: PickerMode) {
         if (beforeClick()) return;
         const accessStrArr = await open({
             multiple: true,
@@ -151,11 +148,13 @@ export function useMediaAction(
                     return;
                 }
                 if (!nodeType) {
-                    editorContentRef.value.insertFileNode(att.filename, formatBytes(att.size), currentRange);
+                    editorContentRef.value.insertFile(att.filename);
                     return;
                 }
                 currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                editorContentRef.value.insertMediaNode(nodeType, url, att.filename, currentRange);
+                if (nodeType === 'img') editorContentRef.value.insertImage(att.filename);
+                else if (nodeType === 'video') editorContentRef.value.insertVideo(att.filename);
+                else if (nodeType === 'audio') editorContentRef.value.insertAudio(att.filename);
             })
         );
         showUploadDialog.value = true;
@@ -227,7 +226,6 @@ export function useMediaAction(
         showAudioDrawer,
         handleAudioRecorded: async (mimetype: string, data: Uint8Array) => {
             showAudioDrawer.value = false;
-            const currentRange = editorContentRef.value?.captureRange() || null;
             if (beforeClick()) return;
 
             const virtualName = `Audio_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
@@ -237,12 +235,11 @@ export function useMediaAction(
                     console.error('编辑器内容引用未定义，无法插入音频节点');
                     return;
                 }
-                editorContentRef.value.insertMediaNode('audio', url, att.filename, currentRange);
+                editorContentRef.value.insertAudio(att.filename);
             });
         },
         insertPhoto: () => genericBatchUpload(true, PHOTO_TYPES, 'img', "image"),
         takePhoto: async () => {
-            const currentRange = editorContentRef.value?.captureRange() || null;
             if (beforeClick()) return;
             const key = uuidv4();
             uploadTaskMap.value[key] = {filename: 'take photo', progress: 0, status: 'pending'};
@@ -251,7 +248,7 @@ export function useMediaAction(
                     console.error('编辑器内容引用未定义，无法插入图片节点');
                     return;
                 }
-                editorContentRef.value.insertMediaNode('img', url, meta.filename, currentRange);
+                editorContentRef.value.insertImage(meta.filename);
             });
             try {
                 const res = await api.cmdAddImageAttachmentFromCamera(event, diaryId.value, true);
@@ -319,7 +316,6 @@ export function useMediaAction(
                 return;
             }
             console.log('粘贴的文件列表:', files.length);
-            const currentRange = editorContentRef.value?.captureRange() || null;
             showUploadDialog.value = true;
             uploadTaskMap.value = {};
             const uploads = Array.from(files).map(file => {
@@ -335,15 +331,15 @@ export function useMediaAction(
                             }
                             if (file.type.startsWith('image/')) {
                                 currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                                editorContentRef.value.insertMediaNode('img', url, att.filename, currentRange);
+                                editorContentRef.value.insertImage(att.filename);
                             } else if (file.type.startsWith('audio/')) {
                                 currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                                editorContentRef.value.insertMediaNode('audio', url, att.filename, currentRange);
+                                editorContentRef.value.insertAudio(att.filename);
                             } else if (file.type.startsWith('video/')) {
                                 currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                                editorContentRef.value.insertMediaNode('video', url, att.filename, currentRange);
+                                editorContentRef.value.insertVideo(att.filename);
                             } else {
-                                editorContentRef.value.insertFileNode(att.filename, formatBytes(att.size), currentRange);
+                                editorContentRef.value.insertFile(att.filename);
                             }
                             resolve();
                         });
