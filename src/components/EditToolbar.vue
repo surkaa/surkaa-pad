@@ -33,7 +33,6 @@ const emit = defineEmits([
         <div class="toolbar-scroll">
           <template v-if="editor">
             <button class="tool-btn" :class="{ 'is-active': editor.isActive('bold') }" @click.stop="editor.chain().focus().toggleBold().run()"><b>B</b></button>
-            <button class="tool-btn" :class="{ 'is-active': editor.isActive('italic') }" @click.stop="editor.chain().focus().toggleItalic().run()"><i>I</i></button>
             <button class="tool-btn" :class="{ 'is-active': editor.isActive('underline') }" @click.stop="editor.chain().focus().toggleUnderline().run()"><u>U</u></button>
             <button class="tool-btn" :class="{ 'is-active': editor.isActive('strike') }" @click.stop="editor.chain().focus().toggleStrike().run()"><s>S</s></button>
             <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 1 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 1 }).run()">H1</button>
