@@ -3,20 +3,13 @@ import { onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import Underline from '@tiptap/extension-underline'
 import { useScroll, useStorage } from '@vueuse/core'
 import { useQuasar } from 'quasar'
 import { platform } from '@tauri-apps/plugin-os'
 import { Menu, MenuItem } from '@tauri-apps/api/menu'
 import type { DiarySummary } from '../bindings'
 import { htmlToMarkdown, markdownToHtml } from './editor/markdownConverter'
-import {
-  AttachmentStorage,
-  ImageNode,
-  VideoNode,
-  AudioNode,
-  FileNode,
-} from './editor/tiptap-extensions'
+import { ImageNode, VideoNode, AudioNode, FileNode } from './editor/tiptap-extensions'
 
 const props = defineProps<{
   modelValue: string
@@ -59,11 +52,6 @@ const editor = useEditor({
     Placeholder.configure({
       placeholder: '开始记录...',
     }),
-    Underline,
-    AttachmentStorage.configure({
-      attachmentMap: props.attachmentMap,
-      getAttachment: getAttachmentMeta,
-    }),
     ImageNode,
     VideoNode,
     AudioNode,
@@ -90,30 +78,20 @@ const editor = useEditor({
   },
 })
 
-function updateAttachmentStorage() {
-  if (!editor.value) return
-  const storage = editor.value.storage as unknown as {
-    attachmentStorage: {
-      attachmentMap: Record<string, string>
-      getAttachment: (filename: string) => ReturnType<typeof getAttachmentMeta>
-    }
-  }
-  storage.attachmentStorage.attachmentMap = props.attachmentMap
-}
-
 watch(() => props.modelValue, (newVal) => {
   if (!editor.value || newVal === undefined) return
   const currentMd = htmlToMarkdown(editor.value.getHTML())
   if (newVal !== currentMd) {
-    updateAttachmentStorage()
     editor.value.commands.setContent(markdownToHtml(newVal, props.attachmentMap))
   }
 })
 
 watch(() => props.attachmentMap, () => {
   if (!editor.value) return
-  updateAttachmentStorage()
-  editor.value.commands.setContent(editor.value.getHTML())
+  editor.value.commands.setContent(markdownToHtml(
+    htmlToMarkdown(editor.value.getHTML()),
+    props.attachmentMap
+  ))
 }, { deep: true })
 
 // --- Click handler (image preview) ---
@@ -132,11 +110,18 @@ function findAttachmentNode(el: HTMLElement | null): { type: string; filename: s
   return null
 }
 
-function handleEditorClick(e: MouseEvent) {
+function handleWrapperClick(e: MouseEvent) {
+  // 点击附件节点时处理图片预览
   const found = findAttachmentNode(e.target as HTMLElement)
-  if (found && found.type === 'image') {
+  if (found?.type === 'image') {
     const url = props.attachmentMap[found.filename]
     if (url) emit('showImage', url)
+    return
+  }
+  // 点击编辑器空白区域（如底部）时聚焦到末尾
+  const proseMirror = editorElement.value?.querySelector('.ProseMirror') as HTMLElement | null
+  if (e.target === editorElement.value || (proseMirror && e.target === proseMirror)) {
+    editor.value?.chain().focus('end').run()
   }
 }
 
@@ -242,17 +227,20 @@ onBeforeUnmount(() => {
 
 defineExpose({
   editor,
-  insertImage: (id: string) => (editor.value?.chain().focus() as any).insertImage({ id }).run(),
-  insertVideo: (id: string) => (editor.value?.chain().focus() as any).insertVideo({ id }).run(),
-  insertAudio: (id: string) => (editor.value?.chain().focus() as any).insertAudio({ id }).run(),
+  insertImage: (id: string) => (editor.value?.chain().focus() as any).insertImage({ id, src: props.attachmentMap[id] || '' }).run(),
+  insertVideo: (id: string) => (editor.value?.chain().focus() as any).insertVideo({ id, src: props.attachmentMap[id] || '' }).run(),
+  insertAudio: (id: string) => (editor.value?.chain().focus() as any).insertAudio({ id, src: props.attachmentMap[id] || '' }).run(),
   insertFile: (id: string) => (editor.value?.chain().focus() as any).insertFile({ id }).run(),
   updateSrc(filename: string, newUrl: string) {
     if (!editor.value) return false
-    const storage = editor.value.storage as unknown as {
-      attachmentStorage: { attachmentMap: Record<string, string> }
-    }
-    storage.attachmentStorage.attachmentMap[filename] = newUrl
-    editor.value.commands.setContent(editor.value.getHTML())
+    editor.value.commands.command(({ tr }) => {
+      tr.doc.descendants((node, pos) => {
+        if (node.attrs.id === filename) {
+          tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: newUrl })
+        }
+      })
+      return true
+    })
     return true
   },
   undo: () => editor.value?.chain().undo().run(),
@@ -261,7 +249,7 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="editorElement" class="tiptap-wrapper" @click="handleEditorClick" @contextmenu="handleContextMenu">
+  <div ref="editorElement" class="tiptap-wrapper" @click="handleWrapperClick" @contextmenu="handleContextMenu">
     <EditorContent :editor="editor" />
   </div>
 </template>
@@ -279,6 +267,7 @@ defineExpose({
   outline: none;
   min-height: 100%;
   padding: 0;
+  text-align: left;
 
   > * + * {
     margin-top: 0.75em;

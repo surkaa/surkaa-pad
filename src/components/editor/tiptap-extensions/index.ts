@@ -1,5 +1,3 @@
-export { AttachmentStorage } from './attachmentStorage'
-export type { AttachmentStorageOptions } from './attachmentStorage'
 export { ImageNode } from './ImageNode'
 export { VideoNode } from './VideoNode'
 export { AudioNode } from './AudioNode'

@@ -34,13 +34,6 @@ export const FileNode = Node.create({
   },
 
   renderHTML({ node }) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const storage = (this.editor!.storage as Record<string, any>).attachmentStorage as {
-      attachmentMap: Record<string, string>
-      getAttachment?: (filename: string) => { size: number } | null
-    } | undefined
-    const att = storage?.getAttachment?.(node.attrs.id)
-    const sizeText = att ? formatBytes(att.size) : ''
     return [
       'div',
       mergeAttributes({
@@ -52,7 +45,7 @@ export const FileNode = Node.create({
         ['span', { class: 'file-icon' }, '📎'],
         ['span', { class: 'file-name' }, node.attrs.id],
       ],
-      ['span', { class: 'file-size' }, sizeText],
+      ['span', { class: 'file-size' }, ''],
     ]
   },
 
@@ -61,19 +54,8 @@ export const FileNode = Node.create({
       insertFile:
         (attrs: { id: string }) =>
         ({ commands }) => {
-          return commands.insertContent({
-            type: this.name,
-            attrs,
-          })
+          return commands.insertContent({ type: this.name, attrs })
         },
     }
   },
 })
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
