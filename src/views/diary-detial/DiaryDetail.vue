@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import {nextTick, onActivated, onMounted, ref, watch} from "vue";
-import LiveRichEditor from "../../components/LiveRichEditor.vue";
+import {nextTick, onActivated, onMounted, ref} from "vue";
+import TiptapEditor from "../../components/TiptapEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
 import {onBeforeRouteLeave} from "vue-router";
@@ -13,15 +13,13 @@ import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useDataStore} from "../../stores/data.ts";
 import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
-import {Extension, ExtensionConfig, ExtensionEvents, MenuButton} from "../../components/editor/extension.ts";
 import {formatError} from "../../utils/formatError.ts";
-import {replaceAttachmentMark} from "../../components/editor/utils.ts";
 import {useConfigStore} from "../../stores/config.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
 
-const liveEditorRef = ref<InstanceType<typeof LiveRichEditor>>();
+const tiptapEditorRef = ref<InstanceType<typeof TiptapEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
 const showRenameDialog = ref(false);
@@ -42,34 +40,10 @@ const {
 } = useEditorUI();
 
 // 媒体操作
-const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, liveEditorRef);
+const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, tiptapEditorRef);
 const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaAction;
 
 const {deleteAttachment, updateAttachmentFilename} = useDataStore();
-const defaultImageSizeIsSmall =  configStore.useTauriConfig('default_image_size_is_small');
-
-const extensionConfig: ExtensionConfig = {
-  defaultImageSizeIsSmall: () => defaultImageSizeIsSmall.value,
-}
-
-const extensionHandlers: Partial<ExtensionEvents> = {
-  renameAttachment, rotateAttachment: mediaAction.rotateAttachment
-}
-
-function defaultButtons(ext: Extension, el: HTMLElement): MenuButton[] {
-  if (!ext.getFilename) return [];
-  const filename = ext.getFilename(el);
-  if (!filename) return [];
-  const attachment = diary.value?.attachments.find(att => att.filename === filename);
-  if (!attachment) return [];
-  return [{
-    label: `转成${attachment.encrypted ? '普通' : '加密'}附件`,
-    action: async () => await mediaAction.toggleAttachmentEncryption(filename)
-  }, {
-    label: '保存到本地',
-    action: async () => await mediaAction.saveDecryptAttachment(filename)
-  }];
-}
 
 function openDiaryDetail() {
   if (!diary.value) {
@@ -112,12 +86,17 @@ async function handleRenameAttachment() {
     showRenameDialog.value = false;
     return;
   }
+  const illegal = newFilename.value.includes('[[') || newFilename.value.includes(']]');
+  if (illegal) {
+    $q.notify({type: 'negative', message: `重命名失败，请去掉新文件名的特殊字符：'[[' 或 ']]'`});
+    return;
+  }
   try {
-    const newContent = replaceAttachmentMark(diaryContent.value, oldFilename.value, newFilename.value);
-    if (newContent == null) {
-      $q.notify({type: 'negative', message: `重命名失败，请去掉新文件名的特殊字符：'[[' 或 ']]'`});
-      return;
-    }
+    // 替换 Markdown 中所有附件的 filename 引用
+    const re = new RegExp(`\\[\\[(IMG|VID|AUD|FILE):${escapeRegExp(oldFilename.value)}(\\|[^\\]]*)?\\]\\]`, 'g');
+    const newContent = diaryContent.value.replace(re, (match, type, config) => {
+      return config ? `[[${type}:${newFilename.value}${config}]]` : `[[${type}:${newFilename.value}]]`;
+    });
     await api.cmdUpdateAttachmentFilename(
         diaryId.value,
         oldFilename.value,
@@ -131,6 +110,10 @@ async function handleRenameAttachment() {
   } catch (e) {
     $q.notify({type: 'negative', message: formatError(e)});
   }
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function pinnedDiary() {
@@ -194,9 +177,9 @@ onMounted(async () => {
   setupToolbar();
 });
 
-watch(() => liveEditorRef.value?.editor, (newEditor) => {
+watch(() => tiptapEditorRef.value?.editor, (newEditor) => {
   if (newEditor) {
-    editorDomRef.value = newEditor;
+    editorDomRef.value = newEditor.view.dom as HTMLElement;
   }
 });
 
@@ -212,26 +195,28 @@ onActivated(async () => {
       <q-btn flat round dense icon="more_horiz" @click="showMenu = true" aria-label="操作"/>
     </Teleport>
 
-    <LiveRichEditor
-        ref="liveEditorRef"
+    <TiptapEditor
+        ref="tiptapEditorRef"
         v-if="isInitialLoaded"
         v-model="diaryContent"
         :diarySummary="diary"
         :attachmentMap="attachmentMap"
-        :defaultButtons="defaultButtons"
-        :extensionConfig="extensionConfig"
-        :extensionHandlers="extensionHandlers"
         @pasteAttachments="mediaAction.pasteAttachments"
         @showImage="showImage"
+        @toggleAttachmentEncryption="mediaAction.toggleAttachmentEncryption"
+        @rotateAttachment="mediaAction.rotateAttachment"
+        @renameAttachment="renameAttachment"
+        @saveDecryptAttachment="mediaAction.saveDecryptAttachment"
         style="width: 100%; flex: 1; padding: 16px"
     />
 
     <EditToolbar
         :view="showToolbar || showToolbarPanel"
         :panelOpen="showToolbarPanel"
+        :editor="tiptapEditorRef?.editor ?? null"
         v-click-outside="() => showToolbarPanel = false"
-        @undo="liveEditorRef?.undo"
-        @redo="liveEditorRef?.redo"
+        @undo="tiptapEditorRef?.undo"
+        @redo="tiptapEditorRef?.redo"
         @additionalAction="additionalAction"
         @insertPhoto="mediaAction.insertPhoto"
         @takePhoto="mediaAction.takePhoto"

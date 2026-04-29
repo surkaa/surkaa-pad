@@ -1,13 +1,16 @@
 <script setup lang="ts">
 
-import {platform} from "@tauri-apps/plugin-os";
+import type { Editor } from '@tiptap/vue-3'
+import { platform } from "@tauri-apps/plugin-os";
 
 const {
   view,
   panelOpen,
+  editor,
 } = defineProps<{
   view: boolean,
   panelOpen: boolean,
+  editor?: Editor | null,
 }>();
 
 const isAndroid = platform() === 'android';
@@ -28,6 +31,16 @@ const emit = defineEmits([
 
       <div class="toolbar-header">
         <div class="toolbar-scroll">
+          <template v-if="editor">
+            <button class="tool-btn" :class="{ 'is-active': editor.isActive('bold') }" @click.stop="editor.chain().focus().toggleBold().run()"><b>B</b></button>
+            <button class="tool-btn" :class="{ 'is-active': editor.isActive('italic') }" @click.stop="editor.chain().focus().toggleItalic().run()"><i>I</i></button>
+            <button class="tool-btn" :class="{ 'is-active': editor.isActive('underline') }" @click.stop="editor.chain().focus().toggleUnderline().run()"><u>U</u></button>
+            <button class="tool-btn" :class="{ 'is-active': editor.isActive('strike') }" @click.stop="editor.chain().focus().toggleStrike().run()"><s>S</s></button>
+            <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 1 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 1 }).run()">H1</button>
+            <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 2 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 2 }).run()">H2</button>
+            <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 3 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 3 }).run()">H3</button>
+            <div class="divider"></div>
+          </template>
           <button class="tool-btn" @click.stop="emit('undo')">↺</button>
           <button class="tool-btn" @click.stop="emit('redo')">↻</button>
         </div>
@@ -140,6 +153,11 @@ const emit = defineEmits([
 
     background: var(--pad-bg-color-300);
     color: var(--pad-text-color);
+
+    &.is-active {
+      background: var(--pad-primary-color, #1976d2);
+      color: #fff;
+    }
 
     &:disabled {
       opacity: 0.4;
