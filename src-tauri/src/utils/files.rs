@@ -1,3 +1,4 @@
+use crate::object::STREAM_MIME_TYPE;
 use std::fs::File;
 use std::io::{self, Read, Seek};
 
@@ -31,7 +32,7 @@ pub fn file_mimetype(mut file: File) -> Result<(String, File), UtilsError> {
     }
     let mimetype = infer::get(&buffer[..n])
         .map(|t| t.mime_type().to_string())
-        .unwrap_or_default();
+        .unwrap_or_else(|| STREAM_MIME_TYPE.to_string());
 
     file.seek(io::SeekFrom::Start(0))?;
 

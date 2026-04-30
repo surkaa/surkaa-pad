@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::object::object_types::STREAM_MINE_TYPE;
+    use crate::object::object_types::STREAM_MIME_TYPE;
     use crate::object::OssClient;
     use crate::stream::{collect_data, create_mock_stream, ByteStream};
     use bytes::Bytes;
@@ -25,7 +25,7 @@ mod tests {
         let bytes = Bytes::from_static(content.as_bytes());
         let stream: ByteStream = Box::pin(iter(once(Ok::<_, Error>(bytes))));
         client
-            .upload(key, len, stream, STREAM_MINE_TYPE)
+            .upload(key, len, stream, STREAM_MIME_TYPE)
             .await
             .expect("上传失败");
     }
@@ -74,7 +74,7 @@ mod tests {
         });
         let stream: ByteStream = Box::pin(stream);
         client
-            .upload(key, file_size, stream, STREAM_MINE_TYPE)
+            .upload(key, file_size, stream, STREAM_MIME_TYPE)
             .await
             .expect("上传失败");
 
@@ -125,7 +125,7 @@ mod tests {
             let bytes = Bytes::from_static(content.as_bytes());
             let stream: ByteStream = Box::pin(iter(once(Ok::<_, Error>(bytes))));
             client
-                .upload(key, len, stream, STREAM_MINE_TYPE)
+                .upload(key, len, stream, STREAM_MIME_TYPE)
                 .await
                 .expect("上传失败");
         }
@@ -270,7 +270,7 @@ mod tests {
                 test_key,
                 test_content.len() as u64,
                 create_mock_stream(test_content.to_vec(), test_content.len()),
-                STREAM_MINE_TYPE,
+                STREAM_MIME_TYPE,
             )
             .await
             .expect("使用流上传测试文件失败");
