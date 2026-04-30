@@ -7,6 +7,7 @@ use crate::diaries::{
     delete_diary_attachment, get_diary, update_diary_attachment, update_diary_attachment_filename,
 };
 use crate::object::OssClient;
+use crate::state::AppState;
 use crate::storages::remote_attachments_key;
 use crate::stream::ByteStream;
 use crate::stream::{collect_data, create_mock_stream, tracker_stream};
@@ -492,13 +493,17 @@ pub async fn save_decrypt_attachment(
 }
 
 pub async fn update_attachment_filename(
-    (crypto, cache, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
+    state: &AppState,
     id: &str,
     old_filename: String,
     new_filename: String,
     new_content: String,
 ) -> Result<(), AttachmentError> {
-    let diary = get_diary(&cache, &lfc, &crypto, &client, id)
+    let cache = &state.diary_cache();
+    let lfc = &state.local_file_cache();
+    let crypto = &state.crypto();
+    let client = &state.oss_client();
+    let diary = get_diary(cache, lfc, crypto, client, id)
         .await
         .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
@@ -515,10 +520,7 @@ pub async fn update_attachment_filename(
     client.rename(&old_key, &new_key).await?;
 
     update_diary_attachment_filename(
-        &cache,
-        &lfc,
-        &crypto,
-        &client,
+        state,
         id,
         old_filename,
         new_filename,

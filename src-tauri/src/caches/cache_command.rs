@@ -12,7 +12,7 @@ pub async fn cmd_clean_cache_file(state: State<'_, AppState>) -> Result<(), AppE
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_clean_unused_file(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
-    let client = state.get_client()?;
+    let client = state.oss_client();
     // 列出所有匹配的对象
     let mut next_token: Option<String> = None;
     let mut remote_objs = HashMap::new();

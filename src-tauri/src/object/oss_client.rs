@@ -6,6 +6,7 @@ use futures::StreamExt;
 use futures_util::TryStreamExt;
 use s3::types::{HeadObjectOutput, Object};
 use s3::{Auth, Client, Credentials};
+use std::sync::{Arc, RwLock};
 
 /// 将项目的 ByteStream（无 Sync）适配为 s3 crate 上传要求的格式（需要 Sync）
 fn to_s3_upload_stream(
@@ -23,20 +24,30 @@ fn to_s3_upload_stream(
     tokio_stream::wrappers::ReceiverStream::new(rx)
 }
 
-#[derive(Clone)]
-pub struct OssClient {
+struct OssClientInner {
     client: Client,
     bucket: String,
 }
 
+#[derive(Clone)]
+pub struct OssClient {
+    inner: Arc<RwLock<Option<OssClientInner>>>,
+}
+
 impl OssClient {
-    pub fn new(
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    pub fn initialize(
+        &self,
         endpoint: String,
         akid: String,
         sakey: String,
         bucket: String,
-        region: String,
-    ) -> Result<Self, ObjectError> {
+    ) -> Result<(), ObjectError> {
         let endpoint_url = if endpoint.starts_with("http") {
             endpoint
         } else {
@@ -51,12 +62,24 @@ impl OssClient {
 
         let client = Client::builder(&endpoint_url)
             .map_err(|e| ObjectError::CreateFailed(e.to_string()))?
-            .region(&region)
+            .region("oss-cn-hangzhou")
             .auth(auth)
             .build()
             .map_err(|e| ObjectError::CreateFailed(e.to_string()))?;
 
-        Ok(Self { client, bucket })
+        let mut guard = self.inner.write().map_err(|e| {
+            ObjectError::OperationFailed(format!("Lock poisoned: {}", e))
+        })?;
+        *guard = Some(OssClientInner { client, bucket });
+        Ok(())
+    }
+
+    fn inner(&self) -> Result<(Client, String), ObjectError> {
+        let guard = self.inner.read().map_err(|e| {
+            ObjectError::OperationFailed(format!("Lock poisoned: {}", e))
+        })?;
+        let inner = guard.as_ref().ok_or(ObjectError::NotInitialized)?;
+        Ok((inner.client.clone(), inner.bucket.clone()))
     }
 
     #[cfg(test)]
@@ -66,26 +89,30 @@ impl OssClient {
         let sakey = std::env::var("ALIYUN_SECRET").expect("请配置ALIYUN_SECRET");
         let bucket = std::env::var("ALIYUN_BUCKET_NAME").expect("请配置ALIYUN_BUCKET_NAME");
         let endpoint = std::env::var("ALIYUN_ENDPOINT").expect("请配置ALIYUN_ENDPOINT");
-        let region = std::env::var("ALIYUN_REGION").expect("请配置ALIYUN_REGION");
-        Self::new(endpoint, akid, sakey, bucket, region).expect("创建 S3 client 失败")
+        let client = Self::new();
+        client
+            .initialize(endpoint, akid, sakey, bucket)
+            .expect("创建 S3 client 失败");
+        client
     }
 
     /// 重命名文件 (CopyObject + DeleteObject)
     pub async fn rename(&self, old_key: &str, new_key: &str) -> Result<(), ObjectError> {
+        let (client, bucket) = self.inner()?;
         // 确保不存在新的键
-        let res = self.client.objects().head(&self.bucket, new_key).send().await;
+        let res = client.objects().head(&bucket, new_key).send().await;
         if let Ok(_res) = res {
             return Err(ObjectError::KeyAlreadyExists(new_key.to_string()));
         }
-        self.client
+        client
             .objects()
-            .copy(&self.bucket, old_key, &self.bucket, new_key)
+            .copy(&bucket, old_key, &bucket, new_key)
             .send()
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
-        self.client
+        client
             .objects()
-            .delete(&self.bucket, old_key)
+            .delete(&bucket, old_key)
             .send()
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
@@ -100,11 +127,11 @@ impl OssClient {
         stream: ByteStream,
         mimetype: &str,
     ) -> Result<String, ObjectError> {
+        let (client, bucket) = self.inner()?;
         let s3_stream = to_s3_upload_stream(stream);
-        let resp = self
-            .client
+        let resp = client
             .objects()
-            .put(&self.bucket, key)
+            .put(&bucket, key)
             .body_stream_sized(s3_stream, len)
             .content_type(mimetype)
             .send()
@@ -115,10 +142,10 @@ impl OssClient {
 
     /// https://help.aliyun.com/zh/oss/developer-reference/putobject
     pub async fn upload_bytes(&self, key: &str, data: &[u8]) -> Result<String, ObjectError> {
-        let resp = self
-            .client
+        let (client, bucket) = self.inner()?;
+        let resp = client
             .objects()
-            .put(&self.bucket, key)
+            .put(&bucket, key)
             .body_bytes(data.to_vec())
             .content_length(data.len() as u64)
             .send()
@@ -128,9 +155,10 @@ impl OssClient {
     }
 
     pub async fn delete(&self, key: &str) -> Result<(), ObjectError> {
-        self.client
+        let (client, bucket) = self.inner()?;
+        client
             .objects()
-            .delete(&self.bucket, key)
+            .delete(&bucket, key)
             .send()
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
@@ -152,13 +180,14 @@ impl OssClient {
     }
 
     pub async fn delete_with_prefix(&self, prefix: &str) -> Result<Vec<String>, ObjectError> {
+        let (client, bucket) = self.inner()?;
         let keys = self.list_all_keys(prefix).await?;
         if keys.is_empty() {
             return Ok(vec![]);
         }
-        self.client
+        client
             .objects()
-            .delete_objects(&self.bucket)
+            .delete_objects(&bucket)
             .objects(keys.clone())
             .send()
             .await
@@ -167,10 +196,10 @@ impl OssClient {
     }
 
     pub async fn get_metadata(&self, key: &str) -> Result<HeadObjectOutput, ObjectError> {
-        let mut resp = self
-            .client
+        let (client, bucket) = self.inner()?;
+        let mut resp = client
             .objects()
-            .head(&self.bucket, key)
+            .head(&bucket, key)
             .send()
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
@@ -184,7 +213,8 @@ impl OssClient {
         prefix: &str,
         next_token: NextToken,
     ) -> Result<(Vec<Object>, NextToken), ObjectError> {
-        let mut req = self.client.objects().list_v2(&self.bucket).prefix(prefix);
+        let (client, bucket) = self.inner()?;
+        let mut req = client.objects().list_v2(&bucket).prefix(prefix);
         if let Some(token) = next_token {
             req = req.continuation_token(token);
         }
@@ -206,7 +236,8 @@ impl OssClient {
         key: &str,
         range: Option<(u64, u64)>,
     ) -> Result<(ByteStream, u64), ObjectError> {
-        let mut req = self.client.objects().get(&self.bucket, key);
+        let (client, bucket) = self.inner()?;
+        let mut req = client.objects().get(&bucket, key);
         if let Some((start, end)) = range {
             req = req.range_bytes(start, end);
         }
@@ -230,10 +261,10 @@ impl OssClient {
     }
 
     pub fn direct_url(&self, key: &str) -> Result<String, ObjectError> {
-        let url = self
-            .client
+        let (client, bucket) = self.inner()?;
+        let url = client
             .objects()
-            .presign_get(&self.bucket, key)
+            .presign_get(&bucket, key)
             .expires_in(std::time::Duration::from_secs(3600))
             .build()
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?

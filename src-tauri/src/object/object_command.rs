@@ -20,6 +20,6 @@ pub async fn cmd_init_oss_client(
     endpoint: String,
 ) -> Result<(), AppError> {
     Ok(state
-        .initialize(akid, aks, endpoint, bucket)
-        .await?)
+        .oss_client()
+        .initialize(endpoint, akid, aks, bucket)?)
 }

@@ -29,7 +29,7 @@ pub fn cmd_add_attachment(
     access_str: String,
     encrypted: bool,
 ) -> Result<String, AppError> {
-    let four_states = state.four_states()?;
+    let four_states = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     let fp = FilePath::from_str(&access_str)
         .map_err(|e| AppError { error_type: "io".into(), message: format!("无效的文件路径: {}", e) })?;
     let mut option = OpenOptions::new();
@@ -73,7 +73,7 @@ pub fn cmd_add_attachment_memory(
     mimetype: String,
     encrypted: bool,
 ) -> Result<String, AppError> {
-    let four_states = state.four_states()?;
+    let four_states = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     let len = data.len();
     let mimetype = if mimetype.is_empty() {
         let end = std::cmp::min(data.len(), 128);
@@ -111,7 +111,7 @@ pub async fn cmd_delete_attachment(
     id: &str,
     filename: String,
 ) -> Result<(), AppError> {
-    let client = state.get_client()?;
+    let client = state.oss_client();
     Ok(delete_attachment(
         &state.diary_cache(),
         &state.local_file_cache(),
@@ -155,7 +155,7 @@ pub async fn cmd_add_image_attachment_from_camera(
             .map_err(|e| AppError { error_type: "base64".into(), message: e.to_string() })?;
         let len = binary_data.len();
         let stream = create_mock_stream(binary_data, len);
-        let three = state.four_states()?;
+        let three = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
         Ok(state.task_pool().spawn(async move {
             add_attachment(
                 three,
@@ -191,7 +191,7 @@ pub fn cmd_toggle_attachment_encryption(
     id: String,
     filename: String,
 ) -> Result<String, AppError> {
-    let four_states = state.four_states()?;
+    let four_states = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     Ok(state.task_pool().spawn(async move {
         toggle_attachment_encryption(four_states, Arc::new(event), &id, filename).await;
     })?)
@@ -213,7 +213,7 @@ pub fn cmd_rotate_image_attachment(
     filename: String,
     rotation: i32,
 ) -> Result<String, AppError> {
-    let four_states = state.four_states()?;
+    let four_states = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     Ok(state.task_pool().spawn(async move {
         rotate_image_attachment(four_states, Arc::new(event), &id, filename, rotation).await;
     })?)
@@ -234,7 +234,7 @@ pub fn cmd_caching_attachment(
     filename: String,
 ) -> Result<String, AppError> {
     let lfc = state.local_file_cache();
-    let client = state.get_client()?;
+    let client = state.oss_client();
     Ok(state.task_pool().spawn(async move {
         caching_attachment(&lfc, &client, Arc::new(event), &id, &filename).await;
     })?)
@@ -255,7 +255,10 @@ pub async fn cmd_save_decrypt_attachment(
     id: String,
     filename: String,
 ) -> Result<String, AppError> {
-    let (crypto, cache, lfc, client) = state.four_states()?;
+    let crypto = state.crypto();
+    let cache = state.diary_cache();
+    let lfc = state.local_file_cache();
+    let client = state.oss_client();
     let diary = get_diary(&cache, &lfc, &crypto, &client, &id).await?;
     let attachment = diary
         .attachments
@@ -316,7 +319,7 @@ pub async fn cmd_update_attachment_filename(
     new_content: String,
 ) -> Result<(), AppError> {
     Ok(update_attachment_filename(
-        state.four_states()?,
+        &state,
         &id,
         old_filename,
         new_filename,

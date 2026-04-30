@@ -456,8 +456,14 @@ mod tests {
         assert!(filename.is_some(), "附件上传未完成");
         let new_filename = "test";
         // 更名
+        let state = crate::state::AppState::from_parts(
+            crypto.clone(),
+            client.clone(),
+            cache.clone(),
+            lfc.clone(),
+        );
         update_attachment_filename(
-            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &state,
             &diary_id,
             filename.unwrap(),
             new_filename.to_string(),

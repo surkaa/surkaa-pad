@@ -10,6 +10,9 @@ pub enum ObjectError {
 
     #[error("Object storage operation failed: {0}")]
     OperationFailed(String),
+
+    #[error("OSS client not initialized")]
+    NotInitialized,
 }
 
 impl From<ObjectError> for crate::error::AppError {

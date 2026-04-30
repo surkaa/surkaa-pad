@@ -26,7 +26,7 @@ pub async fn cmd_save_diary(
         &state.diary_cache(),
         &state.local_file_cache(),
         &state.crypto(),
-        &state.get_client()?,
+        &state.oss_client(),
         content,
     )
     .await?)
@@ -40,7 +40,7 @@ pub async fn cmd_save_diary(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), AppError> {
-    Ok(delete_diary(&state.diary_cache(), &state.local_file_cache(), &state.get_client()?, id).await?)
+    Ok(delete_diary(&state.diary_cache(), &state.local_file_cache(), &state.oss_client(), id).await?)
 }
 
 /// 更新日记的内容
@@ -60,7 +60,7 @@ pub async fn cmd_update_diary_content_only(
         &state.diary_cache(),
         &state.local_file_cache(),
         &state.crypto(),
-        &state.get_client()?,
+        &state.oss_client(),
         id,
         new_content,
     )
@@ -79,7 +79,7 @@ pub async fn cmd_page_diary_ids(
     state: State<'_, AppState>,
     next_token: NextToken,
 ) -> Result<(Vec<String>, NextToken), AppError> {
-    Ok(page_diary_ids(&state.get_client()?, next_token).await?)
+    Ok(page_diary_ids(&state.oss_client(), next_token).await?)
 }
 
 /// 获取日记Summary
@@ -97,7 +97,7 @@ pub async fn cmd_get_diary_summary(
         &state.diary_cache(),
         &state.local_file_cache(),
         &state.crypto(),
-        &state.get_client()?,
+        &state.oss_client(),
         id,
     )
     .await?)
@@ -118,7 +118,7 @@ pub async fn cmd_get_diary_content(
         &state.diary_cache(),
         &state.local_file_cache(),
         &state.crypto(),
-        &state.get_client()?,
+        &state.oss_client(),
         id,
     )
     .await?)
@@ -140,7 +140,7 @@ pub fn cmd_search_diaries(
     let cache = state.diary_cache();
     let lfc = state.local_file_cache();
     let crypto = state.crypto();
-    let client = state.get_client()?;
+    let client = state.oss_client();
     let event = event.clone();
     Ok(state.task_pool().spawn(async move {
         search_diaries(&cache, &lfc, &crypto, &client, Arc::new(event), keyword, or).await;

@@ -94,9 +94,7 @@ async fn process_attachment(
     state: AppState,
     request: Request<Vec<u8>>,
 ) -> Result<Response<Vec<u8>>, ProtocolError> {
-    let client = state
-        .get_client()
-        .map_err(|_| ProtocolError::Internal("OSS client not ready".into()))?;
+    let client = state.oss_client();
     let cache = state.diary_cache();
     let lfc = state.local_file_cache();
     let crypto = state.crypto();

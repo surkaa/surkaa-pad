@@ -1,5 +1,6 @@
 use crate::cryptos::Crypto;
 use crate::object::OssClient;
+use crate::state::AppState;
 use crate::storages::remote_manifest_key;
 
 use crate::attachments::AttachmentMeta;
@@ -212,15 +213,16 @@ pub async fn update_diary_attachment(
 }
 
 pub async fn update_diary_attachment_filename(
-    cache: &DiaryMemoryCache,
-    lfc: &LocalFileCache,
-    crypto: &Crypto,
-    client: &OssClient,
+    state: &AppState,
     id: &str,
     old_filename: String,
     new_filename: String,
     new_content: String,
 ) -> Result<(), DiaryError> {
+    let cache = &state.diary_cache();
+    let lfc = &state.local_file_cache();
+    let crypto = &state.crypto();
+    let client = &state.oss_client();
     let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
     if let Some(att) = diary
         .attachments
