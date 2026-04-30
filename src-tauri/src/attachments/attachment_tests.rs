@@ -6,6 +6,7 @@ mod tests {
     use crate::cryptos::Crypto;
     use crate::diaries::{delete_diary, get_diary, page_diary_ids, save_diary};
     use crate::object::OssClient;
+    use crate::state::AppState;
     use crate::storages::remote_attachments_key;
     use crate::stream::{collect_data, create_mock_stream};
     use futures::future::join_all;
@@ -45,7 +46,6 @@ mod tests {
 
         // 2. 核心测试: 并发添加附件
         for i in 0..concurrency_level {
-            let cache_clone = cache.clone();
             let lfc_clone = lfc.clone();
             let crypto_clone = crypto.clone();
             let client_clone = client.clone();
@@ -57,9 +57,11 @@ mod tests {
             let size = dummy_content.len() as u64;
             let stream = create_mock_stream(dummy_content, 1024);
 
+            let state = AppState::from_parts(crypto_clone, client_clone, lfc_clone);
+
             add_tasks.push(tokio::spawn(async move {
                 add_attachment(
-                    (crypto_clone, cache_clone, lfc_clone, client_clone),
+                    &state,
                     Arc::new(tx),
                     &id_clone,
                     false,
@@ -149,6 +151,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
+        let state = AppState::from_parts(crypto.clone(), client.clone(), lfc.clone());
 
         // 预置数据：初始化日记
         let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "加密切换测试")
@@ -163,7 +166,7 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
 
         add_attachment(
-            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &state,
             Arc::new(tx),
             &diary_id,
             false, // 初始不加密
@@ -178,7 +181,7 @@ mod tests {
         // 切换为加密状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         toggle_attachment_encryption(
-            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &state,
             Arc::new(tx),
             &diary_id,
             filename.to_string(),
@@ -196,7 +199,7 @@ mod tests {
         // 切换回明文状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         toggle_attachment_encryption(
-            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &state,
             Arc::new(tx),
             &diary_id,
             filename.to_string(),
@@ -234,6 +237,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
+        let state = AppState::from_parts(crypto.clone(), client.clone(), lfc.clone());
 
         // 准备环境：保存日记并上传一张原始图片
         let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "图片旋转测试")
@@ -254,7 +258,7 @@ mod tests {
 
         // 上传原始图片
         add_attachment(
-            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &state,
             Arc::new(tx),
             &diary_id,
             true, // 测试加密状态下的旋转
@@ -271,7 +275,7 @@ mod tests {
         let event_sender = Arc::new(tx_rot);
 
         rotate_image_attachment(
-            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &state,
             event_sender,
             &diary_id,
             filename.to_string(),
@@ -337,6 +341,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
+        let state = AppState::from_parts(crypto.clone(), client.clone(), lfc.clone());
 
         // 预置数据：初始化日记主体
         let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "附件缓存生命周期测试")
@@ -351,7 +356,7 @@ mod tests {
 
         // 上传附件并测试缓存是否生成
         add_attachment(
-            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &state,
             Arc::new(tx),
             &diary_id,
             false,
@@ -381,7 +386,7 @@ mod tests {
         // 触发 toggle_attachment_encryption，验证缓存是否被正确替换
         let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         toggle_attachment_encryption(
-            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &state,
             Arc::new(tx2),
             &diary_id,
             filename.clone(),
@@ -426,6 +431,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
+        let state = AppState::from_parts(crypto.clone(), client.clone(), lfc.clone());
         let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "test-content")
             .await
             .expect("初始化日记失败");
@@ -435,7 +441,7 @@ mod tests {
         let stream = create_mock_stream(raw_data.clone(), size as usize);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
         add_attachment(
-            (crypto.clone(), cache.clone(), lfc.clone(), client.clone()),
+            &state,
             Arc::new(tx),
             &diary_id,
             false,
@@ -456,12 +462,6 @@ mod tests {
         assert!(filename.is_some(), "附件上传未完成");
         let new_filename = "test";
         // 更名
-        let state = crate::state::AppState::from_parts(
-            crypto.clone(),
-            client.clone(),
-            cache.clone(),
-            lfc.clone(),
-        );
         update_attachment_filename(
             &state,
             &diary_id,

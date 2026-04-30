@@ -52,13 +52,12 @@ impl AppState {
     pub fn from_parts(
         crypto: Crypto,
         oss_client: OssClient,
-        diary_cache: DiaryMemoryCache,
         local_file_cache: LocalFileCache,
     ) -> Self {
         Self {
             crypto,
             oss_client,
-            diary_cache,
+            diary_cache: DiaryMemoryCache::new(),
             local_file_cache,
             task_pool: TaskPool::new(),
         }

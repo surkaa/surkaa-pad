@@ -55,7 +55,7 @@ pub async fn get_attachment_stream(
 }
 
 pub async fn add_attachment(
-    (crypto, cache, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
+    state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     encrypted: bool,
@@ -63,6 +63,7 @@ pub async fn add_attachment(
     mimetype: String,
     stream: ByteStream,
 ) {
+    let (crypto, cache, lfc, client) = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     let _ = event.send(AttachmentProcessEvent::Started);
     // 包装流 用来更新进度
     let ec = event.clone();
@@ -191,11 +192,12 @@ pub async fn delete_attachment(
 }
 
 pub async fn toggle_attachment_encryption(
-    (crypto, cache, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
+    state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     filename: String,
 ) {
+    let (crypto, cache, lfc, client) = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     let _ = event.send(AttachmentProcessEvent::Started);
 
     let logic = async {
@@ -279,12 +281,13 @@ pub async fn toggle_attachment_encryption(
 }
 
 pub async fn rotate_image_attachment(
-    (crypto, cache, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
+    state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     filename: String,
     rotation: i32,
 ) {
+    let (crypto, cache, lfc, client) = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     let _ = event.send(AttachmentProcessEvent::Started);
 
     let logic = async {
@@ -449,13 +452,14 @@ pub async fn caching_attachment(
 }
 
 pub async fn save_decrypt_attachment(
-    (crypto, _, lfc, client): (Crypto, DiaryMemoryCache, LocalFileCache, OssClient),
+    state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     filename: String,
     attachment: AttachmentMeta,
     mut file: File,
 ) {
+    let (crypto, _, lfc, client) = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     let event_res_clone = event.clone();
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async move {

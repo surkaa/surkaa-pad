@@ -29,7 +29,6 @@ pub fn cmd_add_attachment(
     access_str: String,
     encrypted: bool,
 ) -> Result<String, AppError> {
-    let four_states = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     let fp = FilePath::from_str(&access_str)
         .map_err(|e| AppError { error_type: "io".into(), message: format!("无效的文件路径: {}", e) })?;
     let mut option = OpenOptions::new();
@@ -41,9 +40,11 @@ pub fn cmd_add_attachment(
     let size = file_size(&file)?;
     let (mimetype, file) = file_mimetype(file)?;
     let stream = file_to_stream(file);
-    Ok(state.task_pool().spawn(async move {
+    let task_pool = state.task_pool();
+    let state = state.inner().clone();
+    Ok(task_pool.spawn(async move {
         add_attachment(
-            four_states,
+            &state,
             Arc::new(event),
             &id,
             encrypted,
@@ -73,7 +74,6 @@ pub fn cmd_add_attachment_memory(
     mimetype: String,
     encrypted: bool,
 ) -> Result<String, AppError> {
-    let four_states = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     let len = data.len();
     let mimetype = if mimetype.is_empty() {
         let end = std::cmp::min(data.len(), 128);
@@ -84,9 +84,11 @@ pub fn cmd_add_attachment_memory(
         mimetype
     };
     let stream = create_mock_stream(data, len);
-    Ok(state.task_pool().spawn(async move {
+    let task_pool = state.task_pool();
+    let state = state.inner().clone();
+    Ok(task_pool.spawn(async move {
         add_attachment(
-            four_states,
+            &state,
             Arc::new(event),
             &id,
             encrypted,
@@ -155,10 +157,11 @@ pub async fn cmd_add_image_attachment_from_camera(
             .map_err(|e| AppError { error_type: "base64".into(), message: e.to_string() })?;
         let len = binary_data.len();
         let stream = create_mock_stream(binary_data, len);
-        let three = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
-        Ok(state.task_pool().spawn(async move {
+        let task_pool = state.task_pool();
+        let state = state.inner().clone();
+        Ok(task_pool.spawn(async move {
             add_attachment(
-                three,
+                &state,
                 Arc::new(event),
                 &id,
                 encrypted,
@@ -191,9 +194,10 @@ pub fn cmd_toggle_attachment_encryption(
     id: String,
     filename: String,
 ) -> Result<String, AppError> {
-    let four_states = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
-    Ok(state.task_pool().spawn(async move {
-        toggle_attachment_encryption(four_states, Arc::new(event), &id, filename).await;
+    let task_pool = state.task_pool();
+    let state = state.inner().clone();
+    Ok(task_pool.spawn(async move {
+        toggle_attachment_encryption(&state, Arc::new(event), &id, filename).await;
     })?)
 }
 
@@ -213,9 +217,10 @@ pub fn cmd_rotate_image_attachment(
     filename: String,
     rotation: i32,
 ) -> Result<String, AppError> {
-    let four_states = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
-    Ok(state.task_pool().spawn(async move {
-        rotate_image_attachment(four_states, Arc::new(event), &id, filename, rotation).await;
+    let task_pool = state.task_pool();
+    let state = state.inner().clone();
+    Ok(task_pool.spawn(async move {
+        rotate_image_attachment(&state, Arc::new(event), &id, filename, rotation).await;
     })?)
 }
 
@@ -255,11 +260,7 @@ pub async fn cmd_save_decrypt_attachment(
     id: String,
     filename: String,
 ) -> Result<String, AppError> {
-    let crypto = state.crypto();
-    let cache = state.diary_cache();
-    let lfc = state.local_file_cache();
-    let client = state.oss_client();
-    let diary = get_diary(&cache, &lfc, &crypto, &client, &id).await?;
+    let diary = get_diary(&state.diary_cache(), &state.local_file_cache(), &state.crypto(), &state.oss_client(), &id).await?;
     let attachment = diary
         .attachments
         .iter()
@@ -288,9 +289,11 @@ pub async fn cmd_save_decrypt_attachment(
             message: e.to_string(),
         })?;
 
-    Ok(state.task_pool().spawn(async move {
+    let task_pool = state.task_pool();
+    let state = state.inner().clone();
+    Ok(task_pool.spawn(async move {
         save_decrypt_attachment(
-            (crypto, cache, lfc, client),
+            &state,
             Arc::new(event),
             &id,
             filename,
