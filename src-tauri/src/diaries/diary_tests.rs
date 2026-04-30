@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod diary_tests {
+mod tests {
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
@@ -242,7 +242,7 @@ mod diary_list_tests {
 
         // 清理测试数据
         for id in all_ids {
-            let _ = delete_diary(&cache, &lfc, &client, &id)
+            delete_diary(&cache, &lfc, &client, &id)
                 .await
                 .expect("无法删除测试日记");
         }
@@ -273,10 +273,10 @@ mod diary_search_tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SearchDiariesEvent>();
         let event_sender = Arc::new(tx);
         let _ = search_diaries(
-            &cache,
-            &lfc,
-            &crypto,
-            &client,
+            cache,
+            lfc,
+            crypto,
+            client,
             event_sender.clone(),
             keyword,
             or,

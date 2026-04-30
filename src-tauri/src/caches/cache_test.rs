@@ -45,7 +45,7 @@ mod lfc_tests {
         // 创建一个会出错的流：第一个块正常，第二个块返回错误
         let stream = futures_util::stream::iter(vec![
             Ok(Bytes::from("good data")),
-            Err(io::Error::new(io::ErrorKind::Other, "simulated error")),
+            Err(io::Error::other("simulated error")),
         ]);
         // 转换为 ByteStream
         let stream = Box::pin(stream) as ByteStream;

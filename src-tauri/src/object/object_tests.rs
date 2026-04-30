@@ -15,7 +15,7 @@ mod tests {
         // 检查有没有遗留的测试文件
         let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "{}", msg);
-        if objects.len() != 0 {
+        if !objects.is_empty() {
             panic!("{}: 发现遗留对象 {:?}", msg, objects);
         }
     }
@@ -219,7 +219,7 @@ mod tests {
 
         // 2. 先上传一个文件，确保它存在
         client
-            .upload_bytes(test_key, &test_content.to_vec())
+            .upload_bytes(test_key, test_content.as_ref())
             .await
             .expect("上传测试文件失败");
 
@@ -259,10 +259,10 @@ mod tests {
         let test_content = b"Hello OSS Uploaded Test";
         assert_empty(&client, "测试开始前对象存储应为空").await;
         let etag = client
-            .upload_bytes(test_key, &test_content.to_vec())
+            .upload_bytes(test_key, test_content.as_ref())
             .await
             .expect("上传测试文件失败");
-        let md5 = format!("{:X}", md5::compute(&test_content));
+        let md5 = format!("{:X}", md5::compute(test_content));
         assert_eq!(&etag, &md5, "返回的 ETag 应该是内容的 MD5 值");
         client.delete(test_key).await.expect("删除失败");
         let stream_etag = client
