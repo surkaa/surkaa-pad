@@ -213,7 +213,7 @@ impl OssClient {
         let resp = req.send().await.map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
         let content_len = resp.content_length;
         let stream = resp.body.map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+            std::io::Error::other(e.to_string())
         });
         let content_len = content_len
             .ok_or_else(|| ObjectError::OperationFailed("missing content length".into()))?;

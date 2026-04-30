@@ -213,13 +213,12 @@ impl LocalFileCache {
                             let mut file = {
                                 let mut guard = state.lock().await;
                                 if guard.finalized {
-                                    return Err(std::io::Error::new(
-                                        std::io::ErrorKind::Other,
+                                    return Err(std::io::Error::other(
                                         "Stream finalized",
                                     ));
                                 }
                                 guard.file.take().ok_or_else(|| {
-                                    std::io::Error::new(std::io::ErrorKind::Other, "File closed")
+                                    std::io::Error::other("File closed")
                                 })?
                             };
 
@@ -345,7 +344,7 @@ impl LocalFileCache {
                 }
                 // 获取相对路径
                 let relative = path
-                    .strip_prefix(&self.cache_dir.as_path())
+                    .strip_prefix(self.cache_dir.as_path())
                     .map_err(|e| CacheError::PathError(e.to_string()))?;
                 let key_with_sep = relative
                     .components()

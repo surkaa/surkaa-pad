@@ -498,7 +498,7 @@ pub async fn update_attachment_filename(
     new_filename: String,
     new_content: String,
 ) -> Result<(), AttachmentError> {
-    let diary = get_diary(&cache, &lfc, &crypto, &client, &id)
+    let diary = get_diary(&cache, &lfc, &crypto, &client, id)
         .await
         .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
@@ -508,8 +508,8 @@ pub async fn update_attachment_filename(
     }
 
     // 更新远端存储的 key
-    let old_key = remote_attachments_key(&id, &old_filename);
-    let new_key = remote_attachments_key(&id, &new_filename);
+    let old_key = remote_attachments_key(id, &old_filename);
+    let new_key = remote_attachments_key(id, &new_filename);
 
     // 先复制一份新的对象
     client.rename(&old_key, &new_key).await?;
@@ -519,7 +519,7 @@ pub async fn update_attachment_filename(
         &lfc,
         &crypto,
         &client,
-        &id,
+        id,
         old_filename,
         new_filename,
         new_content,
