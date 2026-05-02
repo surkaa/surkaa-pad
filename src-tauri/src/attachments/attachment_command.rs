@@ -13,6 +13,7 @@ use crate::diaries::{get_diary, update_diary_attachment};
 use crate::error::AppError;
 use crate::state::AppState;
 use crate::storages::remote_attachments_key;
+use crate::object::STREAM_MIME_TYPE;
 use crate::stream::{create_mock_stream, file_to_stream};
 use crate::utils::id_generate::generate_descending_id;
 use crate::utils::{file_mimetype, file_size};
@@ -92,7 +93,7 @@ pub fn cmd_add_attachment_memory(
         let end = std::cmp::min(data.len(), 128);
         infer::get(&data[..end])
             .map(|t| t.mime_type().to_string())
-            .unwrap_or("application/octet-stream".to_string())
+            .unwrap_or(STREAM_MIME_TYPE.to_string())
     } else {
         mimetype
     };
@@ -359,7 +360,7 @@ pub async fn cmd_start_chunked_upload(
             .ok()
             .flatten()
             .map(|t| t.mime_type().to_string())
-            .unwrap_or("application/octet-stream".to_string())
+            .unwrap_or(STREAM_MIME_TYPE.to_string())
     } else {
         mimetype
     };
