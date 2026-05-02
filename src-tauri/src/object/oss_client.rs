@@ -124,11 +124,14 @@ impl OssClient {
         // 确保不存在新的键
         let (_, status) = bucket.head_object(new_key).await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
-        if status == 200 {
+        if (200..300).contains(&status) {
             return Err(ObjectError::KeyAlreadyExists(new_key.to_string()));
         }
-        bucket.copy_object_internal(old_key, new_key).await
+        let copy_status = bucket.copy_object_internal(old_key, new_key).await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        if copy_status >= 300 {
+            return Err(ObjectError::OperationFailed(format!("Copy failed: HTTP {}", copy_status)));
+        }
         bucket.delete_object(old_key).await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
         Ok(())
@@ -171,10 +174,13 @@ impl OssClient {
 
     pub async fn delete(&self, key: &str) -> Result<(), ObjectError> {
         let bucket = self.inner()?;
-        bucket
+        let resp = bucket
             .delete_object(key)
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        if resp.status_code() >= 300 {
+            return Err(ObjectError::OperationFailed(format!("Delete failed: HTTP {}", resp.status_code())));
+        }
         Ok(())
     }
 
