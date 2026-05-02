@@ -1,4 +1,7 @@
 use std::path::PathBuf;
+use std::sync::Arc;
+use dashmap::DashMap;
+use crate::attachments::chunked_upload::ChunkedUploadState;
 use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::Crypto;
 use crate::object::OssClient;
@@ -11,6 +14,7 @@ pub struct AppState {
     diary_cache: DiaryMemoryCache,
     local_file_cache: LocalFileCache,
     task_pool: TaskPool,
+    chunked_uploads: Arc<DashMap<String, ChunkedUploadState>>,
 }
 
 impl AppState {
@@ -25,6 +29,7 @@ impl AppState {
             local_file_cache,
             diary_cache,
             task_pool,
+            chunked_uploads: Arc::new(DashMap::new()),
         }
     }
 
@@ -48,6 +53,10 @@ impl AppState {
         self.task_pool.clone()
     }
 
+    pub fn chunked_uploads(&self) -> Arc<DashMap<String, ChunkedUploadState>> {
+        self.chunked_uploads.clone()
+    }
+
     #[cfg(test)]
     pub fn from_parts(
         crypto: Crypto,
@@ -60,6 +69,7 @@ impl AppState {
             diary_cache: DiaryMemoryCache::new(),
             local_file_cache,
             task_pool: TaskPool::new(),
+            chunked_uploads: Arc::new(DashMap::new()),
         }
     }
 }

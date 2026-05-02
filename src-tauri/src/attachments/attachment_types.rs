@@ -33,3 +33,29 @@ pub struct AttachmentMeta {
     #[serde(default)]
     pub etag: Option<String>,
 }
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChunkedUploadStartResult {
+    pub upload_token: String,
+    pub attachment_filename: String,
+    pub nonce: Option<Vec<u8>>,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChunkedUploadChunkResult {
+    pub part_number: u32,
+    pub etag: String,
+    #[specta(type = f64)]
+    pub uploaded_bytes: u64,
+    #[specta(type = f64)]
+    pub total_bytes: u64,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChunkedUploadFinishResult {
+    pub attachment: AttachmentMeta,
+    pub url: String,
+}
