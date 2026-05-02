@@ -224,7 +224,7 @@ mod tests {
             .expect("上传测试文件失败");
 
         // 3. 生成一个有效期为 60 秒的签名 URL
-        let signed_url = client.direct_url(test_key).expect("生成签名URL失败");
+        let signed_url = client.direct_url(test_key).await.expect("生成签名URL失败");
 
         println!("生成的签名URL: {}", signed_url);
 

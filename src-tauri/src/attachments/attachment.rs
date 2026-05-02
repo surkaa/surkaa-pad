@@ -151,7 +151,7 @@ pub async fn add_attachment(
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
-        let url = get_full_attachment_url(id, &attachment, &client)?;
+        let url = get_full_attachment_url(id, &attachment, &client).await?;
 
         Ok::<(AttachmentMeta, String), AttachmentError>((attachment, url))
     };
@@ -266,7 +266,7 @@ pub async fn toggle_attachment_encryption(
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
-        let url = get_full_attachment_url(id, &new_meta, &client)?;
+        let url = get_full_attachment_url(id, &new_meta, &client).await?;
         Ok((new_meta, url))
     };
 
@@ -399,7 +399,7 @@ pub async fn rotate_image_attachment(
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
-        let url = get_full_attachment_url(id, &new_meta, &client)?;
+        let url = get_full_attachment_url(id, &new_meta, &client).await?;
         Ok((new_meta, url))
     };
 

@@ -186,7 +186,7 @@ async fn process_attachment(
         .map_err(|e| ProtocolError::Internal(e.to_string()))
 }
 
-pub fn get_full_attachment_url(
+pub async fn get_full_attachment_url(
     id: &str,
     attachment: &AttachmentMeta,
     client: &OssClient,
@@ -203,7 +203,7 @@ pub fn get_full_attachment_url(
     } else {
         // TODO 考虑针对未加密的附件也尝试访问缓存
         let key = remote_attachments_key(id, &attachment.filename);
-        let url = client.direct_url(&key)?;
+        let url = client.direct_url(&key).await?;
         Ok(url)
     }
 }
