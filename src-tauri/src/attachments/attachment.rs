@@ -22,7 +22,7 @@ use std::sync::{Arc, LazyLock};
 use tokio::sync::Mutex;
 
 // 添加附件的锁
-static DIARY_ALLOCATORS: LazyLock<DashMap<String, Arc<Mutex<HashSet<u32>>>>> =
+pub(crate) static DIARY_ALLOCATORS: LazyLock<DashMap<String, Arc<Mutex<HashSet<u32>>>>> =
     LazyLock::new(DashMap::new);
 
 // 删除附件的互斥锁
