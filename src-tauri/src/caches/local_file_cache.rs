@@ -20,6 +20,54 @@ pub struct SaveHandle {
     state: Arc<Mutex<WriterState>>,
 }
 
+/// 分片保存句柄，支持逐块写入数据
+pub struct ChunkedSaveHandle {
+    state: Arc<Mutex<WriterState>>,
+}
+
+impl ChunkedSaveHandle {
+    /// 写入单个数据块
+    pub async fn write_chunk(&self, data: &[u8]) -> Result<(), CacheError> {
+        let mut guard = self.state.lock().await;
+        if guard.finalized {
+            return Err(CacheError::AlreadyFinalized);
+        }
+        if let Some(ref mut file) = guard.file {
+            file.write_all(data).await?;
+        } else {
+            return Err(CacheError::FileOrContextMissing);
+        }
+        Ok(())
+    }
+
+    /// 完成缓存：同步文件、重命名、写入 MD5
+    pub async fn finalize(self, md5: &str) -> Result<(), CacheError> {
+        let mut guard = self.state.lock().await;
+        if guard.finalized {
+            return Err(CacheError::AlreadyFinalized);
+        }
+        guard.finalized = true;
+
+        if let Some(file) = guard.file.take() {
+            file.sync_all().await?;
+            tokio::fs::rename(&guard.tmp_path, &guard.data_path).await?;
+            tokio::fs::write(&guard.md5_path, md5).await?;
+            Ok(())
+        } else {
+            Err(CacheError::FileOrContextMissing)
+        }
+    }
+
+    /// 放弃缓存：直接删除临时文件
+    pub async fn abort(self) {
+        let mut guard = self.state.lock().await;
+        if !guard.finalized {
+            let _ = tokio::fs::remove_file(&guard.tmp_path).await;
+            guard.finalized = true;
+        }
+    }
+}
+
 impl SaveHandle {
     /// 完成缓存：同步文件、重命名、写入 MD5
     /// 如果流过程中发生过错误，则会删除临时文件并返回错误
@@ -176,6 +224,29 @@ impl LocalFileCache {
             .await?;
 
         Ok(())
+    }
+
+    /// 分片保存：返回分片句柄，支持逐块写入
+    pub async fn begin_chunked_save(
+        &self,
+        key: &str,
+    ) -> Result<ChunkedSaveHandle, CacheError> {
+        let (data_path, md5_path) = self.get_path(key);
+        Self::ensure_parent_dir(&data_path).await?;
+
+        let tmp_path = data_path.with_extension(format!("{}{}", DATA_FILE_SUFFIX, TMP_FILE_SUFFIX));
+        let file = tokio::fs::File::create(&tmp_path).await?;
+
+        let state = Arc::new(Mutex::new(WriterState {
+            file: Some(file),
+            tmp_path,
+            data_path,
+            md5_path,
+            error_occurred: false,
+            finalized: false,
+        }));
+
+        Ok(ChunkedSaveHandle { state })
     }
 
     /// 流式保存：返回包装后的流和完成句柄

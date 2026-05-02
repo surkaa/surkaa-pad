@@ -80,6 +80,19 @@ impl Crypto {
         Ok((mapped_stream, nonce.to_vec()))
     }
 
+    /// 创建独立的 CTR cipher 实例，用于分片加密
+    /// 返回 (cipher, nonce_bytes)，调用方通过 cipher.apply_keystream 逐块加密
+    pub fn create_ctr_cipher(&self) -> Result<(Aes256Ctr, Vec<u8>), CryptoError> {
+        let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
+        let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
+
+        let mut nonce = [0u8; CTR_NONCE_LEN];
+        OsRng.fill_bytes(&mut nonce);
+
+        let cipher = Aes256Ctr::new(dek.as_ref().into(), (&nonce).into());
+        Ok((cipher, nonce.to_vec()))
+    }
+
     /// 使用CTR流式解密
     pub fn decrypt_streaming(
         &self,

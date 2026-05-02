@@ -322,4 +322,72 @@ impl OssClient {
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
         Ok(url)
     }
+
+    /// 初始化分片上传，返回 upload_id
+    pub async fn initiate_multipart_upload(
+        &self,
+        key: &str,
+        content_type: &str,
+    ) -> Result<String, ObjectError> {
+        let bucket = self.inner()?;
+        let resp = bucket
+            .initiate_multipart_upload(key, content_type)
+            .await
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        Ok(resp.upload_id)
+    }
+
+    /// 上传单个分片，返回 (etag, part_number)
+    pub async fn upload_part(
+        &self,
+        key: &str,
+        part_number: u32,
+        upload_id: &str,
+        data: Vec<u8>,
+        content_type: &str,
+    ) -> Result<(String, u32), ObjectError> {
+        let bucket = self.inner()?;
+        let part = bucket
+            .put_multipart_chunk(data, key, part_number, upload_id, content_type)
+            .await
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        let etag = part.etag.trim_matches('"').to_string();
+        Ok((etag, part.part_number))
+    }
+
+    /// 完成分片上传，返回 composite ETag
+    pub async fn complete_multipart_upload(
+        &self,
+        key: &str,
+        upload_id: &str,
+        parts: Vec<(String, u32)>,
+    ) -> Result<String, ObjectError> {
+        let bucket = self.inner()?;
+        let s3_parts: Vec<s3::serde_types::Part> = parts
+            .into_iter()
+            .map(|(etag, part_number)| s3::serde_types::Part { etag, part_number })
+            .collect();
+        bucket
+            .complete_multipart_upload(key, upload_id, s3_parts)
+            .await
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        // HEAD 获取 composite ETag（格式为 "hash-N"）
+        let (result, _) = bucket.head_object(key).await
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        Ok(result.e_tag.unwrap_or_default().trim_matches('"').to_string())
+    }
+
+    /// 取消分片上传
+    pub async fn abort_multipart_upload(
+        &self,
+        key: &str,
+        upload_id: &str,
+    ) -> Result<(), ObjectError> {
+        let bucket = self.inner()?;
+        bucket
+            .abort_upload(key, upload_id)
+            .await
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        Ok(())
+    }
 }
