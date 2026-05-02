@@ -25,6 +25,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_fs::{FilePath, FsExt, OpenOptions};
+use tauri_plugin_log::log;
 
 /// 给日记添加附件
 /// # Arguments
@@ -564,6 +565,7 @@ pub async fn cmd_finish_chunked_upload(
     );
 
     // 完成 S3 分片上传
+    let parts_count = upload.parts.len();
     let etag = client
         .complete_multipart_upload(&upload.key, &upload.upload_id, upload.parts)
         .await
@@ -586,11 +588,13 @@ pub async fn cmd_finish_chunked_upload(
         pending_ids.remove(&upload.allocated_id);
     }
 
+    log::info!("[chunked_upload] complete: key={}, parts={}, etag={}, total_size={}, uploaded_bytes={}", upload.key, parts_count, etag, upload.total_size, upload.uploaded_bytes);
+
     // 构建附件元数据
     let attachment = AttachmentMeta {
         filename: upload.filename.clone(),
         mimetype: upload.mimetype,
-        size: upload.total_size,
+        size: if upload.total_size > 0 { upload.total_size } else { upload.uploaded_bytes },
         nonce: upload.nonce,
         encrypted: upload.encrypted,
         algorithm: Ctr,

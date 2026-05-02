@@ -6,6 +6,7 @@ use futures_util::TryStreamExt;
 use serde::Serialize;
 use s3::Bucket;
 use std::sync::{Arc, RwLock};
+use tauri_plugin_log::log;
 
 /// 包装 rust-s3 的 HeadObjectResult，保持外部 API 字段名不变
 #[derive(Debug, Clone, Serialize)]
@@ -372,8 +373,9 @@ impl OssClient {
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
         // HEAD 获取 composite ETag（格式为 "hash-N"）
-        let (result, _) = bucket.head_object(key).await
+        let (result, status) = bucket.head_object(key).await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        log::info!("[oss] HEAD after complete: key={}, status={}, etag_raw={:?}, content_length={:?}", key, status, result.e_tag, result.content_length);
         Ok(result.e_tag.unwrap_or_default().trim_matches('"').to_string())
     }
 
