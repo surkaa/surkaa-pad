@@ -369,33 +369,6 @@ async cmdUpdateAttachmentFilename(id: string, oldFilename: string, newFilename: 
 }
 },
 /**
- * 取消任务
- */
-async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_cancel_task", { cancelToken }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async cmdCleanCacheFile() : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_clean_cache_file") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_clean_unused_file") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * 初始化分片上传
  */
 async cmdStartChunkedUpload(id: string, filename: string, mimetype: string, encrypted: boolean, totalSize: number) : Promise<Result<ChunkedUploadStartResult, AppError>> {
@@ -438,6 +411,33 @@ async cmdAbortChunkedUpload(uploadToken: string) : Promise<Result<null, AppError
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * 取消任务
+ */
+async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_cancel_task", { cancelToken }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdCleanCacheFile() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_clean_cache_file") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_clean_unused_file") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -466,6 +466,9 @@ export type AttachmentProcessEvent = { event: "started" } |
  * 不返回数据但仍成功的场景
  */
 { event: "completedWithoutData" } | { event: "error"; data: string }
+export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
+export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
+export type ChunkedUploadStartResult = { uploadToken: string; attachmentFilename: string; nonce: number[] | null }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行
@@ -478,9 +481,6 @@ attachments: AttachmentMeta[] }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type TAURI_CHANNEL<TSend> = null
-export type ChunkedUploadStartResult = { uploadToken: string; attachmentFilename: string; nonce?: number[] | null }
-export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
-export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
 
 /** tauri-specta globals **/
 
