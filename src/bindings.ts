@@ -394,6 +394,50 @@ async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * 初始化分片上传
+ */
+async cmdStartChunkedUpload(id: string, filename: string, mimetype: string, encrypted: boolean, totalSize: number) : Promise<Result<ChunkedUploadStartResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_start_chunked_upload", { id, filename, mimetype, encrypted, totalSize }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 上传单个分片
+ */
+async cmdUploadChunk(uploadToken: string, chunkIndex: number, data: number[]) : Promise<Result<ChunkedUploadChunkResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_upload_chunk", { uploadToken, chunkIndex, data }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 完成分片上传
+ */
+async cmdFinishChunkedUpload(uploadToken: string) : Promise<Result<ChunkedUploadFinishResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_finish_chunked_upload", { uploadToken }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 取消分片上传
+ */
+async cmdAbortChunkedUpload(uploadToken: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_abort_chunked_upload", { uploadToken }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -434,6 +478,9 @@ attachments: AttachmentMeta[] }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type TAURI_CHANNEL<TSend> = null
+export type ChunkedUploadStartResult = { uploadToken: string; attachmentFilename: string; nonce?: number[] | null }
+export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
+export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
 
 /** tauri-specta globals **/
 

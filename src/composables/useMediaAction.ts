@@ -10,6 +10,8 @@ import TiptapEditor from "../components/TiptapEditor.vue";
 import api from "../utils/api.ts";
 import {formatError} from "../utils/formatError.ts";
 
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB (S3 最小分片大小)
+
 export interface UploadTask {
     filename: string;
     progress: number;
@@ -34,6 +36,7 @@ export function useMediaAction(
     const {currentDiaryAttachmentUrlMap} = storeToRefs(dataStore);
 
     const cancelTokens = new Set<string>();
+    const chunkedUploadTokens = new Set<string>();
 
     // 进度管理状态
     const uploadTaskMap = ref<Record<string, UploadTask>>({});
@@ -98,7 +101,7 @@ export function useMediaAction(
         }
     }
 
-    async function uploadMemoryAttachment(
+    async function uploadMemoryAttachmentChunked(
         filename: string,
         bytes: Uint8Array,
         mimetype: string,
@@ -109,14 +112,43 @@ export function useMediaAction(
         uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
         showUploadDialog.value = true;
 
-        const event = createUploadChannel(key, completedCallback);
+        let uploadToken: string | null = null;
         try {
-            // @ts-ignore
-            const res = await api.cmdAddAttachmentMemory(event, diaryId.value, bytes, mimetype, encrypted);
-            cancelTokens.add(res);
+            uploadTaskMap.value[key].status = 'uploading';
+
+            // 初始化分片上传
+            const startResult = await api.cmdStartChunkedUpload(
+                diaryId.value, filename, mimetype, encrypted, bytes.length
+            );
+            uploadToken = startResult.uploadToken;
+            chunkedUploadTokens.add(uploadToken);
+
+            // 逐片上传
+            const totalChunks = Math.ceil(bytes.length / CHUNK_SIZE);
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, bytes.length);
+                const chunk = Array.from(bytes.slice(start, end));
+
+                const chunkResult = await api.cmdUploadChunk(uploadToken, i, chunk);
+                uploadTaskMap.value[key].progress = chunkResult.uploadedBytes / chunkResult.totalBytes;
+            }
+
+            // 完成上传
+            const finishResult = await api.cmdFinishChunkedUpload(uploadToken);
+            uploadTaskMap.value[key].status = 'completed';
+            uploadTaskMap.value[key].progress = 1;
+            chunkedUploadTokens.delete(uploadToken);
+            uploadToken = null;
+            completedCallback?.(finishResult.attachment, finishResult.url);
         } catch (e) {
             uploadTaskMap.value[key].status = 'error';
-            console.error("调用 Rust 后端失败:", e);
+            console.error("分片上传失败:", e);
+            // 尝试取消服务端状态
+            if (uploadToken) {
+                chunkedUploadTokens.delete(uploadToken);
+                api.cmdAbortChunkedUpload(uploadToken).catch(() => {});
+            }
         }
     }
 
@@ -207,17 +239,26 @@ export function useMediaAction(
     }
 
     onUnmounted(async () => {
-        if (cancelTokens.size === 0) return;
+        const promises: Promise<any>[] = [];
 
-        const cancelPromises = Array.from(cancelTokens).map(token => api.cmdCancelTask(token));
-        const results = await Promise.allSettled(cancelPromises);
+        if (cancelTokens.size > 0) {
+            promises.push(...Array.from(cancelTokens).map(token => api.cmdCancelTask(token)));
+        }
+        if (chunkedUploadTokens.size > 0) {
+            promises.push(...Array.from(chunkedUploadTokens).map(token => api.cmdAbortChunkedUpload(token)));
+        }
 
-        for (const result of results) {
-            if (result.status === "rejected" || (result.status === "fulfilled" && (result.value as any)?.status === "error")) {
-                console.error("取消上传任务失败:", result);
+        if (promises.length > 0) {
+            const results = await Promise.allSettled(promises);
+            for (const result of results) {
+                if (result.status === "rejected" || (result.status === "fulfilled" && (result.value as any)?.status === "error")) {
+                    console.error("取消上传任务失败:", result);
+                }
             }
         }
+
         cancelTokens.clear();
+        chunkedUploadTokens.clear();
     });
 
     return {
@@ -231,7 +272,7 @@ export function useMediaAction(
 
             const virtualName = `Audio_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
 
-            await uploadMemoryAttachment(virtualName, data, mimetype, true, (att, url) => {
+            await uploadMemoryAttachmentChunked(virtualName, data, mimetype, true, (att, url) => {
                 if (!editorContentRef.value) {
                     console.error('编辑器内容引用未定义，无法插入音频节点');
                     return;
@@ -327,7 +368,7 @@ export function useMediaAction(
                     reader.onload = async () => {
                         const arrayBuffer = reader.result as ArrayBuffer;
                         const uint8Array = new Uint8Array(arrayBuffer);
-                        await uploadMemoryAttachment(file.name, uint8Array, file.type, false, (att, url) => {
+                        await uploadMemoryAttachmentChunked(file.name, uint8Array, file.type, false, (att, url) => {
                             if (!editorContentRef.value) {
                                 console.error('编辑器内容引用未定义，无法插入媒体节点');
                                 return;

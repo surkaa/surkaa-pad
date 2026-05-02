@@ -1,4 +1,4 @@
-use crate::caches::local_file_cache::ChunkedSaveHandle;
+use crate::caches::ChunkedSaveHandle;
 use crate::cryptos::crypto_types::Aes256Ctr;
 
 /// 分片上传的中间状态，存储在 AppState 的 DashMap 中

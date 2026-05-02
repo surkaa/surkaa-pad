@@ -10,13 +10,14 @@ use crate::attachments::attachment_types::{
 use crate::attachments::chunked_upload::ChunkedUploadState;
 use crate::attachments::{get_full_attachment_url, AttachmentMeta};
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
-use crate::diaries::get_diary;
+use crate::diaries::{get_diary, update_diary_attachment};
 use crate::error::AppError;
 use crate::state::AppState;
 use crate::storages::remote_attachments_key;
 use crate::stream::{create_mock_stream, file_to_stream};
 use crate::utils::id_generate::generate_descending_id;
 use crate::utils::{file_mimetype, file_size};
+use aes::cipher::StreamCipher;
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -355,7 +356,9 @@ pub async fn cmd_start_chunked_upload(
     total_size: u64,
 ) -> Result<ChunkedUploadStartResult, AppError> {
     let mimetype = if mimetype.is_empty() {
-        infer::get_from_filename(&filename)
+        infer::get_from_path(&filename)
+            .ok()
+            .flatten()
             .map(|t| t.mime_type().to_string())
             .unwrap_or("application/octet-stream".to_string())
     } else {
