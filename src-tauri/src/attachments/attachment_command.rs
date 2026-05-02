@@ -1,7 +1,6 @@
 use crate::attachments::attachment::{
     add_attachment, caching_attachment, delete_attachment, rotate_image_attachment,
     save_decrypt_attachment, toggle_attachment_encryption, update_attachment_filename,
-    DIARY_ALLOCATORS,
 };
 use crate::attachments::attachment_types::{
     AttachmentProcessEvent, ChunkedUploadChunkResult, ChunkedUploadFinishResult,
@@ -353,7 +352,7 @@ pub async fn cmd_start_chunked_upload(
     filename: String,
     mimetype: String,
     encrypted: bool,
-    total_size: u64,
+    total_size: f64,
 ) -> Result<ChunkedUploadStartResult, AppError> {
     let mimetype = if mimetype.is_empty() {
         infer::get_from_path(&filename)
@@ -373,7 +372,7 @@ pub async fn cmd_start_chunked_upload(
     );
 
     // MEX 算法分配附件 ID
-    let alloc_state = DIARY_ALLOCATORS.entry(id.clone()).or_default().clone();
+    let alloc_state = state.attachment_allocators().entry(id.clone()).or_default().clone();
     let allocated_id = {
         let mut pending_ids = alloc_state.lock().await;
         let diary = get_diary(&cache, &lfc, &crypto, &client, &id)
@@ -440,7 +439,7 @@ pub async fn cmd_start_chunked_upload(
         cipher,
         parts: Vec::new(),
         lfc_handle,
-        total_size,
+        total_size: total_size as u64,
         uploaded_bytes: 0,
         next_part_number: 1,
     };
@@ -576,7 +575,8 @@ pub async fn cmd_finish_chunked_upload(
     let _ = upload.lfc_handle.finalize(&etag).await;
 
     // 释放 MEX 占位
-    let alloc_state = DIARY_ALLOCATORS
+    let alloc_state = state
+        .attachment_allocators()
         .entry(upload.diary_id.clone())
         .or_default()
         .clone();
@@ -641,7 +641,8 @@ pub async fn cmd_abort_chunked_upload(
     upload.lfc_handle.abort().await;
 
     // 释放 MEX 占位
-    let alloc_state = DIARY_ALLOCATORS
+    let alloc_state = state
+        .attachment_allocators()
         .entry(upload.diary_id)
         .or_default()
         .clone();

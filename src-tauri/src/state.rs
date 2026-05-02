@@ -1,6 +1,8 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use dashmap::DashMap;
+use tokio::sync::Mutex;
 use crate::attachments::chunked_upload::ChunkedUploadState;
 use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::Crypto;
@@ -15,6 +17,8 @@ pub struct AppState {
     local_file_cache: LocalFileCache,
     task_pool: TaskPool,
     chunked_uploads: Arc<DashMap<String, ChunkedUploadState>>,
+    /// 每个日记的附件 ID 分配器（MEX 管理并发上传的序号占用）
+    attachment_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<u32>>>>>,
 }
 
 impl AppState {
@@ -30,6 +34,7 @@ impl AppState {
             diary_cache,
             task_pool,
             chunked_uploads: Arc::new(DashMap::new()),
+            attachment_allocators: Arc::new(DashMap::new()),
         }
     }
 
@@ -57,6 +62,10 @@ impl AppState {
         self.chunked_uploads.clone()
     }
 
+    pub fn attachment_allocators(&self) -> Arc<DashMap<String, Arc<Mutex<HashSet<u32>>>>> {
+        self.attachment_allocators.clone()
+    }
+
     #[cfg(test)]
     pub fn from_parts(
         crypto: Crypto,
@@ -70,6 +79,7 @@ impl AppState {
             local_file_cache,
             task_pool: TaskPool::new(),
             chunked_uploads: Arc::new(DashMap::new()),
+            attachment_allocators: Arc::new(DashMap::new()),
         }
     }
 }

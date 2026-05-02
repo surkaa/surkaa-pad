@@ -21,10 +21,6 @@ use std::io::{Cursor, Write};
 use std::sync::{Arc, LazyLock};
 use tokio::sync::Mutex;
 
-// 添加附件的锁
-pub(crate) static DIARY_ALLOCATORS: LazyLock<DashMap<String, Arc<Mutex<HashSet<u32>>>>> =
-    LazyLock::new(DashMap::new);
-
 // 删除附件的互斥锁
 static DELETE_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
 
@@ -72,7 +68,8 @@ pub async fn add_attachment(
     });
 
     let logic = async move {
-        let alloc_state = DIARY_ALLOCATORS.entry(id.to_string()).or_default().clone();
+        let allocators = state.attachment_allocators();
+        let alloc_state = allocators.entry(id.to_string()).or_default().clone();
         // 加锁获取模拟状态并执行 MEX 算法
         let allocated_id = {
             let mut pending_ids = alloc_state.lock().await;
