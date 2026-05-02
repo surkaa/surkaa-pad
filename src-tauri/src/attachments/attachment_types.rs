@@ -47,10 +47,8 @@ pub struct ChunkedUploadStartResult {
 pub struct ChunkedUploadChunkResult {
     pub part_number: u32,
     pub etag: String,
-    #[specta(type = f64)]
-    pub uploaded_bytes: u64,
-    #[specta(type = f64)]
-    pub total_bytes: u64,
+    pub uploaded_bytes: f64,
+    pub total_bytes: f64,
 }
 
 #[derive(Serialize, Type)]

@@ -535,8 +535,8 @@ pub async fn cmd_upload_chunk(
     Ok(ChunkedUploadChunkResult {
         part_number,
         etag,
-        uploaded_bytes,
-        total_bytes,
+        uploaded_bytes: uploaded_bytes as f64,
+        total_bytes: total_bytes as f64,
     })
 }
 
