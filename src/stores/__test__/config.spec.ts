@@ -138,6 +138,40 @@ describe('config store', () => {
             expect(ref.value).toBe('dark')
         })
 
+        it('notifies other instances in same window when setter writes', async () => {
+            const store = useConfigStore()
+            const refA = store.useTauriConfig('app-theme')
+            const refB = store.useTauriConfig('app-theme')
+
+            refA.value = 'dark'
+
+            await nextTick()
+            expect(refB.value).toBe('dark')
+        })
+
+        it('saveNormalConfig notifies useTauriConfig instances', async () => {
+            const store = useConfigStore()
+            const ref = store.useTauriConfig('app-theme')
+            expect(ref.value).toBe('system')
+
+            await store.saveNormalConfig('app-theme', 'light')
+
+            await nextTick()
+            expect(ref.value).toBe('light')
+        })
+
+        it('deleteConfig notifies useTauriConfig instances', async () => {
+            const store = useConfigStore()
+            const ref = store.useTauriConfig('app-theme')
+            ref.value = 'dark'
+            expect(ref.value).toBe('dark')
+
+            await store.deleteConfig('app-theme')
+
+            await nextTick()
+            expect(ref.value).toBe('system')
+        })
+
         it('reverts to default when key is removed in another window', async () => {
             const store = useConfigStore()
             const ref = store.useTauriConfig('app-theme')
@@ -170,11 +204,10 @@ describe('config store', () => {
 
         it('cleans up storage listener on scope dispose', () => {
             const scope = effectScope()
-            let ref: any
 
             scope.run(() => {
                 const store = useConfigStore()
-                ref = store.useTauriConfig('app-theme')
+                void store.useTauriConfig('app-theme')
             })
 
             // 获取 addEventListener 的 spy

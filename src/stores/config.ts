@@ -41,6 +41,31 @@ function readFromStorage<K extends ConfigKey>(key: K): ConfigMap[K] {
     }
 }
 
+/** 同窗口自定义事件名，解决 storage 事件不通知自身窗口的问题 */
+const SAME_WINDOW_EVENT = 'config:local-change';
+
+interface ConfigChangeDetail {
+    key: string;
+    newValue: string | null; // null = 已删除
+}
+
+function writeToStorage(key: ConfigKey, value: unknown) {
+    const sk = storageKey(key);
+    const json = JSON.stringify(value);
+    localStorage.setItem(sk, json);
+    window.dispatchEvent(new CustomEvent<ConfigChangeDetail>(SAME_WINDOW_EVENT, {
+        detail: { key: sk, newValue: json }
+    }));
+}
+
+function removeFromStorage(key: ConfigKey) {
+    const sk = storageKey(key);
+    localStorage.removeItem(sk);
+    window.dispatchEvent(new CustomEvent<ConfigChangeDetail>(SAME_WINDOW_EVENT, {
+        detail: { key: sk, newValue: null }
+    }));
+}
+
 /**
  * 从旧版 tauri-plugin-store 的 settings.json 迁移到 localStorage。
  * 只执行一次，迁移成功后在 localStorage 中设置标记。
@@ -83,7 +108,7 @@ export const useConfigStore = defineStore('config', () => {
 
     async function saveNormalConfig<K extends ConfigKey>(key: K, value: ConfigMap[K]) {
         await ensureMigrated();
-        localStorage.setItem(storageKey(key), JSON.stringify(value));
+        writeToStorage(key, value);
     }
 
     async function getNormalConfig<K extends ConfigKey>(key: K): Promise<ConfigMap[K]> {
@@ -107,43 +132,54 @@ export const useConfigStore = defineStore('config', () => {
                     val = newValue;
                     trigger();
                     if (!isSyncing) {
-                        localStorage.setItem(storageKey(key), JSON.stringify(newValue));
+                        writeToStorage(key, newValue);
                     }
                 }
             };
         });
 
-        // 跨窗口同步
+        function handleChange(newValue: string | null) {
+            isSyncing = true;
+            if (newValue === null) {
+                val = DEFAULT_CONFIG[key];
+            } else {
+                try {
+                    val = JSON.parse(newValue) as ConfigMap[K];
+                } catch {
+                    val = DEFAULT_CONFIG[key];
+                }
+            }
+            triggerRef?.();
+            isSyncing = false;
+        }
+
+        // 跨窗口同步（storage 事件只在其他窗口触发）
         const onStorage = (e: StorageEvent) => {
             if (e.key === storageKey(key)) {
-                isSyncing = true;
-                if (e.newValue === null) {
-                    val = DEFAULT_CONFIG[key];
-                } else {
-                    try {
-                        val = JSON.parse(e.newValue) as ConfigMap[K];
-                    } catch {
-                        val = DEFAULT_CONFIG[key];
-                    }
-                }
-                triggerRef?.();
-                isSyncing = false;
+                handleChange(e.newValue);
             }
         };
         window.addEventListener('storage', onStorage);
 
+        // 同窗口同步（storage 事件不通知自身窗口，用自定义事件弥补）
+        const onLocalChange = (e: Event) => {
+            const detail = (e as CustomEvent<ConfigChangeDetail>).detail;
+            if (detail.key === storageKey(key)) {
+                handleChange(detail.newValue);
+            }
+        };
+        window.addEventListener(SAME_WINDOW_EVENT, onLocalChange);
+
         onScopeDispose(() => {
             window.removeEventListener('storage', onStorage);
+            window.removeEventListener(SAME_WINDOW_EVENT, onLocalChange);
         });
 
         // 迁移完成后，用迁移来的值覆盖默认值（如果有变化）
         ensureMigrated().then(() => {
             const current = readFromStorage(key);
             if (JSON.stringify(current) !== JSON.stringify(val)) {
-                isSyncing = true;
-                val = current;
-                triggerRef?.();
-                isSyncing = false;
+                handleChange(JSON.stringify(current));
             }
         });
 
@@ -153,7 +189,7 @@ export const useConfigStore = defineStore('config', () => {
     async function deleteConfig(...keys: ConfigKey[]): Promise<void> {
         await ensureMigrated();
         for (const key of keys) {
-            localStorage.removeItem(storageKey(key));
+            removeFromStorage(key);
         }
     }
 
