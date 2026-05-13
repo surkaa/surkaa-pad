@@ -219,6 +219,7 @@ onBeforeUnmount(() => {
 
 defineExpose({
   editor,
+  focusEnd: () => editor.value?.commands.focus('end'),
   insertImage: (id: string) => (editor.value?.chain().focus() as any).insertImage({ id, src: props.attachmentMap[id] || '' }).run(),
   insertVideo: (id: string) => (editor.value?.chain().focus() as any).insertVideo({ id, src: props.attachmentMap[id] || '' }).run(),
   insertAudio: (id: string) => (editor.value?.chain().focus() as any).insertAudio({ id, src: props.attachmentMap[id] || '' }).run(),

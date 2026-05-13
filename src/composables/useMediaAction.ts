@@ -1,6 +1,6 @@
 import {Channel} from "@tauri-apps/api/core";
 import {AttachmentMeta, AttachmentProcessEvent} from "../bindings.ts";
-import {computed, onUnmounted, Ref, ref} from "vue";
+import {computed, nextTick, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {useQuasar} from "quasar";
 import {v4 as uuidv4} from "uuid";
@@ -9,6 +9,7 @@ import {storeToRefs} from "pinia";
 import TiptapEditor from "../components/TiptapEditor.vue";
 import api from "../utils/api.ts";
 import {formatError} from "../utils/formatError.ts";
+import {promisifyUpload} from "../utils/batchUpload";
 
 const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB (S3 最小分片大小)
 
@@ -49,7 +50,7 @@ export function useMediaAction(
         return uploadTasks.value.every(task => task.status === 'completed' || task.status === 'error');
     });
 
-    function createUploadChannel(key: string, onSuccess?: OnAttachmentProcessSuccess) {
+    function createUploadChannel(key: string, onSuccess?: OnAttachmentProcessSuccess, onError?: (errorMsg: string) => void) {
         const event = new Channel<AttachmentProcessEvent>();
         event.onmessage = (msg) => {
             const task = uploadTaskMap.value[key];
@@ -75,6 +76,7 @@ export function useMediaAction(
                 case "error":
                     task.status = 'error';
                     $q.notify({type: 'negative', message: `${task.filename} 上传失败: ${msg.data}`});
+                    onError?.(msg.data);
                     break;
             }
         };
@@ -84,13 +86,14 @@ export function useMediaAction(
     async function uploadAttachment(
         accessStr: string,
         encrypted: boolean,
-        completedCallback?: (meta: AttachmentMeta, url: string) => void
+        completedCallback?: (meta: AttachmentMeta, url: string) => void,
+        errorCallback?: (errorMsg: string) => void
     ) {
         const rawName = accessStr.split(/[\\/]/).pop() || "未知文件";
         const key = uuidv4();
         uploadTaskMap.value[key] = {filename: rawName, progress: 0, status: 'pending'};
 
-        const event = createUploadChannel(key, completedCallback);
+        const event = createUploadChannel(key, completedCallback, errorCallback);
 
         try {
             const res = await api.cmdAddAttachment(event, diaryId.value, accessStr, encrypted);
@@ -98,6 +101,7 @@ export function useMediaAction(
         } catch (e) {
             uploadTaskMap.value[key].status = 'error';
             console.error("调用 Rust 后端失败:", e);
+            errorCallback?.(String(e));
         }
     }
 
@@ -106,7 +110,8 @@ export function useMediaAction(
         bytes: Uint8Array,
         mimetype: string,
         encrypted: boolean,
-        completedCallback?: (meta: AttachmentMeta, url: string) => void
+        completedCallback?: (meta: AttachmentMeta, url: string) => void,
+        errorCallback?: (errorMsg: string) => void
     ) {
         const key = uuidv4();
         uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
@@ -144,6 +149,7 @@ export function useMediaAction(
         } catch (e) {
             uploadTaskMap.value[key].status = 'error';
             console.error("分片上传失败:", e);
+            errorCallback?.(String(e));
             // 尝试取消服务端状态
             if (uploadToken) {
                 chunkedUploadTokens.delete(uploadToken);
@@ -174,24 +180,31 @@ export function useMediaAction(
         console.log('选中文件:', accessStrArr);
         if (!accessStrArr) return;
 
-        const uploads = accessStrArr.map(accessStr =>
-            uploadAttachment(accessStr, encrypted, (att, url) => {
-                if (!editorContentRef.value) {
-                    console.error('编辑器内容引用未定义，无法插入媒体节点');
-                    return;
-                }
-                if (!nodeType) {
-                    editorContentRef.value.insertFile(att.filename);
-                    return;
-                }
-                currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                if (nodeType === 'img') editorContentRef.value.insertImage(att.filename);
-                else if (nodeType === 'video') editorContentRef.value.insertVideo(att.filename);
-                else if (nodeType === 'audio') editorContentRef.value.insertAudio(att.filename);
-            })
-        );
         showUploadDialog.value = true;
-        await Promise.allSettled(uploads);
+
+        const results = await Promise.all(accessStrArr.map(accessStr =>
+            promisifyUpload<{ meta: AttachmentMeta; url: string }>((onSuccess, onError) => {
+                uploadAttachment(accessStr, encrypted,
+                    (meta, url) => onSuccess({ meta, url }),
+                    onError
+                );
+            })
+        ));
+
+        for (const item of results) {
+            if (!item || !editorContentRef.value) continue;
+            const { meta, url } = item;
+            editorContentRef.value.focusEnd();
+            if (!nodeType) {
+                editorContentRef.value.insertFile(meta.filename);
+            } else {
+                currentDiaryAttachmentUrlMap.value[meta.filename] = url;
+                if (nodeType === 'img') editorContentRef.value.insertImage(meta.filename);
+                else if (nodeType === 'video') editorContentRef.value.insertVideo(meta.filename);
+                else if (nodeType === 'audio') editorContentRef.value.insertAudio(meta.filename);
+            }
+            await nextTick();
+        }
     }
 
     async function performAttachmentOperation<Args extends any[]>(
@@ -362,40 +375,48 @@ export function useMediaAction(
             console.log('粘贴的文件列表:', files.length);
             showUploadDialog.value = true;
             uploadTaskMap.value = {};
-            const uploads = Array.from(files).map(file => {
-                return new Promise<void>((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = async () => {
-                        const arrayBuffer = reader.result as ArrayBuffer;
-                        const uint8Array = new Uint8Array(arrayBuffer);
-                        await uploadMemoryAttachmentChunked(file.name, uint8Array, file.type, false, (att, url) => {
-                            if (!editorContentRef.value) {
-                                console.error('编辑器内容引用未定义，无法插入媒体节点');
-                                return;
-                            }
-                            if (file.type.startsWith('image/')) {
-                                currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                                editorContentRef.value.insertImage(att.filename);
-                            } else if (file.type.startsWith('audio/')) {
-                                currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                                editorContentRef.value.insertAudio(att.filename);
-                            } else if (file.type.startsWith('video/')) {
-                                currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                                editorContentRef.value.insertVideo(att.filename);
-                            } else {
-                                editorContentRef.value.insertFile(att.filename);
-                            }
-                            resolve();
-                        });
-                    };
-                    reader.onerror = () => {
-                        $q.notify({type: 'negative', message: `${file.name} 读取失败`});
-                        resolve();
-                    };
-                    reader.readAsArrayBuffer(file);
-                });
-            });
-            await Promise.allSettled(uploads);
+
+            const results = await Promise.all(Array.from(files).map(file => {
+                let nodeKind: 'image' | 'audio' | 'video' | 'file';
+                if (file.type.startsWith('image/')) nodeKind = 'image';
+                else if (file.type.startsWith('audio/')) nodeKind = 'audio';
+                else if (file.type.startsWith('video/')) nodeKind = 'video';
+                else nodeKind = 'file';
+
+                return promisifyUpload<{ nodeKind: typeof nodeKind; meta: AttachmentMeta; url: string }>(
+                    (onSuccess, onError) => {
+                        const reader = new FileReader();
+                        reader.onload = async () => {
+                            const arrayBuffer = reader.result as ArrayBuffer;
+                            const uint8Array = new Uint8Array(arrayBuffer);
+                            await uploadMemoryAttachmentChunked(file.name, uint8Array, file.type, false,
+                                (meta, url) => onSuccess({ nodeKind, meta, url }),
+                                () => onError()
+                            );
+                        };
+                        reader.onerror = () => {
+                            $q.notify({type: 'negative', message: `${file.name} 读取失败`});
+                            onError();
+                        };
+                        reader.readAsArrayBuffer(file);
+                    }
+                );
+            }));
+
+            for (const item of results) {
+                if (!item || !editorContentRef.value) continue;
+                const { nodeKind, meta, url } = item;
+                editorContentRef.value.focusEnd();
+                if (nodeKind === 'file') {
+                    editorContentRef.value.insertFile(meta.filename);
+                } else {
+                    currentDiaryAttachmentUrlMap.value[meta.filename] = url;
+                    if (nodeKind === 'image') editorContentRef.value.insertImage(meta.filename);
+                    else if (nodeKind === 'audio') editorContentRef.value.insertAudio(meta.filename);
+                    else if (nodeKind === 'video') editorContentRef.value.insertVideo(meta.filename);
+                }
+                await nextTick();
+            }
         },
     };
 }
