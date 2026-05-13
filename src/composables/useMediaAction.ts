@@ -26,6 +26,7 @@ const AUDIO_TYPES = ['mp3', 'wav', 'ogg', 'flac', 'aac'];
 const VIDEO_TYPES = ['mp4', 'avi', 'mov', 'mkv', 'webm'];
 
 // TODO 给那个弹窗增加取消功能、显示错误的功能，同时禁用页面返回避免直接取消。
+// TODO 拆分 genericBatchUpload / pasteAttachments 中的上传与插入逻辑，让顺序保证和插入行为可独立单测。
 export function useMediaAction(
     diaryId: Ref<string>,
     editorDomRef: Ref<HTMLElement | undefined>,
