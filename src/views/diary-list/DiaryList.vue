@@ -69,7 +69,7 @@ async function loadDiarySummer(id: string) {
     const summary = await api.cmdGetDiarySummary(id);
     dataStore.insertNewDiary(summary);
   } catch (e) {
-    console.error(`请求日记 ${id} 摘要失败:`, e);
+    console.error(`请求日记 ${id} 摘要失败:`, JSON.stringify(e), e);
   }
 }
 

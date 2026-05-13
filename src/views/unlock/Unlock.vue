@@ -189,28 +189,35 @@ async function saveConfigAndLogin() {
       return;
     }
     console.log('使用快速配置：', quickConfig.value);
-    const lines = quickConfig.value.split('\n').filter(line => line.includes('='));
-    lines.forEach(line => {
-      const [key, value] = line.split('=').map(s => s.trim());
-      switch (key) {
-        case 'ALIYUN_KEY':
-          ossConfig.value.akid = value;
-          break;
-        case 'ALIYUN_SECRET':
-          ossConfig.value.aks = value;
-          break;
-        case 'ALIYUN_BUCKET_NAME':
-          ossConfig.value.bucket = value;
-          break;
-        case 'ALIYUN_ENDPOINT':
-          ossConfig.value.endpoint = value;
-          break;
-        default:
-          console.warn('未知的配置项：', key);
-          loading.value = false;
-          return;
+    // 去掉所有 \r，然后按字段名 = 定位提取值，不依赖换行符
+    const raw = quickConfig.value.replace(/\r/g, '');
+    const KEYS = ['ALIYUN_KEY', 'ALIYUN_SECRET', 'ALIYUN_BUCKET_NAME', 'ALIYUN_ENDPOINT'] as const;
+    for (let i = 0; i < KEYS.length; i++) {
+      const prefix = KEYS[i] + '=';
+      const start = raw.indexOf(prefix);
+      if (start === -1) continue;
+      const valStart = start + prefix.length;
+      // 下一个 key 的位置，没有则取到末尾
+      let valEnd = raw.length;
+      for (let j = i + 1; j < KEYS.length; j++) {
+        const nextIdx = raw.indexOf(KEYS[j] + '=', valStart);
+        if (nextIdx !== -1) { valEnd = nextIdx; break; }
       }
-    });
+      const value = raw.slice(valStart, valEnd).replace(/\n/g, '').trim();
+      switch (KEYS[i]) {
+        case 'ALIYUN_KEY': ossConfig.value.akid = value; break;
+        case 'ALIYUN_SECRET': ossConfig.value.aks = value; break;
+        case 'ALIYUN_BUCKET_NAME': ossConfig.value.bucket = value; break;
+        case 'ALIYUN_ENDPOINT': ossConfig.value.endpoint = value; break;
+      }
+    }
+
+    const { akid, aks, bucket, endpoint } = ossConfig.value;
+    if (!akid || !aks || !bucket || !endpoint) {
+      $q.notify({ type: 'warning', message: '快速配置解析后仍有空字段，请检查内容格式是否正确' });
+      loading.value = false;
+      return;
+    }
   }
 
   try {
@@ -226,17 +233,24 @@ async function saveConfigAndLogin() {
   try {
     encryptedConfig.value = await api.cmdEncryptData(configJson);
     await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig.value);
-    $q.notify({type: 'positive', message: "保存成功，请登录以验证主密码。"});
   } catch (e) {
     $q.notify({type: 'negative', message: `加密配置失败: ${formatError(e)}`});
-    return;
-  } finally {
     loading.value = false;
+    return;
   }
 
-  masterPassword.value = "";
-  ossConfig.value = {akid: '', aks: '', bucket: '', endpoint: ''};
-  pipeline.value = 'login';
+  // 直接验证 OSS 配置是否可用，跳过二次输入密码
+  if (!(await initOss())) {
+    // OSS 验证失败，清除已保存的配置让用户重试
+    await configStore.deleteConfig('encrypted_oss_config');
+    masterPassword.value = '';
+    loading.value = false;
+    return;
+  }
+
+  console.log('Setup & Unlock Successful');
+  setTimeoutForCloseApp();
+  await router.replace({name: 'DiaryList'});
 }
 
 async function initOss() {
