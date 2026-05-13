@@ -1,9 +1,10 @@
 import {defineStore} from "pinia";
-import {customRef, markRaw, onScopeDispose, Ref, ref} from "vue";
-import {Store} from "@tauri-apps/plugin-store";
+import {customRef, onScopeDispose, Ref} from "vue";
 import {DEFAULT_THEME, ThemeType} from "../types.ts";
-import {UnlistenFn} from "@tauri-apps/api/event";
+import {Store} from "@tauri-apps/plugin-store";
 
+const STORAGE_PREFIX = 'config:';
+const MIGRATION_KEY = 'config:migrated';
 const CONFIG_FILENAME = "settings.json";
 
 type ConfigMap = {
@@ -24,40 +25,104 @@ const DEFAULT_CONFIG = {
 } satisfies ConfigMap;
 
 type ConfigKey = keyof ConfigMap;
+const CONFIG_KEYS = Object.keys(DEFAULT_CONFIG) as ConfigKey[];
+
+function storageKey(key: ConfigKey): string {
+    return `${STORAGE_PREFIX}${key}`;
+}
+
+function readFromStorage<K extends ConfigKey>(key: K): ConfigMap[K] {
+    const raw = localStorage.getItem(storageKey(key));
+    if (raw === null) return DEFAULT_CONFIG[key];
+    try {
+        return JSON.parse(raw) as ConfigMap[K];
+    } catch {
+        return DEFAULT_CONFIG[key];
+    }
+}
+
+/** 同窗口自定义事件名，解决 storage 事件不通知自身窗口的问题 */
+const SAME_WINDOW_EVENT = 'config:local-change';
+
+interface ConfigChangeDetail {
+    key: string;
+    newValue: string | null; // null = 已删除
+}
+
+function writeToStorage(key: ConfigKey, value: unknown) {
+    const sk = storageKey(key);
+    const json = JSON.stringify(value);
+    localStorage.setItem(sk, json);
+    window.dispatchEvent(new CustomEvent<ConfigChangeDetail>(SAME_WINDOW_EVENT, {
+        detail: { key: sk, newValue: json }
+    }));
+}
+
+function removeFromStorage(key: ConfigKey) {
+    const sk = storageKey(key);
+    localStorage.removeItem(sk);
+    window.dispatchEvent(new CustomEvent<ConfigChangeDetail>(SAME_WINDOW_EVENT, {
+        detail: { key: sk, newValue: null }
+    }));
+}
+
+/**
+ * 从旧版 tauri-plugin-store 的 settings.json 迁移到 localStorage。
+ * 只执行一次，迁移成功后在 localStorage 中设置标记。
+ */
+async function migrateFromStore(): Promise<void> {
+    if (localStorage.getItem(MIGRATION_KEY)) return;
+
+    try {
+        const s = await Store.load(CONFIG_FILENAME);
+        const len = await s.length();
+        if (len === 0) {
+            localStorage.setItem(MIGRATION_KEY, 'true');
+            return;
+        }
+
+        for (const key of CONFIG_KEYS) {
+            const val = await s.get<ConfigMap[typeof key]>(key);
+            if (val !== null && val !== undefined) {
+                localStorage.setItem(storageKey(key), JSON.stringify(val));
+            }
+        }
+        localStorage.setItem(MIGRATION_KEY, 'true');
+        console.info('[config-store] 已从 settings.json 迁移配置到 localStorage');
+    } catch (e) {
+        console.warn('[config-store] 迁移配置失败，使用默认值:', e);
+        localStorage.setItem(MIGRATION_KEY, 'true');
+    }
+}
 
 export const useConfigStore = defineStore('config', () => {
-    let store = ref<Store>();
+    let migratePromise: Promise<void> | null = null;
 
-    async function initStore(): Promise<Store> {
-        if (store.value) return store.value;
-        const s = await Store.load(CONFIG_FILENAME);
-        store.value = markRaw(s);
-        return store.value;
+    function ensureMigrated(): Promise<void> {
+        if (migratePromise) return migratePromise;
+        migratePromise = migrateFromStore().finally(() => {
+            // 迁移失败也不阻塞后续读写，下次会重试
+        });
+        return migratePromise;
     }
 
     async function saveNormalConfig<K extends ConfigKey>(key: K, value: ConfigMap[K]) {
-        const s = await initStore();
-        await s.set(key, value);
-        await s.save();
+        await ensureMigrated();
+        writeToStorage(key, value);
     }
 
     async function getNormalConfig<K extends ConfigKey>(key: K): Promise<ConfigMap[K]> {
-        const s = await initStore();
-        const val = await s.get<ConfigMap[K]>(key);
-        if (val === null || val === undefined) {
-            return DEFAULT_CONFIG[key];
-        }
-        return val;
+        await ensureMigrated();
+        return readFromStorage(key);
     }
 
-    // Vue 3 响应式 Hook：自动双向同步 Tauri Store，自动在组件卸载时清理监听
     function useTauriConfig<K extends ConfigKey>(key: K): Ref<ConfigMap[K]> {
-        let val: ConfigMap[K] = DEFAULT_CONFIG[key];
-        let unlisten: UnlistenFn | null = null;
-        // 防抖标志，避免循环保存
+        let val: ConfigMap[K] = readFromStorage(key);
         let isSyncing = false;
+        let triggerRef: (() => void) | null = null;
 
-        const tauriRef = customRef((track, trigger) => {
+        const tauriRef = customRef<ConfigMap[K]>((track, trigger) => {
+            triggerRef = trigger;
             return {
                 get() {
                     track();
@@ -66,35 +131,55 @@ export const useConfigStore = defineStore('config', () => {
                 set(newValue) {
                     val = newValue;
                     trigger();
-                    // 如果不是来自底层的更新，则触发保存
                     if (!isSyncing) {
-                        saveNormalConfig(key, newValue).catch(console.error);
+                        writeToStorage(key, newValue);
                     }
                 }
             };
         });
 
-        // 异步初始化与监听
-        initStore().then(async (s) => {
-            const initial = await s.get<ConfigMap[K]>(key);
-            if (initial !== null && initial !== undefined) {
-                isSyncing = true;
-                tauriRef.value = initial;
-                isSyncing = false;
+        function handleChange(newValue: string | null) {
+            isSyncing = true;
+            if (newValue === null) {
+                val = DEFAULT_CONFIG[key];
+            } else {
+                try {
+                    val = JSON.parse(newValue) as ConfigMap[K];
+                } catch {
+                    val = DEFAULT_CONFIG[key];
+                }
             }
+            triggerRef?.();
+            isSyncing = false;
+        }
 
-            unlisten = await s.onKeyChange<ConfigMap[K]>(key, (newVal) => {
-                isSyncing = true;
-                tauriRef.value = newVal === null || newVal === undefined ? DEFAULT_CONFIG[key] : newVal;
-                isSyncing = false;
-            });
+        // 跨窗口同步（storage 事件只在其他窗口触发）
+        const onStorage = (e: StorageEvent) => {
+            if (e.key === storageKey(key)) {
+                handleChange(e.newValue);
+            }
+        };
+        window.addEventListener('storage', onStorage);
+
+        // 同窗口同步（storage 事件不通知自身窗口，用自定义事件弥补）
+        const onLocalChange = (e: Event) => {
+            const detail = (e as CustomEvent<ConfigChangeDetail>).detail;
+            if (detail.key === storageKey(key)) {
+                handleChange(detail.newValue);
+            }
+        };
+        window.addEventListener(SAME_WINDOW_EVENT, onLocalChange);
+
+        onScopeDispose(() => {
+            window.removeEventListener('storage', onStorage);
+            window.removeEventListener(SAME_WINDOW_EVENT, onLocalChange);
         });
 
-        // 核心：当前组件上下文销毁时，自动清理 Tauri 的 Event Listener
-        onScopeDispose(() => {
-            if (unlisten) {
-                unlisten();
-                unlisten = null;
+        // 迁移完成后，用迁移来的值覆盖默认值（如果有变化）
+        ensureMigrated().then(() => {
+            const current = readFromStorage(key);
+            if (JSON.stringify(current) !== JSON.stringify(val)) {
+                handleChange(JSON.stringify(current));
             }
         });
 
@@ -102,11 +187,10 @@ export const useConfigStore = defineStore('config', () => {
     }
 
     async function deleteConfig(...keys: ConfigKey[]): Promise<void> {
-        const s = await initStore();
+        await ensureMigrated();
         for (const key of keys) {
-            await s.delete(key);
+            removeFromStorage(key);
         }
-        await s.save();
     }
 
     return {
@@ -115,5 +199,4 @@ export const useConfigStore = defineStore('config', () => {
         useTauriConfig,
         deleteConfig
     }
-
 });
