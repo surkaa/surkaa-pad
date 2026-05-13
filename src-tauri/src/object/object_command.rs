@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::state::AppState;
 use tauri::State;
+use tauri_plugin_log::log;
 
 /// 初始化 OSS 客户端
 /// # Arguments
@@ -19,6 +20,9 @@ pub async fn cmd_init_oss_client(
     bucket: String,
     endpoint: String,
 ) -> Result<(), AppError> {
+    log::info!("[oss cmd] akid(len={}): {:?}", akid.len(), akid);
+    log::info!("[oss cmd] bucket(len={}): {:?}", bucket.len(), bucket);
+    log::info!("[oss cmd] endpoint(len={}): {:?}", endpoint.len(), endpoint);
     Ok(state
         .oss_client()
         .initialize(endpoint, akid, aks, bucket)?)

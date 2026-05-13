@@ -66,13 +66,21 @@ impl OssClient {
         sakey: String,
         bucket: String,
     ) -> Result<(), ObjectError> {
+        // 先打日志再 trim，保留原始值用于诊断
+        log::info!("[oss init] raw endpoint(len={}): {:?}", endpoint.len(), endpoint);
+        log::info!("[oss init] raw bucket(len={}): {:?}", bucket.len(), bucket);
+        log::info!("[oss init] raw akid(len={}): {:?}", akid.len(), akid);
+
         let endpoint = endpoint.trim().to_string();
         let akid = akid.trim().to_string();
         let sakey = sakey.trim().to_string();
         let bucket = bucket.trim().to_string();
 
-        log::info!("[oss init] endpoint(len={}): {:?}", endpoint.len(), endpoint);
-        log::info!("[oss init] bucket(len={}): {:?}", bucket.len(), bucket);
+        if endpoint.is_empty() || bucket.is_empty() || akid.is_empty() || sakey.is_empty() {
+            return Err(ObjectError::CreateFailed(
+                "OSS 配置不完整，请检查设置中是否已填写 AccessKey、Bucket 及 Endpoint".into()
+            ));
+        }
 
         let endpoint_url = if endpoint.starts_with("http") {
             endpoint
