@@ -108,7 +108,7 @@ async function onLoad(_index: number, done: (stop?: boolean) => void) {
     // 本次加载完成，可以准备下一次
     done(false);
   } catch (error) {
-    console.error('加载失败:', error);
+    console.error('加载失败:', JSON.stringify(error), error);
     done(true);
   } finally {
     isLoading.value = false;

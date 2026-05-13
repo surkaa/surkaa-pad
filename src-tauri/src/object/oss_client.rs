@@ -66,6 +66,14 @@ impl OssClient {
         sakey: String,
         bucket: String,
     ) -> Result<(), ObjectError> {
+        let endpoint = endpoint.trim().to_string();
+        let akid = akid.trim().to_string();
+        let sakey = sakey.trim().to_string();
+        let bucket = bucket.trim().to_string();
+
+        log::info!("[oss init] endpoint(len={}): {:?}", endpoint.len(), endpoint);
+        log::info!("[oss init] bucket(len={}): {:?}", bucket.len(), bucket);
+
         let endpoint_url = if endpoint.starts_with("http") {
             endpoint
         } else {
@@ -246,6 +254,7 @@ impl OssClient {
         next_token: NextToken,
     ) -> Result<(Vec<Object>, NextToken), ObjectError> {
         let bucket = self.inner()?;
+        log::info!("[oss list] prefix={:?}, token={:?}", prefix, next_token);
         let max_keys: Option<usize> = if cfg!(debug_assertions) { Some(10) } else { None };
         let (result, _) = bucket
             .list_page(
