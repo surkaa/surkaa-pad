@@ -121,6 +121,13 @@ impl OssClient {
         Ok(inner.bucket.clone())
     }
 
+    /// 重置客户端，清除内部状态（用于禁用远程存储时）
+    pub fn reset(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            *guard = None;
+        }
+    }
+
     #[cfg(test)]
     pub fn from_env() -> Self {
         dotenvy::dotenv().ok();

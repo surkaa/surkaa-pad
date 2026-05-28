@@ -8,7 +8,7 @@ use crate::attachments::attachment_types::{
     ChunkedUploadStartResult,
 };
 use crate::attachments::chunked_upload::ChunkedUploadState;
-use crate::attachments::{get_full_attachment_url, AttachmentMeta};
+use crate::attachments::AttachmentMeta;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
 use crate::diaries::{get_diary, update_diary_attachment};
 use crate::error::AppError;
@@ -132,12 +132,11 @@ pub async fn cmd_delete_attachment(
     id: &str,
     filename: String,
 ) -> Result<(), AppError> {
-    let client = state.oss_client();
+    let store = state.diary_store();
     Ok(delete_attachment(
         &state.diary_cache(),
-        &state.local_file_cache(),
         &state.crypto(),
-        &client,
+        &*store,
         id,
         filename,
     )
@@ -258,10 +257,9 @@ pub fn cmd_caching_attachment(
     id: String,
     filename: String,
 ) -> Result<String, AppError> {
-    let lfc = state.local_file_cache();
-    let client = state.oss_client();
+    let store = state.diary_store();
     Ok(state.task_pool().spawn(async move {
-        caching_attachment(&lfc, &client, Arc::new(event), &id, &filename).await;
+        caching_attachment(&*store, Arc::new(event), &id, &filename).await;
     })?)
 }
 
@@ -280,7 +278,8 @@ pub async fn cmd_save_decrypt_attachment(
     id: String,
     filename: String,
 ) -> Result<String, AppError> {
-    let diary = get_diary(&state.diary_cache(), &state.local_file_cache(), &state.crypto(), &state.oss_client(), &id).await?;
+    let store = state.diary_store();
+    let diary = get_diary(&state.diary_cache(), &state.crypto(), &*store, &id).await?;
     let attachment = diary
         .attachments
         .iter()
@@ -371,12 +370,12 @@ pub async fn cmd_start_chunked_upload(
         mimetype
     };
 
-    let (crypto, cache, lfc, client) = (
+    let (crypto, cache, store) = (
         state.crypto(),
         state.diary_cache(),
-        state.local_file_cache(),
-        state.oss_client(),
+        state.diary_store(),
     );
+    let lfc = state.local_file_cache();
 
     // 附件 ID / 文件名分配
     let use_original = cfg!(target_os = "windows") && !filename.trim().is_empty();
@@ -385,7 +384,7 @@ pub async fn cmd_start_chunked_upload(
     let (allocated_id, attachment_filename) = if use_original {
         // Windows 平台：使用原始文件名，冲突时追加 _1/_2 后缀去重
         let str_alloc_state = state.filename_allocators().entry(id.clone()).or_default().clone();
-        let diary = get_diary(&cache, &lfc, &crypto, &client, &id)
+        let diary = get_diary(&cache, &crypto, &*store, &id)
             .await
             .map_err(|e| AppError {
                 error_type: "attachment".into(),
@@ -407,7 +406,7 @@ pub async fn cmd_start_chunked_upload(
         // MEX 算法分配附件 ID
         let allocated_id = {
             let mut pending_ids = alloc_state.lock().await;
-            let diary = get_diary(&cache, &lfc, &crypto, &client, &id)
+            let diary = get_diary(&cache, &crypto, &*store, &id)
                 .await
                 .map_err(|e| AppError {
                     error_type: "attachment".into(),
@@ -441,14 +440,18 @@ pub async fn cmd_start_chunked_upload(
         (None, None)
     };
 
-    // 初始化 S3 分片上传
-    let upload_id = client
-        .initiate_multipart_upload(&key, &mimetype)
-        .await
-        .map_err(|e| AppError {
-            error_type: "oss".into(),
-            message: e.to_string(),
-        })?;
+    // 初始化 S3 分片上传（本地模式跳过）
+    let upload_id = if state.is_remote_enabled() {
+        state.oss_client()
+            .initiate_multipart_upload(&key, &mimetype)
+            .await
+            .map_err(|e| AppError {
+                error_type: "oss".into(),
+                message: e.to_string(),
+            })?
+    } else {
+        String::new()
+    };
 
     // 创建本地文件缓存句柄
     let lfc_handle = lfc.begin_chunked_save(&key).await.map_err(|e| AppError {
@@ -530,21 +533,26 @@ pub async fn cmd_upload_chunk(
         }
     }
 
-    // 上传分片到 S3
-    let (etag, _) = state
-        .oss_client()
-        .upload_part(
-            &upload.key,
-            part_number,
-            &upload.upload_id,
-            upload_data.clone(),
-            &upload.mimetype,
-        )
-        .await
-        .map_err(|e| AppError {
-            error_type: "oss".into(),
-            message: e.to_string(),
-        })?;
+    // 上传分片到 S3（本地模式跳过）
+    let etag = if state.is_remote_enabled() {
+        let (etag, _) = state
+            .oss_client()
+            .upload_part(
+                &upload.key,
+                part_number,
+                &upload.upload_id,
+                upload_data.clone(),
+                &upload.mimetype,
+            )
+            .await
+            .map_err(|e| AppError {
+                error_type: "oss".into(),
+                message: e.to_string(),
+            })?;
+        etag
+    } else {
+        String::new()
+    };
 
     // 写入本地缓存
     upload
@@ -589,22 +597,28 @@ pub async fn cmd_finish_chunked_upload(
         })?
         .1;
 
-    let (cache, lfc, crypto, client) = (
+    let (cache, crypto, store) = (
         state.diary_cache(),
-        state.local_file_cache(),
         state.crypto(),
-        state.oss_client(),
+        state.diary_store(),
     );
 
-    // 完成 S3 分片上传
-    let parts_count = upload.parts.len();
-    let etag = client
-        .complete_multipart_upload(&upload.key, &upload.upload_id, upload.parts)
-        .await
-        .map_err(|e| AppError {
-            error_type: "oss".into(),
-            message: e.to_string(),
-        })?;
+    // 完成 S3 分片上传（本地模式跳过）
+    let etag = if state.is_remote_enabled() {
+        let parts_count = upload.parts.len();
+        let etag = state.oss_client()
+            .complete_multipart_upload(&upload.key, &upload.upload_id, upload.parts)
+            .await
+            .map_err(|e| AppError {
+                error_type: "oss".into(),
+                message: e.to_string(),
+            })?;
+        log::info!("[chunked_upload] complete: key={}, parts={}, etag={}, total_size={}, uploaded_bytes={}", upload.key, parts_count, etag, upload.total_size, upload.uploaded_bytes);
+        etag
+    } else {
+        log::info!("[chunked_upload] complete (local): key={}, total_size={}, uploaded_bytes={}", upload.key, upload.total_size, upload.uploaded_bytes);
+        String::new()
+    };
 
     // 固化本地缓存
     let _ = upload.lfc_handle.finalize(&etag).await;
@@ -630,8 +644,6 @@ pub async fn cmd_finish_chunked_upload(
         drop(pending_ids);
     }
 
-    log::info!("[chunked_upload] complete: key={}, parts={}, etag={}, total_size={}, uploaded_bytes={}", upload.key, parts_count, etag, upload.total_size, upload.uploaded_bytes);
-
     // 构建附件元数据
     let attachment = AttachmentMeta {
         filename: upload.filename.clone(),
@@ -644,7 +656,7 @@ pub async fn cmd_finish_chunked_upload(
     };
 
     // 更新日记 manifest
-    update_diary_attachment(&cache, &lfc, &crypto, &client, &upload.diary_id, attachment.clone())
+    update_diary_attachment(&cache, &crypto, &*store, &upload.diary_id, attachment.clone())
         .await
         .map_err(|e| AppError {
             error_type: "attachment".into(),
@@ -652,7 +664,7 @@ pub async fn cmd_finish_chunked_upload(
         })?;
 
     // 获取附件 URL
-    let url = get_full_attachment_url(&upload.diary_id, &attachment, &client)
+    let url = store.get_attachment_url(&upload.diary_id, &attachment)
         .await
         .map_err(|e| AppError {
             error_type: "oss".into(),
@@ -678,11 +690,13 @@ pub async fn cmd_abort_chunked_upload(
         })?
         .1;
 
-    // 取消 S3 分片上传
-    let _ = state
-        .oss_client()
-        .abort_multipart_upload(&upload.key, &upload.upload_id)
-        .await;
+    // 取消 S3 分片上传（本地模式跳过）
+    if state.is_remote_enabled() {
+        let _ = state
+            .oss_client()
+            .abort_multipart_upload(&upload.key, &upload.upload_id)
+            .await;
+    }
 
     // 删除本地临时文件
     upload.lfc_handle.abort().await;

@@ -1,13 +1,10 @@
-use crate::attachments::attachment::get_attachment_stream;
-use crate::attachments::{AttachmentError, AttachmentMeta};
+use crate::attachments::AttachmentError;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
 use crate::cryptos::CryptoError;
 use crate::diaries::{get_diary, DiaryError};
-use crate::object::{ObjectError, OssClient};
+use crate::object::ObjectError;
 use crate::state::AppState;
-use crate::storages::remote_attachments_key;
 use crate::stream::collect_data_with_capacity;
-use chrono::Utc;
 use http_range_header::parse_range_header;
 use std::cmp::min;
 use tauri::http::header::{
@@ -94,10 +91,9 @@ async fn process_attachment(
     state: AppState,
     request: Request<Vec<u8>>,
 ) -> Result<Response<Vec<u8>>, ProtocolError> {
-    let client = state.oss_client();
     let cache = state.diary_cache();
-    let lfc = state.local_file_cache();
     let crypto = state.crypto();
+    let store = state.diary_store();
 
     // Slice Pattern Matching 路由硬解
     let path = request.uri().path().trim_start_matches('/');
@@ -111,7 +107,7 @@ async fn process_attachment(
         .map_err(|_| ProtocolError::BadRequest("Invalid URL encoding in filename"))?
         .into_owned();
 
-    let diary = get_diary(&cache, &lfc, &crypto, &client, id).await?;
+    let diary = get_diary(&cache, &crypto, &*store, id).await?;
 
     let attachment = diary
         .attachments
@@ -147,8 +143,8 @@ async fn process_attachment(
         None => (0, file_size.saturating_sub(1), false),
     };
 
-    let key = remote_attachments_key(id, &filename);
-    let (stream, _len) = get_attachment_stream(&key, &lfc, &client, Some((start, end)), attachment.etag.as_deref()).await?;
+    // 通过 store 获取附件流
+    let (stream, _len) = store.download_attachment(id, &filename, Some((start, end)), attachment.etag.as_deref()).await?;
 
     let stream = if attachment.encrypted {
         crypto.decrypt_streaming(stream, &attachment.nonce, start)?
@@ -184,26 +180,4 @@ async fn process_attachment(
     builder
         .body(data)
         .map_err(|e| ProtocolError::Internal(e.to_string()))
-}
-
-pub async fn get_full_attachment_url(
-    id: &str,
-    attachment: &AttachmentMeta,
-    client: &OssClient,
-) -> Result<String, ObjectError> {
-    // 对文件名进行 URL Encode
-    let encoded_filename = urlencoding::encode(&attachment.filename);
-
-    if attachment.encrypted {
-        let timestamp = Utc::now().timestamp();
-        Ok(format!(
-            "http://{}.localhost/{}/{}?t={}",
-            PROTOCOL_NAME, id, encoded_filename, timestamp
-        ))
-    } else {
-        // TODO 考虑针对未加密的附件也尝试访问缓存
-        let key = remote_attachments_key(id, &attachment.filename);
-        let url = client.direct_url(&key).await?;
-        Ok(url)
-    }
 }

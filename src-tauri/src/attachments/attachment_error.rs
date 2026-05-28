@@ -26,6 +26,9 @@ pub enum AttachmentError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("Diary error: {0}")]
+    Diary(#[from] crate::diaries::DiaryError),
+
 }
 
 impl From<AttachmentError> for crate::error::AppError {

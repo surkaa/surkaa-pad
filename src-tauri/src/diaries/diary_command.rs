@@ -22,11 +22,11 @@ pub async fn cmd_save_diary(
     state: State<'_, AppState>,
     content: &str,
 ) -> Result<(DiarySummary, String), AppError> {
+    let store = state.diary_store();
     Ok(save_diary(
         &state.diary_cache(),
-        &state.local_file_cache(),
         &state.crypto(),
-        &state.oss_client(),
+        &*store,
         content,
     )
     .await?)
@@ -40,7 +40,8 @@ pub async fn cmd_save_diary(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), AppError> {
-    Ok(delete_diary(&state.diary_cache(), &state.local_file_cache(), &state.oss_client(), id).await?)
+    let store = state.diary_store();
+    Ok(delete_diary(&state.diary_cache(), &*store, id).await?)
 }
 
 /// 更新日记的内容
@@ -56,11 +57,11 @@ pub async fn cmd_update_diary_content_only(
     id: &str,
     new_content: &str,
 ) -> Result<DiarySummary, AppError> {
+    let store = state.diary_store();
     Ok(update_diary_content_only(
         &state.diary_cache(),
-        &state.local_file_cache(),
         &state.crypto(),
-        &state.oss_client(),
+        &*store,
         id,
         new_content,
     )
@@ -79,7 +80,8 @@ pub async fn cmd_page_diary_ids(
     state: State<'_, AppState>,
     next_token: NextToken,
 ) -> Result<(Vec<String>, NextToken), AppError> {
-    Ok(page_diary_ids(&state.oss_client(), next_token).await?)
+    let store = state.diary_store();
+    Ok(page_diary_ids(&*store, next_token).await?)
 }
 
 /// 获取日记Summary
@@ -93,11 +95,11 @@ pub async fn cmd_get_diary_summary(
     state: State<'_, AppState>,
     id: &str,
 ) -> Result<DiarySummary, AppError> {
+    let store = state.diary_store();
     Ok(get_diary_summary(
         &state.diary_cache(),
-        &state.local_file_cache(),
         &state.crypto(),
-        &state.oss_client(),
+        &*store,
         id,
     )
     .await?)
@@ -114,11 +116,11 @@ pub async fn cmd_get_diary_content(
     state: State<'_, AppState>,
     id: &str,
 ) -> Result<(String, HashMap<String, String>), AppError> {
+    let store = state.diary_store();
     Ok(get_diary_content(
         &state.diary_cache(),
-        &state.local_file_cache(),
         &state.crypto(),
-        &state.oss_client(),
+        &*store,
         id,
     )
     .await?)
@@ -138,11 +140,10 @@ pub fn cmd_search_diaries(
     or: bool,
 ) -> Result<String, AppError> {
     let cache = state.diary_cache();
-    let lfc = state.local_file_cache();
     let crypto = state.crypto();
-    let client = state.oss_client();
+    let store = state.diary_store();
     let event = event.clone();
     Ok(state.task_pool().spawn(async move {
-        search_diaries(&cache, &lfc, &crypto, &client, Arc::new(event), keyword, or).await;
+        search_diaries(&cache, &crypto, &*store, Arc::new(event), keyword, or).await;
     })?)
 }

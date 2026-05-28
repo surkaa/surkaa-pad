@@ -1,11 +1,10 @@
 use crate::cryptos::Crypto;
-use crate::object::OssClient;
 use crate::state::AppState;
-use crate::storages::remote_manifest_key;
 
 use crate::attachments::AttachmentMeta;
-use crate::caches::{DiaryMemoryCache, LocalFileCache};
+use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
+use crate::diaries::diary_store::DiaryStore;
 use crate::diaries::diary_types::DiarySummary;
 use crate::diaries::diary_migration::{migrate_manifest_bytes, CURRENT_VERSION};
 use crate::diaries::{DiaryError, DiaryManifest};
@@ -21,9 +20,8 @@ static MANIFEST_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new
 
 pub async fn save_diary(
     cache: &DiaryMemoryCache,
-    lfc: &LocalFileCache,
     crypto: &Crypto,
-    client: &OssClient,
+    store: &dyn DiaryStore,
     content: &str,
 ) -> Result<(DiarySummary, String), DiaryError> {
     let id = generate_descending_id();
@@ -44,16 +42,11 @@ pub async fn save_diary(
     // 加密 manifest
     let encrypted_manifest = crypto.encrypt(&manifest_json)?;
 
-    // 上传到 OSS
-    let object_key = remote_manifest_key(&id);
-    let etag = client
-        .upload_bytes(&object_key, &encrypted_manifest)
-        .await?;
+    // 上传到存储（LocalStore 写入 LFC，RemoteStore 写入 OSS + LFC 写透）
+    let etag = store.upload_manifest(&id, &encrypted_manifest).await?;
 
     // 保存到内存缓存中
     cache.insert(&id, manifest.clone(), etag);
-    // 保存到本地文件缓存中
-    lfc.save_bytes(&object_key, &encrypted_manifest).await?;
 
     Ok((DiarySummary::from_manifest(manifest), content.to_string()))
 }
@@ -61,59 +54,33 @@ pub async fn save_diary(
 /// 获取并解密指定 ID 的日记 manifest 自动处理缓存问题
 pub async fn get_diary(
     cache: &DiaryMemoryCache,
-    lfc: &LocalFileCache,
     crypto: &Crypto,
-    client: &OssClient,
+    store: &dyn DiaryStore,
     id: &str,
 ) -> Result<DiaryManifest, DiaryError> {
     if id.is_empty() {
         return Err(DiaryError::EmptyId);
     }
-    let object_key = remote_manifest_key(id);
-    let metadata = client.get_metadata(&object_key).await?;
+
+    // 获取远程 etag 用于缓存校验
+    let remote_etag = store.get_manifest_etag(id).await?;
 
     // 检查内存缓存
     if let Some((diary, etag)) = cache.get(id) {
-        if metadata.etag.as_deref() == Some(&etag) {
+        if remote_etag.as_deref() == Some(&etag) {
             return Ok(diary.clone());
         }
     }
 
-    // 检查文件缓存
-    if let Some(etag) = lfc.get(&object_key).await? {
-        if metadata.etag.as_deref() == Some(&etag) {
-            let cache_bytes = lfc.get_data(&object_key).await?;
-            let manifest_bytes = crypto.decrypt(&cache_bytes)?;
-            // 迁移钩子：JSON 层面版本升级
-            if let (true, Some(new_bytes)) = migrate_manifest_bytes(&manifest_bytes)? {
-                let re_encrypted = crypto.encrypt(&new_bytes)?;
-                let new_etag = client.upload_bytes(&object_key, &re_encrypted).await?;
-                lfc.save_bytes(&object_key, &re_encrypted).await?;
-                let manifest: DiaryManifest = from_slice(&new_bytes)?;
-                cache.insert(id, manifest.clone(), new_etag);
-                return Ok(manifest);
-            }
-            // 反序列化 JSON
-            let manifest: DiaryManifest = from_slice(&manifest_bytes)?;
-            // 更新缓存
-            cache.insert(id, manifest.clone(), metadata.etag.clone().unwrap_or_default());
-            return Ok(manifest);
-        } else {
-            lfc.delete(&object_key).await;
-        }
-    }
-
-    let encrypted_data = client
-        .download_bytes(&object_key)
-        .await?;
+    // 从存储下载（RemoteStore 会检查本地文件缓存，LocalStore 直接读取）
+    let (encrypted_data, etag) = store.download_manifest(id).await?;
 
     let manifest_bytes = crypto.decrypt(&encrypted_data)?;
 
     // 迁移钩子：JSON 层面版本升级
     if let (true, Some(new_bytes)) = migrate_manifest_bytes(&manifest_bytes)? {
         let re_encrypted = crypto.encrypt(&new_bytes)?;
-        let new_etag = client.upload_bytes(&object_key, &re_encrypted).await?;
-        lfc.save_bytes(&object_key, &re_encrypted).await?;
+        let new_etag = store.upload_manifest(id, &re_encrypted).await?;
         let manifest: DiaryManifest = from_slice(&new_bytes)?;
         cache.insert(id, manifest.clone(), new_etag);
         return Ok(manifest);
@@ -123,82 +90,68 @@ pub async fn get_diary(
     let manifest: DiaryManifest = from_slice(&manifest_bytes)?;
 
     // 更新内存缓存
-    cache.insert(id, manifest.clone(), metadata.etag.clone().unwrap_or_default());
-    // 更新本地文件缓存
-    lfc.save_bytes(&object_key, &encrypted_data).await?;
+    cache.insert(id, manifest.clone(), etag);
 
     Ok(manifest)
 }
 
 pub async fn delete_diary(
     cache: &DiaryMemoryCache,
-    lfc: &LocalFileCache,
-    client: &OssClient,
+    store: &dyn DiaryStore,
     id: &str,
 ) -> Result<(), DiaryError> {
-    client.delete_with_prefix(id).await?;
+    store.delete_diary_all(id).await?;
 
-    // 删除缓存
+    // 删除内存缓存
     cache.remove(id);
-    // 删除本地缓存
-    let key = remote_manifest_key(id);
-    lfc.delete(&key).await;
 
     Ok(())
 }
 
 async fn update_diary(
     cache: &DiaryMemoryCache,
-    lfc: &LocalFileCache,
     crypto: &Crypto,
-    client: &OssClient,
+    store: &dyn DiaryStore,
     diary: &DiaryManifest,
 ) -> Result<(), DiaryError> {
     // 序列化为 JSON
-    let manifest_json = serde_json::to_vec(&diary)?;
+    let manifest_json = serde_json::to_vec(diary)?;
 
     // 加密 manifest
     let encrypted_manifest = crypto.encrypt(&manifest_json)?;
 
-    // 上传到 OSS，覆盖原有的 manifest
-    let object_key = remote_manifest_key(&diary.id);
-    let etag = client
-        .upload_bytes(&object_key, &encrypted_manifest)
-        .await?;
+    // 上传到存储，覆盖原有的 manifest
+    let etag = store.upload_manifest(&diary.id, &encrypted_manifest).await?;
 
     // 更新缓存
     cache.insert(&diary.id, diary.clone(), etag);
-    // 更新本地缓存 会自动替换掉旧的
-    lfc.save_bytes(&object_key, &encrypted_manifest).await?;
 
     Ok(())
 }
 
 pub async fn update_diary_content_only(
     cache: &DiaryMemoryCache,
-    lfc: &LocalFileCache,
     crypto: &Crypto,
-    client: &OssClient,
+    store: &dyn DiaryStore,
     id: &str,
     new_content: &str,
 ) -> Result<DiarySummary, DiaryError> {
     // 先获取现有的 manifest
-    let mut manifest = get_diary(cache, lfc, crypto, client, id).await?;
+    let mut manifest = get_diary(cache, crypto, store, id).await?;
 
     // 更新内容和更新时间
     manifest.content = new_content.to_string();
     manifest.updated = Utc::now().timestamp_millis();
 
-    update_diary(cache, lfc, crypto, client, &manifest).await?;
+    update_diary(cache, crypto, store, &manifest).await?;
 
     Ok(DiarySummary::from_manifest(manifest))
 }
 
 pub async fn update_diary_attachment(
     cache: &DiaryMemoryCache,
-    lfc: &LocalFileCache,
     crypto: &Crypto,
-    client: &OssClient,
+    store: &dyn DiaryStore,
     id: &str,
     new_attachment: AttachmentMeta,
 ) -> Result<(), DiaryError> {
@@ -209,7 +162,7 @@ pub async fn update_diary_attachment(
         .clone();
     let _guard = lock.lock().await;
 
-    let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
+    let mut diary = get_diary(cache, crypto, store, id).await?;
     // 判断是否已存在同名附件，若存在则替换，否则添加
     if let Some(existing) = diary
         .attachments
@@ -221,7 +174,7 @@ pub async fn update_diary_attachment(
         diary.attachments.push(new_attachment);
     }
     diary.updated = Utc::now().timestamp_millis();
-    update_diary(cache, lfc, crypto, client, &diary).await?;
+    update_diary(cache, crypto, store, &diary).await?;
     Ok(())
 }
 
@@ -238,11 +191,10 @@ pub async fn update_diary_attachment_filename(
         .clone();
     let _guard = lock.lock().await;
 
-    let cache = &state.diary_cache();
-    let lfc = &state.local_file_cache();
-    let crypto = &state.crypto();
-    let client = &state.oss_client();
-    let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
+    let cache = state.diary_cache();
+    let crypto = state.crypto();
+    let store = state.diary_store();
+    let mut diary = get_diary(&cache, &crypto, &*store, id).await?;
     if let Some(att) = diary
         .attachments
         .iter_mut()
@@ -252,7 +204,7 @@ pub async fn update_diary_attachment_filename(
         // 更新 diary.content
         diary.content = new_content;
         diary.updated = Utc::now().timestamp_millis();
-        update_diary(cache, lfc, crypto, client, &diary).await?;
+        update_diary(&cache, &crypto, &*store, &diary).await?;
         Ok(())
     } else {
         Err(DiaryError::AttachmentNotFound(old_filename))
@@ -261,9 +213,8 @@ pub async fn update_diary_attachment_filename(
 
 pub async fn delete_diary_attachment(
     cache: &DiaryMemoryCache,
-    lfc: &LocalFileCache,
     crypto: &Crypto,
-    client: &OssClient,
+    store: &dyn DiaryStore,
     id: &str,
     filename: &str,
 ) -> Result<(), DiaryError> {
@@ -273,9 +224,9 @@ pub async fn delete_diary_attachment(
         .clone();
     let _guard = lock.lock().await;
 
-    let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
+    let mut diary = get_diary(cache, crypto, store, id).await?;
     diary.attachments.retain(|att| att.filename != filename);
     diary.updated = Utc::now().timestamp_millis();
-    update_diary(cache, lfc, crypto, client, &diary).await?;
+    update_diary(cache, crypto, store, &diary).await?;
     Ok(())
 }

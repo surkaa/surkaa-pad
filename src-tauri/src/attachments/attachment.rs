@@ -1,14 +1,13 @@
 use crate::attachments::attachment_types::AttachmentProcessEvent;
-use crate::attachments::{get_full_attachment_url, AttachmentError, AttachmentMeta};
-use crate::caches::{DiaryMemoryCache, LocalFileCache};
+use crate::attachments::{AttachmentError, AttachmentMeta};
+use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
 use crate::cryptos::Crypto;
+use crate::diaries::diary_store::DiaryStore;
 use crate::diaries::{
     delete_diary_attachment, get_diary, update_diary_attachment, update_diary_attachment_filename,
 };
-use crate::object::OssClient;
 use crate::state::AppState;
-use crate::storages::remote_attachments_key;
 use crate::stream::ByteStream;
 use crate::stream::{collect_data, create_mock_stream, tracker_stream};
 use crate::utils::message_sender::MessageSender;
@@ -23,32 +22,6 @@ use tokio::sync::Mutex;
 
 // 删除附件的互斥锁
 static DELETE_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
-
-pub async fn get_attachment_stream(
-    key: &str,
-    lfc: &LocalFileCache,
-    client: &OssClient,
-    range: Option<(u64, u64)>,
-    known_etag: Option<&str>,
-) -> Result<(ByteStream, u64), AttachmentError> {
-    if let Some(cached_etag) = lfc.get(key).await? {
-        // 如果已知 etag 与本地缓存匹配，直接使用缓存，省去 HEAD 请求
-        if known_etag.is_some_and(|k| k == cached_etag) {
-            return Ok((lfc.get_stream(key, range).await?, 0));
-        }
-        let metadata = client
-            .get_metadata(key)
-            .await?;
-        if metadata.etag.as_deref() == Some(&cached_etag) {
-            Ok((lfc.get_stream(key, range).await?, metadata.content_length.unwrap_or(0)))
-        } else {
-            lfc.delete(key).await;
-            Ok(client.download(key, range).await?)
-        }
-    } else {
-        Ok(client.download(key, range).await?)
-    }
-}
 
 pub fn deduplicate_filename(desired: &str, existing: &HashSet<String>) -> String {
     let sanitized: String = desired
@@ -124,7 +97,7 @@ pub async fn add_attachment(
     stream: ByteStream,
     original_filename: Option<String>,
 ) {
-    let (crypto, cache, lfc, client) = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
+    let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
     let _ = event.send(AttachmentProcessEvent::Started);
     // 包装流 用来更新进度
     let ec = event.clone();
@@ -146,7 +119,7 @@ pub async fn add_attachment(
         // Windows 平台：使用原始文件名，冲突时追加 _1/_2 后缀去重
         if use_original {
             let original = original_filename.as_ref().unwrap().trim().to_string();
-            let diary = get_diary(&cache, &lfc, &crypto, &client, id)
+            let diary = get_diary(&cache, &crypto, &*store, id)
                 .await
                 .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
             let existing_fns: HashSet<String> = diary
@@ -164,7 +137,7 @@ pub async fn add_attachment(
         } else {
             // 加锁获取模拟状态并执行 MEX 算法
             let mut pending_ids = alloc_state.lock().await;
-            let diary = get_diary(&cache, &lfc, &crypto, &client, id)
+            let diary = get_diary(&cache, &crypto, &*store, id)
                 .await
                 .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
@@ -189,7 +162,6 @@ pub async fn add_attachment(
         }
 
         // 直接上传
-        let key = remote_attachments_key(id, &filename);
         let upload_task = async {
             // 根据是否加密决定最终的流
             let (final_stream, nonce) = if !encrypted {
@@ -198,14 +170,9 @@ pub async fn add_attachment(
                 crypto.encrypt_streaming(stream)?
             };
 
-            // 包装流用于本地文件缓存
-            let (wrapped_stream, handle) = lfc.save(&key, final_stream).await?;
-
-            // 执行上传
-            match client.upload(&key, size, wrapped_stream, &mimetype).await {
+            // 通过 store 上传附件（LocalStore 写入 LFC，RemoteStore 写入 OSS + LFC 写透）
+            match store.upload_attachment(id, &filename, size, &mimetype, final_stream).await {
                 Ok(etag) => {
-                    // 上传成功，固化本地缓存
-                    let _ = handle.finalize(&etag).await;
                     Ok(AttachmentMeta {
                         filename: filename.clone(),
                         mimetype,
@@ -217,9 +184,7 @@ pub async fn add_attachment(
                     })
                 }
                 Err(e) => {
-                    // 上传失败，丢弃本地缓存临时文件
-                    handle.abort().await;
-                    Err(AttachmentError::Object(e))
+                    Err(AttachmentError::InvalidOperation(e.to_string()))
                 }
             }
         };
@@ -242,7 +207,7 @@ pub async fn add_attachment(
         };
 
         // 更新 Manifest（在 pending 释放前完成，防止并发分配重复 ID）
-        let manifest_result = update_diary_attachment(&cache, &lfc, &crypto, &client, id, attachment.clone())
+        let manifest_result = update_diary_attachment(&cache, &crypto, &*store, id, attachment.clone())
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()));
 
@@ -259,7 +224,7 @@ pub async fn add_attachment(
 
         manifest_result?;
 
-        let url = get_full_attachment_url(id, &attachment, &client).await?;
+        let url = store.get_attachment_url(id, &attachment).await?;
 
         Ok::<(AttachmentMeta, String), AttachmentError>((attachment, url))
     };
@@ -276,25 +241,20 @@ pub async fn add_attachment(
 
 pub async fn delete_attachment(
     cache: &DiaryMemoryCache,
-    lfc: &LocalFileCache,
     crypto: &Crypto,
-    client: &OssClient,
+    store: &dyn DiaryStore,
     id: &str,
     filename: String,
 ) -> Result<(), AttachmentError> {
     let delete_lock = DELETE_LOCKS.entry(id.to_string()).or_default().clone();
     let _guard = delete_lock.lock().await;
 
-    delete_diary_attachment(cache, lfc, crypto, client, id, &filename)
+    delete_diary_attachment(cache, crypto, store, id, &filename)
         .await
         .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
     // 删除远端附件对象
-    let attachment_key = remote_attachments_key(id, &filename);
-    client.delete(&attachment_key).await?;
-
-    // 删除本地缓存文件
-    lfc.delete(&attachment_key).await;
+    store.delete_attachment(id, &filename).await?;
 
     Ok(())
 }
@@ -305,12 +265,12 @@ pub async fn toggle_attachment_encryption(
     id: &str,
     filename: String,
 ) {
-    let (crypto, cache, lfc, client) = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
+    let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
     let _ = event.send(AttachmentProcessEvent::Started);
 
     let logic = async {
         // 获取当前附件信息
-        let diary = get_diary(&cache, &lfc, &crypto, &client, id)
+        let diary = get_diary(&cache, &crypto, &*store, id)
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
         let old_meta = diary
@@ -322,10 +282,9 @@ pub async fn toggle_attachment_encryption(
 
         // 我们需要反转当前的加密状态
         let encrypted = !old_meta.encrypted;
-        let key = remote_attachments_key(id, &filename);
 
-        // 下载原始数据：优先尝试从本地缓存获取
-        let (raw_stream, _size) = get_attachment_stream(&key, &lfc, &client, None, old_meta.etag.as_deref()).await?;
+        // 下载原始数据
+        let (raw_stream, _size) = store.download_attachment(id, &filename, None, old_meta.etag.as_deref()).await?;
         let size = old_meta.size;
 
         // 处理流转换
@@ -347,22 +306,9 @@ pub async fn toggle_attachment_encryption(
             let _ = ec.send(AttachmentProcessEvent::Progress(p));
         });
 
-        // 将新的状态包装进 lfc 缓存流并上传
-        let (wrapped_stream, handle) = lfc.save(&key, tracked_stream).await?;
-
-        let new_etag = match client
-            .upload(&key, size, wrapped_stream, &old_meta.mimetype)
-            .await
-        {
-            Ok(etag) => {
-                let _ = handle.finalize(&etag).await;
-                etag
-            }
-            Err(e) => {
-                handle.abort().await;
-                return Err(AttachmentError::Object(e));
-            }
-        };
+        // 通过 store 上传
+        let new_etag = store.upload_attachment(id, &filename, size, &old_meta.mimetype, tracked_stream).await
+            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
         // 构造新的元数据并更新 Manifest
         let mut new_meta = old_meta.clone();
@@ -370,11 +316,11 @@ pub async fn toggle_attachment_encryption(
         new_meta.nonce = new_nonce;
         new_meta.etag = Some(new_etag);
 
-        update_diary_attachment(&cache, &lfc, &crypto, &client, id, new_meta.clone())
+        update_diary_attachment(&cache, &crypto, &*store, id, new_meta.clone())
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
-        let url = get_full_attachment_url(id, &new_meta, &client).await?;
+        let url = store.get_attachment_url(id, &new_meta).await?;
         Ok((new_meta, url))
     };
 
@@ -395,7 +341,7 @@ pub async fn rotate_image_attachment(
     filename: String,
     rotation: i32,
 ) {
-    let (crypto, cache, lfc, client) = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
+    let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
     let _ = event.send(AttachmentProcessEvent::Started);
 
     let logic = async {
@@ -406,7 +352,7 @@ pub async fn rotate_image_attachment(
             ));
         }
         // 获取元数据
-        let diary = get_diary(&cache, &lfc, &crypto, &client, id)
+        let diary = get_diary(&cache, &crypto, &*store, id)
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
         let old_meta = diary
@@ -423,10 +369,8 @@ pub async fn rotate_image_attachment(
             ));
         }
 
-        let key = remote_attachments_key(id, &filename);
-
-        // 下载并解密原始数据：优先尝试从本地缓存获取
-        let (raw_stream, _size) = get_attachment_stream(&key, &lfc, &client, None, old_meta.etag.as_deref()).await?;
+        // 下载并解密原始数据
+        let (raw_stream, _size) = store.download_attachment(id, &filename, None, old_meta.etag.as_deref()).await?;
 
         let stream = if old_meta.encrypted {
             crypto.decrypt_streaming(raw_stream, &old_meta.nonce, 0)?
@@ -480,21 +424,9 @@ pub async fn rotate_image_attachment(
             )
         };
 
-        // 更新上传并缓存
-        let (wrapped_stream, handle) = lfc.save(&key, upload_stream).await?;
-        let new_etag = match client
-            .upload(&key, new_size, wrapped_stream, &old_meta.mimetype)
-            .await
-        {
-            Ok(etag) => {
-                let _ = handle.finalize(&etag).await;
-                etag
-            }
-            Err(e) => {
-                handle.abort().await;
-                return Err(AttachmentError::Object(e));
-            }
-        };
+        // 通过 store 上传
+        let new_etag = store.upload_attachment(id, &filename, new_size, &old_meta.mimetype, upload_stream).await
+            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
         // 更新元数据
         let mut new_meta = old_meta.clone();
@@ -503,11 +435,11 @@ pub async fn rotate_image_attachment(
         new_meta.encrypted = is_encrypted;
         new_meta.etag = Some(new_etag);
 
-        update_diary_attachment(&cache, &lfc, &crypto, &client, id, new_meta.clone())
+        update_diary_attachment(&cache, &crypto, &*store, id, new_meta.clone())
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
-        let url = get_full_attachment_url(id, &new_meta, &client).await?;
+        let url = store.get_attachment_url(id, &new_meta).await?;
         Ok((new_meta, url))
     };
 
@@ -522,31 +454,16 @@ pub async fn rotate_image_attachment(
 }
 
 pub async fn caching_attachment(
-    lfc: &LocalFileCache,
-    client: &OssClient,
+    store: &dyn DiaryStore,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     filename: &str,
 ) {
     let _ = event.send(AttachmentProcessEvent::Started);
-    let key = remote_attachments_key(id, filename);
     let logic = async {
-        let metadata = client.get_metadata(&key).await?;
-        if let Some(etag) = lfc.get(&key).await? {
-            if metadata.etag.as_deref() == Some(&etag) {
-                let _ = event.send(AttachmentProcessEvent::CompletedWithoutData);
-                return Ok(());
-            }
-        }
-        // 保存
-        let (stream, len) = client.download(&key, None).await?;
-        let ec = event.clone();
-        let stream = tracker_stream(len, stream, move |progress| {
-            let _ = ec.send(AttachmentProcessEvent::Progress(progress));
-        });
-        lfc.direct_save_with_md5(&key, &metadata.etag.unwrap_or_default(), stream)
-            .await?;
-
+        // 通过 store 触发下载缓存（RemoteStore 会检查并缓存，LocalStore 已经在本地）
+        let (_, _) = store.download_attachment(id, filename, None, None).await?;
+        let _ = event.send(AttachmentProcessEvent::CompletedWithoutData);
         Ok::<(), AttachmentError>(())
     };
     match logic.await {
@@ -567,12 +484,11 @@ pub async fn save_decrypt_attachment(
     attachment: AttachmentMeta,
     mut file: File,
 ) {
-    let (crypto, _, lfc, client) = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
+    let (crypto, store) = (state.crypto(), state.diary_store());
     let event_res_clone = event.clone();
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async move {
-        let key = remote_attachments_key(id, &filename);
-        let (stream, _size) = get_attachment_stream(&key, &lfc, &client, None, attachment.etag.as_deref()).await?;
+        let (stream, _size) = store.download_attachment(id, &filename, None, attachment.etag.as_deref()).await?;
         let event_clone = event.clone();
         let stream = tracker_stream(attachment.size, stream, move |p| {
             let _ = event_clone.send(AttachmentProcessEvent::Progress(p));
@@ -611,11 +527,10 @@ pub async fn update_attachment_filename(
     new_filename: String,
     new_content: String,
 ) -> Result<(), AttachmentError> {
-    let cache = &state.diary_cache();
-    let lfc = &state.local_file_cache();
-    let crypto = &state.crypto();
-    let client = &state.oss_client();
-    let diary = get_diary(cache, lfc, crypto, client, id)
+    let cache = state.diary_cache();
+    let crypto = state.crypto();
+    let store = state.diary_store();
+    let diary = get_diary(&cache, &crypto, &*store, id)
         .await
         .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
@@ -624,12 +539,8 @@ pub async fn update_attachment_filename(
         return Err(AttachmentError::InvalidOperation("原附件不存在".to_string()));
     }
 
-    // 更新远端存储的 key
-    let old_key = remote_attachments_key(id, &old_filename);
-    let new_key = remote_attachments_key(id, &new_filename);
-
-    // 先复制一份新的对象
-    client.rename(&old_key, &new_key).await?;
+    // 通过 store 重命名附件
+    store.rename_attachment(id, &old_filename, &new_filename).await?;
 
     update_diary_attachment_filename(
         state,

@@ -9,5 +9,5 @@ mod attachment_types;
 mod attachment_tests;
 
 pub use attachment_error::AttachmentError;
-pub use attachment_protocol::{attachment_protocol, get_full_attachment_url, PROTOCOL_NAME};
+pub use attachment_protocol::{attachment_protocol, PROTOCOL_NAME};
 pub use attachment_types::AttachmentMeta;

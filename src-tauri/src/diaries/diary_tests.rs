@@ -4,6 +4,7 @@ mod tests {
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
     use crate::diaries::diary_migration::CURRENT_VERSION;
+    use crate::diaries::diary_store::RemoteStore;
     use crate::diaries::diary_types::DiaryManifest;
     use crate::diaries::{delete_diary, get_diary, save_diary, update_diary_content_only};
     use crate::object::OssClient;
@@ -25,10 +26,11 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
+        let store = RemoteStore::new(lfc.clone(), client.clone());
 
         // 测试创建
         let initial_content = "Integration test diary content.";
-        let (summary, content) = save_diary(&cache, &lfc, &crypto, &client, initial_content)
+        let (summary, content) = save_diary(&cache, &crypto, &store, initial_content)
             .await
             .expect("未能保存日记");
 
@@ -37,7 +39,7 @@ mod tests {
         let id = summary.id.clone();
 
         // 测试读取 - 验证远端拉取并写入缓存
-        let fetched_manifest = get_diary(&cache, &lfc, &crypto, &client, &id)
+        let fetched_manifest = get_diary(&cache, &crypto, &store, &id)
             .await
             .expect("远程获取日记失败");
 
@@ -50,26 +52,26 @@ mod tests {
         // 测试更新
         let updated_content = "Updated content for testing.";
         let updated_summary =
-            update_diary_content_only(&cache, &lfc, &crypto, &client, &id, updated_content)
+            update_diary_content_only(&cache, &crypto, &store, &id, updated_content)
                 .await
                 .expect("未能更新日记");
 
         assert!(updated_summary.updated > summary.updated);
 
         // 测试再次读取 - 验证缓存失效/更新机制
-        let refetched_manifest = get_diary(&cache, &lfc, &crypto, &client, &id)
+        let refetched_manifest = get_diary(&cache, &crypto, &store, &id)
             .await
             .expect("未能重新获取更新的日记");
 
         assert_eq!(refetched_manifest.content, updated_content);
 
         // 测试删除
-        delete_diary(&cache, &lfc, &client, &id)
+        delete_diary(&cache, &store, &id)
             .await
             .expect("删除日记失败");
 
         // 验证删除有效性
-        let not_found_result = get_diary(&cache, &lfc, &crypto, &client, &id).await;
+        let not_found_result = get_diary(&cache, &crypto, &store, &id).await;
         assert!(not_found_result.is_err(), "删除后日记不应被检索");
     }
 
@@ -84,10 +86,11 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
+        let store = RemoteStore::new(lfc.clone(), client.clone());
 
         // 保存第一篇日记
         let content1 = "Original content for cache test.";
-        let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, content1)
+        let (summary, _) = save_diary(&cache, &crypto, &store, content1)
             .await
             .expect("保存日记失败");
         let id = summary.id.clone();
@@ -131,7 +134,7 @@ mod tests {
         let cache2 = DiaryMemoryCache::new();
 
         // 再次获取日记，此时应因本地缓存 etag 不匹配而重新下载
-        let fetched = get_diary(&cache2, &lfc, &crypto, &client, &id)
+        let fetched = get_diary(&cache2, &crypto, &store, &id)
             .await
             .expect("获取日记失败");
         assert_eq!(
@@ -156,7 +159,7 @@ mod tests {
         );
 
         // 测试删除日记时本地缓存是否被清理
-        delete_diary(&cache2, &lfc, &client, &id)
+        delete_diary(&cache2, &store, &id)
             .await
             .expect("删除日记失败");
         let cached_after_delete = lfc.get(&object_key).await.expect("检查缓存失败");
@@ -169,6 +172,7 @@ mod diary_list_tests {
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::Crypto;
     use crate::diaries::diary::save_diary;
+    use crate::diaries::diary_store::RemoteStore;
     use crate::diaries::{get_diary_content, get_diary_summary, page_diary_ids};
     use crate::object::OssClient;
     use crate::test_utils::TestOssGuard;
@@ -185,6 +189,7 @@ mod diary_list_tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
+        let store = RemoteStore::new(lfc.clone(), client.clone());
 
         // 创建几个测试日记
         let title = "这是一个测试日记的标题";
@@ -193,9 +198,8 @@ mod diary_list_tests {
         for _ in 0..test_count {
             let _ = save_diary(
                 &cache,
-                &lfc,
                 &crypto,
-                &client,
+                &store,
                 format!("{}\n{}", title, content).as_str(),
             )
             .await
@@ -207,7 +211,7 @@ mod diary_list_tests {
         let mut all_ids = Vec::new();
         let mut page_count = 0;
         loop {
-            let (ids, nt) = page_diary_ids(&client, next_token)
+            let (ids, nt) = page_diary_ids(&store, next_token)
                 .await
                 .expect("无法获取日记列表");
             all_ids.extend(ids);
@@ -222,11 +226,11 @@ mod diary_list_tests {
         assert_eq!(all_ids.len(), test_count);
         assert_eq!(page_count, 3, "分页逻辑错误，预期3页但实际{}", page_count);
         for id in all_ids.clone() {
-            let summary = get_diary_summary(&cache, &lfc, &crypto, &client, &id)
+            let summary = get_diary_summary(&cache, &crypto, &store, &id)
                 .await
                 .expect("无法获取日记摘要");
             assert_eq!(summary.title, title);
-            let content = get_diary_content(&cache, &lfc, &crypto, &client, &id)
+            let content = get_diary_content(&cache, &crypto, &store, &id)
                 .await
                 .expect("无法获取日记内容");
             assert_eq!(content, content);
@@ -241,6 +245,7 @@ mod diary_search_tests {
     use crate::cryptos::Crypto;
     use crate::diaries::diary::save_diary;
     use crate::diaries::diary_search::search_diaries;
+    use crate::diaries::diary_store::RemoteStore;
     use crate::diaries::diary_types::{DiarySummary, SearchDiariesEvent};
     use crate::object::OssClient;
     use crate::test_utils::TestOssGuard;
@@ -249,9 +254,8 @@ mod diary_search_tests {
 
     async fn test_search(
         cache: &DiaryMemoryCache,
-        lfc: &LocalFileCache,
         crypto: &Crypto,
-        client: &OssClient,
+        store: &RemoteStore,
         keyword: String,
         or: bool,
     ) -> (Vec<DiarySummary>, Vec<String>) {
@@ -260,9 +264,8 @@ mod diary_search_tests {
         let event_sender = Arc::new(tx);
         let _ = search_diaries(
             cache,
-            lfc,
             crypto,
-            client,
+            store,
             event_sender.clone(),
             keyword,
             or,
@@ -306,44 +309,41 @@ mod diary_search_tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
+        let store = RemoteStore::new(lfc.clone(), client.clone());
 
         // 创建几个测试日记
         let _ = save_diary(
             &cache,
-            &lfc,
             &crypto,
-            &client,
+            &store,
             "这是第一篇日记，包含关键词 rust",
         )
         .await;
         let _ = save_diary(
             &cache,
-            &lfc,
             &crypto,
-            &client,
+            &store,
             "这是第二篇日记，不包含关键词",
         )
         .await;
         let _ = save_diary(
             &cache,
-            &lfc,
             &crypto,
-            &client,
+            &store,
             "这是第三篇日记，包含关键词 rust 和 async",
         )
         .await;
         let _ = save_diary(
             &cache,
-            &lfc,
             &crypto,
-            &client,
+            &store,
             "这是第四篇日记，包含关键词 async",
         )
         .await;
 
         // 收集结果
         let (matches, unmatches) =
-            test_search(&cache, &lfc, &crypto, &client, "rust".to_string(), true).await;
+            test_search(&cache, &crypto, &store, "rust".to_string(), true).await;
         assert_eq!(matches.len(), 2, "使用 OR 搜索 'rust' 应该匹配 2 篇日记");
         assert_eq!(
             unmatches.len(),
@@ -352,7 +352,7 @@ mod diary_search_tests {
         );
 
         let (matches, unmatches) =
-            test_search(&cache, &lfc, &crypto, &client, "async".to_string(), true).await;
+            test_search(&cache, &crypto, &store, "async".to_string(), true).await;
         assert_eq!(matches.len(), 2, "使用 OR 搜索 'async' 应该匹配 2 篇日记");
         assert_eq!(
             unmatches.len(),
@@ -362,9 +362,8 @@ mod diary_search_tests {
 
         let (matches, unmatches) = test_search(
             &cache,
-            &lfc,
             &crypto,
-            &client,
+            &store,
             "rust async".to_string(),
             false,
         )
@@ -382,9 +381,8 @@ mod diary_search_tests {
 
         let (matches, unmatches) = test_search(
             &cache,
-            &lfc,
             &crypto,
-            &client,
+            &store,
             "rust async".to_string(),
             true,
         )
