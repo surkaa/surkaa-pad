@@ -19,6 +19,7 @@ pub struct AppState {
     chunked_uploads: Arc<DashMap<String, ChunkedUploadState>>,
     /// 每个日记的附件 ID 分配器（MEX 管理并发上传的序号占用）
     attachment_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<u32>>>>>,
+    filename_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>>,
 }
 
 impl AppState {
@@ -35,6 +36,7 @@ impl AppState {
             task_pool,
             chunked_uploads: Arc::new(DashMap::new()),
             attachment_allocators: Arc::new(DashMap::new()),
+            filename_allocators: Arc::new(DashMap::new()),
         }
     }
 
@@ -66,6 +68,10 @@ impl AppState {
         self.attachment_allocators.clone()
     }
 
+    pub fn filename_allocators(&self) -> Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>> {
+        self.filename_allocators.clone()
+    }
+
     #[cfg(test)]
     pub fn from_parts(
         crypto: Crypto,
@@ -80,6 +86,7 @@ impl AppState {
             task_pool: TaskPool::new(),
             chunked_uploads: Arc::new(DashMap::new()),
             attachment_allocators: Arc::new(DashMap::new()),
+            filename_allocators: Arc::new(DashMap::new()),
         }
     }
 }

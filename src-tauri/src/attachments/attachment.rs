@@ -50,6 +50,70 @@ pub async fn get_attachment_stream(
     }
 }
 
+pub fn deduplicate_filename(desired: &str, existing: &HashSet<String>) -> String {
+    let sanitized: String = desired
+        .chars()
+        .filter(|&c| c != '\0' && c != '/' && c != '\\')
+        .collect();
+    let sanitized = sanitized.trim();
+    if sanitized.is_empty() {
+        return String::from("_file");
+    }
+
+    let max_len = 200usize;
+    let truncated = if sanitized.len() > max_len {
+        let path = std::path::Path::new(sanitized);
+        let ext = path
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or_default();
+        let ext_len = ext.len();
+        let stem_max = max_len.saturating_sub(ext_len);
+        let stem: String = path
+            .file_stem()
+            .map(|s| s.to_str().unwrap_or("_file"))
+            .unwrap_or("_file")
+            .chars()
+            .take(stem_max)
+            .collect();
+        format!("{}{}", stem, ext)
+    } else {
+        sanitized.to_string()
+    };
+
+    if !existing.contains(&truncated) {
+        return truncated;
+    }
+
+    let path = std::path::Path::new(&truncated);
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| String::from("_file"));
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+
+    for i in 1..1024 {
+        let candidate = format!("{}_{}{}", stem, i, ext);
+        if !existing.contains(&candidate) {
+            return candidate;
+        }
+    }
+
+    format!(
+        "{}_{}{}",
+        stem,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        ext
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn add_attachment(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
@@ -58,6 +122,7 @@ pub async fn add_attachment(
     size: u64,
     mimetype: String,
     stream: ByteStream,
+    original_filename: Option<String>,
 ) {
     let (crypto, cache, lfc, client) = (state.crypto(), state.diary_cache(), state.local_file_cache(), state.oss_client());
     let _ = event.send(AttachmentProcessEvent::Started);
@@ -70,8 +135,34 @@ pub async fn add_attachment(
     let logic = async move {
         let allocators = state.attachment_allocators();
         let alloc_state = allocators.entry(id.to_string()).or_default().clone();
-        // 加锁获取模拟状态并执行 MEX 算法
-        let allocated_id = {
+        let str_alloc_state = state.filename_allocators().entry(id.to_string()).or_default().clone();
+
+        let use_original = cfg!(target_os = "windows")
+            && original_filename.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+
+        let allocated_id: u32;
+        let filename: String;
+
+        // Windows 平台：使用原始文件名，冲突时追加 _1/_2 后缀去重
+        if use_original {
+            let original = original_filename.as_ref().unwrap().trim().to_string();
+            let diary = get_diary(&cache, &lfc, &crypto, &client, id)
+                .await
+                .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
+            let existing_fns: HashSet<String> = diary
+                .attachments
+                .iter()
+                .map(|a| a.filename.clone())
+                .collect();
+
+            let mut pending_fns = str_alloc_state.lock().await;
+            let combined: HashSet<&String> = existing_fns.union(&*pending_fns).collect();
+            let combined_owned: HashSet<String> = combined.into_iter().cloned().collect();
+            filename = deduplicate_filename(&original, &combined_owned);
+            pending_fns.insert(filename.clone());
+            allocated_id = 0;
+        } else {
+            // 加锁获取模拟状态并执行 MEX 算法
             let mut pending_ids = alloc_state.lock().await;
             let diary = get_diary(&cache, &lfc, &crypto, &client, id)
                 .await
@@ -93,9 +184,9 @@ pub async fn add_attachment(
 
             // 登记到模拟状态中，防止其他并发任务抢占
             pending_ids.insert(new_id);
-            new_id
-        };
-        let filename = allocated_id.to_string();
+            allocated_id = new_id;
+            filename = new_id.to_string();
+        }
 
         // 直接上传
         let key = remote_attachments_key(id, &filename);
@@ -135,18 +226,38 @@ pub async fn add_attachment(
 
         let upload_result: Result<AttachmentMeta, AttachmentError> = upload_task.await;
 
-        // 重新加锁，清理模拟状态并提交 Manifest
-        let mut pending_ids = alloc_state.lock().await;
+        let attachment = match upload_result {
+            Ok(a) => a,
+            Err(e) => {
+                // 无论上传成功或失败，必须擦除占用状态，防止死锁或序号永久丢失
+                if use_original {
+                    let mut pending_fns = str_alloc_state.lock().await;
+                    pending_fns.remove(&filename);
+                } else {
+                    let mut pending_ids = alloc_state.lock().await;
+                    pending_ids.remove(&allocated_id);
+                }
+                return Err(e);
+            }
+        };
 
-        // 无论上传成功或失败，必须擦除占用状态，防止死锁或序号永久丢失
-        pending_ids.remove(&allocated_id);
-
-        let attachment = upload_result?;
-
-        // 更新 Manifest
-        update_diary_attachment(&cache, &lfc, &crypto, &client, id, attachment.clone())
+        // 更新 Manifest（在 pending 释放前完成，防止并发分配重复 ID）
+        let manifest_result = update_diary_attachment(&cache, &lfc, &crypto, &client, id, attachment.clone())
             .await
-            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
+            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()));
+
+        // 重新加锁，清理模拟状态
+        if use_original {
+            let mut pending_fns = str_alloc_state.lock().await;
+            // 无论上传成功或失败，必须擦除占用状态，防止死锁或文件名永久丢失
+            pending_fns.remove(&filename);
+        } else {
+            let mut pending_ids = alloc_state.lock().await;
+            // 无论上传成功或失败，必须擦除占用状态，防止死锁或序号永久丢失
+            pending_ids.remove(&allocated_id);
+        }
+
+        manifest_result?;
 
         let url = get_full_attachment_url(id, &attachment, &client).await?;
 

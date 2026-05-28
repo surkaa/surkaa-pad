@@ -227,9 +227,9 @@ async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, accessStr: string, encrypted: boolean) : Promise<Result<string, AppError>> {
+async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, accessStr: string, encrypted: boolean, originalFilename: string | null) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment", { event, id, accessStr, encrypted }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment", { event, id, accessStr, encrypted, originalFilename }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -1,4 +1,5 @@
 import {Channel} from "@tauri-apps/api/core";
+import {platform} from "@tauri-apps/plugin-os";
 import {AttachmentMeta, AttachmentProcessEvent} from "../bindings.ts";
 import {computed, nextTick, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
@@ -97,7 +98,9 @@ export function useMediaAction(
         const event = createUploadChannel(key, completedCallback, errorCallback);
 
         try {
-            const res = await api.cmdAddAttachment(event, diaryId.value, accessStr, encrypted);
+            const p = platform();
+            const originalFilename = p === 'windows' ? rawName : undefined;
+            const res = await api.cmdAddAttachment(event, diaryId.value, accessStr, encrypted, originalFilename);
             cancelTokens.add(res);
         } catch (e) {
             uploadTaskMap.value[key].status = 'error';

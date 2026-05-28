@@ -5,6 +5,7 @@ use crate::cryptos::crypto_types::Aes256Ctr;
 pub struct ChunkedUploadState {
     pub diary_id: String,
     pub allocated_id: u32,
+    pub allocated_filename: String,
     pub upload_id: String,
     pub key: String,
     pub filename: String,

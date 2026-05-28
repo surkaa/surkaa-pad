@@ -11,7 +11,13 @@ use crate::diaries::diary_migration::{migrate_manifest_bytes, CURRENT_VERSION};
 use crate::diaries::{DiaryError, DiaryManifest};
 use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;
+use dashmap::DashMap;
 use serde_json::from_slice;
+use std::sync::{Arc, LazyLock};
+use tokio::sync::Mutex;
+
+/// 每个日记的 manifest 更新互斥锁，防止并发 read-modify-write 导致附件丢失
+static MANIFEST_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
 
 pub async fn save_diary(
     cache: &DiaryMemoryCache,
@@ -196,6 +202,13 @@ pub async fn update_diary_attachment(
     id: &str,
     new_attachment: AttachmentMeta,
 ) -> Result<(), DiaryError> {
+    // 防止并发 read-modify-write 导致附件丢失
+    let lock = MANIFEST_LOCKS
+        .entry(id.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+    let _guard = lock.lock().await;
+
     let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
     // 判断是否已存在同名附件，若存在则替换，否则添加
     if let Some(existing) = diary
@@ -219,6 +232,12 @@ pub async fn update_diary_attachment_filename(
     new_filename: String,
     new_content: String,
 ) -> Result<(), DiaryError> {
+    let lock = MANIFEST_LOCKS
+        .entry(id.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+    let _guard = lock.lock().await;
+
     let cache = &state.diary_cache();
     let lfc = &state.local_file_cache();
     let crypto = &state.crypto();
@@ -248,6 +267,12 @@ pub async fn delete_diary_attachment(
     id: &str,
     filename: &str,
 ) -> Result<(), DiaryError> {
+    let lock = MANIFEST_LOCKS
+        .entry(id.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+    let _guard = lock.lock().await;
+
     let mut diary = get_diary(cache, lfc, crypto, client, id).await?;
     diary.attachments.retain(|att| att.filename != filename);
     diary.updated = Utc::now().timestamp_millis();

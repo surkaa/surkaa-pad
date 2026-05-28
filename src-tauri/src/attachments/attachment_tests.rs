@@ -44,11 +44,11 @@ mod tests {
         let concurrency_level = 10;
         let mut add_tasks: Vec<JoinHandle<_>> = Vec::with_capacity(concurrency_level);
 
+        let state = AppState::from_parts(crypto.clone(), client.clone(), lfc.clone());
+
         // 2. 核心测试: 并发添加附件
         for i in 0..concurrency_level {
-            let lfc_clone = lfc.clone();
-            let crypto_clone = crypto.clone();
-            let client_clone = client.clone();
+            let state = state.clone();
             let id_clone = diary_id.clone();
             let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
 
@@ -56,8 +56,6 @@ mod tests {
             let dummy_content = format!("attachment_data_{}", i).into_bytes();
             let size = dummy_content.len() as u64;
             let stream = create_mock_stream(dummy_content, 1024);
-
-            let state = AppState::from_parts(crypto_clone, client_clone, lfc_clone);
 
             add_tasks.push(tokio::spawn(async move {
                 add_attachment(
@@ -68,6 +66,7 @@ mod tests {
                     size,
                     "text/plain".to_string(),
                     stream,
+                    None,
                 )
                 .await
             }));
@@ -173,6 +172,7 @@ mod tests {
             size,
             "text/plain".to_string(),
             stream,
+            None,
         )
         .await;
 
@@ -265,6 +265,7 @@ mod tests {
             original_size,
             "image/png".to_string(),
             create_mock_stream(img_buffer, original_size as usize),
+            None,
         )
         .await;
 
@@ -363,6 +364,7 @@ mod tests {
             size,
             "text/plain".to_string(),
             stream,
+            None,
         )
         .await;
 
@@ -448,6 +450,7 @@ mod tests {
             size,
             "text/plain".to_string(),
             stream,
+            None,
         ).await;
         let mut filename = None;
         while let Some(event) = rx.recv().await {

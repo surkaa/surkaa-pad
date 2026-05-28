@@ -1,6 +1,7 @@
 use crate::attachments::attachment::{
-    add_attachment, caching_attachment, delete_attachment, rotate_image_attachment,
-    save_decrypt_attachment, toggle_attachment_encryption, update_attachment_filename,
+    add_attachment, caching_attachment, deduplicate_filename, delete_attachment,
+    rotate_image_attachment, save_decrypt_attachment, toggle_attachment_encryption,
+    update_attachment_filename,
 };
 use crate::attachments::attachment_types::{
     AttachmentProcessEvent, ChunkedUploadChunkResult, ChunkedUploadFinishResult,
@@ -43,6 +44,7 @@ pub fn cmd_add_attachment(
     id: String,
     access_str: String,
     encrypted: bool,
+    original_filename: Option<String>,
 ) -> Result<String, AppError> {
     let fp = FilePath::from_str(&access_str)
         .map_err(|e| AppError { error_type: "io".into(), message: format!("无效的文件路径: {}", e) })?;
@@ -66,6 +68,7 @@ pub fn cmd_add_attachment(
             size,
             mimetype,
             stream,
+            original_filename,
         )
         .await;
     })?)
@@ -110,6 +113,7 @@ pub fn cmd_add_attachment_memory(
             len as u64,
             mimetype,
             stream,
+            None,
         )
         .await;
     })?)
@@ -183,6 +187,7 @@ pub async fn cmd_add_image_attachment_from_camera(
                 len as u64,
                 MIMETYPE.to_string(),
                 stream,
+                None,
             )
             .await;
         })?)
@@ -373,33 +378,59 @@ pub async fn cmd_start_chunked_upload(
         state.oss_client(),
     );
 
-    // MEX 算法分配附件 ID
+    // 附件 ID / 文件名分配
+    let use_original = cfg!(target_os = "windows") && !filename.trim().is_empty();
+
     let alloc_state = state.attachment_allocators().entry(id.clone()).or_default().clone();
-    let allocated_id = {
-        let mut pending_ids = alloc_state.lock().await;
+    let (allocated_id, attachment_filename) = if use_original {
+        // Windows 平台：使用原始文件名，冲突时追加 _1/_2 后缀去重
+        let str_alloc_state = state.filename_allocators().entry(id.clone()).or_default().clone();
         let diary = get_diary(&cache, &lfc, &crypto, &client, &id)
             .await
             .map_err(|e| AppError {
                 error_type: "attachment".into(),
                 message: e.to_string(),
             })?;
-
-        let existing_ids: HashSet<u32> = diary
+        let existing_fns: HashSet<String> = diary
             .attachments
             .iter()
-            .filter_map(|att| att.filename.parse::<u32>().ok())
+            .map(|a| a.filename.clone())
             .collect();
 
-        let new_id = (1..).find(|i| !existing_ids.contains(i) && !pending_ids.contains(i));
-        let new_id = new_id.ok_or_else(|| AppError {
-            error_type: "attachment".into(),
-            message: "无法分配附件 ID".into(),
-        })?;
+        let mut pending_fns = str_alloc_state.lock().await;
+        let combined: HashSet<&String> = existing_fns.union(&*pending_fns).collect();
+        let combined_owned: HashSet<String> = combined.into_iter().cloned().collect();
+        let unique = deduplicate_filename(&filename, &combined_owned);
+        pending_fns.insert(unique.clone());
+        (0u32, unique)
+    } else {
+        // MEX 算法分配附件 ID
+        let allocated_id = {
+            let mut pending_ids = alloc_state.lock().await;
+            let diary = get_diary(&cache, &lfc, &crypto, &client, &id)
+                .await
+                .map_err(|e| AppError {
+                    error_type: "attachment".into(),
+                    message: e.to_string(),
+                })?;
 
-        pending_ids.insert(new_id);
-        new_id
+            let existing_ids: HashSet<u32> = diary
+                .attachments
+                .iter()
+                .filter_map(|att| att.filename.parse::<u32>().ok())
+                .collect();
+
+            let new_id = (1..).find(|i| !existing_ids.contains(i) && !pending_ids.contains(i));
+            let new_id = new_id.ok_or_else(|| AppError {
+                error_type: "attachment".into(),
+                message: "无法分配附件 ID".into(),
+            })?;
+
+            pending_ids.insert(new_id);
+            new_id
+        };
+        (allocated_id, allocated_id.to_string())
     };
-    let attachment_filename = allocated_id.to_string();
     let key = remote_attachments_key(&id, &attachment_filename);
 
     // 创建加密 cipher（如需要）
@@ -432,6 +463,7 @@ pub async fn cmd_start_chunked_upload(
     let upload_state = ChunkedUploadState {
         diary_id: id,
         allocated_id,
+        allocated_filename: attachment_filename.clone(),
         upload_id,
         key,
         filename: attachment_filename.clone(),
@@ -577,15 +609,25 @@ pub async fn cmd_finish_chunked_upload(
     // 固化本地缓存
     let _ = upload.lfc_handle.finalize(&etag).await;
 
-    // 释放 MEX 占位
-    let alloc_state = state
-        .attachment_allocators()
-        .entry(upload.diary_id.clone())
-        .or_default()
-        .clone();
-    {
+    // 释放文件名/MEX 占位
+    if upload.allocated_id == 0 {
+        // Windows 字符串文件名分配器
+        let str_alloc = state
+            .filename_allocators()
+            .entry(upload.diary_id.clone())
+            .or_default()
+            .clone();
+        let mut pending_fns = str_alloc.lock().await;
+        pending_fns.remove(&upload.allocated_filename);
+    } else {
+        let alloc_state = state
+            .attachment_allocators()
+            .entry(upload.diary_id.clone())
+            .or_default()
+            .clone();
         let mut pending_ids = alloc_state.lock().await;
         pending_ids.remove(&upload.allocated_id);
+        drop(pending_ids);
     }
 
     log::info!("[chunked_upload] complete: key={}, parts={}, etag={}, total_size={}, uploaded_bytes={}", upload.key, parts_count, etag, upload.total_size, upload.uploaded_bytes);
@@ -645,13 +687,21 @@ pub async fn cmd_abort_chunked_upload(
     // 删除本地临时文件
     upload.lfc_handle.abort().await;
 
-    // 释放 MEX 占位
-    let alloc_state = state
-        .attachment_allocators()
-        .entry(upload.diary_id)
-        .or_default()
-        .clone();
-    {
+    // 释放文件名/MEX 占位
+    if upload.allocated_id == 0 {
+        let str_alloc = state
+            .filename_allocators()
+            .entry(upload.diary_id)
+            .or_default()
+            .clone();
+        let mut pending_fns = str_alloc.lock().await;
+        pending_fns.remove(&upload.allocated_filename);
+    } else {
+        let alloc_state = state
+            .attachment_allocators()
+            .entry(upload.diary_id)
+            .or_default()
+            .clone();
         let mut pending_ids = alloc_state.lock().await;
         pending_ids.remove(&upload.allocated_id);
     }
