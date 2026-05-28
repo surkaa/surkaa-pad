@@ -8,6 +8,7 @@ mod tests {
     use crate::diaries::{delete_diary, get_diary, save_diary, update_diary_content_only};
     use crate::object::OssClient;
     use crate::storages::remote_manifest_key;
+    use crate::test_utils::TestOssGuard;
     use chrono::Utc;
     use serde_json::to_vec;
     use serial_test::serial;
@@ -19,17 +20,11 @@ mod tests {
         // 初始化依赖
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
-
-        // 判断为空，确保测试环境干净
-        let (objects, _) = client.list("", None).await.expect("未能列出对象");
-        assert!(
-            objects.is_empty(),
-            "测试环境不干净。请确保运行测试前OSS桶是空的。"
-        );
 
         // 测试创建
         let initial_content = "Integration test diary content.";
@@ -84,6 +79,7 @@ mod tests {
         // 初始化依赖
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
@@ -172,9 +168,10 @@ mod tests {
 mod diary_list_tests {
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::Crypto;
-    use crate::diaries::diary::{delete_diary, save_diary};
+    use crate::diaries::diary::save_diary;
     use crate::diaries::{get_diary_content, get_diary_summary, page_diary_ids};
     use crate::object::OssClient;
+    use crate::test_utils::TestOssGuard;
     use serial_test::serial;
 
     #[serial]
@@ -183,16 +180,11 @@ mod diary_list_tests {
         // 初始化依赖
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
-
-        // 确保是空的测试环境
-        let (ids, _) = page_diary_ids(&client, None)
-            .await
-            .expect("无法获取日记列表");
-        assert!(ids.is_empty(), "测试环境不干净，存在日记数据");
 
         // 创建几个测试日记
         let title = "这是一个测试日记的标题";
@@ -240,12 +232,6 @@ mod diary_list_tests {
             assert_eq!(content, content);
         }
 
-        // 清理测试数据
-        for id in all_ids {
-            delete_diary(&cache, &lfc, &client, &id)
-                .await
-                .expect("无法删除测试日记");
-        }
     }
 }
 
@@ -253,11 +239,11 @@ mod diary_list_tests {
 mod diary_search_tests {
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::Crypto;
-    use crate::diaries::diary::{delete_diary, save_diary};
+    use crate::diaries::diary::save_diary;
     use crate::diaries::diary_search::search_diaries;
     use crate::diaries::diary_types::{DiarySummary, SearchDiariesEvent};
-    use crate::diaries::page_diary_ids;
     use crate::object::OssClient;
+    use crate::test_utils::TestOssGuard;
     use serial_test::serial;
     use std::sync::Arc;
 
@@ -315,16 +301,11 @@ mod diary_search_tests {
         // 初始化依赖
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
-
-        // 确保是空的测试环境
-        let (ids, _) = page_diary_ids(&client, None)
-            .await
-            .expect("无法获取日记列表");
-        assert!(ids.is_empty(), "测试环境不干净，存在日记数据");
 
         // 创建几个测试日记
         let _ = save_diary(
@@ -419,13 +400,6 @@ mod diary_search_tests {
             "使用 OR 搜索 'rust async' 应该不匹配 1 篇日记"
         );
 
-        // 清理测试数据
-        let (ids, _) = page_diary_ids(&client, None)
-            .await
-            .expect("无法获取日记列表");
-        for id in ids {
-            let _ = delete_diary(&cache, &lfc, &client, &id).await;
-        }
     }
 }
 

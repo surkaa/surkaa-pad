@@ -8,6 +8,8 @@ mod state;
 mod storages;
 mod stream;
 mod tasks;
+#[cfg(test)]
+mod test_utils;
 mod utils;
 
 use crate::attachments::attachment_command::{

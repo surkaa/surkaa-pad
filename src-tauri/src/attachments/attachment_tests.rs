@@ -4,9 +4,10 @@ mod tests {
     use crate::attachments::attachment_types::AttachmentProcessEvent;
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::Crypto;
-    use crate::diaries::{delete_diary, get_diary, page_diary_ids, save_diary};
+    use crate::diaries::{get_diary, save_diary};
     use crate::object::OssClient;
     use crate::state::AppState;
+    use crate::test_utils::TestOssGuard;
     use crate::storages::remote_attachments_key;
     use crate::stream::{collect_data, create_mock_stream};
     use futures::future::join_all;
@@ -22,20 +23,12 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
 
-        // 0. 判断是是否为空
-        let (ids, _) = page_diary_ids(&client, None)
-            .await
-            .expect("分页获取日记 ID 失败");
-        assert!(
-            ids.is_empty(),
-            "测试前环境不干净，存在遗留日记数据，请清理后重试"
-        );
-
-        // 1. 预置数据: 初始化日记主体
+        // 预置数据: 初始化日记主体
         let (summary, _) = save_diary(&cache, &lfc, &crypto, &client, "并发附件测试日记主体")
             .await
             .expect("未能初始化测试日记");
@@ -135,10 +128,6 @@ mod tests {
             "并发删除存在遗漏，附件未能全部清空"
         );
 
-        // 清理测试数据
-        delete_diary(&cache, &lfc, &client, &diary_id)
-            .await
-            .expect("测试结束时清理日记失败");
     }
 
     #[serial]
@@ -147,6 +136,7 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
@@ -222,10 +212,6 @@ mod tests {
         let downloaded_bytes = collect_data(down_stream).await.expect("收集失败");
         assert_eq!(downloaded_bytes, raw_data, "转换后的文件内容与原始数据不符");
 
-        // 清理
-        delete_diary(&cache, &lfc, &client, &diary_id)
-            .await
-            .unwrap();
     }
 
     #[serial]
@@ -234,6 +220,7 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
@@ -327,10 +314,6 @@ mod tests {
         assert_eq!(final_img.width(), 20);
         assert_eq!(final_img.height(), 10);
 
-        // 清理
-        delete_diary(&cache, &lfc, &client, &diary_id)
-            .await
-            .unwrap();
     }
 
     #[serial]
@@ -339,6 +322,7 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
@@ -418,10 +402,6 @@ mod tests {
             "附件删除后，关联的本地缓存应该被一并清除"
         );
 
-        // 清理日记
-        delete_diary(&cache, &lfc, &client, &diary_id)
-            .await
-            .unwrap();
     }
 
     #[serial]
@@ -430,6 +410,7 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
@@ -478,9 +459,5 @@ mod tests {
             .expect("获取日记失败");
         let meta = diary.attachments.first().unwrap();
         assert_eq!(meta.filename, new_filename, "附件更名后元数据未更新");
-        // 清理
-        delete_diary(&cache, &lfc, &client, &diary_id)
-            .await
-            .expect("测试结束时清理日记失败");
     }
 }

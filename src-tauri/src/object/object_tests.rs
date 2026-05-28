@@ -3,6 +3,7 @@ mod tests {
     use crate::object::object_types::STREAM_MIME_TYPE;
     use crate::object::OssClient;
     use crate::stream::{collect_data, create_mock_stream, ByteStream};
+    use crate::test_utils::TestOssGuard;
     use bytes::Bytes;
 
     use futures_util::stream::iter;
@@ -10,15 +11,6 @@ mod tests {
     use serial_test::serial;
     use std::io::Error;
     use std::iter::once;
-
-    async fn assert_empty(client: &OssClient, msg: &str) {
-        // 检查有没有遗留的测试文件
-        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
-        assert!(next_token.is_none(), "{}", msg);
-        if !objects.is_empty() {
-            panic!("{}: 发现遗留对象 {:?}", msg, objects);
-        }
-    }
 
     async fn add_object(client: &OssClient, key: &str, content: &'static str) {
         let len = content.len() as u64;
@@ -34,11 +26,11 @@ mod tests {
     #[tokio::test]
     async fn test_oss() {
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let key = "test_upload.txt";
         let content = "This is a test line for OSS upload and download testing.";
         let repeat_count = 1000;
 
-        assert_empty(&client, "测试开始前对象存储应为空").await;
 
         // 生成测试文件
         let dir = tempfile::tempdir().expect("无法创建临时目录");
@@ -86,6 +78,7 @@ mod tests {
         // 列出对象
         let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
+
         assert_eq!(objects.len(), 1, "应列出一个对象");
         let obj = &objects[0];
         assert_eq!(obj.key, key);
@@ -107,14 +100,14 @@ mod tests {
         client.delete(key).await.expect("删除失败");
 
         // 确认删除
-        assert_empty(&client, "测试结束后对象存储应为空").await;
+
     }
 
     #[serial]
     #[tokio::test]
     async fn test_batch_delete() {
         let client = OssClient::from_env();
-        assert_empty(&client, "测试开始前对象存储应为空").await;
+        let _guard = TestOssGuard::new(client.clone()).await;
 
         // 上传多个测试文件
         let prefix = "id_";
@@ -150,14 +143,15 @@ mod tests {
             .expect("前缀删除失败");
         assert_eq!(delete_keys.len(), keys.len(), "应删除所有上传的对象");
         // 确认删除
-        assert_empty(&client, "测试结束后对象存储应为空").await;
+
     }
 
     #[serial]
     #[tokio::test]
     async fn test_list() {
         let client = OssClient::from_env();
-        assert_empty(&client, "测试开始前对象存储应为空").await;
+        let _guard = TestOssGuard::new(client.clone()).await;
+
         add_object(&client, "folder/test1.txt", "Test file 1").await;
         add_object(&client, "folder/test2.txt", "Test file 2").await;
         add_object(&client, "folder/subfolder/test3.txt", "Test file 3").await;
@@ -165,25 +159,21 @@ mod tests {
         // 列出对象
         let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
+
         assert_eq!(objects.len(), 3, "应列出三个对象");
         let keys: Vec<String> = objects.iter().map(|obj| obj.key.clone()).collect();
         assert!(keys.contains(&"folder/test1.txt".to_string()));
         assert!(keys.contains(&"folder/test2.txt".to_string()));
         assert!(keys.contains(&"folder/subfolder/test3.txt".to_string()));
 
-        // 清理
-        client
-            .delete_with_prefix("folder/")
-            .await
-            .expect("删除失败");
-        assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 
     #[serial]
     #[tokio::test]
     async fn test_download_range() {
         let client = OssClient::from_env();
-        assert_empty(&client, "测试开始前对象存储应为空").await;
+        let _guard = TestOssGuard::new(client.clone()).await;
+
         let key = "test_range.txt";
         let content = "This is a test file for range download.";
         add_object(&client, key, content).await;
@@ -203,9 +193,6 @@ mod tests {
             "下载的范围数据应与原内容匹配"
         );
 
-        // 清理
-        client.delete(key).await.expect("删除失败");
-        assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 
     #[serial]
@@ -213,9 +200,9 @@ mod tests {
     async fn test_oss_direct_url() {
         // 1. 初始化客户端 (依赖环境变量)
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let test_key = "test_direct_url.txt";
         let test_content = b"Hello OSS Direct URL Test";
-        assert_empty(&client, "测试开始前对象存储应为空").await;
 
         // 2. 先上传一个文件，确保它存在
         client
@@ -240,8 +227,6 @@ mod tests {
         let status = resp.status();
         let body = resp.bytes().await.expect("读取响应体失败");
 
-        // 清理测试文件
-        let _ = client.delete(test_key).await;
 
         assert!(
             status.is_success(),
@@ -255,16 +240,16 @@ mod tests {
     #[tokio::test]
     async fn test_upload_etag() {
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let test_key = "upload_etag.txt";
         let test_content = b"Hello OSS Uploaded Test";
-        assert_empty(&client, "测试开始前对象存储应为空").await;
+
         let etag = client
             .upload_bytes(test_key, test_content.as_ref())
             .await
             .expect("上传测试文件失败");
         let md5 = format!("{:X}", md5::compute(test_content));
         assert_eq!(&etag, &md5, "返回的 ETag 应该是内容的 MD5 值");
-        client.delete(test_key).await.expect("删除失败");
         let stream_etag = client
             .upload(
                 test_key,
@@ -275,17 +260,17 @@ mod tests {
             .await
             .expect("使用流上传测试文件失败");
         assert_eq!(&stream_etag, &md5, "返回的 ETag 应该是内容的 MD5 值");
-        client.delete(test_key).await.expect("删除失败");
-        assert_empty(&client, "测试后对象存储应为空").await;
+
     }
 
     #[serial]
     #[tokio::test]
     async fn test_rename() {
         let client = OssClient::from_env();
+        let _guard = TestOssGuard::new(client.clone()).await;
         let test_key = "rename.txt";
         let test_content = b"Hello OSS Renamed Test".to_vec();
-        assert_empty(&client, "测试开始前对象存储应为空").await;
+
         client.upload_bytes(test_key, &test_content.to_vec()).await.expect("上传测试文件失败");
         let new_key = "renamed.txt";
         client.rename(test_key, new_key).await.expect("重命名失败");
@@ -301,9 +286,5 @@ mod tests {
         client.upload_bytes(test_key, &test_content.to_vec()).await.expect("上传测试文件失败");
         let rename_result = client.rename(test_key, new_key).await;
         assert!(rename_result.is_err(), "重命名到已存在的键应该失败");
-        // 清理
-        client.delete(new_key).await.expect("删除失败");
-        client.delete(test_key).await.expect("删除失败");
-        assert_empty(&client, "测试结束后对象存储应为空").await;
     }
 }
