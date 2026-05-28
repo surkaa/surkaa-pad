@@ -12,6 +12,7 @@ type ConfigMap = {
     "biometric_enabled": boolean;
     "biometric_dek": string | null;
     "encrypted_oss_config": number[] | null;
+    "remote_enabled": boolean;
     "default_image_size_is_small": boolean;
     "pinned_diary_ids": string[]
 };
@@ -20,6 +21,7 @@ const DEFAULT_CONFIG = {
     "biometric_enabled": false,
     "biometric_dek": null,
     "encrypted_oss_config": null,
+    "remote_enabled": false,
     "default_image_size_is_small": false,
     "pinned_diary_ids": []
 } satisfies ConfigMap;
@@ -33,7 +35,14 @@ function storageKey(key: ConfigKey): string {
 
 function readFromStorage<K extends ConfigKey>(key: K): ConfigMap[K] {
     const raw = localStorage.getItem(storageKey(key));
-    if (raw === null) return DEFAULT_CONFIG[key];
+    if (raw === null) {
+        // 兼容旧版本：如果 encrypted_oss_config 存在但 remote_enabled 不存在，默认启用远程
+        if (key === 'remote_enabled') {
+            const hasOssConfig = localStorage.getItem(storageKey('encrypted_oss_config')) !== null;
+            return (hasOssConfig ? true : DEFAULT_CONFIG[key]) as ConfigMap[K];
+        }
+        return DEFAULT_CONFIG[key];
+    }
     try {
         return JSON.parse(raw) as ConfigMap[K];
     } catch {

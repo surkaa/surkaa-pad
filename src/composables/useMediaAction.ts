@@ -99,7 +99,7 @@ export function useMediaAction(
 
         try {
             const p = platform();
-            const originalFilename = p === 'windows' ? rawName : undefined;
+            const originalFilename = p === 'windows' ? rawName : null;
             const res = await api.cmdAddAttachment(event, diaryId.value, accessStr, encrypted, originalFilename);
             cancelTokens.add(res);
         } catch (e) {

@@ -112,6 +112,40 @@ async cmdInitOssClient(akid: string, aks: string, bucket: string, endpoint: stri
 }
 },
 /**
+ * 启用远程存储：初始化 OSS 客户端 → 同步本地数据到云端 → 设置 remote_enabled
+ */
+async cmdEnableRemoteStorage(event: TAURI_CHANNEL<SyncProgressEvent>, akid: string, aks: string, bucket: string, endpoint: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_enable_remote_storage", { event, akid, aks, bucket, endpoint }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 禁用远程存储：同步云端数据到本地 → 设置 remote_enabled = false → 重置 OSS 客户端
+ */
+async cmdDisableRemoteStorage(event: TAURI_CHANNEL<SyncProgressEvent>) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_disable_remote_storage", { event }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 获取当前存储模式
+ */
+async cmdGetStorageMode() : Promise<boolean> {
+    return await TAURI_INVOKE("cmd_get_storage_mode");
+},
+/**
+ * 设置远程存储启用状态（解锁时从前端配置恢复）
+ */
+async cmdSetRemoteEnabled(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("cmd_set_remote_enabled", { enabled });
+},
+/**
  * 根据内容保存日记
  * # Arguments
  * * `content` - 日记内容
@@ -480,6 +514,7 @@ title: string;
 attachments: AttachmentMeta[] }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
+export type SyncProgressEvent = { event: "started"; data: { total: number } } | { event: "progress"; data: { current: number; total: number; diary_title: string } } | { event: "completed" } | { event: "error"; data: string }
 export type TAURI_CHANNEL<TSend> = null
 
 /** tauri-specta globals **/

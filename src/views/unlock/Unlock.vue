@@ -22,6 +22,40 @@
         </div>
 
         <q-form
+            v-else-if="pipeline === 'first-time'"
+            @submit.prevent="startLocalOnly"
+            class="q-gutter-y-lg q-pa-sm"
+        >
+          <div class="text-h6 text-weight-bold q-mb-sm" style="color: var(--pad-text-color)">开始使用</div>
+
+          <q-input
+              v-model="masterPassword"
+              type="password"
+              label="设置主密码"
+              outlined
+              autofocus
+              color="primary"
+              :disable="loading"
+              :rules="[val => !!val || '主密码不能为空']"
+              lazy-rules
+          />
+
+          <q-btn
+              type="submit"
+              color="primary"
+              class="full-width primary-gradient-btn"
+              size="lg"
+              :loading="loading"
+              label="开始使用（本地存储）"
+              unelevated
+          />
+
+          <div class="q-mt-md row justify-center">
+            <q-btn flat color="primary" size="sm" label="配置云存储" @click="pipeline = 'config'" :disable="loading"/>
+          </div>
+        </q-form>
+
+        <q-form
             v-else-if="pipeline === 'login'"
             @submit.prevent="unlock"
             class="q-gutter-y-lg q-pa-sm"
@@ -160,7 +194,7 @@ const configStore = useConfigStore();
 const {setTimeoutForCloseApp} = useTimeoutStore();
 const router = useRouter();
 
-const pipeline = ref<'wait-load-config' | 'login' | 'config'>('wait-load-config');
+const pipeline = ref<'wait-load-config' | 'login' | 'config' | 'first-time'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
 const ossConfig = ref<OssConfigType>({
   akid: '',
@@ -248,6 +282,10 @@ async function saveConfigAndLogin() {
     return;
   }
 
+  // OSS 配置成功，启用远程存储
+  await configStore.saveNormalConfig('remote_enabled', true);
+  await api.cmdSetRemoteEnabled(true);
+
   console.log('Setup & Unlock Successful');
   setTimeoutForCloseApp();
   await router.replace({name: 'DiaryList'});
@@ -281,8 +319,13 @@ async function unlock() {
   try {
     await api.cmdUnlock(masterPassword.value);
 
-    if (!(await initOss())) {
-      return;
+    const remoteEnabled = await configStore.getNormalConfig('remote_enabled');
+    await api.cmdSetRemoteEnabled(remoteEnabled);
+
+    if (remoteEnabled) {
+      if (!(await initOss())) {
+        return;
+      }
     }
 
     console.log('Unlock Successful');
@@ -295,10 +338,29 @@ async function unlock() {
   }
 }
 
+async function startLocalOnly() {
+  if (loading.value) return;
+  loading.value = true;
+
+  try {
+    await api.cmdUnlock(masterPassword.value);
+    await configStore.saveNormalConfig('remote_enabled', false);
+    await api.cmdSetRemoteEnabled(false);
+
+    console.log('Local-only Unlock Successful');
+    setTimeoutForCloseApp();
+    await router.replace({name: 'DiaryList'});
+  } catch (e) {
+    $q.notify({type: "negative", message: `解锁失败: ${formatError(e)}`});
+  } finally {
+    loading.value = false;
+  }
+}
+
 async function confirmReset() {
   if (await confirm('确定要重置OssClient配置吗？这将删除所有本地配置。')) {
-    await configStore.deleteConfig('encrypted_oss_config', 'biometric_enabled', 'biometric_dek');
-    pipeline.value = 'config';
+    await configStore.deleteConfig('encrypted_oss_config', 'remote_enabled', 'biometric_enabled', 'biometric_dek');
+    pipeline.value = 'first-time';
     masterPassword.value = '';
   }
 }
@@ -344,7 +406,7 @@ onMounted(async () => {
       await tryBiometricUnlock();
     }
   } else {
-    pipeline.value = 'config';
+    pipeline.value = 'first-time';
   }
 });
 </script>

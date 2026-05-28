@@ -60,6 +60,27 @@
       </div>
 
       <div class="q-mb-lg">
+        <div class="group-title q-mb-sm">云存储</div>
+        <q-list bordered separator class="pad-card rounded-borders">
+          <q-item>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">云同步</q-item-label>
+              <q-item-label caption class="desc-text">
+                {{ remoteEnabled ? '已启用' : '未启用' }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-toggle
+                  v-model="remoteEnabled"
+                  @update:model-value="handleRemoteToggle"
+                  color="primary"
+              />
+            </q-item-section>
+          </q-item>
+        </q-list>
+      </div>
+
+      <div class="q-mb-lg">
         <div class="group-title q-mb-sm">数据管理</div>
         <q-list bordered separator class="pad-card rounded-borders">
           <q-item clickable v-ripple @click="exportLogFile">
@@ -83,6 +104,49 @@
         </q-list>
       </div>
     </div>
+
+    <!-- OSS 配置对话框 -->
+    <q-dialog v-model="showOssConfigDialog" persistent>
+      <q-card class="pad-modal" style="min-width: 340px">
+        <q-card-section>
+          <div class="text-h6 title-text">配置云存储</div>
+          <div class="text-caption desc-text">填写阿里云 OSS 配置以启用云同步</div>
+        </q-card-section>
+        <q-card-section class="q-pt-none q-gutter-y-sm">
+          <q-input v-model="ossConfig.akid" label="AccessKey ID" outlined dense color="primary" :disable="loading"
+                   :rules="[val => !!val || '必填']" hide-bottom-space/>
+          <q-input v-model="ossConfig.aks" type="password" label="AccessKey Secret" outlined dense color="primary"
+                   :disable="loading" :rules="[val => !!val || '必填']" hide-bottom-space/>
+          <q-input v-model="ossConfig.bucket" label="Bucket 名称" outlined dense color="primary" :disable="loading"
+                   :rules="[val => !!val || '必填']" hide-bottom-space/>
+          <q-input v-model="ossConfig.endpoint" label="Endpoint" outlined dense color="primary" :disable="loading"
+                   :rules="[val => !!val || '必填']" hide-bottom-space/>
+        </q-card-section>
+        <q-card-actions align="right" class="q-pb-md q-pr-md">
+          <q-btn flat label="取消" color="grey-7" v-close-popup @click="remoteEnabled = false"/>
+          <q-btn unelevated label="启用云同步" color="primary" :loading="loading" @click="doEnableRemote"/>
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- 同步进度对话框 -->
+    <q-dialog v-model="showSyncProgress" persistent>
+      <q-card class="pad-modal" style="min-width: 300px">
+        <q-card-section>
+          <div class="text-h6 title-text">同步中</div>
+        </q-card-section>
+        <q-card-section class="q-pt-none">
+          <div class="desc-text q-mb-sm">{{ syncStatusText }}</div>
+          <q-linear-progress
+              v-if="syncTotal > 0"
+              :value="syncTotal > 0 ? syncProgress / syncTotal : 0"
+              color="primary"
+              class="q-mt-sm"
+          />
+          <q-spinner v-else color="primary" size="2em"/>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
 
     <q-dialog v-model="showPasswordVerify" persistent>
       <q-card class="pad-modal" style="min-width: 300px">
@@ -114,7 +178,7 @@
 </template>
 
 <script setup lang="ts">
-import {ref} from 'vue';
+import {onMounted, ref} from 'vue';
 import {platform} from "@tauri-apps/plugin-os";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {exportLogFile} from "../../utils";
@@ -124,6 +188,9 @@ import {useConfigStore} from "../../stores/config.ts";
 import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
+import {OssConfigType} from "../../types.ts";
+import {Channel} from "@tauri-apps/api/core";
+import {SyncProgressEvent} from "../../bindings.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -135,6 +202,106 @@ const theme = configStore.useTauriConfig('app-theme');
 const biometricEnable = configStore.useTauriConfig('biometric_enabled');
 const defaultImageSize = configStore.useTauriConfig('default_image_size_is_small');
 const isAndroid = ref(platform() === 'android');
+
+// 云存储
+const remoteEnabled = ref(false);
+const showOssConfigDialog = ref(false);
+const showSyncProgress = ref(false);
+const syncProgress = ref(0);
+const syncTotal = ref(0);
+const syncStatusText = ref('');
+const ossConfig = ref<OssConfigType>({akid: '', aks: '', bucket: '', endpoint: ''});
+
+onMounted(async () => {
+  remoteEnabled.value = await api.cmdGetStorageMode();
+});
+
+async function handleRemoteToggle(newValue: boolean) {
+  if (newValue) {
+    // 开启：弹出 OSS 配置对话框
+    ossConfig.value = {akid: '', aks: '', bucket: '', endpoint: ''};
+    showOssConfigDialog.value = true;
+  } else {
+    // 关闭
+    if (await confirm('关闭云同步后，云端数据将下载到本地。确定继续？')) {
+      await doDisableRemote();
+    } else {
+      remoteEnabled.value = true;
+    }
+  }
+}
+
+async function doEnableRemote() {
+  const {akid, aks, bucket, endpoint} = ossConfig.value;
+  if (!akid || !aks || !bucket || !endpoint) {
+    $q.notify({type: 'warning', message: '请填写完整的 OSS 配置'});
+    return;
+  }
+  showOssConfigDialog.value = false;
+  showSyncProgress.value = true;
+  syncStatusText.value = '正在同步数据到云端...';
+  syncProgress.value = 0;
+
+  try {
+    const encryptedConfig = await api.cmdEncryptData(JSON.stringify(ossConfig.value));
+    await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig);
+
+    const event = new Channel<SyncProgressEvent>();
+    event.onmessage = (msg: any) => {
+      if (msg.event === 'started') {
+        syncTotal.value = msg.data.total;
+      } else if (msg.event === 'progress') {
+        syncProgress.value = msg.data.current;
+        syncTotal.value = msg.data.total;
+        syncStatusText.value = `正在同步 ${msg.data.current}/${msg.data.total}...`;
+      } else if (msg.event === 'completed') {
+        syncStatusText.value = '同步完成';
+      }
+    };
+
+    await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
+    await configStore.saveNormalConfig('remote_enabled', true);
+    remoteEnabled.value = true;
+    $q.notify({type: 'positive', message: '云同步已启用'});
+  } catch (e) {
+    $q.notify({type: 'negative', message: `启用云同步失败: ${formatError(e)}`});
+    remoteEnabled.value = false;
+    await configStore.deleteConfig('encrypted_oss_config');
+  } finally {
+    showSyncProgress.value = false;
+  }
+}
+
+async function doDisableRemote() {
+  showSyncProgress.value = true;
+  syncStatusText.value = '正在从云端下载数据...';
+  syncProgress.value = 0;
+
+  try {
+    const event = new Channel<SyncProgressEvent>();
+    event.onmessage = (msg: any) => {
+      if (msg.event === 'started') {
+        syncTotal.value = msg.data.total;
+      } else if (msg.event === 'progress') {
+        syncProgress.value = msg.data.current;
+        syncTotal.value = msg.data.total;
+        syncStatusText.value = `正在下载 ${msg.data.current}/${msg.data.total}...`;
+      } else if (msg.event === 'completed') {
+        syncStatusText.value = '下载完成';
+      }
+    };
+
+    await api.cmdDisableRemoteStorage(event);
+    await configStore.saveNormalConfig('remote_enabled', false);
+    remoteEnabled.value = false;
+    $q.notify({type: 'positive', message: '云同步已关闭，数据已下载到本地'});
+  } catch (e) {
+    $q.notify({type: 'negative', message: `关闭云同步失败: ${formatError(e)}`});
+    remoteEnabled.value = true;
+  } finally {
+    showSyncProgress.value = false;
+  }
+}
 
 // 接收 Quasar v-model 抛出的 boolean
 async function handleBiometricToggle(newValue: boolean) {
@@ -172,8 +339,8 @@ function cancelBiometric() {
 }
 
 async function handleReset() {
-  if (await confirm('确定要重置OssClient配置吗？此操作不可撤销。重置后将自动重启应用')) {
-    await configStore.deleteConfig('encrypted_oss_config', 'biometric_dek', 'biometric_enabled');
+  if (await confirm('确定要重置应用配置吗？此操作不可撤销。重置后将自动重启应用')) {
+    await configStore.deleteConfig('encrypted_oss_config', 'remote_enabled', 'biometric_dek', 'biometric_enabled');
     await api.cmdCleanCacheFile();
     $q.notify('配置已重置, 即将自动重启');
     setTimeout(relaunch, 1000);
