@@ -379,8 +379,13 @@ async function tryBiometricUnlock() {
 
     await api.cmdBiometricUnlock(data);
 
-    if (!(await initOss())) {
-      return;
+    const remoteEnabled = await configStore.getNormalConfig('remote_enabled');
+    await api.cmdSetRemoteEnabled(remoteEnabled);
+
+    if (remoteEnabled) {
+      if (!(await initOss())) {
+        return;
+      }
     }
 
     console.log('Biometric Unlock Successful');

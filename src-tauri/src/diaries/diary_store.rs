@@ -475,3 +475,366 @@ impl DiaryStore for RemoteStore {
         Ok(self.client.abort_multipart_upload(key, upload_id).await?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::caches::DiaryMemoryCache;
+    use crate::cryptos::Crypto;
+    use crate::diaries::diary::{delete_diary, get_diary, save_diary, update_diary_content_only};
+    use crate::stream::create_mock_stream;
+    use crate::storages::remote_manifest_key;
+
+    /// 创建带测试密钥的 Crypto 实例（使用与 .env 相同的测试凭据）
+    fn make_crypto() -> Crypto {
+        dotenvy::dotenv().ok();
+        let password = std::env::var("TEST_PASSWORD").unwrap_or_else(|_| "1".to_string());
+        let salt = std::env::var("TEST_SALT").unwrap_or_else(|_| "NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg".to_string());
+        let crypto = Crypto::new();
+        crypto.derive_dek(password, &salt).expect("派生密钥失败");
+        crypto
+    }
+
+    fn make_lfc() -> (LocalFileCache, tempfile::TempDir) {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        (LocalFileCache::new(temp_dir.path().to_path_buf()), temp_dir)
+    }
+
+    fn make_local_store() -> (LocalStore, LocalFileCache, tempfile::TempDir) {
+        let (lfc, td) = make_lfc();
+        (LocalStore::new(lfc.clone()), lfc, td)
+    }
+
+    // ==================== LocalStore 基础 CRUD ====================
+
+    #[tokio::test]
+    async fn test_local_store_manifest_roundtrip() {
+        let (store, _lfc, _td) = make_local_store();
+        let data = b"encrypted manifest data";
+
+        let etag = store.upload_manifest("test-id-1", data).await.unwrap();
+        assert!(!etag.is_empty());
+
+        let (downloaded, returned_etag) = store.download_manifest("test-id-1").await.unwrap();
+        assert_eq!(downloaded, data);
+        assert_eq!(returned_etag, etag);
+    }
+
+    #[tokio::test]
+    async fn test_local_store_get_manifest_etag() {
+        let (store, _lfc, _td) = make_local_store();
+
+        // 不存在时返回 None
+        let etag = store.get_manifest_etag("nonexistent").await.unwrap();
+        assert!(etag.is_none());
+
+        // 上传后返回 Some(etag)
+        let data = b"test data";
+        let uploaded_etag = store.upload_manifest("test-id", data).await.unwrap();
+        let etag = store.get_manifest_etag("test-id").await.unwrap();
+        assert_eq!(etag, Some(uploaded_etag));
+    }
+
+    #[tokio::test]
+    async fn test_local_store_delete_diary_all() {
+        let (store, _lfc, _td) = make_local_store();
+
+        // 上传 manifest 和附件
+        store.upload_manifest("del-test", b"manifest data").await.unwrap();
+        store.upload_attachment("del-test", "att1.txt", 5, "text/plain", create_mock_stream(b"hello".to_vec(), 5)).await.unwrap();
+        store.upload_attachment("del-test", "att2.txt", 5, "text/plain", create_mock_stream(b"world".to_vec(), 5)).await.unwrap();
+
+        // 验证存在
+        assert!(store.get_manifest_etag("del-test").await.unwrap().is_some());
+
+        // 删除
+        store.delete_diary_all("del-test").await.unwrap();
+
+        // 验证全部清除
+        assert!(store.get_manifest_etag("del-test").await.unwrap().is_none());
+        assert!(store.download_attachment("del-test", "att1.txt", None, None).await.is_err());
+        assert!(store.download_attachment("del-test", "att2.txt", None, None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_local_store_list_diary_ids() {
+        let (store, _lfc, _td) = make_local_store();
+
+        // 空列表
+        let (ids, next) = store.list_diary_ids(None).await.unwrap();
+        assert!(ids.is_empty());
+        assert!(next.is_none());
+
+        // 创建几个日记
+        store.upload_manifest("20250101000000000", b"diary1").await.unwrap();
+        store.upload_manifest("20250102000000000", b"diary2").await.unwrap();
+        store.upload_manifest("20250103000000000", b"diary3").await.unwrap();
+
+        let (ids, next) = store.list_diary_ids(None).await.unwrap();
+        assert_eq!(ids.len(), 3);
+        assert!(next.is_none());
+        // 应该按降序排列
+        assert_eq!(ids[0], "20250103000000000");
+        assert_eq!(ids[1], "20250102000000000");
+        assert_eq!(ids[2], "20250101000000000");
+    }
+
+    #[tokio::test]
+    async fn test_local_store_list_diary_ids_pagination() {
+        let (store, _lfc, _td) = make_local_store();
+
+        // 创建 5 个日记
+        for i in 0..5 {
+            let id = format!("id_{:03}", i);
+            store.upload_manifest(&id, b"data").await.unwrap();
+        }
+
+        // 第一页（page_size = 50，所以全部返回）
+        let (ids, next) = store.list_diary_ids(None).await.unwrap();
+        assert_eq!(ids.len(), 5);
+        assert!(next.is_none());
+    }
+
+    // ==================== LocalStore 附件操作 ====================
+
+    #[tokio::test]
+    async fn test_local_store_attachment_roundtrip() {
+        let (store, _lfc, _td) = make_local_store();
+        let data = b"attachment content here";
+
+        let etag = store.upload_attachment("diary1", "photo.jpg", data.len() as u64, "image/jpeg", create_mock_stream(data.to_vec(), data.len())).await.unwrap();
+        assert!(!etag.is_empty());
+
+        let (stream, _len) = store.download_attachment("diary1", "photo.jpg", None, None).await.unwrap();
+        let downloaded = crate::stream::collect_data(stream).await.unwrap();
+        assert_eq!(downloaded, data);
+    }
+
+    #[tokio::test]
+    async fn test_local_store_delete_attachment() {
+        let (store, _lfc, _td) = make_local_store();
+
+        store.upload_attachment("diary1", "file.txt", 4, "text/plain", create_mock_stream(b"test".to_vec(), 4)).await.unwrap();
+
+        // 确认存在
+        assert!(store.download_attachment("diary1", "file.txt", None, None).await.is_ok());
+
+        // 删除
+        store.delete_attachment("diary1", "file.txt").await.unwrap();
+
+        // 确认不存在
+        assert!(store.download_attachment("diary1", "file.txt", None, None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_local_store_rename_attachment() {
+        let (store, _lfc, _td) = make_local_store();
+        let data = b"rename test data";
+
+        store.upload_attachment("diary1", "old.txt", data.len() as u64, "text/plain", create_mock_stream(data.to_vec(), data.len())).await.unwrap();
+
+        store.rename_attachment("diary1", "old.txt", "new.txt").await.unwrap();
+
+        // 旧名字不存在
+        assert!(store.download_attachment("diary1", "old.txt", None, None).await.is_err());
+        // 新名字存在且数据正确
+        let (stream, _) = store.download_attachment("diary1", "new.txt", None, None).await.unwrap();
+        let downloaded = crate::stream::collect_data(stream).await.unwrap();
+        assert_eq!(downloaded, data);
+    }
+
+    #[tokio::test]
+    async fn test_local_store_get_attachment_url() {
+        let (store, _lfc, _td) = make_local_store();
+        let meta = AttachmentMeta {
+            filename: "test.jpg".to_string(),
+            mimetype: "image/jpeg".to_string(),
+            size: 100,
+            encrypted: true,
+            nonce: vec![],
+            algorithm: crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr,
+            etag: None,
+        };
+        let url = store.get_attachment_url("diary1", &meta).await.unwrap();
+        assert!(url.contains("attachment.localhost"));
+        assert!(url.contains("diary1"));
+        assert!(url.contains("test.jpg"));
+    }
+
+    // ==================== LocalStore + 日记函数集成 ====================
+
+    #[tokio::test]
+    async fn test_local_store_save_and_get_diary() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = make_crypto();
+        let (store, _lfc, _td) = make_local_store();
+
+        let (summary, content) = save_diary(&cache, &crypto, &store, "Hello, local world!").await.unwrap();
+        assert_eq!(content, "Hello, local world!");
+        assert!(!summary.id.is_empty());
+
+        let manifest = get_diary(&cache, &crypto, &store, &summary.id).await.unwrap();
+        assert_eq!(manifest.content, "Hello, local world!");
+        assert_eq!(manifest.attachments.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_local_store_update_diary() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = make_crypto();
+        let (store, _lfc, _td) = make_local_store();
+
+        let (summary, _) = save_diary(&cache, &crypto, &store, "original").await.unwrap();
+
+        let updated = update_diary_content_only(&cache, &crypto, &store, &summary.id, "updated content").await.unwrap();
+        assert!(updated.updated >= summary.updated);
+
+        let manifest = get_diary(&cache, &crypto, &store, &summary.id).await.unwrap();
+        assert_eq!(manifest.content, "updated content");
+    }
+
+    #[tokio::test]
+    async fn test_local_store_delete_diary() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = make_crypto();
+        let (store, _lfc, _td) = make_local_store();
+
+        let (summary, _) = save_diary(&cache, &crypto, &store, "to be deleted").await.unwrap();
+        let id = summary.id.clone();
+
+        // 确认存在
+        assert!(get_diary(&cache, &crypto, &store, &id).await.is_ok());
+
+        // 删除
+        delete_diary(&cache, &store, &id).await.unwrap();
+
+        // 确认不存在
+        assert!(get_diary(&cache, &crypto, &store, &id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_local_store_list_after_save() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = make_crypto();
+        let (store, _lfc, _td) = make_local_store();
+
+        save_diary(&cache, &crypto, &store, "diary one").await.unwrap();
+        save_diary(&cache, &crypto, &store, "diary two").await.unwrap();
+        save_diary(&cache, &crypto, &store, "diary three").await.unwrap();
+
+        let (ids, _) = store.list_diary_ids(None).await.unwrap();
+        assert_eq!(ids.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_local_store_get_nonexistent_diary() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = make_crypto();
+        let (store, _lfc, _td) = make_local_store();
+
+        let result = get_diary(&cache, &crypto, &store, "nonexistent-id").await;
+        assert!(result.is_err());
+    }
+
+    // ==================== AppState.diary_store() 行为 ====================
+
+    #[test]
+    fn test_app_state_diary_store_local_mode() {
+        let (lfc, _td) = make_lfc();
+        let state = crate::state::AppState::from_parts(
+            Crypto::new(),
+            OssClient::new(),
+            lfc,
+        );
+        // 默认 remote_enabled = false
+        assert!(!state.is_remote_enabled());
+    }
+
+    #[test]
+    fn test_app_state_diary_store_remote_mode() {
+        let (lfc, _td) = make_lfc();
+        let state = crate::state::AppState::from_parts(
+            Crypto::new(),
+            OssClient::new(),
+            lfc,
+        );
+        state.set_remote_enabled(true);
+        assert!(state.is_remote_enabled());
+
+        state.set_remote_enabled(false);
+        assert!(!state.is_remote_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_local_store_data_persistence_across_instances() {
+        let (lfc, _td) = make_lfc();
+
+        // 用第一个 store 实例写入
+        {
+            let store = LocalStore::new(lfc.clone());
+            store.upload_manifest("persist-test", b"persistent data").await.unwrap();
+        }
+
+        // 用第二个 store 实例读取（模拟应用重启）
+        {
+            let store = LocalStore::new(lfc.clone());
+            let (data, _etag) = store.download_manifest("persist-test").await.unwrap();
+            assert_eq!(data, b"persistent data");
+        }
+    }
+
+    // ==================== 边界情况 ====================
+
+    #[tokio::test]
+    async fn test_local_store_empty_manifest() {
+        let (store, _lfc, _td) = make_local_store();
+        let etag = store.upload_manifest("empty", b"").await.unwrap();
+        let (data, _) = store.download_manifest("empty").await.unwrap();
+        assert!(data.is_empty());
+        assert!(!etag.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_local_store_overwrite_manifest() {
+        let (store, _lfc, _td) = make_local_store();
+
+        store.upload_manifest("overwrite", b"version 1").await.unwrap();
+        store.upload_manifest("overwrite", b"version 2").await.unwrap();
+
+        let (data, _) = store.download_manifest("overwrite").await.unwrap();
+        assert_eq!(data, b"version 2");
+    }
+
+    #[tokio::test]
+    async fn test_local_store_attachment_with_range() {
+        let (store, _lfc, _td) = make_local_store();
+        let data = b"0123456789abcdef";
+
+        store.upload_attachment("diary1", "range-test", data.len() as u64, "application/octet-stream", create_mock_stream(data.to_vec(), data.len())).await.unwrap();
+
+        // 请求 range [4, 8]
+        let (stream, _) = store.download_attachment("diary1", "range-test", Some((4, 8)), None).await.unwrap();
+        let downloaded = crate::stream::collect_data(stream).await.unwrap();
+        assert_eq!(downloaded, b"45678");
+    }
+
+    // ==================== 跨 store 数据迁移模拟 ====================
+
+    #[tokio::test]
+    async fn test_local_to_remote_data_transfer() {
+        let (lfc, _td) = make_lfc();
+        let local_store = LocalStore::new(lfc.clone());
+
+        // 在 LocalStore 中创建数据
+        local_store.upload_manifest("migrate-1", b"manifest data").await.unwrap();
+        local_store.upload_attachment("migrate-1", "att.txt", 4, "text/plain", create_mock_stream(b"test".to_vec(), 4)).await.unwrap();
+
+        // 模拟从 LocalStore 读取（同步到云端的第一步）
+        let (manifest, _etag) = local_store.download_manifest("migrate-1").await.unwrap();
+        assert_eq!(manifest, b"manifest data");
+
+        let (att_stream, _) = local_store.download_attachment("migrate-1", "att.txt", None, None).await.unwrap();
+        let att_data = crate::stream::collect_data(att_stream).await.unwrap();
+        assert_eq!(att_data, b"test");
+    }
+}
