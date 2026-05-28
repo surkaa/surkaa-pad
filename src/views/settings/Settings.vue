@@ -205,6 +205,7 @@ const isAndroid = ref(platform() === 'android');
 
 // 云存储
 const remoteEnabled = ref(false);
+const skipRemoteToggleHandler = ref(false);
 const showOssConfigDialog = ref(false);
 const showSyncProgress = ref(false);
 const syncProgress = ref(0);
@@ -217,6 +218,10 @@ onMounted(async () => {
 });
 
 async function handleRemoteToggle(newValue: boolean) {
+  if (skipRemoteToggleHandler.value) {
+    skipRemoteToggleHandler.value = false;
+    return;
+  }
   if (newValue) {
     // 开启：弹出 OSS 配置对话框
     ossConfig.value = {akid: '', aks: '', bucket: '', endpoint: ''};
@@ -261,10 +266,12 @@ async function doEnableRemote() {
 
     await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
     await configStore.saveNormalConfig('remote_enabled', true);
+    skipRemoteToggleHandler.value = true;
     remoteEnabled.value = true;
     $q.notify({type: 'positive', message: '云同步已启用'});
   } catch (e) {
     $q.notify({type: 'negative', message: `启用云同步失败: ${formatError(e)}`});
+    skipRemoteToggleHandler.value = true;
     remoteEnabled.value = false;
     await configStore.deleteConfig('encrypted_oss_config');
   } finally {
@@ -293,10 +300,12 @@ async function doDisableRemote() {
 
     await api.cmdDisableRemoteStorage(event);
     await configStore.saveNormalConfig('remote_enabled', false);
+    skipRemoteToggleHandler.value = true;
     remoteEnabled.value = false;
     $q.notify({type: 'positive', message: '云同步已关闭，数据已下载到本地'});
   } catch (e) {
     $q.notify({type: 'negative', message: `关闭云同步失败: ${formatError(e)}`});
+    skipRemoteToggleHandler.value = true;
     remoteEnabled.value = true;
   } finally {
     showSyncProgress.value = false;
