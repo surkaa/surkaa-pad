@@ -182,6 +182,14 @@ cargo test
 cargo clippy
 ```
 
+### OSS 测试桶管理
+
+`src-tauri/src/bin/oss_tool.rs` 提供了一个 CLI 工具，用于管理测试用的 OSS 存储桶（列出、删除、上传、下载等操作）。需在 `src-tauri/.env` 中配置 `ALIYUN_KEY`、`ALIYUN_SECRET`、`ALIYUN_BUCKET_NAME`、`ALIYUN_ENDPOINT`、`ALIYUN_REGION`。
+
+```bash
+cargo run --bin oss_tool -- <command>
+```
+
 ## 许可证
 
 本项目采用 Apache License 2.0 + MIT 双重许可开源。
