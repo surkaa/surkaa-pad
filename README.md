@@ -144,20 +144,27 @@ surkaa-pad/
 ├── src/                    # Vue 3 frontend
 │   ├── components/         # UI components (incl. Tiptap editor)
 │   ├── composables/        # Vue composables
+│   ├── directives/         # Vue directives (e.g. vClickOutside)
+│   ├── layout/             # App layout component
 │   ├── router/             # Route config
-│   ├── stores/             # Pinia stores
-│   └── utils/              # Helpers (API, markdown)
+│   ├── stores/             # Pinia stores (config, data, layout, timeout)
+│   ├── utils/              # Helpers (API, markdown)
+│   └── views/              # Page components (unlock, diary-list, diary-detail, diary-search, settings)
 ├── src-tauri/              # Rust backend
 │   └── src/
+│       ├── bin/            # CLI tools (oss_tool)
 │       ├── cryptos/        # Encrypt/decrypt
-│       ├── diaries/        # Diary CRUD
+│       ├── diaries/        # Diary CRUD, sync, search, store abstraction
 │       ├── attachments/    # Attachment management
 │       ├── object/         # S3 client wrapper
 │       ├── caches/         # Two-layer cache
 │       ├── tasks/          # Cancellable async tasks
 │       ├── stream/         # Stream helpers
-│       ├── storages/       # Remote path helpers
-│       ├── state/          # Global state
+│       ├── storages.rs     # Remote path helpers
+│       ├── state.rs        # Global state (AppState)
+│       ├── error.rs        # App error types
+│       ├── lib.rs          # Tauri command registration
+│       ├── main.rs         # Entry point
 │       └── utils/          # Common utilities
 └── CLAUDE.md               # Dev reference
 ```
