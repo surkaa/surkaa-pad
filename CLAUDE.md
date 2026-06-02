@@ -37,7 +37,9 @@ pnpm tsc                        # 仅类型检查 (vue-tsc --noEmit)
 - **路由** (`src/router/index.ts`): Hash 模式，带 keep-alive 页面缓存管理。`/` (Unlock) → `/diary-list`, `/diary-detail/:id?`, `/diary-search`, `/settings`。后退导航会自动销毁离开页面的缓存。
 - **Pinia Store**:
   - `config.ts` — 通过 `localStorage` 持久化（含从旧版 Tauri Store 的一次性迁移）。`useTauriConfig()` 返回 Vue `customRef`，修改时自动写入 localStorage，通过 `storage` 事件实现跨窗口同步。配置项包含主题、生物识别开关、加密后的 OSS 配置、远程存储开关、置顶日记 ID 等。
-  - `data.ts` — 日记列表 ID、摘要缓存、当前编辑状态的内存存储。
+  - `data.ts` — 日记列表 ID、摘要缓存、置顶日记、当前编辑日记及附件 URL map 的内存存储。
+  - `layout.ts` — 管理自定义页面标题（`useLayoutStore`）。
+  - `timeout.ts` — 解锁后 1 小时无操作自动关闭应用的安全定时器（`useTimeoutStore`）。
 - **Tauri 绑定** (`src/bindings.ts`): 由 tauri-specta 从 Rust 命令签名自动生成，**请勿手动编辑**。仅 Windows 调试构建时自动重新导出。
 - **API 包装** (`src/utils/api.ts`): 解包 tauri-specta 的 `Result<T, E>` 类型——错误时 throw，成功时返回数据。
 - **编辑器** (`src/components/editor/`): 基于 Tiptap 的富文本编辑器（`TiptapEditor.vue`），通过自定义 Node 扩展（`tiptap-extensions/`）支持图片、视频、音频、文件等附件内联展示。HTML ↔ Markdown 双向转换由 `markdownConverter.ts` 处理，附件以 `[[TYPE:filename]]` 标记语法存储在 Markdown 中。
@@ -51,13 +53,13 @@ pnpm tsc                        # 仅类型检查 (vue-tsc --noEmit)
 | 模块 | 职责 |
 |---|---|
 | `cryptos` | AES-256-GCM 加解密、AES-256-CTR 流式加解密、Argon2id 密钥派生。`Crypto` 是 `Arc<RwLock<Option<DerivedKey>>>` 的可克隆句柄。`create_ctr_cipher()` 返回独立的 `Aes256Ctr` 实例，用于分片上传场景下跨 chunk 顺序加密。 |
-| `diaries` | 加密日记清单的 CRUD。每篇日记在 OSS 存储为 `{id}/manifest.enc`。标题取自正文首行。含迁移系统（V1→V2 为附件添加 etag 字段）。 |
+| `diaries` | 加密日记清单的 CRUD。每篇日记存储为 `{id}/manifest.enc`。标题取自正文首行。含 `DiaryStore` trait 抽象（`LocalStore`/`RemoteStore`）、同步（`diary_sync`）、搜索（`diary_search`）、列表分页（`diary_list`）、迁移系统（V1→V2 为附件添加 etag 字段）。 |
 | `attachments` | 附件管理（添加、删除、旋转、切换加密状态、分片上传）。包含自定义 `attachment://` URI Scheme 协议，用于在界面中直接内联展示解密后的媒体内容。分片上传三阶段：start → upload chunks → finish/abort，状态存储在 `AppState.chunked_uploads`。附件 ID 分配使用 MEX 算法，分配器存储在 `AppState.attachment_allocators`。 |
 | `object` | 对 `s3` crate 的封装，提供对 OSS 的流式上传/下载/删除操作，以及分片上传（initiate/upload_part/complete/abort）。未加密附件使用预签名 URL 直接访问。通用 MIME 类型 fallback 常量 `STREAM_MIME_TYPE` 定义在 `object_types.rs`。 |
 | `caches` | 两层缓存：`DiaryMemoryCache`（内存 DashMap，按日记 ID 索引）和 `LocalFileCache`（磁盘缓存，用 MD5 记录 etag 便于缓存校验）。`LocalFileCache` 支持 `SaveHandle`（流式保存）和 `ChunkedSaveHandle`（分片增量写入），均使用临时文件 + 原子重命名确保崩溃安全。 |
 | `tasks` | `TaskPool` 管理可取消的异步任务，向前端返回取消令牌。 |
 | `stream` | `ByteStream` 类型别名及相关工具：CTR 流加密适配器、数据收集、文件转流。 |
-| `state` | `AppState`——中心化管理状态，持有 Crypto、OssClient（通过 OnceLock 延迟初始化）、缓存层、任务池、分片上传状态（`chunked_uploads: DashMap`）、附件 ID 分配器（`attachment_allocators: DashMap`）。 |
+| `state` | `AppState`——中心化管理状态，持有 Crypto、OssClient、缓存层、任务池、分片上传状态（`chunked_uploads`）、附件 ID 分配器（`attachment_allocators`）、文件名分配器（`filename_allocators`）、远程存储开关（`remote_enabled: AtomicBool`）。通过 `diary_store()` 根据当前模式返回 `LocalStore` 或 `RemoteStore`。 |
 | `storages` | OSS 路径工具：`remote_manifest_key(id)` → `"{id}/manifest.enc"`，`remote_attachments_key(id, filename)` → `"{id}/{filename}"`。 |
 | `utils` | 文件工具、基于时间戳的降序 ID 生成、用于通过 Tauri Channel 发送类型化事件的 MessageSender trait。 |
 
