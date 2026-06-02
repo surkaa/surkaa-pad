@@ -36,7 +36,7 @@ pnpm tsc                        # 仅类型检查 (vue-tsc --noEmit)
 
 - **路由** (`src/router/index.ts`): Hash 模式，带 keep-alive 页面缓存管理。`/` (Unlock) → `/diary-list`, `/diary-detail/:id?`, `/diary-search`, `/settings`。后退导航会自动销毁离开页面的缓存。
 - **Pinia Store**:
-  - `config.ts` — 通过 Tauri Store 插件持久化到 `settings.json`。`useTauriConfig()` 返回一个与 Rust 后端双向自动同步的 Vue ref。配置项包含主题、生物识别开关、加密后的 OSS 配置、置顶日记 ID 等。
+  - `config.ts` — 通过 `localStorage` 持久化（含从旧版 Tauri Store 的一次性迁移）。`useTauriConfig()` 返回 Vue `customRef`，修改时自动写入 localStorage，通过 `storage` 事件实现跨窗口同步。配置项包含主题、生物识别开关、加密后的 OSS 配置、远程存储开关、置顶日记 ID 等。
   - `data.ts` — 日记列表 ID、摘要缓存、当前编辑状态的内存存储。
 - **Tauri 绑定** (`src/bindings.ts`): 由 tauri-specta 从 Rust 命令签名自动生成，**请勿手动编辑**。仅 Windows 调试构建时自动重新导出。
 - **API 包装** (`src/utils/api.ts`): 解包 tauri-specta 的 `Result<T, E>` 类型——错误时 throw，成功时返回数据。
@@ -81,7 +81,7 @@ pnpm tsc                        # 仅类型检查 (vue-tsc --noEmit)
 - **URI Scheme 协议** (`attachment_protocol.rs`): 前端请求 `http://attachment.localhost/{diary_id}/{filename}`，协议处理器从 OSS/缓存获取数据并流式解密后返回。支持 HTTP Range 请求（最大单次 1MB），适用于视频拖动播放。
 - **etag 缓存校验**: 读取日记时先 HEAD 请求获取远程 etag，与内存缓存和本地文件缓存比对，命中则跳过下载。详见 `diaries/diary.rs:get_diary()`。
 - **迁移系统**: `DiaryManifest` 含 `version` 字段，`MigrationRegistry` 按版本顺序链式注册迁移步骤（当前 V2）。
-- **前端配置持久化**: `useTauriConfig()` 创建 Vue `customRef`，初始化时自动读取、修改时自动保存，通过 `onKeyChange` 响应跨窗口变更。
+- **前端配置持久化**: `useTauriConfig()` 创建 Vue `customRef`，底层使用 `localStorage` 存储（前缀 `config:`）。修改时自动写入并派发同窗口自定义事件；跨窗口通过 `storage` 事件同步。首次启动时自动从旧版 `settings.json`（Tauri Store）迁移。
 - **分片上传**: 粘贴等内存数据场景使用三阶段分片上传（`cmd_start_chunked_upload` → `cmd_upload_chunk` × N → `cmd_finish_chunked_upload`），5MB 分片。S3 multipart ETag 格式为 `"{md5}-{part_count}"`，存入 `AttachmentMeta.etag` 作为不透明字符串。进度通过每个 chunk 完成后返回的 `uploadedBytes/totalBytes` 更新。
 - **Rust 日志**: 使用 `tauri_plugin_log::log`（`use tauri_plugin_log::log;`），不要单独引入 `log` crate。
 
