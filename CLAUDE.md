@@ -40,7 +40,7 @@ pnpm tsc                        # 仅类型检查 (vue-tsc --noEmit)
   - `data.ts` — 日记列表 ID、摘要缓存、当前编辑状态的内存存储。
 - **Tauri 绑定** (`src/bindings.ts`): 由 tauri-specta 从 Rust 命令签名自动生成，**请勿手动编辑**。仅 Windows 调试构建时自动重新导出。
 - **API 包装** (`src/utils/api.ts`): 解包 tauri-specta 的 `Result<T, E>` 类型——错误时 throw，成功时返回数据。
-- **编辑器** (`src/components/editor/`): 基于 Tiptap/ProseMirror 的富文本编辑器（`TiptapEditor.vue`），通过自定义 Node 扩展（`tiptap-extensions/`）支持图片、视频、音频、文件等附件内联展示。HTML ↔ Markdown 双向转换由 `markdownConverter.ts` 处理，附件以 `[[TYPE:filename]]` 标记语法存储在 Markdown 中。
+- **编辑器** (`src/components/editor/`): 基于 Tiptap 的富文本编辑器（`TiptapEditor.vue`），通过自定义 Node 扩展（`tiptap-extensions/`）支持图片、视频、音频、文件等附件内联展示。HTML ↔ Markdown 双向转换由 `markdownConverter.ts` 处理，附件以 `[[TYPE:filename]]` 标记语法存储在 Markdown 中。
 - **录音组件** (`src/components/CaptureAudioDrawer.vue`): 使用 `MediaRecorder` API 录音，录制完成组装完整文件后上传。
 - **媒体操作** (`src/composables/useMediaAction.ts`): 统一管理附件上传、录音、拍照等操作的 composable。包含 `uploadAttachment`（文件选择）、`uploadMemoryAttachmentChunked`（内存数据分片上传）、附件操作（旋转/切换加密/保存解密/缓存）等。
 
@@ -76,7 +76,7 @@ pnpm tsc                        # 仅类型检查 (vue-tsc --noEmit)
 
 ### 关键设计
 
-- **Tiptap 编辑器** (`TiptapEditor.vue`): 基于 Tiptap/ProseMirror，使用 `StarterKit` + 自定义 Node 扩展。附件 URL 直接存储为节点 `src` 属性（而非通过外部 Storage 间接查找），`updateSrc()` 通过 `tr.setNodeMarkup` 精确更新单个节点属性。编辑内容通过 `onUpdate` → `htmlToMarkdown` → `emit('update:modelValue')` 同步到父组件。附件 map 变化不再触发全文重渲染。
+- **Tiptap 编辑器** (`TiptapEditor.vue`): 基于 Tiptap，使用 `StarterKit` + 自定义 Node 扩展。附件 URL 直接存储为节点 `src` 属性（而非通过外部 Storage 间接查找），`updateSrc()` 通过 `tr.setNodeMarkup` 精确更新单个节点属性。编辑内容通过 `onUpdate` → `htmlToMarkdown` → `emit('update:modelValue')` 同步到父组件。附件 map 变化不再触发全文重渲染。
 - **Markdown 转换** (`markdownConverter.ts`): HTML 端到 Markdown 存储端双向转换。附件以 `[[TYPE:filename|config]]` 语法嵌入 Markdown。转换逻辑有 50 个单元测试覆盖。
 - **URI Scheme 协议** (`attachment_protocol.rs`): 前端请求 `http://attachment.localhost/{diary_id}/{filename}`，协议处理器从 OSS/缓存获取数据并流式解密后返回。支持 HTTP Range 请求（最大单次 1MB），适用于视频拖动播放。
 - **etag 缓存校验**: 读取日记时先 HEAD 请求获取远程 etag，与内存缓存和本地文件缓存比对，命中则跳过下载。详见 `diaries/diary.rs:get_diary()`。

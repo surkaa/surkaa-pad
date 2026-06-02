@@ -27,7 +27,7 @@ SurKaa Pad 是一款基于 [Tauri 2](https://tauri.app/) 的端到端加密日�
 
 - **端到端加密** — 日记正文 AES-256-GCM，附件 AES-256-CTR 流式加密，主密码通过 Argon2id 派生密钥
 - **云端同步** — S3 兼容对象存储作为加密数据后端，跨设备访问
-- **富文本编辑** — 基于 Tiptap/ProseMirror，支持图片、视频、音频、文件附件内联展示
+- **富文本编辑** — 基于 Tiptap，支持图片、视频、音频、文件附件内联展示
 - **全文搜索** — 本地全文检索，快速定位历史日记
 - **生物识别解锁**（Android） — 指纹/面容快速解锁，免去重复输入密码
 - **主题切换** — 深色 / 浅色 / 跟随系统
@@ -40,7 +40,7 @@ SurKaa Pad 是一款基于 [Tauri 2](https://tauri.app/) 的端到端加密日�
 |------|------|
 | 前端框架 | Vue 3 + TypeScript |
 | UI 组件库 | Quasar Framework |
-| 富文本编辑器 | Tiptap / ProseMirror |
+| 富文本编辑器 | Tiptap |
 | 桌面/移动壳 | Tauri 2 (Rust) |
 | 加密 | AES-256-GCM / AES-256-CTR / Argon2id |
 | 云存储 | S3 兼容协议 |
