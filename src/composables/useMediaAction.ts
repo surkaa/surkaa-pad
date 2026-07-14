@@ -170,7 +170,9 @@ export function useMediaAction(
         if (showPanel.value) showPanel.value = false;
         uploadTaskMap.value = {};
         if (!opts?.skipFocus) {
-            editorDomRef.value?.focus();
+            if (platform() !== 'android') {
+                editorDomRef.value?.focus();
+            }
         }
     }
 
@@ -198,7 +200,7 @@ export function useMediaAction(
         for (const item of results) {
             if (!item || !editorContentRef.value) continue;
             const { meta, url } = item;
-            editorContentRef.value.focusEnd();
+            if (platform() !== 'android') editorContentRef.value.focusEnd();
             if (!nodeType) {
                 editorContentRef.value.insertFile(meta.filename);
             } else {
@@ -410,7 +412,7 @@ export function useMediaAction(
             for (const item of results) {
                 if (!item || !editorContentRef.value) continue;
                 const { nodeKind, meta, url } = item;
-                editorContentRef.value.focusEnd();
+                if (platform() !== 'android') editorContentRef.value.focusEnd();
                 if (nodeKind === 'file') {
                     editorContentRef.value.insertFile(meta.filename);
                 } else {
