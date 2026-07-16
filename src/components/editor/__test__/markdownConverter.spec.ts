@@ -340,6 +340,24 @@ describe('structured diary content', () => {
     })).toBe('before\n\n[[FILE:doc.pdf]][[ALBUM:a1|mode=stackedCards|images=1.jpg,2.jpg]]')
   })
 
+  it('round-trips album nodes with encoded filenames', () => {
+    const content = {
+      nodes: [{
+        type: 'album' as const,
+        id: 'a1',
+        images: ['one,1.jpg', '二.jpg'],
+        displayMode: 'horizontalList' as const,
+      }],
+    }
+    const markdown = diaryContentToMarkdown(content)
+
+    expect(markdownToDiaryContent(markdown)).toEqual(content)
+    expect(diaryContentToHtml(content, {
+      'one,1.jpg': 'url-1',
+      '二.jpg': 'url-2',
+    })).toContain('class="editor-image-album"')
+  })
+
   it('converts Tiptap HTML and structured content in both directions', () => {
     const content = htmlToDiaryContent(
       '<p>hello</p><img src="blob:u" data-id="photo.png" data-size="small">',
