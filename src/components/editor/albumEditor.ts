@@ -40,3 +40,24 @@ export function createAlbumDocument(
 
   return inserted ? { ...document, content: nextContent } : document
 }
+
+export function changeAlbumDisplayMode(
+  document: EditorJsonNode,
+  albumId: string,
+  displayMode: 'horizontalList' | 'stackedCards',
+): EditorJsonNode {
+  const content = document.content || []
+  return {
+    ...document,
+    content: content.map(node => {
+      if (node.type !== 'albumNode' || node.attrs?.id !== albumId) return node
+      return {
+        ...node,
+        attrs: {
+          ...node.attrs,
+          displayMode,
+        },
+      }
+    }),
+  }
+}

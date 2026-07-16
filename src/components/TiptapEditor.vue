@@ -10,7 +10,7 @@ import { Menu, MenuItem } from '@tauri-apps/api/menu'
 import type { DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import { shouldFocusEditorEnd } from './editor/editorClick'
-import { createAlbumDocument } from './editor/albumEditor'
+import { changeAlbumDisplayMode, createAlbumDocument } from './editor/albumEditor'
 import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode } from './editor/tiptap-extensions'
 
 const props = defineProps<{
@@ -152,6 +152,16 @@ function cycleStackedAlbum(albumId: string) {
   })
 }
 
+function changeAlbumMode(
+  albumId: string,
+  displayMode: 'horizontalList' | 'stackedCards',
+) {
+  if (!editor.value || !albumId) return
+  editor.value.commands.setContent(
+    changeAlbumDisplayMode(editor.value.getJSON(), albumId, displayMode),
+  )
+}
+
 function startAlbumSelection(filename: string) {
   albumAnchor.value = filename
   albumSelection.value = [filename]
@@ -225,7 +235,8 @@ async function handleContextMenu(e: MouseEvent) {
   ]
 
   if (found.type === 'image') {
-    const isAlbumImage = Boolean(found.el.closest('.editor-image-album'))
+    const album = found.el.closest('.editor-image-album') as HTMLElement | null
+    const isAlbumImage = Boolean(album)
     const isSmall = found.el.getAttribute('data-size') === 'small'
     if (!isAlbumImage) {
       buttons.push({
@@ -254,6 +265,16 @@ async function handleContextMenu(e: MouseEvent) {
       buttons.push({
         label: '创建图集',
         action: () => startAlbumSelection(found.filename),
+      })
+    } else {
+      const albumId = album?.dataset.id || ''
+      const currentMode = album?.dataset.displayMode
+      buttons.push({
+        label: currentMode === 'stackedCards' ? '切换为横向图集' : '切换为堆叠图集',
+        action: () => changeAlbumMode(
+          albumId,
+          currentMode === 'stackedCards' ? 'horizontalList' : 'stackedCards',
+        ),
       })
     }
   }

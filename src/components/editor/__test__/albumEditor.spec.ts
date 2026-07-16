@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createAlbumDocument } from '../albumEditor'
+import { changeAlbumDisplayMode, createAlbumDocument } from '../albumEditor'
 
 describe('createAlbumDocument', () => {
   it('inserts the album at the initial image position and removes selected images', () => {
@@ -36,6 +36,26 @@ describe('createAlbumDocument', () => {
           },
         },
         { type: 'imageNode', attrs: { id: '3.jpg' } },
+      ],
+    })
+  })
+})
+
+describe('changeAlbumDisplayMode', () => {
+  it('changes only the target album', () => {
+    const document = {
+      type: 'doc',
+      content: [
+        { type: 'albumNode', attrs: { id: 'a1', displayMode: 'horizontalList' } },
+        { type: 'albumNode', attrs: { id: 'a2', displayMode: 'horizontalList' } },
+      ],
+    }
+
+    expect(changeAlbumDisplayMode(document, 'a1', 'stackedCards')).toEqual({
+      type: 'doc',
+      content: [
+        { type: 'albumNode', attrs: { id: 'a1', displayMode: 'stackedCards' } },
+        { type: 'albumNode', attrs: { id: 'a2', displayMode: 'horizontalList' } },
       ],
     })
   })
