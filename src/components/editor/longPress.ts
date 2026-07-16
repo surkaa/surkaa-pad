@@ -1,7 +1,6 @@
 export interface LongPressController {
   start(action: () => void): void
   cancel(): void
-  isTriggered(): boolean
   consumeTriggered(): boolean
 }
 
@@ -24,9 +23,6 @@ export function createLongPressController(delay = 500): LongPressController {
         clearTimeout(timer)
         timer = null
       }
-    },
-    isTriggered() {
-      return triggered
     },
     consumeTriggered() {
       const result = triggered
