@@ -8,6 +8,7 @@ use crate::diaries::diary::{delete_diary, save_diary, update_diary_content_only}
 use crate::diaries::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
 use crate::diaries::diary_search::search_diaries;
 use crate::diaries::diary_types::{DiarySummary, SearchDiariesEvent};
+use crate::diaries::DiaryContent;
 use crate::state::AppState;
 use tauri::State;
 
@@ -20,16 +21,10 @@ use tauri::State;
 #[specta::specta]
 pub async fn cmd_save_diary(
     state: State<'_, AppState>,
-    content: &str,
-) -> Result<(DiarySummary, String), AppError> {
+    content: DiaryContent,
+) -> Result<(DiarySummary, DiaryContent), AppError> {
     let store = state.diary_store();
-    Ok(save_diary(
-        &state.diary_cache(),
-        &state.crypto(),
-        &*store,
-        content,
-    )
-    .await?)
+    Ok(save_diary(&state.diary_cache(), &state.crypto(), &*store, content).await?)
 }
 
 /// 删除日记及其所有附件
@@ -55,7 +50,7 @@ pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<()
 pub async fn cmd_update_diary_content_only(
     state: State<'_, AppState>,
     id: &str,
-    new_content: &str,
+    new_content: DiaryContent,
 ) -> Result<DiarySummary, AppError> {
     let store = state.diary_store();
     Ok(update_diary_content_only(
@@ -96,13 +91,7 @@ pub async fn cmd_get_diary_summary(
     id: &str,
 ) -> Result<DiarySummary, AppError> {
     let store = state.diary_store();
-    Ok(get_diary_summary(
-        &state.diary_cache(),
-        &state.crypto(),
-        &*store,
-        id,
-    )
-    .await?)
+    Ok(get_diary_summary(&state.diary_cache(), &state.crypto(), &*store, id).await?)
 }
 
 /// 获取日记内容
@@ -115,15 +104,9 @@ pub async fn cmd_get_diary_summary(
 pub async fn cmd_get_diary_content(
     state: State<'_, AppState>,
     id: &str,
-) -> Result<(String, HashMap<String, String>), AppError> {
+) -> Result<(DiaryContent, HashMap<String, String>), AppError> {
     let store = state.diary_store();
-    Ok(get_diary_content(
-        &state.diary_cache(),
-        &state.crypto(),
-        &*store,
-        id,
-    )
-    .await?)
+    Ok(get_diary_content(&state.diary_cache(), &state.crypto(), &*store, id).await?)
 }
 
 /// 搜索日记

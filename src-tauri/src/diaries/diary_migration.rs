@@ -1,9 +1,9 @@
-use crate::diaries::DiaryError;
+use crate::diaries::{DiaryContent, DiaryError};
 use serde_json::Value;
 use tauri_plugin_log::log;
 
 /// 代码当前支持的 schema 版本
-pub const CURRENT_VERSION: u32 = 2;
+pub const CURRENT_VERSION: u32 = 3;
 
 /// 单个迁移步骤：将 JSON 从 V(n) 转换为 V(n+1)
 pub trait DiaryMigration: Send + Sync {
@@ -74,9 +74,7 @@ impl MigrationRegistry {
 
 /// 从 JSON 值中读取 version 字段，缺省返回 1
 pub fn get_version(json: &Value) -> u32 {
-    json.get("version")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(1) as u32
+    json.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u32
 }
 
 /// V1 → V2: 为每个附件添加 etag 字段
@@ -128,8 +126,9 @@ impl DiaryMigration for V1ToV2Migration {
 
     #[cfg(test)]
     fn test_verify(&self, json: &Value) {
-        assert_eq!(get_version(json), 2);
-        let attachments = json["attachments"].as_array().expect("attachments should be array");
+        let attachments = json["attachments"]
+            .as_array()
+            .expect("attachments should be array");
         assert_eq!(attachments.len(), 2);
         for att in attachments {
             assert_eq!(att["etag"], Value::Null, "每个附件应有 etag: null");
@@ -137,15 +136,54 @@ impl DiaryMigration for V1ToV2Migration {
     }
 }
 
+/// V2 → V3: 将 Markdown + 附件标记转换为有序结构化节点
+struct V2ToV3Migration;
+
+impl DiaryMigration for V2ToV3Migration {
+    fn source_version(&self) -> u32 {
+        2
+    }
+
+    fn migrate_json(&self, json: &mut Value) -> Result<(), DiaryError> {
+        let content = json.get("content").and_then(Value::as_str).ok_or_else(|| {
+            DiaryError::InvalidManifest("V2 manifest content must be a string".to_string())
+        })?;
+        json["content"] = serde_json::to_value(DiaryContent::from_editor_text(content))?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn test_input(&self) -> Value {
+        serde_json::json!({
+            "id": "test-v2",
+            "version": 2,
+            "content": "开头\n\n[[IMG:1.jpg|size=small]]\n\n结尾",
+            "attachments": []
+        })
+    }
+
+    #[cfg(test)]
+    fn test_verify(&self, json: &Value) {
+        assert_eq!(json["content"]["nodes"][0]["type"], "markdown");
+        assert_eq!(json["content"]["nodes"][1]["type"], "image");
+        assert_eq!(json["content"]["nodes"][1]["filename"], "1.jpg");
+        assert_eq!(json["content"]["nodes"][1]["size"], "small");
+        assert_eq!(json["content"]["nodes"][2]["type"], "markdown");
+    }
+}
+
 /// 构建包含所有已知迁移步骤的注册表
 pub fn default_registry() -> MigrationRegistry {
     let mut reg = MigrationRegistry::new();
     reg.register(Box::new(V1ToV2Migration));
+    reg.register(Box::new(V2ToV3Migration));
     reg
 }
 
 /// 便利函数：迁移 JSON 字节，返回（是否发生迁移, 新版 JSON 字节）
-pub fn migrate_manifest_bytes(manifest_bytes: &[u8]) -> Result<(bool, Option<Vec<u8>>), DiaryError> {
+pub fn migrate_manifest_bytes(
+    manifest_bytes: &[u8],
+) -> Result<(bool, Option<Vec<u8>>), DiaryError> {
     let mut json: Value = serde_json::from_slice(manifest_bytes)?;
     let registry = default_registry();
     if registry.migrate(&mut json)? {

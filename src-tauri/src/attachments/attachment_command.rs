@@ -328,7 +328,6 @@ pub async fn cmd_save_decrypt_attachment(
 /// * `id` - 日记 ID
 /// * `old_filename` - 旧附件 ID
 /// * `new_filename` - 新附件 ID
-/// * `new_content`  - 新的完整内容
 /// # Returns
 /// * `Result<(), String>` - 成功时返回null，失败时返回错误信息
 #[tauri::command]
@@ -338,14 +337,12 @@ pub async fn cmd_update_attachment_filename(
     id: String,
     old_filename: String,
     new_filename: String,
-    new_content: String,
 ) -> Result<(), AppError> {
     Ok(update_attachment_filename(
         &state,
         &id,
         old_filename,
-        new_filename,
-        new_content
+        new_filename
     ).await?)
 }
 

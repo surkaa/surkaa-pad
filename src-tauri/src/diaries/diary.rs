@@ -4,10 +4,10 @@ use crate::state::AppState;
 use crate::attachments::AttachmentMeta;
 use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
+use crate::diaries::diary_migration::{migrate_manifest_bytes, CURRENT_VERSION};
 use crate::diaries::diary_store::DiaryStore;
 use crate::diaries::diary_types::DiarySummary;
-use crate::diaries::diary_migration::{migrate_manifest_bytes, CURRENT_VERSION};
-use crate::diaries::{DiaryError, DiaryManifest};
+use crate::diaries::{DiaryContent, DiaryError, DiaryManifest};
 use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;
 use dashmap::DashMap;
@@ -18,18 +18,19 @@ use tokio::sync::Mutex;
 /// 每个日记的 manifest 更新互斥锁，防止并发 read-modify-write 导致附件丢失
 static MANIFEST_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
 
-pub async fn save_diary(
+pub async fn save_diary<C: Into<DiaryContent>>(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    content: &str,
-) -> Result<(DiarySummary, String), DiaryError> {
+    content: C,
+) -> Result<(DiarySummary, DiaryContent), DiaryError> {
+    let content = content.into();
     let id = generate_descending_id();
     // 创建一个简单的 manifest
     let manifest = DiaryManifest {
         id: id.clone(),
         algorithm: Gcm,
-        content: content.to_string(),
+        content: content.clone(),
         created: Utc::now().timestamp_millis(),
         updated: Utc::now().timestamp_millis(),
         attachments: Vec::new(),
@@ -48,7 +49,7 @@ pub async fn save_diary(
     // 保存到内存缓存中
     cache.insert(&id, manifest.clone(), etag);
 
-    Ok((DiarySummary::from_manifest(manifest), content.to_string()))
+    Ok((DiarySummary::from_manifest(manifest), content))
 }
 
 /// 获取并解密指定 ID 的日记 manifest 自动处理缓存问题
@@ -121,7 +122,9 @@ async fn update_diary(
     let encrypted_manifest = crypto.encrypt(&manifest_json)?;
 
     // 上传到存储，覆盖原有的 manifest
-    let etag = store.upload_manifest(&diary.id, &encrypted_manifest).await?;
+    let etag = store
+        .upload_manifest(&diary.id, &encrypted_manifest)
+        .await?;
 
     // 更新缓存
     cache.insert(&diary.id, diary.clone(), etag);
@@ -129,18 +132,18 @@ async fn update_diary(
     Ok(())
 }
 
-pub async fn update_diary_content_only(
+pub async fn update_diary_content_only<C: Into<DiaryContent>>(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
     id: &str,
-    new_content: &str,
+    new_content: C,
 ) -> Result<DiarySummary, DiaryError> {
     // 先获取现有的 manifest
     let mut manifest = get_diary(cache, crypto, store, id).await?;
 
     // 更新内容和更新时间
-    manifest.content = new_content.to_string();
+    manifest.content = new_content.into();
     manifest.updated = Utc::now().timestamp_millis();
 
     update_diary(cache, crypto, store, &manifest).await?;
@@ -183,7 +186,6 @@ pub async fn update_diary_attachment_filename(
     id: &str,
     old_filename: String,
     new_filename: String,
-    new_content: String,
 ) -> Result<(), DiaryError> {
     let lock = MANIFEST_LOCKS
         .entry(id.to_string())
@@ -200,9 +202,10 @@ pub async fn update_diary_attachment_filename(
         .iter_mut()
         .find(|att| att.filename == old_filename)
     {
-        att.filename = new_filename;
-        // 更新 diary.content
-        diary.content = new_content;
+        att.filename = new_filename.clone();
+        diary
+            .content
+            .rename_attachment(&old_filename, &new_filename);
         diary.updated = Utc::now().timestamp_millis();
         update_diary(&cache, &crypto, &*store, &diary).await?;
         Ok(())
@@ -226,6 +229,7 @@ pub async fn delete_diary_attachment(
 
     let mut diary = get_diary(cache, crypto, store, id).await?;
     diary.attachments.retain(|att| att.filename != filename);
+    diary.content.remove_attachment(filename);
     diary.updated = Utc::now().timestamp_millis();
     update_diary(cache, crypto, store, &diary).await?;
     Ok(())

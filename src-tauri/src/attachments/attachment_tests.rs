@@ -468,8 +468,7 @@ mod tests {
             &state,
             &diary_id,
             filename.unwrap(),
-            new_filename.to_string(),
-            summary.title.to_string()
+            new_filename.to_string()
         ).await.expect("附件更名失败");
         // 检查
         let store = RemoteStore::new(lfc.clone(), client.clone());

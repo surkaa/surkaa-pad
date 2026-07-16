@@ -31,7 +31,7 @@ pub async fn search_diaries(
                 async move {
                     let diary = get_diary(cache, crypto, store, &id).await?;
 
-                    let content = diary.content();
+                    let content = diary.content.searchable_text();
                     // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词
                     let is_match = if or {
                         kc.iter().any(|keyword| content.contains(keyword))

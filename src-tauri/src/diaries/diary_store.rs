@@ -670,11 +670,11 @@ mod tests {
         let (store, _lfc, _td) = make_local_store();
 
         let (summary, content) = save_diary(&cache, &crypto, &store, "Hello, local world!").await.unwrap();
-        assert_eq!(content, "Hello, local world!");
+        assert_eq!(content.searchable_text(), "Hello, local world!");
         assert!(!summary.id.is_empty());
 
         let manifest = get_diary(&cache, &crypto, &store, &summary.id).await.unwrap();
-        assert_eq!(manifest.content, "Hello, local world!");
+        assert_eq!(manifest.content.searchable_text(), "Hello, local world!");
         assert_eq!(manifest.attachments.len(), 0);
     }
 
@@ -690,7 +690,7 @@ mod tests {
         assert!(updated.updated >= summary.updated);
 
         let manifest = get_diary(&cache, &crypto, &store, &summary.id).await.unwrap();
-        assert_eq!(manifest.content, "updated content");
+        assert_eq!(manifest.content.searchable_text(), "updated content");
     }
 
     #[tokio::test]

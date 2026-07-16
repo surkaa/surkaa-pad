@@ -11,6 +11,9 @@ pub enum DiaryError {
     #[error("Attachment not found: {0}")]
     AttachmentNotFound(String),
 
+    #[error("Invalid diary manifest: {0}")]
+    InvalidManifest(String),
+
     #[error("Object storage error: {0}")]
     Object(#[from] crate::object::ObjectError),
 

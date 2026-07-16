@@ -34,7 +34,7 @@ mod tests {
             .await
             .expect("未能保存日记");
 
-        assert_eq!(content, initial_content);
+        assert_eq!(content.searchable_text(), initial_content);
         assert!(!summary.id.is_empty());
         let id = summary.id.clone();
 
@@ -44,7 +44,7 @@ mod tests {
             .expect("远程获取日记失败");
 
         assert_eq!(fetched_manifest.id, id);
-        assert_eq!(fetched_manifest.content, initial_content);
+        assert_eq!(fetched_manifest.content.searchable_text(), initial_content);
 
         // 为了确保 update 生成的时间戳严格大于前一次，休眠防 Flaky Test
         tokio::time::sleep(Duration::from_millis(5)).await;
@@ -63,7 +63,7 @@ mod tests {
             .await
             .expect("未能重新获取更新的日记");
 
-        assert_eq!(refetched_manifest.content, updated_content);
+        assert_eq!(refetched_manifest.content.searchable_text(), updated_content);
 
         // 测试删除
         delete_diary(&cache, &store, &id)
@@ -114,7 +114,7 @@ mod tests {
         let modified_manifest = DiaryManifest {
             id: id.clone(),
             algorithm: Gcm,
-            content: "Modified content after external update.".to_string(),
+            content: "Modified content after external update.".into(),
             created: summary.created,
             updated: Utc::now().timestamp_millis(),
             attachments: Vec::new(),
@@ -427,7 +427,7 @@ mod diary_migration_tests {
     #[test]
     fn test_no_migration_needed_when_already_current() {
         let json_bytes =
-            br#"{"id":"test","version":2,"content":"hello","attachments":[]}"#;
+            br#"{"id":"test","version":3,"content":{"nodes":[]},"attachments":[]}"#;
         let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
         assert!(!migrated);
         assert!(new_bytes.is_none());
@@ -436,7 +436,7 @@ mod diary_migration_tests {
     #[test]
     fn test_version_greater_than_current_no_downgrade() {
         let mut json = serde_json::json!({"id": "test", "content": "hello"});
-        json["version"] = Value::Number(3.into());
+        json["version"] = Value::Number((CURRENT_VERSION + 1).into());
         let bytes = serde_json::to_vec(&json).unwrap();
         let (migrated, _) = migrate_manifest_bytes(&bytes).unwrap();
         assert!(!migrated);

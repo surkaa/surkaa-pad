@@ -525,7 +525,6 @@ pub async fn update_attachment_filename(
     id: &str,
     old_filename: String,
     new_filename: String,
-    new_content: String,
 ) -> Result<(), AttachmentError> {
     let cache = state.diary_cache();
     let crypto = state.crypto();
@@ -542,13 +541,7 @@ pub async fn update_attachment_filename(
     // 通过 store 重命名附件
     store.rename_attachment(id, &old_filename, &new_filename).await?;
 
-    update_diary_attachment_filename(
-        state,
-        id,
-        old_filename,
-        new_filename,
-        new_content,
-    )
+    update_diary_attachment_filename(state, id, old_filename, new_filename)
     .await
     .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 

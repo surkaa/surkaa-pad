@@ -2,7 +2,7 @@ use crate::caches::DiaryMemoryCache;
 use crate::cryptos::Crypto;
 use crate::diaries::diary_store::DiaryStore;
 use crate::diaries::diary_types::DiarySummary;
-use crate::diaries::{get_diary, DiaryError};
+use crate::diaries::{get_diary, DiaryContent, DiaryError};
 use crate::object::NextToken;
 use std::collections::HashMap;
 
@@ -28,7 +28,7 @@ pub async fn get_diary_content(
     crypto: &Crypto,
     store: &dyn DiaryStore,
     id: &str,
-) -> Result<(String, HashMap<String, String>), DiaryError> {
+) -> Result<(DiaryContent, HashMap<String, String>), DiaryError> {
     let diary = get_diary(cache, crypto, store, id).await?;
     let mut map = HashMap::new();
     for attachment in diary.attachments {
