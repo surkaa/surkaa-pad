@@ -41,6 +41,8 @@ pub enum DiaryContentNode {
     Album {
         id: String,
         images: Vec<String>,
+        #[serde(rename = "displayMode")]
+        #[specta(rename = "displayMode")]
         display_mode: AlbumDisplayMode,
     },
 }
