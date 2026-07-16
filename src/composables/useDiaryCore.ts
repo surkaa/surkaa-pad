@@ -7,6 +7,7 @@ import {CloseRequestedEvent, getCurrentWindow} from "@tauri-apps/api/window";
 import {UnlistenFn} from "@tauri-apps/api/event";
 import api from "../utils/api.ts";
 import {formatError} from "../utils/formatError.ts";
+import type {DiaryContent} from "../bindings.ts";
 
 export function useDiaryCore() {
     const $q = useQuasar();
@@ -15,7 +16,7 @@ export function useDiaryCore() {
     const dataStore = useDataStore();
     const {currentId, currentDiary, diarySummaries, currentDiaryAttachmentUrlMap} = storeToRefs(dataStore);
 
-    const diaryContent = ref<string>("");
+    const diaryContent = ref<DiaryContent>({nodes: []});
 
     const isDelBack = ref(false);
 
@@ -31,10 +32,12 @@ export function useDiaryCore() {
         if (!currentDiary.value) return [];
 
         const referencedIds = new Set<string>();
-        const re = /\[\[(?:IMG|VID|AUD|FILE):([^\]|]+)(?:\|[^\]]*)?\]\]/g;
-        let match: RegExpExecArray | null;
-        while ((match = re.exec(diaryContent.value)) !== null) {
-            referencedIds.add(match[1]);
+        for (const node of diaryContent.value.nodes) {
+            if (node.type === 'album') {
+                node.images.forEach(filename => referencedIds.add(filename));
+            } else if (node.type !== 'markdown') {
+                referencedIds.add(node.filename);
+            }
         }
 
         return currentDiary.value.attachments.filter(
@@ -106,8 +109,8 @@ export function useDiaryCore() {
         });
     }
 
-    function updateContent(newContent: string) {
-        if (diaryContent.value === newContent) return;
+    function updateContent(newContent: DiaryContent) {
+        if (JSON.stringify(diaryContent.value) === JSON.stringify(newContent)) return;
         diaryContent.value = newContent;
     }
 

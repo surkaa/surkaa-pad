@@ -152,7 +152,7 @@ async cmdSetRemoteEnabled(enabled: boolean) : Promise<void> {
  * # Returns
  * * `Result<(DiarySummary, String), String>` - 成功时返回日记 Summary 和日记 ID，失败时返回错误信息
  */
-async cmdSaveDiary(content: string) : Promise<Result<[DiarySummary, string], AppError>> {
+async cmdSaveDiary(content: DiaryContent) : Promise<Result<[DiarySummary, DiaryContent], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_save_diary", { content }) };
 } catch (e) {
@@ -168,7 +168,7 @@ async cmdSaveDiary(content: string) : Promise<Result<[DiarySummary, string], App
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdUpdateDiaryContentOnly(id: string, newContent: string) : Promise<Result<DiarySummary, AppError>> {
+async cmdUpdateDiaryContentOnly(id: string, newContent: DiaryContent) : Promise<Result<DiarySummary, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_update_diary_content_only", { id, newContent }) };
 } catch (e) {
@@ -229,7 +229,7 @@ async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, AppError>> {
  * # Returns
  * * `Result<(String, HashMap<String, String>), String>` - 成功时返回日记内容和附件filename->src Map，失败时返回错误信息
  */
-async cmdGetDiaryContent(id: string) : Promise<Result<[string, Partial<{ [key in string]: string }>], AppError>> {
+async cmdGetDiaryContent(id: string) : Promise<Result<[DiaryContent, Partial<{ [key in string]: string }>], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_content", { id }) };
 } catch (e) {
@@ -390,13 +390,12 @@ async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
  * * `id` - 日记 ID
  * * `old_filename` - 旧附件 ID
  * * `new_filename` - 新附件 ID
- * * `new_content`  - 新的完整内容
  * # Returns
  * * `Result<(), String>` - 成功时返回null，失败时返回错误信息
  */
-async cmdUpdateAttachmentFilename(id: string, oldFilename: string, newFilename: string, newContent: string) : Promise<Result<null, AppError>> {
+async cmdUpdateAttachmentFilename(id: string, oldFilename: string, newFilename: string) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_update_attachment_filename", { id, oldFilename, newFilename, newContent }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_update_attachment_filename", { id, oldFilename, newFilename }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -485,6 +484,7 @@ async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
 
 /** user-defined types **/
 
+export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }
 export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm; etag?: string | null }
 export type AttachmentProcessEvent = { event: "started" } | 
@@ -503,6 +503,8 @@ export type AttachmentProcessEvent = { event: "started" } |
 export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
 export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
 export type ChunkedUploadStartResult = { uploadToken: string; attachmentFilename: string; nonce: number[] | null }
+export type DiaryContent = { nodes: DiaryContentNode[] }
+export type DiaryContentNode = { type: "markdown"; text: string } | { type: "image"; filename: string; size: ImageSize } | { type: "video"; filename: string } | { type: "audio"; filename: string } | { type: "file"; filename: string } | { type: "album"; id: string; images: string[]; displayMode: AlbumDisplayMode }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行
@@ -513,6 +515,7 @@ title: string;
  */
 attachments: AttachmentMeta[] }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
+export type ImageSize = "normal" | "small"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type SyncProgressEvent = { event: "started"; data: { total: number } } | { event: "progress"; data: { current: number; total: number; diary_title: string } } | { event: "completed" } | { event: "error"; data: string }
 export type TAURI_CHANNEL<TSend> = null

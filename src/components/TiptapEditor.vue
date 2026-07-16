@@ -7,18 +7,18 @@ import { useScroll, useStorage } from '@vueuse/core'
 import { useQuasar } from 'quasar'
 import { platform } from '@tauri-apps/plugin-os'
 import { Menu, MenuItem } from '@tauri-apps/api/menu'
-import type { DiarySummary } from '../bindings'
-import { htmlToMarkdown, markdownToHtml } from './editor/markdownConverter'
+import type { DiaryContent, DiarySummary } from '../bindings'
+import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import { ImageNode, VideoNode, AudioNode, FileNode } from './editor/tiptap-extensions'
 
 const props = defineProps<{
-  modelValue: string
+  modelValue: DiaryContent
   diarySummary?: DiarySummary
   attachmentMap: Record<string, string>
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: string): void
+  (e: 'update:modelValue', value: DiaryContent): void
   (e: 'pasteAttachments', files: File[]): void
   (e: 'showImage', src: string): void
   (e: 'toggleAttachmentEncryption', filename: string): void
@@ -44,7 +44,7 @@ function getAttachmentMeta(filename: string) {
 }
 
 const editor = useEditor({
-  content: markdownToHtml(props.modelValue, props.attachmentMap),
+  content: diaryContentToHtml(props.modelValue, props.attachmentMap),
   extensions: [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
@@ -73,16 +73,15 @@ const editor = useEditor({
   },
   onUpdate({ editor: ed }) {
     const html = ed.getHTML()
-    const md = htmlToMarkdown(html)
-    emit('update:modelValue', md)
+    emit('update:modelValue', htmlToDiaryContent(html))
   },
 })
 
 watch(() => props.modelValue, (newVal) => {
   if (!editor.value || newVal === undefined) return
-  const currentMd = htmlToMarkdown(editor.value.getHTML())
-  if (newVal !== currentMd) {
-    editor.value.commands.setContent(markdownToHtml(newVal, props.attachmentMap))
+  const currentContent = htmlToDiaryContent(editor.value.getHTML())
+  if (JSON.stringify(newVal) !== JSON.stringify(currentContent)) {
+    editor.value.commands.setContent(diaryContentToHtml(newVal, props.attachmentMap))
   }
 })
 

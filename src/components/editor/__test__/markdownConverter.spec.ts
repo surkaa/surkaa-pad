@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
-import { htmlToMarkdown, markdownToHtml } from '../markdownConverter'
+import {
+  diaryContentToHtml,
+  diaryContentToMarkdown,
+  htmlToDiaryContent,
+  htmlToMarkdown,
+  markdownToDiaryContent,
+  markdownToHtml,
+} from '../markdownConverter'
 
 // ==================== htmlToMarkdown ====================
 
@@ -309,5 +316,39 @@ describe('markdownToHtml', () => {
     const back = markdownToHtml(md, { 'pic.png': 'blob:u' })
     expect(back).toContain('src="blob:u"')
     expect(back).toContain('data-id="pic.png"')
+  })
+})
+
+describe('structured diary content', () => {
+  it('parses attachment markers into ordered nodes', () => {
+    expect(markdownToDiaryContent('before [[IMG:photo.png|size=small]] after')).toEqual({
+      nodes: [
+        { type: 'markdown', text: 'before ' },
+        { type: 'image', filename: 'photo.png', size: 'small' },
+        { type: 'markdown', text: ' after' },
+      ],
+    })
+  })
+
+  it('serializes structured nodes to editor markdown', () => {
+    expect(diaryContentToMarkdown({
+      nodes: [
+        { type: 'markdown', text: 'before\n\n' },
+        { type: 'file', filename: 'doc.pdf' },
+        { type: 'album', id: 'a1', images: ['1.jpg', '2.jpg'], displayMode: 'stackedCards' },
+      ],
+    })).toBe('before\n\n[[FILE:doc.pdf]][[ALBUM:a1|mode=stackedCards|images=1.jpg,2.jpg]]')
+  })
+
+  it('converts Tiptap HTML and structured content in both directions', () => {
+    const content = htmlToDiaryContent(
+      '<p>hello</p><img src="blob:u" data-id="photo.png" data-size="small">',
+    )
+    expect(content.nodes).toEqual([
+      { type: 'markdown', text: 'hello\n\n' },
+      { type: 'image', filename: 'photo.png', size: 'small' },
+    ])
+    expect(diaryContentToHtml(content, { 'photo.png': 'blob:u' }))
+      .toContain('data-id="photo.png"')
   })
 })

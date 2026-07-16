@@ -15,6 +15,7 @@ import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {useConfigStore} from "../../stores/config.ts";
+import {diaryContentToMarkdown} from "../../components/editor/markdownConverter.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -60,7 +61,7 @@ function additionalAction() {
 function showDiarySource() {
   $q.dialog({
     title: '日记内容 - 源码',
-    message: diaryContent.value.replace('\n', '\\n'),
+    message: diaryContentToMarkdown(diaryContent.value).replace('\n', '\\n'),
     persistent: true,
     ok: {label: '关闭', color: 'primary'},
   });
@@ -92,28 +93,28 @@ async function handleRenameAttachment() {
     return;
   }
   try {
-    // 替换 Markdown 中所有附件的 filename 引用
-    const re = new RegExp(`\\[\\[(IMG|VID|AUD|FILE):${escapeRegExp(oldFilename.value)}(\\|[^\\]]*)?\\]\\]`, 'g');
-    const newContent = diaryContent.value.replace(re, (_match, type, config) => {
-      return config ? `[[${type}:${newFilename.value}${config}]]` : `[[${type}:${newFilename.value}]]`;
-    });
     await api.cmdUpdateAttachmentFilename(
         diaryId.value,
         oldFilename.value,
-        newFilename.value,
-        newContent
+        newFilename.value
     );
     updateAttachmentFilename(diaryId.value, oldFilename.value, newFilename.value);
-    updateContent(newContent);
+    const renamedContent = structuredClone(diaryContent.value);
+    for (const node of renamedContent.nodes) {
+      if (node.type === 'album') {
+        node.images = node.images.map(filename =>
+          filename === oldFilename.value ? newFilename.value : filename
+        );
+      } else if (node.type !== 'markdown' && node.filename === oldFilename.value) {
+        node.filename = newFilename.value;
+      }
+    }
+    updateContent(renamedContent);
     showRenameDialog.value = false;
     renameCb?.(newFilename.value);
   } catch (e) {
     $q.notify({type: 'negative', message: formatError(e)});
   }
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function pinnedDiary() {
