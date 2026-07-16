@@ -27,6 +27,7 @@ export const AlbumNode = Node.create({
       images: { default: [] },
       displayMode: { default: 'horizontalList' },
       urls: { default: [] },
+      hasCycled: { default: false },
     }
   },
 
@@ -40,6 +41,7 @@ export const AlbumNode = Node.create({
           images: parseJsonArray(element.dataset.images),
           displayMode: element.dataset.displayMode || 'horizontalList',
           urls: parseJsonArray(element.dataset.urls),
+          hasCycled: element.dataset.hasCycled === 'true',
         }
       },
     }]
@@ -65,6 +67,7 @@ export const AlbumNode = Node.create({
         'data-images': JSON.stringify(images),
         'data-display-mode': node.attrs.displayMode,
         'data-urls': JSON.stringify(urls),
+        'data-has-cycled': String(node.attrs.hasCycled),
       }),
       ...children,
     ]

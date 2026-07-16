@@ -11,6 +11,7 @@ import type { DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import { shouldFocusEditorEnd } from './editor/editorClick'
 import { changeAlbumDisplayMode, createAlbumDocument } from './editor/albumEditor'
+import { animateStackedAlbumCycle } from './editor/albumAnimation'
 import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode } from './editor/tiptap-extensions'
 
 const props = defineProps<{
@@ -117,7 +118,10 @@ function handleWrapperClick(e: MouseEvent) {
       return
     }
     if (album?.dataset.displayMode === 'stackedCards') {
-      cycleStackedAlbum(album.dataset.id || '')
+      animateStackedAlbumCycle(
+        album,
+        () => cycleStackedAlbum(album.dataset.id || ''),
+      )
       return
     }
     const url = props.attachmentMap[found.filename]
@@ -145,7 +149,12 @@ function cycleStackedAlbum(albumId: string) {
       if (images.length > 1) {
         images.push(images.shift()!)
         urls.push(urls.shift()!)
-        tr.setNodeMarkup(pos, undefined, { ...node.attrs, images, urls })
+        tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          images,
+          urls,
+          hasCycled: true,
+        })
       }
     })
     return true
@@ -478,27 +487,48 @@ defineExpose({
       position: relative;
       display: block;
       min-height: min(72vw, 360px);
-      overflow: hidden;
+      overflow: visible;
 
       img[data-id] {
         position: absolute;
         inset: 8px auto auto 50%;
         transform: translateX(-50%);
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+        transition:
+          transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+          opacity 300ms ease;
       }
 
       img:nth-child(1) {
         z-index: 3;
+        transform: translateX(-50%) rotate(0deg);
       }
 
       img:nth-child(2) {
         z-index: 2;
-        transform: translateX(-50%) rotate(3deg);
+        transform: translateX(-34%) rotate(5deg) scale(0.94);
       }
 
       img:nth-child(n+3) {
+        visibility: hidden;
+      }
+
+      &[data-has-cycled="true"] img:last-child:not(:nth-child(2)) {
         z-index: 1;
-        transform: translateX(-50%) rotate(-3deg);
+        visibility: visible;
+        transform: translateX(-66%) rotate(-5deg) scale(0.94);
+      }
+
+      &.album-cycling {
+        img:nth-child(1) {
+          z-index: 4;
+          transform: translateX(-66%) rotate(-5deg) scale(0.94);
+        }
+
+        img:nth-child(2) {
+          z-index: 3;
+          transform: translateX(-50%) rotate(0deg) scale(1);
+        }
       }
     }
   }
