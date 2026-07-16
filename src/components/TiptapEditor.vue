@@ -269,6 +269,15 @@ async function handleContextMenu(e: MouseEvent) {
     } else {
       const albumId = album?.dataset.id || ''
       const currentMode = album?.dataset.displayMode
+      if (currentMode === 'stackedCards') {
+        buttons.push({
+          label: '预览图片',
+          action: () => {
+            const url = props.attachmentMap[found.filename]
+            if (url) emit('showImage', url)
+          },
+        })
+      }
       buttons.push({
         label: currentMode === 'stackedCards' ? '切换为横向图集' : '切换为堆叠图集',
         action: () => changeAlbumMode(
