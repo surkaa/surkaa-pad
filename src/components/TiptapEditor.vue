@@ -9,6 +9,7 @@ import { platform } from '@tauri-apps/plugin-os'
 import { Menu, MenuItem } from '@tauri-apps/api/menu'
 import type { DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
+import { shouldFocusEditorEnd } from './editor/editorClick'
 import { ImageNode, VideoNode, AudioNode, FileNode } from './editor/tiptap-extensions'
 
 const props = defineProps<{
@@ -111,7 +112,11 @@ function handleWrapperClick(e: MouseEvent) {
   }
   // 点击编辑器空白区域（如底部）时聚焦到末尾
   const proseMirror = editorElement.value?.querySelector('.ProseMirror') as HTMLElement | null
-  if (e.target === editorElement.value || (proseMirror && e.target === proseMirror)) {
+  if (
+    editorElement.value
+    && proseMirror
+    && shouldFocusEditorEnd(e.target, editorElement.value, proseMirror, e.clientY)
+  ) {
     editor.value?.chain().focus('end').run()
   }
 }
