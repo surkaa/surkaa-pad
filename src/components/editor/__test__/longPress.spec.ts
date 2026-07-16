@@ -17,7 +17,9 @@ describe('createLongPressController', () => {
     vi.advanceTimersByTime(1)
 
     expect(action).toHaveBeenCalledOnce()
+    expect(controller.isTriggered()).toBe(true)
     expect(controller.consumeTriggered()).toBe(true)
+    expect(controller.isTriggered()).toBe(false)
     expect(controller.consumeTriggered()).toBe(false)
   })
 
@@ -31,6 +33,7 @@ describe('createLongPressController', () => {
     vi.advanceTimersByTime(500)
 
     expect(action).not.toHaveBeenCalled()
+    expect(controller.isTriggered()).toBe(false)
     expect(controller.consumeTriggered()).toBe(false)
   })
 })

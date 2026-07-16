@@ -246,6 +246,10 @@ function confirmAlbum(displayMode: 'horizontalList' | 'stackedCards') {
 // --- Context menu ---
 
 async function handleContextMenu(e: MouseEvent) {
+  if (stackedAlbumLongPress.isTriggered()) {
+    e.preventDefault()
+    return
+  }
   const found = findAttachmentNode(e.target as HTMLElement)
   if (!found) return
   e.preventDefault()
