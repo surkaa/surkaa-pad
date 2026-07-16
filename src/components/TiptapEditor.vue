@@ -11,7 +11,6 @@ import type { DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import { shouldFocusEditorEnd } from './editor/editorClick'
 import { changeAlbumDisplayMode, createAlbumDocument } from './editor/albumEditor'
-import { createLongPressController } from './editor/longPress'
 import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode } from './editor/tiptap-extensions'
 
 const props = defineProps<{
@@ -35,9 +34,6 @@ const editorElement = ref<HTMLDivElement>()
 const currentPlatform = platform()
 const albumSelection = ref<string[]>([])
 const albumAnchor = ref('')
-const stackedAlbumLongPress = createLongPressController()
-let longPressPointerId: number | null = null
-let longPressOrigin: { x: number; y: number } | null = null
 
 const storageY = useStorage(`scroll-y-${props.diarySummary?.id}`, 0, sessionStorage)
 const { y } = useScroll(editorElement, {
@@ -121,7 +117,6 @@ function handleWrapperClick(e: MouseEvent) {
       return
     }
     if (album?.dataset.displayMode === 'stackedCards') {
-      if (stackedAlbumLongPress.consumeTriggered()) return
       cycleStackedAlbum(album.dataset.id || '')
       return
     }
@@ -138,36 +133,6 @@ function handleWrapperClick(e: MouseEvent) {
   ) {
     editor.value?.chain().focus('end').run()
   }
-}
-
-function handlePointerDown(e: PointerEvent) {
-  if (e.button !== 0) return
-  const found = findAttachmentNode(e.target as HTMLElement)
-  const album = found?.el.closest('.editor-image-album') as HTMLElement | null
-  if (found?.type !== 'image' || album?.dataset.displayMode !== 'stackedCards') return
-
-  longPressPointerId = e.pointerId
-  longPressOrigin = { x: e.clientX, y: e.clientY }
-  stackedAlbumLongPress.start(() => {
-    const url = props.attachmentMap[found.filename]
-    if (url) emit('showImage', url)
-  })
-}
-
-function cancelLongPress(e?: PointerEvent) {
-  if (e && longPressPointerId !== null && e.pointerId !== longPressPointerId) return
-  stackedAlbumLongPress.cancel()
-  longPressPointerId = null
-  longPressOrigin = null
-}
-
-function handlePointerMove(e: PointerEvent) {
-  if (
-    longPressPointerId !== e.pointerId
-    || !longPressOrigin
-    || Math.hypot(e.clientX - longPressOrigin.x, e.clientY - longPressOrigin.y) <= 8
-  ) return
-  cancelLongPress(e)
 }
 
 function cycleStackedAlbum(albumId: string) {
@@ -246,10 +211,6 @@ function confirmAlbum(displayMode: 'horizontalList' | 'stackedCards') {
 // --- Context menu ---
 
 async function handleContextMenu(e: MouseEvent) {
-  if (stackedAlbumLongPress.isTriggered()) {
-    e.preventDefault()
-    return
-  }
   const found = findAttachmentNode(e.target as HTMLElement)
   if (!found) return
   e.preventDefault()
@@ -364,7 +325,6 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  stackedAlbumLongPress.cancel()
   editor.value?.destroy()
 })
 
@@ -400,16 +360,7 @@ defineExpose({
 </script>
 
 <template>
-  <div
-    ref="editorElement"
-    class="tiptap-wrapper"
-    @click="handleWrapperClick"
-    @contextmenu="handleContextMenu"
-    @pointerdown="handlePointerDown"
-    @pointerup="cancelLongPress"
-    @pointercancel="cancelLongPress"
-    @pointermove="handlePointerMove"
-  >
+  <div ref="editorElement" class="tiptap-wrapper" @click="handleWrapperClick" @contextmenu="handleContextMenu">
     <EditorContent :editor="editor" />
     <div v-if="albumAnchor" class="album-selection-bar" @click.stop>
       <span>已选择 {{ albumSelection.length }} 张图片</span>
