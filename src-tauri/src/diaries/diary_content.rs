@@ -16,7 +16,11 @@ pub enum AlbumDisplayMode {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Type, PartialEq, Eq)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum DiaryContentNode {
     Markdown {
         text: String,
@@ -237,5 +241,20 @@ mod tests {
                 filename: "2.mp4".to_string()
             }]
         );
+    }
+
+    #[test]
+    fn serializes_album_fields_as_camel_case() {
+        let content = DiaryContent {
+            nodes: vec![DiaryContentNode::Album {
+                id: "album-1".to_string(),
+                images: vec!["1.jpg".to_string()],
+                display_mode: super::AlbumDisplayMode::StackedCards,
+            }],
+        };
+        let json = serde_json::to_value(content).unwrap();
+
+        assert_eq!(json["nodes"][0]["displayMode"], "stackedCards");
+        assert!(json["nodes"][0].get("display_mode").is_none());
     }
 }
