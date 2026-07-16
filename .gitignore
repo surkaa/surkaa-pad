@@ -1,5 +1,6 @@
 .env**
 .claude
+.codex/
 tauri.conf.schema.json
 
 # Logs
