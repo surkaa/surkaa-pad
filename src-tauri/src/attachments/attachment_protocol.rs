@@ -30,7 +30,6 @@ enum ProtocolError {
 
 impl ProtocolError {
     fn into_response(self) -> Response<Vec<u8>> {
-
         let (status, msg) = match self {
             Self::BadRequest(m) => (StatusCode::BAD_REQUEST, m.to_string()),
             Self::Forbidden(m) => (StatusCode::FORBIDDEN, m.to_string()),
@@ -52,19 +51,29 @@ impl ProtocolError {
 }
 
 impl From<DiaryError> for ProtocolError {
-    fn from(e: DiaryError) -> Self { ProtocolError::Internal(e.to_string()) }
+    fn from(e: DiaryError) -> Self {
+        ProtocolError::Internal(e.to_string())
+    }
 }
 impl From<CryptoError> for ProtocolError {
-    fn from(e: CryptoError) -> Self { ProtocolError::Internal(e.to_string()) }
+    fn from(e: CryptoError) -> Self {
+        ProtocolError::Internal(e.to_string())
+    }
 }
 impl From<AttachmentError> for ProtocolError {
-    fn from(e: AttachmentError) -> Self { ProtocolError::Internal(e.to_string()) }
+    fn from(e: AttachmentError) -> Self {
+        ProtocolError::Internal(e.to_string())
+    }
 }
 impl From<ObjectError> for ProtocolError {
-    fn from(e: ObjectError) -> Self { ProtocolError::Internal(e.to_string()) }
+    fn from(e: ObjectError) -> Self {
+        ProtocolError::Internal(e.to_string())
+    }
 }
 impl From<std::io::Error> for ProtocolError {
-    fn from(e: std::io::Error) -> Self { ProtocolError::Internal(e.to_string()) }
+    fn from(e: std::io::Error) -> Self {
+        ProtocolError::Internal(e.to_string())
+    }
 }
 
 pub fn attachment_protocol(
@@ -144,7 +153,14 @@ async fn process_attachment(
     };
 
     // 通过 store 获取附件流
-    let (stream, _len) = store.download_attachment(id, &filename, Some((start, end)), attachment.etag.as_deref()).await?;
+    let (stream, _len) = store
+        .download_attachment(
+            id,
+            &filename,
+            Some((start, end)),
+            attachment.etag.as_deref(),
+        )
+        .await?;
 
     let stream = if attachment.encrypted {
         crypto.decrypt_streaming(stream, &attachment.nonce, start)?

@@ -25,9 +25,7 @@ pub async fn cmd_init_oss_client(
     log::info!("[oss cmd] akid(len={}): {:?}", akid.len(), akid);
     log::info!("[oss cmd] bucket(len={}): {:?}", bucket.len(), bucket);
     log::info!("[oss cmd] endpoint(len={}): {:?}", endpoint.len(), endpoint);
-    Ok(state
-        .oss_client()
-        .initialize(endpoint, akid, aks, bucket)?)
+    Ok(state.oss_client().initialize(endpoint, akid, aks, bucket)?)
 }
 
 /// 启用远程存储：初始化 OSS 客户端 → 同步本地数据到云端 → 设置 remote_enabled

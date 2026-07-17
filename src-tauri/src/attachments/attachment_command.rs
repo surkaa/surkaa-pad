@@ -12,9 +12,9 @@ use crate::attachments::AttachmentMeta;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
 use crate::diaries::{get_diary, update_diary_attachment};
 use crate::error::AppError;
+use crate::object::STREAM_MIME_TYPE;
 use crate::state::AppState;
 use crate::storages::remote_attachments_key;
-use crate::object::STREAM_MIME_TYPE;
 use crate::stream::{create_mock_stream, file_to_stream};
 use crate::utils::id_generate::generate_descending_id;
 use crate::utils::{file_mimetype, file_size};
@@ -46,14 +46,16 @@ pub fn cmd_add_attachment(
     encrypted: bool,
     original_filename: Option<String>,
 ) -> Result<String, AppError> {
-    let fp = FilePath::from_str(&access_str)
-        .map_err(|e| AppError { error_type: "io".into(), message: format!("无效的文件路径: {}", e) })?;
+    let fp = FilePath::from_str(&access_str).map_err(|e| AppError {
+        error_type: "io".into(),
+        message: format!("无效的文件路径: {}", e),
+    })?;
     let mut option = OpenOptions::new();
     option.read(true);
-    let file = app_handle
-        .fs()
-        .open(fp, option)
-        .map_err(|e| AppError { error_type: "io".into(), message: format!("无法打开文件: {}", e) })?;
+    let file = app_handle.fs().open(fp, option).map_err(|e| AppError {
+        error_type: "io".into(),
+        message: format!("无法打开文件: {}", e),
+    })?;
     let size = file_size(&file)?;
     let (mimetype, file) = file_mimetype(file)?;
     let stream = file_to_stream(file);
@@ -133,14 +135,7 @@ pub async fn cmd_delete_attachment(
     filename: String,
 ) -> Result<(), AppError> {
     let store = state.diary_store();
-    Ok(delete_attachment(
-        &state.diary_cache(),
-        &state.crypto(),
-        &*store,
-        id,
-        filename,
-    )
-    .await?)
+    Ok(delete_attachment(&state.diary_cache(), &state.crypto(), &*store, id, filename).await?)
 }
 
 /// 拍摄图片来添加
@@ -165,14 +160,15 @@ pub async fn cmd_add_image_attachment_from_camera(
         use tauri_plugin_native_camera::NativeCameraExt;
         const MIMETYPE: &str = "image/jpeg";
 
-        let result = app
-            .native_camera()
-            .take_picture()
-            .map_err(|e| AppError { error_type: "camera".into(), message: e.to_string() })?;
+        let result = app.native_camera().take_picture().map_err(|e| AppError {
+            error_type: "camera".into(),
+            message: e.to_string(),
+        })?;
         let base64_data = result.image_data;
-        let binary_data = STANDARD
-            .decode(base64_data)
-            .map_err(|e| AppError { error_type: "base64".into(), message: e.to_string() })?;
+        let binary_data = STANDARD.decode(base64_data).map_err(|e| AppError {
+            error_type: "base64".into(),
+            message: e.to_string(),
+        })?;
         let len = binary_data.len();
         let stream = create_mock_stream(binary_data, len);
         let task_pool = state.task_pool();
@@ -195,7 +191,10 @@ pub async fn cmd_add_image_attachment_from_camera(
     {
         // 简单使用一下参数避免编译器警告
         let _ = (app, state, event, id, encrypted);
-        Err(AppError { error_type: "platform".into(), message: "拍照功能仅在 Android 上可用".into() })
+        Err(AppError {
+            error_type: "platform".into(),
+            message: "拍照功能仅在 Android 上可用".into(),
+        })
     }
 }
 
@@ -284,7 +283,10 @@ pub async fn cmd_save_decrypt_attachment(
         .attachments
         .iter()
         .find(|a| a.filename == filename)
-        .ok_or_else(|| AppError { error_type: "attachment".into(), message: "附件不存在".into() })?
+        .ok_or_else(|| AppError {
+            error_type: "attachment".into(),
+            message: "附件不存在".into(),
+        })?
         .clone();
 
     let ext = infer::get_from_mime(&attachment.mimetype)
@@ -296,7 +298,10 @@ pub async fn cmd_save_decrypt_attachment(
         .file()
         .set_file_name(format!("{}.{}", attachment.filename, ext))
         .blocking_save_file()
-        .ok_or_else(|| AppError { error_type: "user".into(), message: "未选择".into() })?;
+        .ok_or_else(|| AppError {
+            error_type: "user".into(),
+            message: "未选择".into(),
+        })?;
 
     let mut option = OpenOptions::new();
     option.write(true).truncate(true).create(true);
@@ -311,15 +316,7 @@ pub async fn cmd_save_decrypt_attachment(
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
-        save_decrypt_attachment(
-            &state,
-            Arc::new(event),
-            &id,
-            filename,
-            attachment,
-            file,
-        )
-        .await;
+        save_decrypt_attachment(&state, Arc::new(event), &id, filename, attachment, file).await;
     })?)
 }
 
@@ -338,12 +335,7 @@ pub async fn cmd_update_attachment_filename(
     old_filename: String,
     new_filename: String,
 ) -> Result<(), AppError> {
-    Ok(update_attachment_filename(
-        &state,
-        &id,
-        old_filename,
-        new_filename
-    ).await?)
+    Ok(update_attachment_filename(&state, &id, old_filename, new_filename).await?)
 }
 
 /// 初始化分片上传
@@ -367,20 +359,24 @@ pub async fn cmd_start_chunked_upload(
         mimetype
     };
 
-    let (crypto, cache, store) = (
-        state.crypto(),
-        state.diary_cache(),
-        state.diary_store(),
-    );
+    let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
     let lfc = state.local_file_cache();
 
     // 附件 ID / 文件名分配
     let use_original = cfg!(target_os = "windows") && !filename.trim().is_empty();
 
-    let alloc_state = state.attachment_allocators().entry(id.clone()).or_default().clone();
+    let alloc_state = state
+        .attachment_allocators()
+        .entry(id.clone())
+        .or_default()
+        .clone();
     let (allocated_id, attachment_filename) = if use_original {
         // Windows 平台：使用原始文件名，冲突时追加 _1/_2 后缀去重
-        let str_alloc_state = state.filename_allocators().entry(id.clone()).or_default().clone();
+        let str_alloc_state = state
+            .filename_allocators()
+            .entry(id.clone())
+            .or_default()
+            .clone();
         let diary = get_diary(&cache, &crypto, &*store, &id)
             .await
             .map_err(|e| AppError {
@@ -439,7 +435,8 @@ pub async fn cmd_start_chunked_upload(
 
     // 初始化 S3 分片上传（本地模式跳过）
     let upload_id = if state.is_remote_enabled() {
-        state.oss_client()
+        state
+            .oss_client()
             .initiate_multipart_upload(&key, &mimetype)
             .await
             .map_err(|e| AppError {
@@ -478,7 +475,9 @@ pub async fn cmd_start_chunked_upload(
         next_part_number: 1,
     };
 
-    state.chunked_uploads().insert(upload_token.clone(), upload_state);
+    state
+        .chunked_uploads()
+        .insert(upload_token.clone(), upload_state);
 
     Ok(ChunkedUploadStartResult {
         upload_token,
@@ -594,16 +593,13 @@ pub async fn cmd_finish_chunked_upload(
         })?
         .1;
 
-    let (cache, crypto, store) = (
-        state.diary_cache(),
-        state.crypto(),
-        state.diary_store(),
-    );
+    let (cache, crypto, store) = (state.diary_cache(), state.crypto(), state.diary_store());
 
     // 完成 S3 分片上传（本地模式跳过）
     let etag = if state.is_remote_enabled() {
         let parts_count = upload.parts.len();
-        let etag = state.oss_client()
+        let etag = state
+            .oss_client()
             .complete_multipart_upload(&upload.key, &upload.upload_id, upload.parts)
             .await
             .map_err(|e| AppError {
@@ -613,7 +609,12 @@ pub async fn cmd_finish_chunked_upload(
         log::info!("[chunked_upload] complete: key={}, parts={}, etag={}, total_size={}, uploaded_bytes={}", upload.key, parts_count, etag, upload.total_size, upload.uploaded_bytes);
         etag
     } else {
-        log::info!("[chunked_upload] complete (local): key={}, total_size={}, uploaded_bytes={}", upload.key, upload.total_size, upload.uploaded_bytes);
+        log::info!(
+            "[chunked_upload] complete (local): key={}, total_size={}, uploaded_bytes={}",
+            upload.key,
+            upload.total_size,
+            upload.uploaded_bytes
+        );
         String::new()
     };
 
@@ -645,7 +646,11 @@ pub async fn cmd_finish_chunked_upload(
     let attachment = AttachmentMeta {
         filename: upload.filename.clone(),
         mimetype: upload.mimetype,
-        size: if upload.total_size > 0 { upload.total_size } else { upload.uploaded_bytes },
+        size: if upload.total_size > 0 {
+            upload.total_size
+        } else {
+            upload.uploaded_bytes
+        },
         nonce: upload.nonce,
         encrypted: upload.encrypted,
         algorithm: Ctr,
@@ -653,15 +658,22 @@ pub async fn cmd_finish_chunked_upload(
     };
 
     // 更新日记 manifest
-    update_diary_attachment(&cache, &crypto, &*store, &upload.diary_id, attachment.clone())
-        .await
-        .map_err(|e| AppError {
-            error_type: "attachment".into(),
-            message: e.to_string(),
-        })?;
+    update_diary_attachment(
+        &cache,
+        &crypto,
+        &*store,
+        &upload.diary_id,
+        attachment.clone(),
+    )
+    .await
+    .map_err(|e| AppError {
+        error_type: "attachment".into(),
+        message: e.to_string(),
+    })?;
 
     // 获取附件 URL
-    let url = store.get_attachment_url(&upload.diary_id, &attachment)
+    let url = store
+        .get_attachment_url(&upload.diary_id, &attachment)
         .await
         .map_err(|e| AppError {
             error_type: "oss".into(),

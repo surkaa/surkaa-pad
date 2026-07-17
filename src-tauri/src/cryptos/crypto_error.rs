@@ -40,7 +40,6 @@ pub enum CryptoError {
 
     #[error("Crypto not initialized")]
     NotInitialized,
-
 }
 
 impl From<CryptoError> for crate::error::AppError {

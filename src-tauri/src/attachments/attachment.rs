@@ -108,10 +108,17 @@ pub async fn add_attachment(
     let logic = async move {
         let allocators = state.attachment_allocators();
         let alloc_state = allocators.entry(id.to_string()).or_default().clone();
-        let str_alloc_state = state.filename_allocators().entry(id.to_string()).or_default().clone();
+        let str_alloc_state = state
+            .filename_allocators()
+            .entry(id.to_string())
+            .or_default()
+            .clone();
 
         let use_original = cfg!(target_os = "windows")
-            && original_filename.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
+            && original_filename
+                .as_ref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
 
         let allocated_id: u32;
         let filename: String;
@@ -171,21 +178,20 @@ pub async fn add_attachment(
             };
 
             // 通过 store 上传附件（LocalStore 写入 LFC，RemoteStore 写入 OSS + LFC 写透）
-            match store.upload_attachment(id, &filename, size, &mimetype, final_stream).await {
-                Ok(etag) => {
-                    Ok(AttachmentMeta {
-                        filename: filename.clone(),
-                        mimetype,
-                        size,
-                        nonce,
-                        encrypted,
-                        algorithm: Ctr,
-                        etag: Some(etag),
-                    })
-                }
-                Err(e) => {
-                    Err(AttachmentError::InvalidOperation(e.to_string()))
-                }
+            match store
+                .upload_attachment(id, &filename, size, &mimetype, final_stream)
+                .await
+            {
+                Ok(etag) => Ok(AttachmentMeta {
+                    filename: filename.clone(),
+                    mimetype,
+                    size,
+                    nonce,
+                    encrypted,
+                    algorithm: Ctr,
+                    etag: Some(etag),
+                }),
+                Err(e) => Err(AttachmentError::InvalidOperation(e.to_string())),
             }
         };
 
@@ -207,9 +213,10 @@ pub async fn add_attachment(
         };
 
         // 更新 Manifest（在 pending 释放前完成，防止并发分配重复 ID）
-        let manifest_result = update_diary_attachment(&cache, &crypto, &*store, id, attachment.clone())
-            .await
-            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()));
+        let manifest_result =
+            update_diary_attachment(&cache, &crypto, &*store, id, attachment.clone())
+                .await
+                .map_err(|e| AttachmentError::InvalidOperation(e.to_string()));
 
         // 重新加锁，清理模拟状态
         if use_original {
@@ -284,7 +291,9 @@ pub async fn toggle_attachment_encryption(
         let encrypted = !old_meta.encrypted;
 
         // 下载原始数据
-        let (raw_stream, _size) = store.download_attachment(id, &filename, None, old_meta.etag.as_deref()).await?;
+        let (raw_stream, _size) = store
+            .download_attachment(id, &filename, None, old_meta.etag.as_deref())
+            .await?;
         let size = old_meta.size;
 
         // 处理流转换
@@ -297,7 +306,9 @@ pub async fn toggle_attachment_encryption(
             let (encrypted_stream, nonce) = crypto.encrypt_streaming(raw_stream)?;
             (encrypted_stream, nonce)
         } else {
-            return Err(AttachmentError::InvalidOperation("无效的转换状态".to_string()));
+            return Err(AttachmentError::InvalidOperation(
+                "无效的转换状态".to_string(),
+            ));
         };
 
         // 包装进度追踪
@@ -307,7 +318,9 @@ pub async fn toggle_attachment_encryption(
         });
 
         // 通过 store 上传
-        let new_etag = store.upload_attachment(id, &filename, size, &old_meta.mimetype, tracked_stream).await
+        let new_etag = store
+            .upload_attachment(id, &filename, size, &old_meta.mimetype, tracked_stream)
+            .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
         // 构造新的元数据并更新 Manifest
@@ -370,7 +383,9 @@ pub async fn rotate_image_attachment(
         }
 
         // 下载并解密原始数据
-        let (raw_stream, _size) = store.download_attachment(id, &filename, None, old_meta.etag.as_deref()).await?;
+        let (raw_stream, _size) = store
+            .download_attachment(id, &filename, None, old_meta.etag.as_deref())
+            .await?;
 
         let stream = if old_meta.encrypted {
             crypto.decrypt_streaming(raw_stream, &old_meta.nonce, 0)?
@@ -425,7 +440,9 @@ pub async fn rotate_image_attachment(
         };
 
         // 通过 store 上传
-        let new_etag = store.upload_attachment(id, &filename, new_size, &old_meta.mimetype, upload_stream).await
+        let new_etag = store
+            .upload_attachment(id, &filename, new_size, &old_meta.mimetype, upload_stream)
+            .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
         // 更新元数据
@@ -488,7 +505,9 @@ pub async fn save_decrypt_attachment(
     let event_res_clone = event.clone();
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async move {
-        let (stream, _size) = store.download_attachment(id, &filename, None, attachment.etag.as_deref()).await?;
+        let (stream, _size) = store
+            .download_attachment(id, &filename, None, attachment.etag.as_deref())
+            .await?;
         let event_clone = event.clone();
         let stream = tracker_stream(attachment.size, stream, move |p| {
             let _ = event_clone.send(AttachmentProcessEvent::Progress(p));
@@ -502,10 +521,13 @@ pub async fn save_decrypt_attachment(
 
         while let Some(chunk) = stream.next().await {
             if let Ok(chunk) = chunk {
-                file.write_all(&chunk)
-                    .map_err(|e| AttachmentError::FileOperationFailed(format!("写入文件失败:{}", e)))?;
+                file.write_all(&chunk).map_err(|e| {
+                    AttachmentError::FileOperationFailed(format!("写入文件失败:{}", e))
+                })?;
             } else {
-                return Err(AttachmentError::FileOperationFailed("下载文件失败".to_string()));
+                return Err(AttachmentError::FileOperationFailed(
+                    "下载文件失败".to_string(),
+                ));
             }
         }
         Ok::<(), AttachmentError>(())
@@ -535,15 +557,19 @@ pub async fn update_attachment_filename(
 
     // 确认存在那个附件
     if !diary.attachments.iter().any(|a| a.filename == old_filename) {
-        return Err(AttachmentError::InvalidOperation("原附件不存在".to_string()));
+        return Err(AttachmentError::InvalidOperation(
+            "原附件不存在".to_string(),
+        ));
     }
 
     // 通过 store 重命名附件
-    store.rename_attachment(id, &old_filename, &new_filename).await?;
+    store
+        .rename_attachment(id, &old_filename, &new_filename)
+        .await?;
 
     update_diary_attachment_filename(state, id, old_filename, new_filename)
-    .await
-    .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
+        .await
+        .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
     Ok(())
 }

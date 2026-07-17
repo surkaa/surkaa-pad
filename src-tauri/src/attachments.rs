@@ -1,9 +1,9 @@
 mod attachment;
 pub mod attachment_command;
-pub mod chunked_upload;
 mod attachment_error;
 mod attachment_protocol;
 mod attachment_types;
+pub mod chunked_upload;
 
 #[cfg(test)]
 mod attachment_tests;

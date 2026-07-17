@@ -1,15 +1,15 @@
-use std::collections::HashSet;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use dashmap::DashMap;
-use tokio::sync::Mutex;
 use crate::attachments::chunked_upload::ChunkedUploadState;
 use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::Crypto;
 use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
 use crate::object::OssClient;
 use crate::tasks::TaskPool;
+use dashmap::DashMap;
+use std::collections::HashSet;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -90,7 +90,10 @@ impl AppState {
     /// 根据当前存储模式构造 DiaryStore
     pub fn diary_store(&self) -> Box<dyn DiaryStore> {
         if self.remote_enabled.load(Ordering::Relaxed) {
-            Box::new(RemoteStore::new(self.local_file_cache.clone(), self.oss_client.clone()))
+            Box::new(RemoteStore::new(
+                self.local_file_cache.clone(),
+                self.oss_client.clone(),
+            ))
         } else {
             Box::new(LocalStore::new(self.local_file_cache.clone()))
         }

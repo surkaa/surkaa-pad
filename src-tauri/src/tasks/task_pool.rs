@@ -39,7 +39,10 @@ impl TaskPool {
         };
 
         // 获取锁 (必须在 spawn 之前获取，防止竞态条件)
-        let mut guard = self.tasks.lock().map_err(|e| TaskError::LockPoisoned(e.to_string()))?;
+        let mut guard = self
+            .tasks
+            .lock()
+            .map_err(|e| TaskError::LockPoisoned(e.to_string()))?;
 
         // 启动任务
         let handle = tauri::async_runtime::spawn(wrapped_task);
@@ -52,7 +55,10 @@ impl TaskPool {
 
     /// 取消任务
     pub fn cancel(&self, cancel_token: &str) -> Result<bool, TaskError> {
-        let mut guard = self.tasks.lock().map_err(|e| TaskError::LockPoisoned(e.to_string()))?;
+        let mut guard = self
+            .tasks
+            .lock()
+            .map_err(|e| TaskError::LockPoisoned(e.to_string()))?;
 
         if let Some(handle) = guard.remove(cancel_token) {
             // 取消该任务

@@ -85,11 +85,9 @@ impl SaveHandle {
 
         if let Some(file) = guard.file.take() {
             file.sync_all().await?;
-            tokio::fs::rename(&guard.tmp_path, &guard.data_path)
-                .await?;
+            tokio::fs::rename(&guard.tmp_path, &guard.data_path).await?;
 
-            tokio::fs::write(&guard.md5_path, md5)
-                .await?;
+            tokio::fs::write(&guard.md5_path, md5).await?;
 
             Ok(())
         } else {
@@ -138,8 +136,7 @@ impl LocalFileCache {
     async fn ensure_parent_dir(path: &Path) -> Result<(), CacheError> {
         if let Some(parent) = path.parent() {
             if !parent.exists() {
-                tokio::fs::create_dir_all(parent)
-                    .await?;
+                tokio::fs::create_dir_all(parent).await?;
             }
         }
         Ok(())
@@ -172,13 +169,10 @@ impl LocalFileCache {
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
         if data_exists && md5_exists {
-            let mut tokio_file = tokio::fs::File::open(&data_path)
-                .await?;
+            let mut tokio_file = tokio::fs::File::open(&data_path).await?;
             if let Some((start, end)) = range {
                 // 将文件指针移动到 start 的位置
-                tokio_file
-                    .seek(SeekFrom::Start(start))
-                    .await?;
+                tokio_file.seek(SeekFrom::Start(start)).await?;
 
                 // 计算需要读取的字节数
                 let limit = end.saturating_sub(start).saturating_add(1);
@@ -212,25 +206,19 @@ impl LocalFileCache {
         let tmp_path = data_path.with_extension(format!("{}{}", DATA_FILE_SUFFIX, TMP_FILE_SUFFIX));
 
         // 异步写入临时文件
-        tokio::fs::write(&tmp_path, data)
-            .await?;
+        tokio::fs::write(&tmp_path, data).await?;
 
         // 原子重命名
-        tokio::fs::rename(&tmp_path, &data_path)
-            .await?;
+        tokio::fs::rename(&tmp_path, &data_path).await?;
 
         let md5 = format!("{:X}", md5::compute(data));
-        tokio::fs::write(&md5_path, &md5)
-            .await?;
+        tokio::fs::write(&md5_path, &md5).await?;
 
         Ok(())
     }
 
     /// 分片保存：返回分片句柄，支持逐块写入
-    pub async fn begin_chunked_save(
-        &self,
-        key: &str,
-    ) -> Result<ChunkedSaveHandle, CacheError> {
+    pub async fn begin_chunked_save(&self, key: &str) -> Result<ChunkedSaveHandle, CacheError> {
         let (data_path, md5_path) = self.get_path(key);
         Self::ensure_parent_dir(&data_path).await?;
 
@@ -261,8 +249,7 @@ impl LocalFileCache {
         Self::ensure_parent_dir(&data_path).await?;
 
         let tmp_path = data_path.with_extension(format!("{}{}", DATA_FILE_SUFFIX, TMP_FILE_SUFFIX));
-        let file = tokio::fs::File::create(&tmp_path)
-            .await?;
+        let file = tokio::fs::File::create(&tmp_path).await?;
 
         let state = Arc::new(Mutex::new(WriterState {
             file: Some(file),
@@ -275,45 +262,42 @@ impl LocalFileCache {
 
         // 包装原始流
         let state_clone = state.clone();
-        let wrapped_stream: ByteStream = Box::pin(
-            stream.then(move |chunk_result| {
-                let state = state_clone.clone();
-                async move {
-                    match chunk_result {
-                        Ok(chunk) => {
-                            let mut file = {
-                                let mut guard = state.lock().await;
-                                if guard.finalized {
-                                    return Err(std::io::Error::other(
-                                        "Stream finalized",
-                                    ));
-                                }
-                                guard.file.take().ok_or_else(|| {
-                                    std::io::Error::other("File closed")
-                                })?
-                            };
-
-                            let write_res = file.write_all(&chunk).await;
-
+        let wrapped_stream: ByteStream = Box::pin(stream.then(move |chunk_result| {
+            let state = state_clone.clone();
+            async move {
+                match chunk_result {
+                    Ok(chunk) => {
+                        let mut file = {
                             let mut guard = state.lock().await;
-                            if let Err(e) = write_res {
-                                guard.error_occurred = true;
-                                guard.file = Some(file);
-                                return Err(e);
+                            if guard.finalized {
+                                return Err(std::io::Error::other("Stream finalized"));
                             }
-                            guard.file = Some(file);
+                            guard
+                                .file
+                                .take()
+                                .ok_or_else(|| std::io::Error::other("File closed"))?
+                        };
 
-                            Ok(chunk)
-                        }
-                        Err(e) => {
-                            let mut guard = state.lock().await;
+                        let write_res = file.write_all(&chunk).await;
+
+                        let mut guard = state.lock().await;
+                        if let Err(e) = write_res {
                             guard.error_occurred = true;
-                            Err(e)
+                            guard.file = Some(file);
+                            return Err(e);
                         }
+                        guard.file = Some(file);
+
+                        Ok(chunk)
+                    }
+                    Err(e) => {
+                        let mut guard = state.lock().await;
+                        guard.error_occurred = true;
+                        Err(e)
                     }
                 }
-            }),
-        );
+            }
+        }));
 
         Ok((wrapped_stream, SaveHandle { state }))
     }
@@ -330,8 +314,7 @@ impl LocalFileCache {
 
         // 创建临时文件
         let tmp_path = data_path.with_extension(format!("{}{}", DATA_FILE_SUFFIX, TMP_FILE_SUFFIX));
-        let mut file = tokio::fs::File::create(&tmp_path)
-            .await?;
+        let mut file = tokio::fs::File::create(&tmp_path).await?;
 
         // 写入数据
         while let Some(chunk) = stream.next().await {
@@ -348,12 +331,10 @@ impl LocalFileCache {
 
         file.sync_all().await?;
         // 重命名
-        tokio::fs::rename(&tmp_path, &data_path)
-            .await?;
+        tokio::fs::rename(&tmp_path, &data_path).await?;
 
         // 写入md5
-        tokio::fs::write(&md5_path, &md5)
-            .await?;
+        tokio::fs::write(&md5_path, &md5).await?;
 
         Ok(())
     }
@@ -364,8 +345,7 @@ impl LocalFileCache {
         let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
         let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
         if data_exists && md5_exists {
-            Ok(tokio::fs::read(&data_path)
-                .await?)
+            Ok(tokio::fs::read(&data_path).await?)
         } else {
             Err(CacheError::NotFound)
         }
@@ -373,16 +353,13 @@ impl LocalFileCache {
 
     /// 删除所有缓存
     pub async fn delete_all(&self) -> Result<(), CacheError> {
-        let mut read_dir = tokio::fs::read_dir(self.cache_dir.as_path())
-            .await?;
+        let mut read_dir = tokio::fs::read_dir(self.cache_dir.as_path()).await?;
         while let Some(entry) = read_dir.next_entry().await? {
             let file_type = entry.file_type().await?;
             if file_type.is_dir() {
-                tokio::fs::remove_dir_all(entry.path())
-                    .await?;
+                tokio::fs::remove_dir_all(entry.path()).await?;
             } else {
-                tokio::fs::remove_file(entry.path())
-                    .await?;
+                tokio::fs::remove_file(entry.path()).await?;
             }
         }
         Ok(())
@@ -394,8 +371,7 @@ impl LocalFileCache {
         let mut stack = vec![self.cache_dir.as_ref().to_path_buf()];
 
         while let Some(dir) = stack.pop() {
-            let mut read_dir = tokio::fs::read_dir(&dir)
-                .await?;
+            let mut read_dir = tokio::fs::read_dir(&dir).await?;
 
             while let Some(entry) = read_dir.next_entry().await? {
                 let file_type = entry.file_type().await?;

@@ -52,8 +52,8 @@ impl Crypto {
         let (nonce_bytes, ciphertext) = encrypted.split_at(NONCE_LEN);
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
         let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
-        let cipher =
-            Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|e| CryptoError::InvalidKey(format!("{:?}", e)))?;
+        let cipher = Aes256Gcm::new_from_slice(dek.as_ref())
+            .map_err(|e| CryptoError::InvalidKey(format!("{:?}", e)))?;
 
         let nonce = Nonce::from_slice(nonce_bytes);
 
@@ -65,7 +65,10 @@ impl Crypto {
     }
 
     /// 使用CTR流式加密包装流
-    pub fn encrypt_streaming(&self, stream: ByteStream) -> Result<(ByteStream, Vec<u8>), CryptoError> {
+    pub fn encrypt_streaming(
+        &self,
+        stream: ByteStream,
+    ) -> Result<(ByteStream, Vec<u8>), CryptoError> {
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
         let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
 
@@ -104,7 +107,10 @@ impl Crypto {
         let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
 
         if nonce.len() != CTR_NONCE_LEN {
-            return Err(CryptoError::InvalidNonceLength { expected: CTR_NONCE_LEN, actual: nonce.len() });
+            return Err(CryptoError::InvalidNonceLength {
+                expected: CTR_NONCE_LEN,
+                actual: nonce.len(),
+            });
         }
 
         let mut cipher = Aes256Ctr::new(dek.as_ref().into(), nonce.into());
@@ -121,8 +127,8 @@ impl Crypto {
     pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
         let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
-        let cipher =
-            Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|e| CryptoError::InvalidKey(format!("{:?}", e)))?;
+        let cipher = Aes256Gcm::new_from_slice(dek.as_ref())
+            .map_err(|e| CryptoError::InvalidKey(format!("{:?}", e)))?;
 
         let mut nonce_bytes = [0u8; NONCE_LEN];
         OsRng.fill_bytes(&mut nonce_bytes);
@@ -169,7 +175,10 @@ impl Crypto {
         let dek_bytes: Vec<u8> =
             hex::decode(&dek).map_err(|e| CryptoError::InvalidDekHex(e.to_string()))?;
         if dek_bytes.len() != KEY_LEN {
-            return Err(CryptoError::InvalidDekLength { expected: KEY_LEN, actual: dek_bytes.len() });
+            return Err(CryptoError::InvalidDekLength {
+                expected: KEY_LEN,
+                actual: dek_bytes.len(),
+            });
         }
         let mut dek_array = [0u8; KEY_LEN];
         dek_array.copy_from_slice(&dek_bytes);
@@ -201,9 +210,13 @@ fn derive_key(password: String, salt: &str) -> Result<DerivedKey, CryptoError> {
         .hash_password(password.as_bytes(), &salt)
         .map_err(|e| CryptoError::DeriveFailed(e.to_string()))?;
 
-    let dek = hash.hash.ok_or(CryptoError::DeriveFailed("无法提取哈希值".to_string()))?;
+    let dek = hash
+        .hash
+        .ok_or(CryptoError::DeriveFailed("无法提取哈希值".to_string()))?;
     if dek.as_bytes().len() != KEY_LEN {
-        return Err(CryptoError::DeriveFailed("派生的密钥长度不正确".to_string()));
+        return Err(CryptoError::DeriveFailed(
+            "派生的密钥长度不正确".to_string(),
+        ));
     }
 
     let mut dek_array = [0u8; KEY_LEN];

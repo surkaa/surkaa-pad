@@ -17,8 +17,14 @@ use tauri_plugin_log::log;
     content = "data"
 )]
 pub enum SyncProgressEvent {
-    Started { total: u32 },
-    Progress { current: u32, total: u32, diary_title: String },
+    Started {
+        total: u32,
+    },
+    Progress {
+        current: u32,
+        total: u32,
+        diary_title: String,
+    },
     Completed,
     Error(String),
 }
@@ -60,7 +66,13 @@ pub async fn sync_local_to_cloud(
             diary_title: title,
         });
 
-        log::info!("[sync] uploaded manifest {}/{}: id={}, etag={}", i + 1, total, id, new_etag);
+        log::info!(
+            "[sync] uploaded manifest {}/{}: id={}, etag={}",
+            i + 1,
+            total,
+            id,
+            new_etag
+        );
     }
 
     // 同步附件：遍历 LFC 中所有非 manifest 的文件
@@ -80,7 +92,11 @@ pub async fn sync_local_to_cloud(
         // 更新本地 MD5 为云端 etag
         lfc.save_bytes(key, &data).await?;
 
-        log::info!("[sync] uploaded attachment: key={}, etag={}", key, remote_etag);
+        log::info!(
+            "[sync] uploaded attachment: key={}, etag={}",
+            key,
+            remote_etag
+        );
     }
 
     let _ = event.send(SyncProgressEvent::Completed);
@@ -123,7 +139,13 @@ pub async fn sync_cloud_to_local(
             diary_title: id.clone(),
         });
 
-        log::info!("[sync] downloaded manifest {}/{}: id={}, etag={}", i + 1, total, id, etag);
+        log::info!(
+            "[sync] downloaded manifest {}/{}: id={}, etag={}",
+            i + 1,
+            total,
+            id,
+            etag
+        );
     }
 
     // 下载所有附件：遍历云端所有对象，过滤出附件

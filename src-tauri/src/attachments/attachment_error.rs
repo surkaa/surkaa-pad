@@ -28,7 +28,6 @@ pub enum AttachmentError {
 
     #[error("Diary error: {0}")]
     Diary(#[from] crate::diaries::DiaryError),
-
 }
 
 impl From<AttachmentError> for crate::error::AppError {

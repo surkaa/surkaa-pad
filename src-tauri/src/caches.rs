@@ -1,9 +1,9 @@
+pub mod cache_command;
 mod cache_error;
-mod diary_memory_cache;
-mod local_file_cache;
 #[cfg(test)]
 mod cache_test;
-pub mod cache_command;
+mod diary_memory_cache;
+mod local_file_cache;
 
 pub use cache_error::CacheError;
 pub use diary_memory_cache::DiaryMemoryCache;
