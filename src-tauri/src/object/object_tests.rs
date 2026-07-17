@@ -8,7 +8,6 @@ mod tests {
 
     use futures_util::stream::iter;
     use futures_util::TryStreamExt;
-    use serial_test::serial;
     use std::io::Error;
     use std::iter::once;
 
@@ -22,15 +21,13 @@ mod tests {
             .expect("上传失败");
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_oss() {
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let key = "test_upload.txt";
         let content = "This is a test line for OSS upload and download testing.";
         let repeat_count = 1000;
-
 
         // 生成测试文件
         let dir = tempfile::tempdir().expect("无法创建临时目录");
@@ -100,14 +97,13 @@ mod tests {
         client.delete(key).await.expect("删除失败");
 
         // 确认删除
-
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_batch_delete() {
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
 
         // 上传多个测试文件
         let prefix = "id_";
@@ -143,14 +139,13 @@ mod tests {
             .expect("前缀删除失败");
         assert_eq!(delete_keys.len(), keys.len(), "应删除所有上传的对象");
         // 确认删除
-
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_list() {
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
 
         add_object(&client, "folder/test1.txt", "Test file 1").await;
         add_object(&client, "folder/test2.txt", "Test file 2").await;
@@ -165,14 +160,13 @@ mod tests {
         assert!(keys.contains(&"folder/test1.txt".to_string()));
         assert!(keys.contains(&"folder/test2.txt".to_string()));
         assert!(keys.contains(&"folder/subfolder/test3.txt".to_string()));
-
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_download_range() {
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
 
         let key = "test_range.txt";
         let content = "This is a test file for range download.";
@@ -192,15 +186,14 @@ mod tests {
             &content[5..=15],
             "下载的范围数据应与原内容匹配"
         );
-
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_oss_direct_url() {
         // 1. 初始化客户端 (依赖环境变量)
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let test_key = "test_direct_url.txt";
         let test_content = b"Hello OSS Direct URL Test";
 
@@ -227,20 +220,19 @@ mod tests {
         let status = resp.status();
         let body = resp.bytes().await.expect("读取响应体失败");
 
-
         assert!(
             status.is_success(),
             "签名URL应该可以正常访问，当前状态码: {}",
             status
         );
         assert_eq!(body.as_ref(), test_content, "下载的内容与上传的不一致");
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_upload_etag() {
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let test_key = "upload_etag.txt";
         let test_content = b"Hello OSS Uploaded Test";
 
@@ -260,31 +252,40 @@ mod tests {
             .await
             .expect("使用流上传测试文件失败");
         assert_eq!(&stream_etag, &md5, "返回的 ETag 应该是内容的 MD5 值");
-
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_rename() {
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let test_key = "rename.txt";
         let test_content = b"Hello OSS Renamed Test".to_vec();
 
-        client.upload_bytes(test_key, &test_content.to_vec()).await.expect("上传测试文件失败");
+        client
+            .upload_bytes(test_key, &test_content.to_vec())
+            .await
+            .expect("上传测试文件失败");
         let new_key = "renamed.txt";
         client.rename(test_key, new_key).await.expect("重命名失败");
         // 确认旧键不存在
         let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
         assert!(next_token.is_none(), "不应有续页");
-        assert!(!objects.iter().any(|obj| obj.key == test_key), "旧键仍然存在");
+        assert!(
+            !objects.iter().any(|obj| obj.key == test_key),
+            "旧键仍然存在"
+        );
         // 新键存在且内容正确
         let (download_stream, _) = client.download(new_key, None).await.expect("下载失败");
         let downloaded_data = collect_data(download_stream).await.expect("接收下载流失败");
         assert_eq!(test_content, downloaded_data);
         // 上传另一个对象测试不允许有同名对象的重命名
-        client.upload_bytes(test_key, &test_content.to_vec()).await.expect("上传测试文件失败");
+        client
+            .upload_bytes(test_key, &test_content.to_vec())
+            .await
+            .expect("上传测试文件失败");
         let rename_result = client.rename(test_key, new_key).await;
         assert!(rename_result.is_err(), "重命名到已存在的键应该失败");
+        _guard.cleanup().await;
     }
 }

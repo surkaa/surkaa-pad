@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::attachments::attachment::{add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption, update_attachment_filename};
+    use crate::attachments::attachment::{
+        add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption,
+        update_attachment_filename,
+    };
     use crate::attachments::attachment_types::AttachmentProcessEvent;
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::Crypto;
@@ -8,12 +11,11 @@ mod tests {
     use crate::diaries::{get_diary, save_diary};
     use crate::object::OssClient;
     use crate::state::AppState;
-    use crate::test_utils::TestOssGuard;
     use crate::storages::remote_attachments_key;
     use crate::stream::{collect_data, create_mock_stream};
+    use crate::test_utils::TestOssGuard;
     use futures::future::join_all;
     use image::ImageFormat;
-    use serial_test::serial;
     use std::io::Cursor;
     use std::sync::Arc;
     use tokio::task::JoinHandle;
@@ -24,13 +26,12 @@ mod tests {
         state
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_thread_add_and_delete_attachment() {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
@@ -114,14 +115,8 @@ mod tests {
 
             del_tasks.push(tokio::spawn(async move {
                 let store = RemoteStore::new(lfc_clone, client_clone);
-                delete_attachment(
-                    &cache_clone,
-                    &crypto_clone,
-                    &store,
-                    &id_clone,
-                    filename_str,
-                )
-                .await
+                delete_attachment(&cache_clone, &crypto_clone, &store, &id_clone, filename_str)
+                    .await
             }));
         }
 
@@ -137,16 +132,15 @@ mod tests {
             final_manifest.attachments.is_empty(),
             "并发删除存在遗漏，附件未能全部清空"
         );
-
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_toggle_attachment_encryption() {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
@@ -181,38 +175,22 @@ mod tests {
 
         // 切换为加密状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        toggle_attachment_encryption(
-            &state,
-            Arc::new(tx),
-            &diary_id,
-            filename.to_string(),
-        )
-        .await;
+        toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, filename.to_string()).await;
 
         // 验证元数据是否已更新为加密
         let store = RemoteStore::new(lfc.clone(), client.clone());
-        let diary_encrypted = get_diary(&cache, &crypto, &store, &diary_id)
-            .await
-            .unwrap();
+        let diary_encrypted = get_diary(&cache, &crypto, &store, &diary_id).await.unwrap();
         let meta_enc = diary_encrypted.attachments.first().unwrap();
         assert!(meta_enc.encrypted, "附件应该是加密状态");
         assert!(!meta_enc.nonce.is_empty(), "加密状态下 nonce 不应为空");
 
         // 切换回明文状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        toggle_attachment_encryption(
-            &state,
-            Arc::new(tx),
-            &diary_id,
-            filename.to_string(),
-        )
-        .await;
+        toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, filename.to_string()).await;
 
         // 检查数据是否还原
         let store = RemoteStore::new(lfc.clone(), client.clone());
-        let diary_decrypted = get_diary(&cache, &crypto, &store, &diary_id)
-            .await
-            .unwrap();
+        let diary_decrypted = get_diary(&cache, &crypto, &store, &diary_id).await.unwrap();
         let meta_dec = diary_decrypted.attachments.first().unwrap();
         assert!(!meta_dec.encrypted, "附件应该是明文状态");
         assert!(meta_dec.nonce.is_empty(), "明文状态下 nonce 应该为空");
@@ -224,16 +202,15 @@ mod tests {
             .unwrap();
         let downloaded_bytes = collect_data(down_stream).await.expect("收集失败");
         assert_eq!(downloaded_bytes, raw_data, "转换后的文件内容与原始数据不符");
-
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_rotate_image_attachment() {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
@@ -314,9 +291,7 @@ mod tests {
 
         // 解密
         let store = RemoteStore::new(lfc.clone(), client.clone());
-        let diary = get_diary(&cache, &crypto, &store, &diary_id)
-            .await
-            .unwrap();
+        let diary = get_diary(&cache, &crypto, &store, &diary_id).await.unwrap();
         let meta = diary.attachments.first().unwrap();
         let dec_stream = crypto
             .decrypt_streaming(raw_stream, &meta.nonce, 0)
@@ -328,16 +303,15 @@ mod tests {
         let final_img = image::load_from_memory(&rotated_data).expect("无法解码旋转后的图片");
         assert_eq!(final_img.width(), 20);
         assert_eq!(final_img.height(), 10);
-
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_attachment_local_cache_lifecycle() {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
@@ -387,13 +361,7 @@ mod tests {
 
         // 触发 toggle_attachment_encryption，验证缓存是否被正确替换
         let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        toggle_attachment_encryption(
-            &state,
-            Arc::new(tx2),
-            &diary_id,
-            filename.clone(),
-        )
-        .await;
+        toggle_attachment_encryption(&state, Arc::new(tx2), &diary_id, filename.clone()).await;
 
         while let Some(event) = rx2.recv().await {
             if let AttachmentProcessEvent::Completed(_, _) = event {
@@ -418,16 +386,15 @@ mod tests {
             cached_after_delete.is_none(),
             "附件删除后，关联的本地缓存应该被一并清除"
         );
-
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_attachment_rename() {
         let cache = DiaryMemoryCache::new();
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
@@ -450,7 +417,8 @@ mod tests {
             "text/plain".to_string(),
             stream,
             None,
-        ).await;
+        )
+        .await;
         let mut filename = None;
         while let Some(event) = rx.recv().await {
             match event {
@@ -458,7 +426,7 @@ mod tests {
                 AttachmentProcessEvent::Progress(_) => {}
                 AttachmentProcessEvent::Completed(m, _) => filename = Some(m.filename),
                 AttachmentProcessEvent::CompletedWithoutData => {}
-                AttachmentProcessEvent::Error(e) => panic!("添加附件失败: {}", e)
+                AttachmentProcessEvent::Error(e) => panic!("添加附件失败: {}", e),
             }
         }
         assert!(filename.is_some(), "附件上传未完成");
@@ -468,8 +436,10 @@ mod tests {
             &state,
             &diary_id,
             filename.unwrap(),
-            new_filename.to_string()
-        ).await.expect("附件更名失败");
+            new_filename.to_string(),
+        )
+        .await
+        .expect("附件更名失败");
         // 检查
         let store = RemoteStore::new(lfc.clone(), client.clone());
         let diary = get_diary(&cache, &crypto, &store, &diary_id)
@@ -477,5 +447,6 @@ mod tests {
             .expect("获取日记失败");
         let meta = diary.attachments.first().unwrap();
         assert_eq!(meta.filename, new_filename, "附件更名后元数据未更新");
+        _guard.cleanup().await;
     }
 }

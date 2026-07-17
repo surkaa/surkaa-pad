@@ -12,16 +12,14 @@ mod tests {
     use crate::test_utils::TestOssGuard;
     use chrono::Utc;
     use serde_json::to_vec;
-    use serial_test::serial;
     use std::time::Duration;
 
-    #[serial]
     #[tokio::test]
     async fn test_diary_crud_lifecycle() {
         // 初始化依赖
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
@@ -76,15 +74,15 @@ mod tests {
         // 验证删除有效性
         let not_found_result = get_diary(&cache, &crypto, &store, &id).await;
         assert!(not_found_result.is_err(), "删除后日记不应被检索");
+        _guard.cleanup().await;
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_local_file_cache_integration() {
         // 初始化依赖
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
@@ -167,6 +165,7 @@ mod tests {
             .expect("删除日记失败");
         let cached_after_delete = lfc.get(&object_key).await.expect("检查缓存失败");
         assert!(cached_after_delete.is_none(), "删除后本地缓存应被移除");
+        _guard.cleanup().await;
     }
 }
 
@@ -179,15 +178,13 @@ mod diary_list_tests {
     use crate::diaries::{get_diary_content, get_diary_summary, page_diary_ids};
     use crate::object::OssClient;
     use crate::test_utils::TestOssGuard;
-    use serial_test::serial;
 
-    #[serial]
     #[tokio::test]
     async fn test_diary_list() {
         // 初始化依赖
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
@@ -238,6 +235,7 @@ mod diary_list_tests {
                 .expect("无法获取日记内容");
             assert_eq!(content, content);
         }
+        _guard.cleanup().await;
     }
 }
 
@@ -251,7 +249,6 @@ mod diary_search_tests {
     use crate::diaries::diary_types::{DiarySummary, SearchDiariesEvent};
     use crate::object::OssClient;
     use crate::test_utils::TestOssGuard;
-    use serial_test::serial;
     use std::sync::Arc;
 
     async fn test_search(
@@ -292,13 +289,12 @@ mod diary_search_tests {
         (matches, unmatches)
     }
 
-    #[serial]
     #[tokio::test]
     async fn test_diary_search() {
         // 初始化依赖
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
-        let _guard = TestOssGuard::new(client.clone()).await;
+        let (client, _guard) = TestOssGuard::new(client).await;
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
@@ -361,6 +357,7 @@ mod diary_search_tests {
             1,
             "使用 OR 搜索 'rust async' 应该不匹配 1 篇日记"
         );
+        _guard.cleanup().await;
     }
 }
 

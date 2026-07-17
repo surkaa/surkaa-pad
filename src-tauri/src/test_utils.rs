@@ -1,38 +1,86 @@
 use crate::object::OssClient;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-/// 存储上一个测试的 OssClient，下一个测试启动时接力清理。
-/// Drop 中无法可靠执行 async，因此采用接力模式。
-static PREV_CLIENT: Mutex<Option<OssClient>> = Mutex::new(None);
+static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
-/// 测试用 OSS 守卫：确保每个测试都在干净的桶中运行。
-///
-/// - 创建时：清空桶内所有对象
-/// - 销毁时：存储 client，供下一个测试接力清理
+/// 为每个测试分配独立 OSS 前缀；成功时清理，panic 时保留现场。
 pub struct TestOssGuard {
     client: OssClient,
+    prefix: String,
+    cleaned: bool,
 }
 
 impl TestOssGuard {
-    pub async fn new(client: OssClient) -> Self {
-        // 接力清理上一测试遗留数据（同一次 cargo test 内）
-        if let Ok(mut prev) = PREV_CLIENT.lock() {
-            if let Some(prev_client) = prev.take() {
-                let _ = prev_client.delete_with_prefix("").await;
+    pub async fn new(client: OssClient) -> (OssClient, Self) {
+        let prefix = unique_test_prefix();
+        println!("[OSS TEST] prefix={prefix}");
+        let client = client.with_key_prefix(prefix.clone());
+        let guard = Self {
+            client: client.clone(),
+            prefix,
+            cleaned: false,
+        };
+        (client, guard)
+    }
+
+    pub async fn cleanup(mut self) {
+        match self.client.delete_with_prefix("").await {
+            Ok(keys) => {
+                self.cleaned = true;
+                println!(
+                    "[OSS TEST] passed; cleaned prefix={}, objects={}",
+                    self.prefix,
+                    keys.len()
+                );
             }
+            Err(error) => eprintln!(
+                "[OSS TEST] cleanup failed; retained prefix={}, error={error}",
+                self.prefix
+            ),
         }
-
-        // 跨运行清理（新 cargo test 进程，PREV_CLIENT 为空）
-        let _ = client.delete_with_prefix("").await;
-
-        Self { client }
     }
 }
 
 impl Drop for TestOssGuard {
     fn drop(&mut self) {
-        if let Ok(mut prev) = PREV_CLIENT.lock() {
-            let _ = prev.insert(self.client.clone());
+        if !self.cleaned {
+            eprintln!("[OSS TEST] retained prefix={}", self.prefix);
         }
+    }
+}
+
+fn unique_test_prefix() -> String {
+    let test_name = std::thread::current()
+        .name()
+        .unwrap_or("unknown-test")
+        .to_string();
+    let safe_name: String = test_name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!(
+        "rust-tests/{safe_name}/{}-{timestamp}-{sequence}",
+        std::process::id()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unique_test_prefix;
+
+    #[test]
+    fn generated_prefixes_are_unique_and_safe() {
+        let first = unique_test_prefix();
+        let second = unique_test_prefix();
+        assert_ne!(first, second);
+        assert!(first.starts_with("rust-tests/"));
+        assert!(!first.contains("::"));
+        assert!(!first.ends_with('/'));
     }
 }
