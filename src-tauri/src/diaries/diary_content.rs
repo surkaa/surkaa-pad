@@ -353,4 +353,100 @@ mod tests {
 
         assert_eq!(content, original);
     }
+
+    #[test]
+    fn preserves_single_images_and_their_surrounding_whitespace() {
+        let source = "before \n[[IMG:only.jpg|size=small]]\n\t after";
+        let mut content = DiaryContent::from_editor_text(source);
+        let original = content.clone();
+
+        content.group_consecutive_images_into_albums();
+
+        assert_eq!(content, original);
+        assert!(matches!(
+            &content.nodes[1],
+            DiaryContentNode::Image { filename, size }
+                if filename == "only.jpg" && *size == ImageSize::Small
+        ));
+    }
+
+    #[test]
+    fn creates_multiple_albums_with_stable_sequential_ids() {
+        let source = concat!(
+            "[[IMG:1.jpg]][[IMG:2.jpg]]",
+            "separator",
+            "[[IMG:3.jpg]]\n[[IMG:4.jpg]]\t[[IMG:5.jpg]]",
+        );
+        let mut first = DiaryContent::from_editor_text(source);
+        let mut second = DiaryContent::from_editor_text(source);
+
+        first.group_consecutive_images_into_albums();
+        second.group_consecutive_images_into_albums();
+
+        assert_eq!(first, second, "相同 V2 内容必须产生稳定的迁移结果");
+        assert!(matches!(
+            &first.nodes[0],
+            DiaryContentNode::Album { id, images, .. }
+                if id == "migration-v3-album-1" && images == &["1.jpg", "2.jpg"]
+        ));
+        assert!(matches!(
+            &first.nodes[2],
+            DiaryContentNode::Album { id, images, .. }
+                if id == "migration-v3-album-2"
+                    && images == &["3.jpg", "4.jpg", "5.jpg"]
+        ));
+    }
+
+    #[test]
+    fn recognizes_rust_whitespace_but_not_zero_width_space() {
+        let mut whitespace =
+            DiaryContent::from_editor_text("[[IMG:1.jpg]]\u{00a0}\u{3000}\r\n[[IMG:2.jpg]]");
+        whitespace.group_consecutive_images_into_albums();
+        assert!(matches!(
+            whitespace.nodes.as_slice(),
+            [DiaryContentNode::Album { images, .. }] if images == &["1.jpg", "2.jpg"]
+        ));
+
+        let mut zero_width = DiaryContent::from_editor_text("[[IMG:1.jpg]]\u{200b}[[IMG:2.jpg]]");
+        let original = zero_width.clone();
+        zero_width.group_consecutive_images_into_albums();
+        assert_eq!(
+            zero_width, original,
+            "零宽空格不是 Rust whitespace，不应被吞掉"
+        );
+    }
+
+    #[test]
+    fn every_non_image_node_breaks_a_group() {
+        for marker in [
+            "[[FILE:a.pdf]]",
+            "[[VID:a.mp4]]",
+            "[[AUD:a.mp3]]",
+            "[[UNKNOWN:value]]",
+        ] {
+            let source = format!("[[IMG:1.jpg]]{marker}[[IMG:2.jpg]]");
+            let mut content = DiaryContent::from_editor_text(&source);
+            content.group_consecutive_images_into_albums();
+
+            assert!(
+                content
+                    .nodes
+                    .iter()
+                    .all(|node| !matches!(node, DiaryContentNode::Album { .. })),
+                "{marker} 必须中断图片分组"
+            );
+        }
+    }
+
+    #[test]
+    fn grouping_is_idempotent() {
+        let mut content =
+            DiaryContent::from_editor_text("[[IMG:1.jpg]]\n[[IMG:2.jpg]]\n[[IMG:3.jpg]]");
+        content.group_consecutive_images_into_albums();
+        let once = content.clone();
+
+        content.group_consecutive_images_into_albums();
+
+        assert_eq!(content, once);
+    }
 }

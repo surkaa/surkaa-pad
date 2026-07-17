@@ -63,7 +63,10 @@ mod tests {
             .await
             .expect("未能重新获取更新的日记");
 
-        assert_eq!(refetched_manifest.content.searchable_text(), updated_content);
+        assert_eq!(
+            refetched_manifest.content.searchable_text(),
+            updated_content
+        );
 
         // 测试删除
         delete_diary(&cache, &store, &id)
@@ -235,7 +238,6 @@ mod diary_list_tests {
                 .expect("无法获取日记内容");
             assert_eq!(content, content);
         }
-
     }
 }
 
@@ -262,15 +264,7 @@ mod diary_search_tests {
         // 创建事件监听器
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SearchDiariesEvent>();
         let event_sender = Arc::new(tx);
-        let _ = search_diaries(
-            cache,
-            crypto,
-            store,
-            event_sender.clone(),
-            keyword,
-            or,
-        )
-        .await;
+        let _ = search_diaries(cache, crypto, store, event_sender.clone(), keyword, or).await;
 
         let mut matches = Vec::new();
         let mut unmatches = Vec::new();
@@ -312,20 +306,8 @@ mod diary_search_tests {
         let store = RemoteStore::new(lfc.clone(), client.clone());
 
         // 创建几个测试日记
-        let _ = save_diary(
-            &cache,
-            &crypto,
-            &store,
-            "这是第一篇日记，包含关键词 rust",
-        )
-        .await;
-        let _ = save_diary(
-            &cache,
-            &crypto,
-            &store,
-            "这是第二篇日记，不包含关键词",
-        )
-        .await;
+        let _ = save_diary(&cache, &crypto, &store, "这是第一篇日记，包含关键词 rust").await;
+        let _ = save_diary(&cache, &crypto, &store, "这是第二篇日记，不包含关键词").await;
         let _ = save_diary(
             &cache,
             &crypto,
@@ -333,13 +315,7 @@ mod diary_search_tests {
             "这是第三篇日记，包含关键词 rust 和 async",
         )
         .await;
-        let _ = save_diary(
-            &cache,
-            &crypto,
-            &store,
-            "这是第四篇日记，包含关键词 async",
-        )
-        .await;
+        let _ = save_diary(&cache, &crypto, &store, "这是第四篇日记，包含关键词 async").await;
 
         // 收集结果
         let (matches, unmatches) =
@@ -360,14 +336,8 @@ mod diary_search_tests {
             "使用 OR 搜索 'async' 应该不匹配 2 篇日记"
         );
 
-        let (matches, unmatches) = test_search(
-            &cache,
-            &crypto,
-            &store,
-            "rust async".to_string(),
-            false,
-        )
-        .await;
+        let (matches, unmatches) =
+            test_search(&cache, &crypto, &store, "rust async".to_string(), false).await;
         assert_eq!(
             matches.len(),
             1,
@@ -379,14 +349,8 @@ mod diary_search_tests {
             "使用 AND 搜索 'rust async' 应该不匹配 3 篇日记"
         );
 
-        let (matches, unmatches) = test_search(
-            &cache,
-            &crypto,
-            &store,
-            "rust async".to_string(),
-            true,
-        )
-        .await;
+        let (matches, unmatches) =
+            test_search(&cache, &crypto, &store, "rust async".to_string(), true).await;
         assert_eq!(
             matches.len(),
             3,
@@ -397,7 +361,6 @@ mod diary_search_tests {
             1,
             "使用 OR 搜索 'rust async' 应该不匹配 1 篇日记"
         );
-
     }
 }
 
@@ -426,8 +389,7 @@ mod diary_migration_tests {
 
     #[test]
     fn test_no_migration_needed_when_already_current() {
-        let json_bytes =
-            br#"{"id":"test","version":3,"content":{"nodes":[]},"attachments":[]}"#;
+        let json_bytes = br#"{"id":"test","version":3,"content":{"nodes":[]},"attachments":[]}"#;
         let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
         assert!(!migrated);
         assert!(new_bytes.is_none());
@@ -440,6 +402,48 @@ mod diary_migration_tests {
         let bytes = serde_json::to_vec(&json).unwrap();
         let (migrated, _) = migrate_manifest_bytes(&bytes).unwrap();
         assert!(!migrated);
+    }
+
+    #[test]
+    fn test_v2_migration_groups_only_consecutive_images() {
+        let source = serde_json::json!({
+            "id": "migration-boundaries",
+            "version": 2,
+            "content": concat!(
+                "prefix\n",
+                "[[IMG:1.jpg]] \n [[IMG:2.jpg]]",
+                "body",
+                "[[IMG:3.jpg]]\n[[FILE:a.pdf]]\n[[IMG:4.jpg]]",
+                "\n[[IMG:5.jpg]]\t[[IMG:6.jpg]]",
+                "\nsuffix"
+            ),
+            "attachments": []
+        });
+
+        let bytes = serde_json::to_vec(&source).unwrap();
+        let (migrated, new_bytes) = migrate_manifest_bytes(&bytes).unwrap();
+        let result: Value = serde_json::from_slice(&new_bytes.unwrap()).unwrap();
+        let nodes = result["content"]["nodes"].as_array().unwrap();
+
+        assert!(migrated);
+        assert_eq!(get_version(&result), CURRENT_VERSION);
+        assert_eq!(
+            nodes.iter().filter(|node| node["type"] == "album").count(),
+            2
+        );
+        assert_eq!(nodes[1]["images"], serde_json::json!(["1.jpg", "2.jpg"]));
+        assert_eq!(nodes[1]["id"], "migration-v3-album-1");
+        assert!(nodes.iter().any(|node| node["type"] == "file"));
+        assert!(nodes
+            .iter()
+            .any(|node| node["type"] == "image" && node["filename"] == "3.jpg"));
+        assert_eq!(
+            nodes
+                .iter()
+                .find(|node| node["id"] == "migration-v3-album-2")
+                .unwrap()["images"],
+            serde_json::json!(["4.jpg", "5.jpg", "6.jpg"])
+        );
     }
 
     // ---- 各迁移步骤统一测试：test_input → 转换为最新版本 ----
