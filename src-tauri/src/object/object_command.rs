@@ -45,12 +45,16 @@ pub async fn cmd_enable_remote_storage(
     state.oss_client().initialize(endpoint, akid, aks, bucket)?;
 
     // 2. 同步本地数据到云端
-    sync_local_to_cloud(&state.local_file_cache(), &state.oss_client(), &event)
-        .await
-        .map_err(|e| AppError {
+    if let Err(error) =
+        sync_local_to_cloud(&state.local_file_cache(), &state.oss_client(), &event).await
+    {
+        let message = error.to_string();
+        let _ = event.send(SyncProgressEvent::Error(message.clone()));
+        return Err(AppError {
             error_type: "sync".into(),
-            message: e.to_string(),
-        })?;
+            message,
+        });
+    }
 
     // 3. 设置远程存储启用
     state.set_remote_enabled(true);
@@ -68,12 +72,16 @@ pub async fn cmd_disable_remote_storage(
     log::info!("[remote] disabling remote storage...");
 
     // 1. 同步云端数据到本地
-    sync_cloud_to_local(&state.local_file_cache(), &state.oss_client(), &event)
-        .await
-        .map_err(|e| AppError {
+    if let Err(error) =
+        sync_cloud_to_local(&state.local_file_cache(), &state.oss_client(), &event).await
+    {
+        let message = error.to_string();
+        let _ = event.send(SyncProgressEvent::Error(message.clone()));
+        return Err(AppError {
             error_type: "sync".into(),
-            message: e.to_string(),
-        })?;
+            message,
+        });
+    }
 
     // 2. 设置远程存储禁用
     state.set_remote_enabled(false);

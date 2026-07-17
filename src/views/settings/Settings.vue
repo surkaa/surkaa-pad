@@ -261,6 +261,8 @@ async function doEnableRemote() {
         syncStatusText.value = `正在同步 ${msg.data.current}/${msg.data.total}...`;
       } else if (msg.event === 'completed') {
         syncStatusText.value = '同步完成';
+      } else if (msg.event === 'error') {
+        syncStatusText.value = `同步失败：${msg.data}`;
       }
     };
 
@@ -295,6 +297,8 @@ async function doDisableRemote() {
         syncStatusText.value = `正在下载 ${msg.data.current}/${msg.data.total}...`;
       } else if (msg.event === 'completed') {
         syncStatusText.value = '下载完成';
+      } else if (msg.event === 'error') {
+        syncStatusText.value = `下载失败：${msg.data}`;
       }
     };
 

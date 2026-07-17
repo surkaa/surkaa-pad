@@ -184,19 +184,25 @@ fn main() {
             );
         }
 
-        "help" | _ => {
-            println!("测试桶管理工具");
-            println!();
-            println!("用法:");
-            println!("  oss_tool list [prefix]           列出对象");
-            println!("  oss_tool delete <key>            删除单个对象");
-            println!("  oss_tool delete-all [prefix]     删除所有对象（危险！）");
-            println!("  oss_tool upload <key> <file>     上传文件");
-            println!("  oss_tool put <key> <text>        写入/覆盖文本（模拟外部修改）");
-            println!("  oss_tool download <key> [file]   下载对象");
-            println!("  oss_tool head <key>              查看对象元数据");
+        "help" => print_help(),
+        unknown => {
+            eprintln!("未知命令: {unknown}");
+            print_help();
         }
     }
+}
+
+fn print_help() {
+    println!("测试桶管理工具");
+    println!();
+    println!("用法:");
+    println!("  oss_tool list [prefix]           列出对象");
+    println!("  oss_tool delete <key>            删除单个对象");
+    println!("  oss_tool delete-all [prefix]     删除所有对象（危险！）");
+    println!("  oss_tool upload <key> <file>     上传文件");
+    println!("  oss_tool put <key> <text>        写入/覆盖文本（模拟外部修改）");
+    println!("  oss_tool download <key> [file]   下载对象");
+    println!("  oss_tool head <key>              查看对象元数据");
 }
 
 fn extract_region(endpoint: &str) -> String {

@@ -479,7 +479,6 @@ mod tests {
     use crate::caches::DiaryMemoryCache;
     use crate::cryptos::Crypto;
     use crate::diaries::diary::{delete_diary, get_diary, save_diary, update_diary_content_only};
-    use crate::storages::remote_manifest_key;
     use crate::stream::create_mock_stream;
 
     /// 创建带测试密钥的 Crypto 实例（使用与 .env 相同的测试凭据）

@@ -2,10 +2,8 @@ use crate::caches::LocalFileCache;
 use crate::diaries::diary_store::{DiaryStore, LocalStore, RemoteStore};
 use crate::diaries::DiaryError;
 use crate::object::OssClient;
-use crate::storages::{diary_id_from_manifest_key, remote_attachments_key};
 use serde::Serialize;
 use specta::Type;
-use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri_plugin_log::log;
 
@@ -86,6 +84,17 @@ pub async fn sync_local_to_cloud(
         .collect();
 
     for (key, local_md5) in &attachment_entries {
+        if client
+            .get_metadata(key)
+            .await
+            .ok()
+            .and_then(|metadata| metadata.etag)
+            .is_some_and(|remote_etag| etags_match(local_md5, &remote_etag))
+        {
+            log::info!("[sync] skipped unchanged attachment: key={}", key);
+            continue;
+        }
+
         // 上传附件到云端
         let data = lfc.get_data(key).await?;
         let remote_etag = client.upload_bytes(key, &data).await?;
@@ -101,6 +110,12 @@ pub async fn sync_local_to_cloud(
 
     let _ = event.send(SyncProgressEvent::Completed);
     Ok(())
+}
+
+fn etags_match(local_md5: &str, remote_etag: &str) -> bool {
+    local_md5
+        .trim_matches('"')
+        .eq_ignore_ascii_case(remote_etag.trim_matches('"'))
 }
 
 /// 将云端数据同步到本地（禁用远程存储时调用）
@@ -176,4 +191,16 @@ pub async fn sync_cloud_to_local(
 
     let _ = event.send(SyncProgressEvent::Completed);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::etags_match;
+
+    #[test]
+    fn etag_comparison_ignores_case_and_oss_quotes() {
+        assert!(etags_match("ABC123", "abc123"));
+        assert!(etags_match("\"ABC123\"", "abc123"));
+        assert!(!etags_match("ABC123", "ABC124"));
+    }
 }
