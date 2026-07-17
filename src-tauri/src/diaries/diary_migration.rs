@@ -148,7 +148,9 @@ impl DiaryMigration for V2ToV3Migration {
         let content = json.get("content").and_then(Value::as_str).ok_or_else(|| {
             DiaryError::InvalidManifest("V2 manifest content must be a string".to_string())
         })?;
-        json["content"] = serde_json::to_value(DiaryContent::from_editor_text(content))?;
+        let mut content = DiaryContent::from_editor_text(content);
+        content.group_consecutive_images_into_albums();
+        json["content"] = serde_json::to_value(content)?;
         Ok(())
     }
 
@@ -157,7 +159,7 @@ impl DiaryMigration for V2ToV3Migration {
         serde_json::json!({
             "id": "test-v2",
             "version": 2,
-            "content": "开头\n\n[[IMG:1.jpg|size=small]]\n\n结尾",
+            "content": "开头\n\n[[IMG:1.jpg|size=small]]\n\n[[IMG:2.jpg]]\n\n结尾",
             "attachments": []
         })
     }
@@ -165,9 +167,13 @@ impl DiaryMigration for V2ToV3Migration {
     #[cfg(test)]
     fn test_verify(&self, json: &Value) {
         assert_eq!(json["content"]["nodes"][0]["type"], "markdown");
-        assert_eq!(json["content"]["nodes"][1]["type"], "image");
-        assert_eq!(json["content"]["nodes"][1]["filename"], "1.jpg");
-        assert_eq!(json["content"]["nodes"][1]["size"], "small");
+        assert_eq!(json["content"]["nodes"][1]["type"], "album");
+        assert_eq!(json["content"]["nodes"][1]["id"], "migration-v3-album-1");
+        assert_eq!(
+            json["content"]["nodes"][1]["images"],
+            serde_json::json!(["1.jpg", "2.jpg"])
+        );
+        assert_eq!(json["content"]["nodes"][1]["displayMode"], "horizontalList");
         assert_eq!(json["content"]["nodes"][2]["type"], "markdown");
     }
 }

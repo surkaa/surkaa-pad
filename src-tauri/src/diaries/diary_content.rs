@@ -147,6 +147,60 @@ impl DiaryContent {
             DiaryContentNode::Markdown { .. } => true,
         });
     }
+
+    /// 将仅由空白分隔的连续图片合并为图集，供 V2 → V3 迁移使用。
+    pub fn group_consecutive_images_into_albums(&mut self) {
+        let mut grouped = Vec::with_capacity(self.nodes.len());
+        let mut index = 0;
+        let mut album_index = 1;
+
+        while index < self.nodes.len() {
+            let DiaryContentNode::Image { filename, .. } = &self.nodes[index] else {
+                grouped.push(self.nodes[index].clone());
+                index += 1;
+                continue;
+            };
+
+            let mut images = vec![filename.clone()];
+            let mut cursor = index + 1;
+            while cursor < self.nodes.len() {
+                match &self.nodes[cursor] {
+                    DiaryContentNode::Image { filename, .. } => {
+                        images.push(filename.clone());
+                        cursor += 1;
+                    }
+                    DiaryContentNode::Markdown { text }
+                        if text.chars().all(char::is_whitespace)
+                            && matches!(
+                                self.nodes.get(cursor + 1),
+                                Some(DiaryContentNode::Image { .. })
+                            ) =>
+                    {
+                        if let DiaryContentNode::Image { filename, .. } = &self.nodes[cursor + 1] {
+                            images.push(filename.clone());
+                        }
+                        cursor += 2;
+                    }
+                    _ => break,
+                }
+            }
+
+            if images.len() >= 2 {
+                grouped.push(DiaryContentNode::Album {
+                    id: format!("migration-v3-album-{album_index}"),
+                    images,
+                    display_mode: AlbumDisplayMode::HorizontalList,
+                });
+                album_index += 1;
+                index = cursor;
+            } else {
+                grouped.push(self.nodes[index].clone());
+                index += 1;
+            }
+        }
+
+        self.nodes = grouped;
+    }
 }
 
 impl From<&str> for DiaryContent {
@@ -195,7 +249,7 @@ fn parse_attachment_marker(marker: &str) -> Option<DiaryContentNode> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DiaryContent, DiaryContentNode, ImageSize};
+    use super::{AlbumDisplayMode, DiaryContent, DiaryContentNode, ImageSize};
 
     #[test]
     fn parses_markdown_and_attachment_nodes_in_order() {
@@ -258,5 +312,45 @@ mod tests {
 
         assert_eq!(json["nodes"][0]["displayMode"], "stackedCards");
         assert!(json["nodes"][0].get("display_mode").is_none());
+    }
+
+    #[test]
+    fn groups_images_separated_only_by_whitespace() {
+        let mut content = DiaryContent::from_editor_text(
+            "before\n[[IMG:1.jpg]] \n\t [[IMG:2.jpg]][[IMG:3.jpg]]\nafter",
+        );
+        content.group_consecutive_images_into_albums();
+
+        assert_eq!(
+            content.nodes,
+            vec![
+                DiaryContentNode::Markdown {
+                    text: "before\n".to_string(),
+                },
+                DiaryContentNode::Album {
+                    id: "migration-v3-album-1".to_string(),
+                    images: vec![
+                        "1.jpg".to_string(),
+                        "2.jpg".to_string(),
+                        "3.jpg".to_string(),
+                    ],
+                    display_mode: AlbumDisplayMode::HorizontalList,
+                },
+                DiaryContentNode::Markdown {
+                    text: "\nafter".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_group_images_separated_by_content_or_other_attachments() {
+        let mut content = DiaryContent::from_editor_text(
+            "[[IMG:1.jpg]] text [[IMG:2.jpg]][[FILE:a.pdf]][[IMG:3.jpg]]",
+        );
+        let original = content.clone();
+        content.group_consecutive_images_into_albums();
+
+        assert_eq!(content, original);
     }
 }
