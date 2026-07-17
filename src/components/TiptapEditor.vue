@@ -350,6 +350,13 @@ defineExpose({
   editor,
   focusEnd: () => editor.value?.commands.focus('end'),
   insertImage: (id: string) => (editor.value?.chain().focus() as any).insertImage({ id, src: props.attachmentMap[id] || '' }).run(),
+  insertAlbum: (id: string, images: string[], urls: string[]) => (editor.value?.chain().focus() as any).insertAlbum({
+    id,
+    images,
+    urls,
+    displayMode: 'horizontalList',
+    hasCycled: false,
+  }).run(),
   insertVideo: (id: string) => (editor.value?.chain().focus() as any).insertVideo({ id, src: props.attachmentMap[id] || '' }).run(),
   insertAudio: (id: string) => (editor.value?.chain().focus() as any).insertAudio({ id, src: props.attachmentMap[id] || '' }).run(),
   insertFile: (id: string) => (editor.value?.chain().focus() as any).insertFile({ id }).run(),

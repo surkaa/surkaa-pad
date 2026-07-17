@@ -11,6 +11,12 @@ import TiptapEditor from "../components/TiptapEditor.vue";
 import api from "../utils/api.ts";
 import {formatError} from "../utils/formatError.ts";
 import {promisifyUpload} from "../utils/batchUpload";
+import {
+    applyAttachmentInsertions,
+    planAttachmentInsertions,
+    type AttachmentNodeKind,
+    type UploadedAttachment,
+} from "../utils/attachmentInsertion";
 
 const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB (S3 最小分片大小)
 
@@ -27,7 +33,6 @@ const AUDIO_TYPES = ['mp3', 'wav', 'ogg', 'flac', 'aac'];
 const VIDEO_TYPES = ['mp4', 'avi', 'mov', 'mkv', 'webm'];
 
 // TODO 给那个弹窗增加取消功能、显示错误的功能，同时禁用页面返回避免直接取消。
-// TODO 拆分 genericBatchUpload / pasteAttachments 中的上传与插入逻辑，让顺序保证和插入行为可独立单测。
 export function useMediaAction(
     diaryId: Ref<string>,
     editorDomRef: Ref<HTMLElement | undefined>,
@@ -176,7 +181,29 @@ export function useMediaAction(
         }
     }
 
-    async function genericBatchUpload(encrypted: boolean, extensions?: string[], nodeType?: string, pickerMode?: PickerMode) {
+    async function insertUploadedAttachments(results: (UploadedAttachment | null)[]) {
+        const editor = editorContentRef.value;
+        if (!editor) return;
+
+        for (const item of results) {
+            if (item && item.nodeKind !== 'file') {
+                currentDiaryAttachmentUrlMap.value[item.filename] = item.url;
+            }
+        }
+        if (platform() !== 'android') editor.focusEnd();
+        await applyAttachmentInsertions(
+            planAttachmentInsertions(results, uuidv4),
+            editor,
+            nextTick,
+        );
+    }
+
+    async function genericBatchUpload(
+        encrypted: boolean,
+        extensions?: string[],
+        nodeKind: AttachmentNodeKind = 'file',
+        pickerMode?: PickerMode
+    ) {
         if (beforeClick()) return;
         const accessStrArr = await open({
             multiple: true,
@@ -189,28 +216,14 @@ export function useMediaAction(
         showUploadDialog.value = true;
 
         const results = await Promise.all(accessStrArr.map(accessStr =>
-            promisifyUpload<{ meta: AttachmentMeta; url: string }>((onSuccess, onError) => {
+            promisifyUpload<UploadedAttachment>((onSuccess, onError) => {
                 uploadAttachment(accessStr, encrypted,
-                    (meta, url) => onSuccess({ meta, url }),
+                    (meta, url) => onSuccess({ nodeKind, filename: meta.filename, url }),
                     onError
                 );
             })
         ));
-
-        for (const item of results) {
-            if (!item || !editorContentRef.value) continue;
-            const { meta, url } = item;
-            if (platform() !== 'android') editorContentRef.value.focusEnd();
-            if (!nodeType) {
-                editorContentRef.value.insertFile(meta.filename);
-            } else {
-                currentDiaryAttachmentUrlMap.value[meta.filename] = url;
-                if (nodeType === 'img') editorContentRef.value.insertImage(meta.filename);
-                else if (nodeType === 'video') editorContentRef.value.insertVideo(meta.filename);
-                else if (nodeType === 'audio') editorContentRef.value.insertAudio(meta.filename);
-            }
-            await nextTick();
-        }
+        await insertUploadedAttachments(results);
     }
 
     async function performAttachmentOperation<Args extends any[]>(
@@ -300,7 +313,7 @@ export function useMediaAction(
                 editorContentRef.value.insertAudio(att.filename);
             });
         },
-        insertPhoto: () => genericBatchUpload(true, PHOTO_TYPES, 'img', "image"),
+        insertPhoto: () => genericBatchUpload(true, PHOTO_TYPES, 'image', "image"),
         takePhoto: async () => {
             if (beforeClick()) return;
             const key = uuidv4();
@@ -389,14 +402,14 @@ export function useMediaAction(
                 else if (file.type.startsWith('video/')) nodeKind = 'video';
                 else nodeKind = 'file';
 
-                return promisifyUpload<{ nodeKind: typeof nodeKind; meta: AttachmentMeta; url: string }>(
+                return promisifyUpload<UploadedAttachment>(
                     (onSuccess, onError) => {
                         const reader = new FileReader();
                         reader.onload = async () => {
                             const arrayBuffer = reader.result as ArrayBuffer;
                             const uint8Array = new Uint8Array(arrayBuffer);
                             await uploadMemoryAttachmentChunked(file.name, uint8Array, file.type, false,
-                                (meta, url) => onSuccess({ nodeKind, meta, url }),
+                                (meta, url) => onSuccess({ nodeKind, filename: meta.filename, url }),
                                 () => onError()
                             );
                         };
@@ -409,20 +422,7 @@ export function useMediaAction(
                 );
             }));
 
-            for (const item of results) {
-                if (!item || !editorContentRef.value) continue;
-                const { nodeKind, meta, url } = item;
-                if (platform() !== 'android') editorContentRef.value.focusEnd();
-                if (nodeKind === 'file') {
-                    editorContentRef.value.insertFile(meta.filename);
-                } else {
-                    currentDiaryAttachmentUrlMap.value[meta.filename] = url;
-                    if (nodeKind === 'image') editorContentRef.value.insertImage(meta.filename);
-                    else if (nodeKind === 'audio') editorContentRef.value.insertAudio(meta.filename);
-                    else if (nodeKind === 'video') editorContentRef.value.insertVideo(meta.filename);
-                }
-                await nextTick();
-            }
+            await insertUploadedAttachments(results);
         },
     };
 }
