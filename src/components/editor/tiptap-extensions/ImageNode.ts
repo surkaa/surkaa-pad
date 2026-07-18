@@ -41,6 +41,7 @@ export const ImageNode = Node.create({
     const attrs: Record<string, string> = {
       src: node.attrs.src || '',
       'data-id': node.attrs.id,
+      class: 'editor-image-loading',
       loading: 'lazy',
     }
     if (node.attrs.size === 'small') {

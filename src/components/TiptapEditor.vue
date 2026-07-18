@@ -12,6 +12,7 @@ import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConvert
 import { shouldFocusEditorEnd } from './editor/editorClick'
 import { changeAlbumDisplayMode, createAlbumDocument } from './editor/albumEditor'
 import { animateStackedAlbumCycle } from './editor/albumAnimation'
+import { setupEditorImageLoading } from './editor/imageLoading'
 import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode } from './editor/tiptap-extensions'
 
 const props = defineProps<{
@@ -335,14 +336,20 @@ async function handleContextMenu(e: MouseEvent) {
 
 // --- Lifecycle ---
 
+let disposeImageLoading: (() => void) | null = null
+
 onMounted(async () => {
   await nextTick()
+  if (editorElement.value) {
+    disposeImageLoading = setupEditorImageLoading(editorElement.value)
+  }
   if (storageY.value > 0 && editorElement.value) {
     editorElement.value.scrollTop = storageY.value
   }
 })
 
 onBeforeUnmount(() => {
+  disposeImageLoading?.()
   editor.value?.destroy()
 })
 
@@ -459,8 +466,39 @@ defineExpose({
   img[data-id] {
     cursor: pointer;
     min-height: 50px;
-    transition: width 0.3s ease;
+    transition: width 0.3s ease, opacity 0.25s ease;
     width: auto;
+  }
+
+  .ProseMirror > img[data-id].editor-image-loading {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 180px;
+    aspect-ratio: 16 / 9;
+    opacity: 0.65;
+    background: linear-gradient(
+      90deg,
+      var(--pad-bg-color-200) 25%,
+      var(--pad-bg-color) 50%,
+      var(--pad-bg-color-200) 75%
+    );
+    background-size: 200% 100%;
+    animation: editor-image-skeleton 1.25s ease-in-out infinite;
+  }
+
+  .ProseMirror > img[data-id].editor-image-loaded:not([data-size="small"]) {
+    display: block;
+    width: var(--image-natural-width, auto);
+    height: auto;
+    opacity: 1;
+  }
+
+  .ProseMirror > img[data-id].editor-image-error {
+    display: block;
+    width: 100%;
+    min-height: 100px;
+    background: color-mix(in srgb, var(--q-negative) 12%, transparent);
   }
 
   img[data-id]:hover {
@@ -488,6 +526,18 @@ defineExpose({
       height: min(72vw, 360px);
       object-fit: cover;
       border-radius: 8px;
+    }
+
+    img[data-id].editor-image-loading {
+      opacity: 0.65;
+      background: linear-gradient(
+        90deg,
+        var(--pad-bg-color-200) 25%,
+        var(--pad-bg-color) 50%,
+        var(--pad-bg-color-200) 75%
+      );
+      background-size: 200% 100%;
+      animation: editor-image-skeleton 1.25s ease-in-out infinite;
     }
 
     &[data-display-mode="stackedCards"] {
@@ -545,6 +595,12 @@ defineExpose({
     aspect-ratio: 1 / 1;
     object-fit: cover;
     display: inline-block;
+  }
+
+  .ProseMirror > img[data-size="small"].editor-image-loading {
+    width: 32% !important;
+    min-height: 0;
+    aspect-ratio: 1 / 1;
   }
 
   audio[data-id] {
@@ -612,5 +668,10 @@ defineExpose({
     outline: 3px solid rgba(64, 158, 255, 0.5);
     outline-offset: 2px;
   }
+}
+
+@keyframes editor-image-skeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style>

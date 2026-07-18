@@ -55,6 +55,7 @@ export const AlbumNode = Node.create({
       {
         src: urls[index] || '',
         'data-id': filename,
+        class: 'editor-image-loading',
         loading: 'lazy',
       },
     ])
