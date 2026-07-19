@@ -246,7 +246,6 @@ export function useMediaAction(
         uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
 
         const event = createUploadChannel(key, (meta, url) => {
-            console.log(`${operationName}完成:`, filename, meta.encrypted, url);
             dataStore.updateAttachment(diaryId.value, meta);
             if (!editorContentRef.value) {
                 console.error('编辑器内容引用未定义，无法更新媒体链接');
