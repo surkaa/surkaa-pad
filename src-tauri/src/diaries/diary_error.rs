@@ -14,6 +14,9 @@ pub enum DiaryError {
     #[error("Invalid diary manifest: {0}")]
     InvalidManifest(String),
 
+    #[error("Diary manifest version {found} is newer than the supported version {supported}")]
+    UnsupportedVersion { found: u32, supported: u32 },
+
     #[error("Object storage error: {0}")]
     Object(#[from] crate::object::ObjectError),
 
@@ -26,9 +29,17 @@ pub enum DiaryError {
 
 impl From<DiaryError> for crate::error::AppError {
     fn from(e: DiaryError) -> Self {
-        crate::error::AppError {
-            error_type: "diary".into(),
-            message: e.to_string(),
+        match e {
+            DiaryError::UnsupportedVersion { found, supported } => crate::error::AppError {
+                error_type: "diary_version_too_new".into(),
+                message: format!(
+                    "Diary manifest version {found} is newer than the supported version {supported}"
+                ),
+            },
+            other => crate::error::AppError {
+                error_type: "diary".into(),
+                message: other.to_string(),
+            },
         }
     }
 }

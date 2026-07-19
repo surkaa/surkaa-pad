@@ -9,7 +9,14 @@ import {useTimeoutStore} from "../../stores/timeout.ts";
 import {useOpenDiaryDetail} from "../../composables/useOpenDiaryDetail.ts";
 import api from "../../utils/api.ts";
 import {useConfigStore} from "../../stores/config.ts";
+import {useQuasar} from "quasar";
+import {
+  formatError,
+  isNewerDiaryVersionError,
+  NEWER_DIARY_VERSION_MESSAGE
+} from "../../utils/formatError.ts";
 
+const $q = useQuasar();
 const timeoutStore = useTimeoutStore();
 const dataStore = useDataStore();
 const {
@@ -70,6 +77,12 @@ async function loadDiarySummer(id: string) {
     dataStore.insertNewDiary(summary);
   } catch (e) {
     console.error(`请求日记 ${id} 摘要失败:`, JSON.stringify(e), e);
+    $q.notify({
+      type: isNewerDiaryVersionError(e) ? 'warning' : 'negative',
+      message: isNewerDiaryVersionError(e)
+          ? NEWER_DIARY_VERSION_MESSAGE
+          : `加载日记摘要失败: ${formatError(e)}`
+    });
   }
 }
 

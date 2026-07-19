@@ -6,7 +6,11 @@ import {storeToRefs} from "pinia";
 import {CloseRequestedEvent, getCurrentWindow} from "@tauri-apps/api/window";
 import {UnlistenFn} from "@tauri-apps/api/event";
 import api from "../utils/api.ts";
-import {formatError} from "../utils/formatError.ts";
+import {
+    formatError,
+    isNewerDiaryVersionError,
+    NEWER_DIARY_VERSION_MESSAGE
+} from "../utils/formatError.ts";
 import type {DiaryContent} from "../bindings.ts";
 
 export function useDiaryCore() {
@@ -61,6 +65,12 @@ export function useDiaryCore() {
             isInitialLoaded.value = true;
         } catch (e) {
             console.error(`加载日记失败:`, e);
+            $q.notify({
+                type: isNewerDiaryVersionError(e) ? 'warning' : 'negative',
+                message: isNewerDiaryVersionError(e)
+                    ? NEWER_DIARY_VERSION_MESSAGE
+                    : `加载日记失败: ${formatError(e)}`
+            });
         }
     }
 

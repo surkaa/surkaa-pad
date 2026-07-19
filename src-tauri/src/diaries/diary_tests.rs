@@ -459,6 +459,7 @@ mod diary_migration_tests {
     use crate::diaries::diary_migration::{
         default_registry, get_version, migrate_manifest_bytes, CURRENT_VERSION,
     };
+    use crate::diaries::DiaryError;
     use serde_json::Value;
 
     // ---- 基础工具函数 ----
@@ -486,12 +487,34 @@ mod diary_migration_tests {
     }
 
     #[test]
-    fn test_version_greater_than_current_no_downgrade() {
+    fn test_version_greater_than_current_requests_app_upgrade() {
         let mut json = serde_json::json!({"id": "test", "content": "hello"});
         json["version"] = Value::Number((CURRENT_VERSION + 1).into());
         let bytes = serde_json::to_vec(&json).unwrap();
-        let (migrated, _) = migrate_manifest_bytes(&bytes).unwrap();
-        assert!(!migrated);
+        let error = migrate_manifest_bytes(&bytes).unwrap_err();
+
+        assert!(matches!(
+            error,
+            DiaryError::UnsupportedVersion {
+                found,
+                supported: CURRENT_VERSION
+            } if found == CURRENT_VERSION + 1
+        ));
+    }
+
+    #[test]
+    fn test_unsupported_version_maps_to_stable_app_error_type() {
+        let error = DiaryError::UnsupportedVersion {
+            found: CURRENT_VERSION + 1,
+            supported: CURRENT_VERSION,
+        };
+        let app_error: crate::error::AppError = error.into();
+
+        assert_eq!(app_error.error_type, "diary_version_too_new");
+        assert!(app_error
+            .message
+            .contains(&(CURRENT_VERSION + 1).to_string()));
+        assert!(app_error.message.contains(&CURRENT_VERSION.to_string()));
     }
 
     #[test]

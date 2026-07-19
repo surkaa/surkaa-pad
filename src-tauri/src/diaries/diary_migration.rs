@@ -47,7 +47,13 @@ impl MigrationRegistry {
     /// 按序执行所有适用的迁移步骤，返回是否发生了迁移
     pub fn migrate(&self, json: &mut Value) -> Result<bool, DiaryError> {
         let version = get_version(json);
-        if version >= CURRENT_VERSION {
+        if version > CURRENT_VERSION {
+            return Err(DiaryError::UnsupportedVersion {
+                found: version,
+                supported: CURRENT_VERSION,
+            });
+        }
+        if version == CURRENT_VERSION {
             log::debug!("Manifest version {version} already current (latest {CURRENT_VERSION}), skip migration");
             return Ok(false);
         }
