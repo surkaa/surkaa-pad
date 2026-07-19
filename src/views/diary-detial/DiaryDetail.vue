@@ -37,7 +37,7 @@ const {
 // UI交互
 const {
   showMenu, showToolbar, showToolbarPanel,
-  setupToolbar,
+  setupToolbar, showToolbarAfterEditorFocus,
 } = useEditorUI();
 
 // 媒体操作
@@ -202,6 +202,7 @@ onActivated(async () => {
         v-model="diaryContent"
         :diarySummary="diary"
         :attachmentMap="attachmentMap"
+        @editorFocused="showToolbarAfterEditorFocus"
         @pasteAttachments="mediaAction.pasteAttachments"
         @showImage="showImage"
         @toggleAttachmentEncryption="mediaAction.toggleAttachmentEncryption"

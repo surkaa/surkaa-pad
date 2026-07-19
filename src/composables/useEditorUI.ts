@@ -1,6 +1,5 @@
 import {ref, watch} from 'vue';
 import {platform} from "@tauri-apps/plugin-os";
-import {useKeyboardShow} from "./useKeyboardShow.ts";
 
 export function useEditorUI() {
     const showMenu = ref(false);
@@ -10,11 +9,15 @@ export function useEditorUI() {
 
     const setupToolbar = () => {
         const p = platform();
-        if (p === 'android') {
-            // 目前这个键盘只测试了安卓手机
-            useKeyboardShow(showToolbar);
-        } else {
+        if (p !== 'android') {
             // 其他平台默认显示工具栏
+            showToolbar.value = true;
+        }
+    };
+
+    // Android 上首次聚焦编辑器后显示工具栏，不再随键盘收起而隐藏。
+    const showToolbarAfterEditorFocus = () => {
+        if (platform() === 'android') {
             showToolbar.value = true;
         }
     };
@@ -34,6 +37,7 @@ export function useEditorUI() {
         showMenu,
         showToolbar,
         showToolbarPanel,
-        setupToolbar
+        setupToolbar,
+        showToolbarAfterEditorFocus,
     };
 }

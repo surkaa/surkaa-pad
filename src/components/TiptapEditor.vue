@@ -29,6 +29,7 @@ const emit = defineEmits<{
   (e: 'rotateAttachment', filename: string, rotation: number): void
   (e: 'renameAttachment', filename: string, cb: (newFilename: string) => void): void
   (e: 'saveDecryptAttachment', filename: string): void
+  (e: 'editorFocused'): void
 }>()
 
 const $q = useQuasar()
@@ -81,6 +82,9 @@ const editor = useEditor({
   onUpdate({ editor: ed }) {
     const html = ed.getHTML()
     emit('update:modelValue', htmlToDiaryContent(html))
+  },
+  onFocus() {
+    emit('editorFocused')
   },
 })
 
