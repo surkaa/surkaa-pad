@@ -19,7 +19,7 @@ use crate::attachments::attachment_command::{
     cmd_start_chunked_upload, cmd_toggle_attachment_encryption, cmd_update_attachment_filename,
     cmd_upload_chunk,
 };
-use crate::attachments::{attachment_protocol, PROTOCOL_NAME};
+use crate::attachments::{bind_attachment_server, start_attachment_server};
 use crate::caches::cache_command::{cmd_clean_cache_file, cmd_clean_unused_file};
 use crate::caches::LOCAL_FILE_CACHE_FILENAME;
 use crate::cryptos::crypto_command::{
@@ -38,20 +38,25 @@ use crate::state::AppState;
 use crate::tasks::task_command::cmd_cancel_task;
 use tauri::{App, Manager};
 
-fn run_setup(app: &mut App) {
+fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let cache_path = app
         .handle()
         .path()
         .app_cache_dir()
         .expect("failed to get cache dir");
     let lfc_path = cache_path.join(LOCAL_FILE_CACHE_FILENAME);
-    app.manage(AppState::new(lfc_path));
+    let (listener, attachment_server) = bind_attachment_server()?;
+    let state = AppState::new(lfc_path, attachment_server);
+    start_attachment_server(listener, state.clone());
+    app.manage(state);
 
     #[cfg(target_os = "android")]
     {
         let _ = app.handle().plugin(tauri_plugin_biometric::init());
         let _ = app.handle().plugin(tauri_plugin_native_camera::init());
     }
+
+    Ok(())
 }
 
 fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
@@ -142,9 +147,8 @@ pub fn run() {
         // 注册 dialog 插件
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
-        .register_asynchronous_uri_scheme_protocol(PROTOCOL_NAME, attachment_protocol)
         .setup(move |app| {
-            run_setup(app);
+            run_setup(app)?;
             builder.mount_events(app);
             Ok(())
         })

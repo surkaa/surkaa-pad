@@ -1,7 +1,5 @@
 use async_trait::async_trait;
-use chrono::Utc;
 
-use crate::attachments::AttachmentMeta;
 use crate::caches::LocalFileCache;
 use crate::diaries::DiaryError;
 use crate::object::{NextToken, OssClient};
@@ -43,12 +41,6 @@ pub trait DiaryStore: Send + Sync {
     ) -> Result<(ByteStream, u64), DiaryError>;
     /// 删除附件
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError>;
-    /// 获取附件的完整 URL（用于前端展示）
-    async fn get_attachment_url(
-        &self,
-        id: &str,
-        attachment: &AttachmentMeta,
-    ) -> Result<String, DiaryError>;
     /// 重命名附件
     async fn rename_attachment(
         &self,
@@ -190,19 +182,6 @@ impl DiaryStore for LocalStore {
         let key = remote_attachments_key(id, filename);
         self.lfc.delete(&key).await;
         Ok(())
-    }
-
-    async fn get_attachment_url(
-        &self,
-        id: &str,
-        attachment: &AttachmentMeta,
-    ) -> Result<String, DiaryError> {
-        let encoded_filename = urlencoding::encode(&attachment.filename);
-        let timestamp = Utc::now().timestamp();
-        Ok(format!(
-            "http://attachment.localhost/{}/{}?t={}",
-            id, encoded_filename, timestamp
-        ))
     }
 
     async fn rename_attachment(
@@ -398,25 +377,6 @@ impl DiaryStore for RemoteStore {
         self.client.delete(&key).await?;
         self.lfc.delete(&key).await;
         Ok(())
-    }
-
-    async fn get_attachment_url(
-        &self,
-        id: &str,
-        attachment: &AttachmentMeta,
-    ) -> Result<String, DiaryError> {
-        let encoded_filename = urlencoding::encode(&attachment.filename);
-        if attachment.encrypted {
-            let timestamp = Utc::now().timestamp();
-            Ok(format!(
-                "http://attachment.localhost/{}/{}?t={}",
-                id, encoded_filename, timestamp
-            ))
-        } else {
-            let key = remote_attachments_key(id, &attachment.filename);
-            let url = self.client.direct_url(&key).await?;
-            Ok(url)
-        }
     }
 
     async fn rename_attachment(
@@ -719,24 +679,6 @@ mod tests {
             .unwrap();
         let downloaded = crate::stream::collect_data(stream).await.unwrap();
         assert_eq!(downloaded, data);
-    }
-
-    #[tokio::test]
-    async fn test_local_store_get_attachment_url() {
-        let (store, _lfc, _td) = make_local_store();
-        let meta = AttachmentMeta {
-            filename: "test.jpg".to_string(),
-            mimetype: "image/jpeg".to_string(),
-            size: 100,
-            encrypted: true,
-            nonce: vec![],
-            algorithm: crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr,
-            etag: None,
-        };
-        let url = store.get_attachment_url("diary1", &meta).await.unwrap();
-        assert!(url.contains("attachment.localhost"));
-        assert!(url.contains("diary1"));
-        assert!(url.contains("test.jpg"));
     }
 
     // ==================== LocalStore + 日记函数集成 ====================

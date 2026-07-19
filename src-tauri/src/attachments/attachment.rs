@@ -231,7 +231,7 @@ pub async fn add_attachment(
 
         manifest_result?;
 
-        let url = store.get_attachment_url(id, &attachment).await?;
+        let url = state.attachment_url(id, &attachment.filename);
 
         Ok::<(AttachmentMeta, String), AttachmentError>((attachment, url))
     };
@@ -333,7 +333,7 @@ pub async fn toggle_attachment_encryption(
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
-        let url = store.get_attachment_url(id, &new_meta).await?;
+        let url = state.attachment_url(id, &new_meta.filename);
         Ok((new_meta, url))
     };
 
@@ -456,7 +456,7 @@ pub async fn rotate_image_attachment(
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
-        let url = store.get_attachment_url(id, &new_meta).await?;
+        let url = state.attachment_url(id, &new_meta.filename);
         Ok((new_meta, url))
     };
 

@@ -230,9 +230,15 @@ mod diary_list_tests {
                 .await
                 .expect("无法获取日记摘要");
             assert_eq!(summary.title, title);
-            let content = get_diary_content(&cache, &crypto, &store, &id)
-                .await
-                .expect("无法获取日记内容");
+            let content = get_diary_content(
+                &cache,
+                &crypto,
+                &store,
+                &crate::attachments::AttachmentServerHandle::for_test(),
+                &id,
+            )
+            .await
+            .expect("无法获取日记内容");
             assert_eq!(content, content);
         }
         _guard.cleanup().await;

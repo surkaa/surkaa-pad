@@ -1,4 +1,5 @@
 use crate::attachments::chunked_upload::ChunkedUploadState;
+use crate::attachments::AttachmentServerHandle;
 use crate::caches::{DiaryMemoryCache, LocalFileCache};
 use crate::cryptos::Crypto;
 use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
@@ -22,12 +23,13 @@ pub struct AppState {
     /// 每个日记的附件 ID 分配器（MEX 管理并发上传的序号占用）
     attachment_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<u32>>>>>,
     filename_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>>,
+    attachment_server: AttachmentServerHandle,
     /// 是否启用远程存储
     remote_enabled: Arc<AtomicBool>,
 }
 
 impl AppState {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: PathBuf, attachment_server: AttachmentServerHandle) -> Self {
         let crypto = Crypto::new();
         let diary_cache = DiaryMemoryCache::new();
         let local_file_cache = LocalFileCache::new(path);
@@ -41,6 +43,7 @@ impl AppState {
             chunked_uploads: Arc::new(DashMap::new()),
             attachment_allocators: Arc::new(DashMap::new()),
             filename_allocators: Arc::new(DashMap::new()),
+            attachment_server,
             remote_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -77,6 +80,14 @@ impl AppState {
         self.filename_allocators.clone()
     }
 
+    pub fn attachment_server(&self) -> AttachmentServerHandle {
+        self.attachment_server.clone()
+    }
+
+    pub fn attachment_url(&self, diary_id: &str, filename: &str) -> String {
+        self.attachment_server.url(diary_id, filename)
+    }
+
     /// 是否启用了远程存储
     pub fn is_remote_enabled(&self) -> bool {
         self.remote_enabled.load(Ordering::Relaxed)
@@ -105,6 +116,21 @@ impl AppState {
         oss_client: OssClient,
         local_file_cache: LocalFileCache,
     ) -> Self {
+        Self::from_parts_with_attachment_server(
+            crypto,
+            oss_client,
+            local_file_cache,
+            AttachmentServerHandle::for_test(),
+        )
+    }
+
+    #[cfg(test)]
+    pub fn from_parts_with_attachment_server(
+        crypto: Crypto,
+        oss_client: OssClient,
+        local_file_cache: LocalFileCache,
+        attachment_server: AttachmentServerHandle,
+    ) -> Self {
         Self {
             crypto,
             oss_client,
@@ -114,6 +140,7 @@ impl AppState {
             chunked_uploads: Arc::new(DashMap::new()),
             attachment_allocators: Arc::new(DashMap::new()),
             filename_allocators: Arc::new(DashMap::new()),
+            attachment_server,
             remote_enabled: Arc::new(AtomicBool::new(false)),
         }
     }

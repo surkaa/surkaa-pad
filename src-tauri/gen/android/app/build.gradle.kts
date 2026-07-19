@@ -18,7 +18,7 @@ android {
     compileSdk = 36
     namespace = "cn.surkaa.pad"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        manifestPlaceholders["networkSecurityConfig"] = "@xml/network_security_config"
         applicationId = "cn.surkaa.pad"
         minSdk = 24
         targetSdk = 36
@@ -43,7 +43,7 @@ android {
     
     buildTypes {
         getByName("debug") {
-            manifestPlaceholders["usesCleartextTraffic"] = "true"
+            manifestPlaceholders["networkSecurityConfig"] = "@xml/network_security_config_debug"
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false

@@ -20,3 +20,5 @@ pub use diary_types::DiaryManifest;
 
 #[cfg(test)]
 pub use diary_list::*;
+#[cfg(test)]
+pub(crate) use diary_migration::CURRENT_VERSION;

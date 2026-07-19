@@ -23,7 +23,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.surkaa_pad"
-        android:usesCleartextTraffic="${usesCleartextTraffic}">
+        android:networkSecurityConfig="${networkSecurityConfig}">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"

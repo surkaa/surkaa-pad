@@ -16,7 +16,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost attachment: http://attachment.localhost; img-src 'self' asset: http://asset.localhost attachment: http://attachment.localhost https://*.aliyuncs.com; media-src 'self' attachment: http://attachment.localhost https://*.aliyuncs.com",
+      "csp": "default-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*; img-src 'self' asset: http://asset.localhost http://127.0.0.1:* https://*.aliyuncs.com; media-src 'self' http://127.0.0.1:* https://*.aliyuncs.com",
       "assetProtocol": {
         "enable": true,
         "scope": ["$APPDATA/**/*"]

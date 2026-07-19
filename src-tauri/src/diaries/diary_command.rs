@@ -106,7 +106,14 @@ pub async fn cmd_get_diary_content(
     id: &str,
 ) -> Result<(DiaryContent, HashMap<String, String>), AppError> {
     let store = state.diary_store();
-    Ok(get_diary_content(&state.diary_cache(), &state.crypto(), &*store, id).await?)
+    Ok(get_diary_content(
+        &state.diary_cache(),
+        &state.crypto(),
+        &*store,
+        &state.attachment_server(),
+        id,
+    )
+    .await?)
 }
 
 /// 搜索日记

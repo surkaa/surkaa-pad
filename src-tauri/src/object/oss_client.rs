@@ -400,6 +400,7 @@ impl OssClient {
         Ok(data)
     }
 
+    #[cfg(test)]
     pub async fn direct_url(&self, key: &str) -> Result<String, ObjectError> {
         let bucket = self.inner()?;
         let key = self.physical_key(key);

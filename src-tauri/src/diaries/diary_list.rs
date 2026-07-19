@@ -1,3 +1,4 @@
+use crate::attachments::AttachmentServerHandle;
 use crate::caches::DiaryMemoryCache;
 use crate::cryptos::Crypto;
 use crate::diaries::diary_store::DiaryStore;
@@ -27,12 +28,13 @@ pub async fn get_diary_content(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
+    attachment_server: &AttachmentServerHandle,
     id: &str,
 ) -> Result<(DiaryContent, HashMap<String, String>), DiaryError> {
     let diary = get_diary(cache, crypto, store, id).await?;
     let mut map = HashMap::new();
     for attachment in diary.attachments {
-        let url = store.get_attachment_url(id, &attachment).await?;
+        let url = attachment_server.url(id, &attachment.filename);
         map.insert(attachment.filename, url);
     }
     Ok((diary.content, map))

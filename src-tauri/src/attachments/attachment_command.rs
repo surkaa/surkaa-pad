@@ -671,14 +671,7 @@ pub async fn cmd_finish_chunked_upload(
         message: e.to_string(),
     })?;
 
-    // 获取附件 URL
-    let url = store
-        .get_attachment_url(&upload.diary_id, &attachment)
-        .await
-        .map_err(|e| AppError {
-            error_type: "oss".into(),
-            message: e.to_string(),
-        })?;
+    let url = state.attachment_url(&upload.diary_id, &attachment.filename);
 
     Ok(ChunkedUploadFinishResult { attachment, url })
 }
