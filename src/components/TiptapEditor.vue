@@ -10,10 +10,19 @@ import { Menu, MenuItem } from '@tauri-apps/api/menu'
 import type { DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import { shouldFocusEditorEnd } from './editor/editorClick'
-import { changeAlbumDisplayMode, createAlbumDocument } from './editor/albumEditor'
+import {
+  addImageToAlbumDocument,
+  changeAlbumDisplayMode,
+  createAlbumDocument,
+  listAlbums,
+  splitAlbumDocument,
+  type AlbumSplitOperation,
+  type AlbumSummary,
+} from './editor/albumEditor'
 import { animateStackedAlbumCycle } from './editor/albumAnimation'
 import { setupEditorImageLoading } from './editor/imageLoading'
 import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode } from './editor/tiptap-extensions'
+import AlbumImageInsertDialog from './AlbumImageInsertDialog.vue'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -37,6 +46,9 @@ const editorElement = ref<HTMLDivElement>()
 const currentPlatform = platform()
 const albumSelection = ref<string[]>([])
 const albumAnchor = ref('')
+const showAlbumInsertDialog = ref(false)
+const albumInsertSource = ref('')
+const albumInsertTargets = ref<AlbumSummary[]>([])
 
 const storageY = useStorage(`scroll-y-${props.diarySummary?.id}`, 0, sessionStorage)
 const { y } = useScroll(editorElement, {
@@ -222,6 +234,81 @@ function confirmAlbum(displayMode: 'horizontalList' | 'stackedCards') {
   editor.value.commands.setContent(nextDocument)
 }
 
+function openAlbumInsertDialog(filename: string) {
+  if (!editor.value) return
+  const albums = listAlbums(editor.value.getJSON())
+  if (albums.length === 0) {
+    $q.notify({ type: 'info', message: '当前日记中没有可加入的图集' })
+    return
+  }
+  albumInsertSource.value = filename
+  albumInsertTargets.value = albums
+  showAlbumInsertDialog.value = true
+}
+
+function insertImageIntoAlbum(albumId: string, insertionIndex: number) {
+  if (!editor.value || !albumInsertSource.value) return
+  editor.value.commands.setContent(addImageToAlbumDocument(
+    editor.value.getJSON(),
+    albumInsertSource.value,
+    albumId,
+    insertionIndex,
+    props.attachmentMap,
+  ))
+  albumInsertSource.value = ''
+  albumInsertTargets.value = []
+}
+
+function applyAlbumSplit(
+  albumId: string,
+  filename: string,
+  operation: AlbumSplitOperation,
+) {
+  if (!editor.value) return
+  editor.value.commands.setContent(splitAlbumDocument(
+    editor.value.getJSON(),
+    albumId,
+    filename,
+    operation,
+  ))
+}
+
+function requestSingleImageSplit(albumId: string, filename: string) {
+  $q.dialog({
+    title: '拆分当前图片',
+    message: '请选择当前图片相对于剩余图集的位置',
+    options: {
+      type: 'radio',
+      model: 'before',
+      items: [
+        { label: '放在剩余图集前面', value: 'before' },
+        { label: '放在剩余图集后面', value: 'after' },
+      ],
+    },
+    cancel: true,
+  }).onOk((position: 'before' | 'after') => {
+    applyAlbumSplit(albumId, filename, { type: 'single', position })
+  })
+}
+
+function requestRangeSplit(albumId: string, filename: string) {
+  $q.dialog({
+    title: '拆分连续图片',
+    message: '请选择要从图集中拆分的范围',
+    options: {
+      type: 'radio',
+      model: 'before',
+      items: [
+        { label: '当前图片及其前面的所有图片', value: 'before' },
+        { label: '当前图片及其后面的所有图片', value: 'after' },
+      ],
+    },
+    cancel: true,
+  }).onOk((direction: 'before' | 'after') => {
+    applyAlbumSplit(albumId, filename, { type: 'range', direction })
+  })
+}
+
 // --- Context menu ---
 
 async function handleContextMenu(e: MouseEvent) {
@@ -280,6 +367,12 @@ async function handleContextMenu(e: MouseEvent) {
         label: '创建图集',
         action: () => startAlbumSelection(found.filename),
       })
+      if (editor.value && listAlbums(editor.value.getJSON()).length > 0) {
+        buttons.push({
+          label: '加入已有图集',
+          action: () => openAlbumInsertDialog(found.filename),
+        })
+      }
     } else {
       const albumId = album?.dataset.id || ''
       const currentMode = album?.dataset.displayMode
@@ -299,6 +392,20 @@ async function handleContextMenu(e: MouseEvent) {
           currentMode === 'stackedCards' ? 'horizontalList' : 'stackedCards',
         ),
       })
+      buttons.push(
+        {
+          label: '拆分整个图集',
+          action: () => applyAlbumSplit(albumId, found.filename, { type: 'all' }),
+        },
+        {
+          label: '仅拆分当前图片',
+          action: () => requestSingleImageSplit(albumId, found.filename),
+        },
+        {
+          label: '拆分当前及前后图片',
+          action: () => requestRangeSplit(albumId, found.filename),
+        },
+      )
     }
   }
 
@@ -320,10 +427,13 @@ async function handleContextMenu(e: MouseEvent) {
   }
 
   if (currentPlatform === 'android') {
+    let selectedAction: MenuAction | undefined
     $q.bottomSheet({
       actions: buttons.map(b => ({ label: b.label, id: b.label })),
     }).onOk((action: { id: string }) => {
-      buttons.find(b => b.label === action.id)?.action()
+      selectedAction = buttons.find(b => b.label === action.id)
+    }).onDismiss(() => {
+      selectedAction?.action()
     })
   } else {
     try {
@@ -398,6 +508,11 @@ defineExpose({
 <template>
   <div ref="editorElement" class="tiptap-wrapper" @click="handleWrapperClick" @contextmenu="handleContextMenu">
     <EditorContent :editor="editor" />
+    <AlbumImageInsertDialog
+      v-model="showAlbumInsertDialog"
+      :albums="albumInsertTargets"
+      @insert="insertImageIntoAlbum"
+    />
     <div v-if="albumAnchor" class="album-selection-bar" @click.stop>
       <span>已选择 {{ albumSelection.length }} 张图片</span>
       <q-btn flat dense label="取消" @click="cancelAlbumSelection" />
