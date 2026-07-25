@@ -9,7 +9,11 @@ import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {
   attachmentTypeOptions,
+  type AttachmentFilterSelection,
   hasDiarySearchCriteria,
+  NO_ATTACHMENT_FILTER,
+  normalizeAttachmentFilterSelection,
+  selectedAttachmentTypes,
 } from "../../utils/diarySearchFilters.ts";
 
 const $q = useQuasar();
@@ -18,7 +22,10 @@ const keyword = ref('');
 
 const diarySummaries = ref<DiarySummary[]>([]);
 const or = ref(false);
-const attachmentTypes = ref<AttachmentTypeFilter[]>([]);
+const attachmentFilterSelection = ref<AttachmentFilterSelection[]>([NO_ATTACHMENT_FILTER]);
+const attachmentTypes = computed<AttachmentTypeFilter[]>(() =>
+    selectedAttachmentTypes(attachmentFilterSelection.value)
+);
 const canSearch = computed(() => hasDiarySearchCriteria(keyword.value, attachmentTypes.value));
 
 // 用于记录滚动位置，保持在列表页和详情页切换时的滚动状态
@@ -29,6 +36,13 @@ const searchTotal = ref(0);
 
 // 激活状态
 const isActivating = ref(true);
+
+function updateAttachmentFilterSelection(next: AttachmentFilterSelection[]) {
+  attachmentFilterSelection.value = normalizeAttachmentFilterSelection(
+      attachmentFilterSelection.value,
+      next,
+  );
+}
 
 async function searchHandle() {
   if (cancelToken.value) {
@@ -130,21 +144,25 @@ onUnmounted(() => {
     </Teleport>
 
     <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">
-      <q-select
-          v-model="attachmentTypes"
+      <div class="attachment-filter">
+        <div class="attachment-filter-label">附件类型</div>
+        <q-btn-toggle
+          :model-value="attachmentFilterSelection"
+          @update:model-value="updateAttachmentFilterSelection"
           :options="attachmentTypeOptions"
-          label="按附件类型筛选"
           multiple
-          use-chips
-          emit-value
-          map-options
-          popup-content-class="attachment-filter-popup"
+          no-caps
+          unelevated
+          spread
           dense
-          outlined
-          class="attachment-filter"
-      >
-        <template #hint>同时选择多个类型时，满足任一类型即可</template>
-      </q-select>
+          color="transparent"
+          text-color="grey-7"
+          toggle-color="primary"
+          class="attachment-filter-options"
+          aria-label="按附件类型筛选"
+        />
+        <div class="attachment-filter-hint">具体类型可多选，满足任一类型即可</div>
+      </div>
 
       <DiarySummaryCard
           v-for="d in diarySummaries"
@@ -180,38 +198,45 @@ onUnmounted(() => {
 
     .attachment-filter {
       flex: none;
+      padding: 10px;
+      border: 1px solid var(--pad-border-color-100);
+      border-radius: 8px;
+      background-color: var(--pad-bg-color-200);
 
-      :deep(.q-field__control) {
-        background-color: var(--pad-bg-color-200);
+      .attachment-filter-label {
+        margin-bottom: 8px;
         color: var(--pad-text-color);
+        font-size: 13px;
+        font-weight: 500;
       }
 
-      :deep(.q-field__native),
-      :deep(.q-field__label),
-      :deep(.q-field__marginal) {
+      .attachment-filter-options {
+        border: 1px solid var(--pad-border-color-100);
+        border-radius: 6px;
+        overflow: hidden;
+        background-color: var(--pad-bg-color-300);
+
+        :deep(.q-btn) {
+          min-height: 34px;
+          padding: 0 6px;
+        }
+
+        :deep(.q-btn:not(.bg-primary)) {
+          background-color: transparent !important;
+          color: var(--pad-text-color-200) !important;
+        }
+
+        :deep(.q-btn + .q-btn) {
+          border-left: 1px solid var(--pad-border-color-100);
+        }
+      }
+
+      .attachment-filter-hint {
+        margin-top: 6px;
         color: var(--pad-text-color-200);
-      }
-
-      :deep(.q-chip) {
-        background-color: var(--pad-bg-color-400);
-        color: var(--pad-text-color);
+        font-size: 12px;
       }
     }
   }
-}
-
-:global(.attachment-filter-popup) {
-  background-color: var(--pad-bg-color-200);
-  color: var(--pad-text-color);
-  border: 1px solid var(--pad-border-color-100);
-}
-
-:global(.attachment-filter-popup .q-item) {
-  color: var(--pad-text-color-200);
-}
-
-:global(.attachment-filter-popup .q-item--active) {
-  background-color: var(--pad-bg-color-300);
-  color: var(--pad-primary-color);
 }
 </style>
