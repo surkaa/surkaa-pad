@@ -12,8 +12,8 @@ import {
   type AttachmentFilterSelection,
   hasDiarySearchCriteria,
   NO_ATTACHMENT_FILTER,
-  normalizeAttachmentFilterSelection,
   selectedAttachmentTypes,
+  toggleAttachmentFilterSelection,
 } from "../../utils/diarySearchFilters.ts";
 
 const $q = useQuasar();
@@ -37,10 +37,10 @@ const searchTotal = ref(0);
 // 激活状态
 const isActivating = ref(true);
 
-function updateAttachmentFilterSelection(next: AttachmentFilterSelection[]) {
-  attachmentFilterSelection.value = normalizeAttachmentFilterSelection(
+function toggleAttachmentFilter(value: AttachmentFilterSelection) {
+  attachmentFilterSelection.value = toggleAttachmentFilterSelection(
       attachmentFilterSelection.value,
-      next,
+      value,
   );
 }
 
@@ -146,21 +146,22 @@ onUnmounted(() => {
     <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">
       <div class="attachment-filter">
         <div class="attachment-filter-label">附件类型</div>
-        <q-btn-toggle
-          :model-value="attachmentFilterSelection"
-          @update:model-value="updateAttachmentFilterSelection"
-          :options="attachmentTypeOptions"
-          multiple
-          no-caps
-          unelevated
-          spread
-          dense
-          color="transparent"
-          text-color="grey-7"
-          toggle-color="primary"
-          class="attachment-filter-options"
-          aria-label="按附件类型筛选"
-        />
+        <div class="attachment-filter-options" role="group" aria-label="按附件类型筛选">
+          <q-btn
+            v-for="option in attachmentTypeOptions"
+            :key="option.value"
+            :label="option.label"
+            :aria-pressed="attachmentFilterSelection.includes(option.value)"
+            :class="{
+              'attachment-filter-option': true,
+              'is-selected': attachmentFilterSelection.includes(option.value),
+            }"
+            no-caps
+            unelevated
+            dense
+            @click="toggleAttachmentFilter(option.value)"
+          />
+        </div>
         <div class="attachment-filter-hint">具体类型可多选，满足任一类型即可</div>
       </div>
 
@@ -211,23 +212,27 @@ onUnmounted(() => {
       }
 
       .attachment-filter-options {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         border: 1px solid var(--pad-border-color-100);
         border-radius: 6px;
         overflow: hidden;
         background-color: var(--pad-bg-color-300);
 
-        :deep(.q-btn) {
+        .attachment-filter-option {
           min-height: 34px;
           padding: 0 6px;
-        }
-
-        :deep(.q-btn:not(.bg-primary)) {
           background-color: transparent !important;
           color: var(--pad-text-color-200) !important;
-        }
 
-        :deep(.q-btn + .q-btn) {
-          border-left: 1px solid var(--pad-border-color-100);
+          & + .attachment-filter-option {
+            border-left: 1px solid var(--pad-border-color-100);
+          }
+
+          &.is-selected {
+            background-color: var(--q-primary) !important;
+            color: white !important;
+          }
         }
       }
 

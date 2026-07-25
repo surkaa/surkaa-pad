@@ -3,6 +3,7 @@ import {
   hasDiarySearchCriteria,
   normalizeAttachmentFilterSelection,
   selectedAttachmentTypes,
+  toggleAttachmentFilterSelection,
 } from '../diarySearchFilters'
 
 describe('hasDiarySearchCriteria', () => {
@@ -46,5 +47,21 @@ describe('selectedAttachmentTypes', () => {
   it('maps no-filter to the empty backend filter and preserves concrete types', () => {
     expect(selectedAttachmentTypes(['all'])).toEqual([])
     expect(selectedAttachmentTypes(['image', 'other'])).toEqual(['image', 'other'])
+  })
+})
+
+describe('toggleAttachmentFilterSelection', () => {
+  it('switches from no-filter to a concrete type', () => {
+    expect(toggleAttachmentFilterSelection(['all'], 'image')).toEqual(['image'])
+  })
+
+  it('adds and removes concrete types while preserving a non-empty selection', () => {
+    expect(toggleAttachmentFilterSelection(['image'], 'audio')).toEqual(['image', 'audio'])
+    expect(toggleAttachmentFilterSelection(['image', 'audio'], 'image')).toEqual(['audio'])
+    expect(toggleAttachmentFilterSelection(['audio'], 'audio')).toEqual(['all'])
+  })
+
+  it('selecting no-filter clears every concrete type', () => {
+    expect(toggleAttachmentFilterSelection(['image', 'video'], 'all')).toEqual(['all'])
   })
 })

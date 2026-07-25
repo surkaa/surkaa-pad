@@ -33,6 +33,16 @@ export function normalizeAttachmentFilterSelection(
   return attachmentTypes.length > 0 ? attachmentTypes : [NO_ATTACHMENT_FILTER]
 }
 
+export function toggleAttachmentFilterSelection(
+  previous: readonly AttachmentFilterSelection[],
+  value: AttachmentFilterSelection,
+): AttachmentFilterSelection[] {
+  const next = previous.includes(value)
+    ? previous.filter(selected => selected !== value)
+    : [...previous, value]
+  return normalizeAttachmentFilterSelection(previous, next)
+}
+
 export function selectedAttachmentTypes(
   selection: readonly AttachmentFilterSelection[],
 ): AttachmentTypeFilter[] {
