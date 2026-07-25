@@ -33,30 +33,46 @@ const savedScrollTop = ref(0);
 const scrollContainer = ref<HTMLElement | null>(null);
 const cancelToken = ref<string>();
 const searchTotal = ref(0);
+let searchSequence = 0;
+let filterRevision = 0;
 
 // 激活状态
 const isActivating = ref(true);
 
-function toggleAttachmentFilter(value: AttachmentFilterSelection) {
+async function toggleAttachmentFilter(value: AttachmentFilterSelection) {
   attachmentFilterSelection.value = toggleAttachmentFilterSelection(
       attachmentFilterSelection.value,
       value,
   );
+  const revision = ++filterRevision;
+  await cancelCurrentSearch();
+  if (revision === filterRevision) {
+    await startSearch();
+  }
 }
 
-async function searchHandle() {
-  if (cancelToken.value) {
-    await api.cmdCancelTask(cancelToken.value);
-    return;
+async function cancelCurrentSearch() {
+  searchSequence += 1;
+  const token = cancelToken.value;
+  cancelToken.value = undefined;
+  if (token) {
+    await api.cmdCancelTask(token);
   }
+}
+
+async function startSearch() {
+  const currentSearch = ++searchSequence;
   // 清空
   diarySummaries.value = [];
+  searchTotal.value = 0;
   if (!canSearch.value) {
     return;
   }
 
+  let finished = false;
   const event = new Channel<SearchDiariesEvent>();
   event.onmessage = msg => {
+    if (currentSearch !== searchSequence) return;
     switch (msg.event) {
       case "match":
         searchTotal.value = searchTotal.value + 1;
@@ -67,27 +83,43 @@ async function searchHandle() {
         console.log('收到unmatch事件，id：', msg.data);
         break;
       case "finished":
+        finished = true;
         $q.notify({type: 'positive', message: '搜索完成'});
         cancelToken.value = undefined;
         break;
       case "error":
+        finished = true;
         $q.notify({type: 'negative', message: msg.data || '搜索失败'});
         cancelToken.value = undefined;
         break;
     }
   };
   try {
-    searchTotal.value = 0;
-    cancelToken.value = await api.cmdSearchDiaries(
+    const token = await api.cmdSearchDiaries(
         event,
         keyword.value,
         or.value,
         attachmentTypes.value,
     );
-    console.log('搜索中，取消令牌：', cancelToken.value);
+    if (currentSearch !== searchSequence) {
+      await api.cmdCancelTask(token);
+    } else if (!finished) {
+      cancelToken.value = token;
+      console.log('搜索中，取消令牌：', token);
+    }
   } catch (e) {
-    $q.notify({type: 'negative', message: formatError(e)});
+    if (currentSearch === searchSequence) {
+      $q.notify({type: 'negative', message: formatError(e)});
+    }
   }
+}
+
+async function searchHandle() {
+  if (cancelToken.value) {
+    await cancelCurrentSearch();
+    return;
+  }
+  await startSearch();
 }
 
 function handleScroll(e: Event) {
@@ -113,9 +145,7 @@ onDeactivated(() => {
 
 onUnmounted(() => {
   // 组件销毁时取消搜索任务
-  if (cancelToken.value) {
-    api.cmdCancelTask(cancelToken.value).then();
-  }
+  void cancelCurrentSearch();
   keyword.value = '';
 })
 </script>
