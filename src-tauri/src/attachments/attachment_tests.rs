@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::attachments::attachment::{
-        add_attachment, delete_attachment, rotate_image_attachment, toggle_attachment_encryption,
-        update_attachment_filename,
+        add_attachment, caching_attachment, delete_attachment, rotate_image_attachment,
+        toggle_attachment_encryption, update_attachment_filename,
     };
     use crate::attachments::attachment_types::AttachmentProcessEvent;
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
@@ -358,6 +358,37 @@ mod tests {
         assert!(cached.is_some(), "附件上传后应该被正确缓存");
         let cached_data = lfc.get_data(&key).await.unwrap();
         assert_eq!(cached_data, raw_data, "本地缓存内容与上传的原始数据不一致");
+
+        // 删除已有缓存后主动缓存，验证远端附件被完整下载并只发送一次完成事件。
+        lfc.delete(&key).await;
+        assert!(lfc.get(&key).await.unwrap().is_none());
+
+        let (cache_tx, mut cache_rx) =
+            tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
+        caching_attachment(&store, Arc::new(cache_tx), &diary_id, &filename).await;
+
+        let mut started_count = 0;
+        let mut completed_count = 0;
+        let mut reached_100_percent = false;
+        while let Ok(event) = cache_rx.try_recv() {
+            match event {
+                AttachmentProcessEvent::Started => started_count += 1,
+                AttachmentProcessEvent::Progress(progress) => {
+                    reached_100_percent |= progress == 100;
+                }
+                AttachmentProcessEvent::CompletedWithoutData => completed_count += 1,
+                AttachmentProcessEvent::Error(error) => {
+                    panic!("主动缓存附件失败: {error}")
+                }
+                AttachmentProcessEvent::Completed(_, _) => {
+                    panic!("主动缓存不应返回附件元数据")
+                }
+            }
+        }
+        assert_eq!(started_count, 1);
+        assert_eq!(completed_count, 1);
+        assert!(reached_100_percent);
+        assert_eq!(lfc.get_data(&key).await.unwrap(), raw_data);
 
         // 触发 toggle_attachment_encryption，验证缓存是否被正确替换
         let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();

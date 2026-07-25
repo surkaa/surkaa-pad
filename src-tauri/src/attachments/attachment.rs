@@ -478,12 +478,16 @@ pub async fn caching_attachment(
 ) {
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async {
-        // TODO: 主动缓存流程在 DiaryStore 重构后断开了。download_attachment 返回
-        // (ByteStream, u64)，这里丢弃未消费的流不会写入 LFC；应恢复完整流消费与
-        // 临时文件/ETag 固化，并移除成功路径重复发送的 CompletedWithoutData。
-        // 通过 store 触发下载缓存（RemoteStore 会检查并缓存，LocalStore 已经在本地）
-        let (_, _) = store.download_attachment(id, filename, None, None).await?;
-        let _ = event.send(AttachmentProcessEvent::CompletedWithoutData);
+        let progress_event = event.clone();
+        store
+            .cache_attachment(
+                id,
+                filename,
+                Arc::new(move |progress| {
+                    let _ = progress_event.send(AttachmentProcessEvent::Progress(progress));
+                }),
+            )
+            .await?;
         Ok::<(), AttachmentError>(())
     };
     match logic.await {

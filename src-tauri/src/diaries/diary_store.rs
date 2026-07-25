@@ -2,9 +2,12 @@ use async_trait::async_trait;
 
 use crate::caches::LocalFileCache;
 use crate::diaries::DiaryError;
-use crate::object::{NextToken, OssClient};
+use crate::object::{NextToken, ObjectError, OssClient};
 use crate::storages::{diary_id_from_manifest_key, remote_attachments_key, remote_manifest_key};
-use crate::stream::ByteStream;
+use crate::stream::{tracker_stream, ByteStream};
+use std::sync::Arc;
+
+pub type StoreProgressCallback = Arc<dyn Fn(u8) + Send + Sync>;
 
 /// 日记存储抽象，隔离本地与远程的 I/O 差异
 #[async_trait]
@@ -39,6 +42,13 @@ pub trait DiaryStore: Send + Sync {
         range: Option<(u64, u64)>,
         known_etag: Option<&str>,
     ) -> Result<(ByteStream, u64), DiaryError>;
+    /// 将完整附件缓存到本地；已经命中有效缓存时直接成功。
+    async fn cache_attachment(
+        &self,
+        id: &str,
+        filename: &str,
+        progress: StoreProgressCallback,
+    ) -> Result<(), DiaryError>;
     /// 删除附件
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError>;
     /// 重命名附件
@@ -176,6 +186,21 @@ impl DiaryStore for LocalStore {
         let key = remote_attachments_key(id, filename);
         let stream = self.lfc.get_stream(&key, range).await?;
         Ok((stream, 0))
+    }
+
+    async fn cache_attachment(
+        &self,
+        id: &str,
+        filename: &str,
+        progress: StoreProgressCallback,
+    ) -> Result<(), DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        self.lfc
+            .get(&key)
+            .await?
+            .ok_or(crate::caches::CacheError::NotFound)?;
+        progress(100);
+        Ok(())
     }
 
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
@@ -372,6 +397,42 @@ impl DiaryStore for RemoteStore {
         Ok(self.client.download(&key, range).await?)
     }
 
+    async fn cache_attachment(
+        &self,
+        id: &str,
+        filename: &str,
+        progress: StoreProgressCallback,
+    ) -> Result<(), DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        let metadata = self.client.get_metadata(&key).await?;
+        let remote_etag = metadata.etag.ok_or_else(|| {
+            DiaryError::Object(ObjectError::OperationFailed(format!(
+                "附件缺少 ETag: {key}"
+            )))
+        })?;
+
+        if self
+            .lfc
+            .get(&key)
+            .await?
+            .is_some_and(|cached_etag| etags_match(&cached_etag, &remote_etag))
+        {
+            progress(100);
+            return Ok(());
+        }
+
+        let (stream, size) = self.client.download(&key, None).await?;
+        let progress_for_stream = progress.clone();
+        let tracked_stream = tracker_stream(size, stream, move |percent| {
+            progress_for_stream(percent);
+        });
+        self.lfc
+            .save_stream_with_etag(&key, &remote_etag, tracked_stream)
+            .await?;
+        progress(100);
+        Ok(())
+    }
+
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
         self.client.delete(&key).await?;
@@ -433,6 +494,11 @@ impl DiaryStore for RemoteStore {
     }
 }
 
+fn etags_match(left: &str, right: &str) -> bool {
+    left.trim_matches('"')
+        .eq_ignore_ascii_case(right.trim_matches('"'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,6 +506,7 @@ mod tests {
     use crate::cryptos::Crypto;
     use crate::diaries::diary::{delete_diary, get_diary, save_diary, update_diary_content_only};
     use crate::stream::create_mock_stream;
+    use std::sync::Mutex;
 
     /// 创建带测试密钥的 Crypto 实例（使用与 .env 相同的测试凭据）
     fn make_crypto() -> Crypto {
@@ -613,6 +680,42 @@ mod tests {
             .unwrap();
         let downloaded = crate::stream::collect_data(stream).await.unwrap();
         assert_eq!(downloaded, data);
+    }
+
+    #[tokio::test]
+    async fn test_local_store_cache_attachment_requires_existing_cache() {
+        let (store, _lfc, _td) = make_local_store();
+        let progress_values = Arc::new(Mutex::new(Vec::new()));
+
+        let missing_result = store
+            .cache_attachment("diary1", "missing.txt", Arc::new(|_| {}))
+            .await;
+        assert!(missing_result.is_err());
+
+        store
+            .upload_attachment(
+                "diary1",
+                "cached.txt",
+                4,
+                "text/plain",
+                create_mock_stream(b"test".to_vec(), 4),
+            )
+            .await
+            .unwrap();
+
+        let captured_progress = progress_values.clone();
+        store
+            .cache_attachment(
+                "diary1",
+                "cached.txt",
+                Arc::new(move |progress| {
+                    captured_progress.lock().unwrap().push(progress);
+                }),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(*progress_values.lock().unwrap(), vec![100]);
     }
 
     #[tokio::test]
