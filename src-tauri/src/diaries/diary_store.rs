@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::caches::LocalFileCache;
 use crate::diaries::DiaryError;
-use crate::object::{NextToken, ObjectError, OssClient};
+use crate::object::{NextToken, ObjectError, ObjectMigrationOutcome, OssClient};
 use crate::storages::{diary_id_from_manifest_key, remote_attachments_key, remote_manifest_key};
 use crate::stream::{tracker_stream, ByteStream};
 use std::sync::Arc;
@@ -51,13 +51,13 @@ pub trait DiaryStore: Send + Sync {
     ) -> Result<(), DiaryError>;
     /// 删除附件
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError>;
-    /// 重命名附件
-    async fn rename_attachment(
+    /// 将 V3 的 filename 对象 key 幂等迁移为 V4 attachment ID。
+    async fn migrate_attachment_object(
         &self,
         id: &str,
-        old_name: &str,
-        new_name: &str,
-    ) -> Result<(), DiaryError>;
+        old_filename: &str,
+        attachment_id: &str,
+    ) -> Result<ObjectMigrationOutcome, DiaryError>;
     /// 初始化分片上传，返回 upload_id
     async fn initiate_multipart_upload(
         &self,
@@ -209,19 +209,38 @@ impl DiaryStore for LocalStore {
         Ok(())
     }
 
-    async fn rename_attachment(
+    async fn migrate_attachment_object(
         &self,
         id: &str,
-        old_name: &str,
-        new_name: &str,
-    ) -> Result<(), DiaryError> {
-        let old_key = remote_attachments_key(id, old_name);
-        let new_key = remote_attachments_key(id, new_name);
-        // 读取旧数据 → 写入新 key → 删除旧 key
-        let data = self.lfc.get_data(&old_key).await?;
-        self.lfc.save_bytes(&new_key, &data).await?;
-        self.lfc.delete(&old_key).await;
-        Ok(())
+        old_filename: &str,
+        attachment_id: &str,
+    ) -> Result<ObjectMigrationOutcome, DiaryError> {
+        let old_key = remote_attachments_key(id, old_filename);
+        let new_key = remote_attachments_key(id, attachment_id);
+        if old_key == new_key {
+            return Ok(ObjectMigrationOutcome::AlreadyMigrated);
+        }
+        let old_etag = self.lfc.get(&old_key).await?;
+        let new_etag = self.lfc.get(&new_key).await?;
+        match (old_etag, new_etag) {
+            (None, None) => Ok(ObjectMigrationOutcome::Missing),
+            (None, Some(_)) => Ok(ObjectMigrationOutcome::AlreadyMigrated),
+            (Some(old_etag), Some(new_etag)) => {
+                if !etags_match(&old_etag, &new_etag) {
+                    return Err(DiaryError::Object(ObjectError::KeyAlreadyExists(new_key)));
+                }
+                self.lfc.delete(&old_key).await;
+                Ok(ObjectMigrationOutcome::AlreadyMigrated)
+            }
+            (Some(old_etag), None) => {
+                let stream = self.lfc.get_stream(&old_key, None).await?;
+                self.lfc
+                    .save_stream_with_etag(&new_key, &old_etag, stream)
+                    .await?;
+                self.lfc.delete(&old_key).await;
+                Ok(ObjectMigrationOutcome::Migrated)
+            }
+        }
     }
 
     async fn initiate_multipart_upload(
@@ -440,16 +459,19 @@ impl DiaryStore for RemoteStore {
         Ok(())
     }
 
-    async fn rename_attachment(
+    async fn migrate_attachment_object(
         &self,
         id: &str,
-        old_name: &str,
-        new_name: &str,
-    ) -> Result<(), DiaryError> {
-        let old_key = remote_attachments_key(id, old_name);
-        let new_key = remote_attachments_key(id, new_name);
-        self.client.rename(&old_key, &new_key).await?;
-        Ok(())
+        old_filename: &str,
+        attachment_id: &str,
+    ) -> Result<ObjectMigrationOutcome, DiaryError> {
+        let old_key = remote_attachments_key(id, old_filename);
+        let new_key = remote_attachments_key(id, attachment_id);
+        let outcome = self.client.migrate_object(&old_key, &new_key).await?;
+        // OSS 是远程模式下的权威来源；清理两个位置的缓存，避免保留半迁移状态。
+        self.lfc.delete(&old_key).await;
+        self.lfc.delete(&new_key).await;
+        Ok(outcome)
     }
 
     async fn initiate_multipart_upload(
@@ -503,8 +525,11 @@ fn etags_match(left: &str, right: &str) -> bool {
 mod tests {
     use super::*;
     use crate::caches::DiaryMemoryCache;
+    use crate::cryptos::crypto_types::EncryptionAlgorithm::{Ctr, Gcm};
     use crate::cryptos::Crypto;
     use crate::diaries::diary::{delete_diary, get_diary, save_diary, update_diary_content_only};
+    use crate::diaries::diary_content::DiaryContentNode;
+    use crate::diaries::diary_migration::{legacy_attachment_id, CURRENT_VERSION};
     use crate::stream::create_mock_stream;
     use std::sync::Mutex;
 
@@ -750,7 +775,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_local_store_rename_attachment() {
+    async fn test_local_store_migrates_attachment_object_idempotently() {
         let (store, _lfc, _td) = make_local_store();
         let data = b"rename test data";
 
@@ -765,10 +790,13 @@ mod tests {
             .await
             .unwrap();
 
-        store
-            .rename_attachment("diary1", "old.txt", "new.txt")
-            .await
-            .unwrap();
+        assert_eq!(
+            store
+                .migrate_attachment_object("diary1", "old.txt", "att-stable")
+                .await
+                .unwrap(),
+            ObjectMigrationOutcome::Migrated
+        );
 
         // 旧名字不存在
         assert!(store
@@ -777,11 +805,54 @@ mod tests {
             .is_err());
         // 新名字存在且数据正确
         let (stream, _) = store
-            .download_attachment("diary1", "new.txt", None, None)
+            .download_attachment("diary1", "att-stable", None, None)
             .await
             .unwrap();
         let downloaded = crate::stream::collect_data(stream).await.unwrap();
         assert_eq!(downloaded, data);
+
+        assert_eq!(
+            store
+                .migrate_attachment_object("diary1", "old.txt", "att-stable")
+                .await
+                .unwrap(),
+            ObjectMigrationOutcome::AlreadyMigrated
+        );
+    }
+
+    #[tokio::test]
+    async fn test_local_store_rejects_conflicting_migration_target() {
+        let (store, _lfc, _td) = make_local_store();
+        for (key, data) in [
+            ("old.txt", b"old".as_slice()),
+            ("att-stable", b"new".as_slice()),
+        ] {
+            store
+                .upload_attachment(
+                    "diary1",
+                    key,
+                    data.len() as u64,
+                    "text/plain",
+                    create_mock_stream(data.to_vec(), data.len()),
+                )
+                .await
+                .unwrap();
+        }
+
+        assert!(matches!(
+            store
+                .migrate_attachment_object("diary1", "old.txt", "att-stable")
+                .await,
+            Err(DiaryError::Object(ObjectError::KeyAlreadyExists(_)))
+        ));
+        assert!(store
+            .download_attachment("diary1", "old.txt", None, None)
+            .await
+            .is_ok());
+        assert!(store
+            .download_attachment("diary1", "att-stable", None, None)
+            .await
+            .is_ok());
     }
 
     // ==================== LocalStore + 日记函数集成 ====================
@@ -803,6 +874,101 @@ mod tests {
             .unwrap();
         assert_eq!(manifest.content.searchable_text(), "Hello, local world!");
         assert_eq!(manifest.attachments.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_diary_commits_v4_only_after_object_migration_can_succeed() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = make_crypto();
+        let (store, _lfc, _td) = make_local_store();
+        let diary_id = "v3-object-migration";
+        let old_filename = "photo.jpg";
+        let attachment_id = legacy_attachment_id(diary_id, old_filename);
+        let original = b"original-photo";
+        store
+            .upload_attachment(
+                diary_id,
+                old_filename,
+                original.len() as u64,
+                "image/jpeg",
+                create_mock_stream(original.to_vec(), original.len()),
+            )
+            .await
+            .unwrap();
+        // 先制造目标 key 冲突，验证迁移失败时不会发布 V4 manifest。
+        store
+            .upload_attachment(
+                diary_id,
+                &attachment_id,
+                8,
+                "image/jpeg",
+                create_mock_stream(b"conflict".to_vec(), 8),
+            )
+            .await
+            .unwrap();
+        let v3 = serde_json::json!({
+            "id": diary_id,
+            "algorithm": Gcm,
+            "content": {
+                "nodes": [{
+                    "type": "image",
+                    "filename": old_filename,
+                    "size": "normal"
+                }]
+            },
+            "created": 1,
+            "updated": 1,
+            "attachments": [{
+                "filename": old_filename,
+                "mimetype": "image/jpeg",
+                "size": original.len(),
+                "encrypted": false,
+                "nonce": [],
+                "algorithm": Ctr,
+                "etag": null
+            }],
+            "version": 3
+        });
+        let encrypted_v3 = crypto.encrypt(&serde_json::to_vec(&v3).unwrap()).unwrap();
+        store
+            .upload_manifest(diary_id, &encrypted_v3)
+            .await
+            .unwrap();
+
+        assert!(get_diary(&cache, &crypto, &store, diary_id).await.is_err());
+        let (still_v3, _) = store.download_manifest(diary_id).await.unwrap();
+        let still_v3: serde_json::Value =
+            serde_json::from_slice(&crypto.decrypt(&still_v3).unwrap()).unwrap();
+        assert_eq!(still_v3["version"], 3);
+
+        store
+            .delete_attachment(diary_id, &attachment_id)
+            .await
+            .unwrap();
+        let migrated = get_diary(&cache, &crypto, &store, diary_id).await.unwrap();
+        assert_eq!(migrated.version, CURRENT_VERSION);
+        assert_eq!(migrated.attachments[0].id, attachment_id);
+        assert_eq!(migrated.attachments[0].filename, old_filename);
+        assert!(matches!(
+            &migrated.content.nodes[0],
+            DiaryContentNode::Image {
+                attachment_id: node_id,
+                ..
+            } if node_id == &attachment_id
+        ));
+        assert!(store
+            .download_attachment(diary_id, old_filename, None, None)
+            .await
+            .is_err());
+        let (stream, _) = store
+            .download_attachment(diary_id, &attachment_id, None, None)
+            .await
+            .unwrap();
+        assert_eq!(crate::stream::collect_data(stream).await.unwrap(), original);
+        let (v4_bytes, _) = store.download_manifest(diary_id).await.unwrap();
+        let v4: serde_json::Value =
+            serde_json::from_slice(&crypto.decrypt(&v4_bytes).unwrap()).unwrap();
+        assert_eq!(v4["version"], CURRENT_VERSION);
     }
 
     #[tokio::test]

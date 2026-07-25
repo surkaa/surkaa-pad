@@ -101,6 +101,7 @@ mod tests {
 
     fn attachment(mimetype: &str) -> AttachmentMeta {
         AttachmentMeta {
+            id: "att-1".to_string(),
             filename: "1".to_string(),
             mimetype: mimetype.to_string(),
             size: 1,

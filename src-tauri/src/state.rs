@@ -20,8 +20,6 @@ pub struct AppState {
     local_file_cache: LocalFileCache,
     task_pool: TaskPool,
     chunked_uploads: Arc<DashMap<String, ChunkedUploadState>>,
-    /// 每个日记的附件 ID 分配器（MEX 管理并发上传的序号占用）
-    attachment_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<u32>>>>>,
     filename_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>>,
     attachment_server: AttachmentServerHandle,
     /// 是否启用远程存储
@@ -41,7 +39,6 @@ impl AppState {
             diary_cache,
             task_pool,
             chunked_uploads: Arc::new(DashMap::new()),
-            attachment_allocators: Arc::new(DashMap::new()),
             filename_allocators: Arc::new(DashMap::new()),
             attachment_server,
             remote_enabled: Arc::new(AtomicBool::new(false)),
@@ -72,10 +69,6 @@ impl AppState {
         self.chunked_uploads.clone()
     }
 
-    pub fn attachment_allocators(&self) -> Arc<DashMap<String, Arc<Mutex<HashSet<u32>>>>> {
-        self.attachment_allocators.clone()
-    }
-
     pub fn filename_allocators(&self) -> Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>> {
         self.filename_allocators.clone()
     }
@@ -84,8 +77,8 @@ impl AppState {
         self.attachment_server.clone()
     }
 
-    pub fn attachment_url(&self, diary_id: &str, filename: &str) -> String {
-        self.attachment_server.url(diary_id, filename)
+    pub fn attachment_url(&self, diary_id: &str, attachment_id: &str) -> String {
+        self.attachment_server.url(diary_id, attachment_id)
     }
 
     /// 是否启用了远程存储
@@ -138,7 +131,6 @@ impl AppState {
             local_file_cache,
             task_pool: TaskPool::new(),
             chunked_uploads: Arc::new(DashMap::new()),
-            attachment_allocators: Arc::new(DashMap::new()),
             filename_allocators: Arc::new(DashMap::new()),
             attachment_server,
             remote_enabled: Arc::new(AtomicBool::new(false)),

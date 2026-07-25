@@ -8,6 +8,15 @@ use serde::Serialize;
 use std::sync::{Arc, RwLock};
 use tauri_plugin_log::log;
 
+fn etags_match(left: Option<&str>, right: Option<&str>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => left
+            .trim_matches('"')
+            .eq_ignore_ascii_case(right.trim_matches('"')),
+        _ => false,
+    }
+}
+
 /// 包装 rust-s3 的 HeadObjectResult，保持外部 API 字段名不变
 #[derive(Debug, Clone, Serialize)]
 pub struct HeadObjectOutput {
@@ -21,6 +30,13 @@ pub struct Object {
     pub key: String,
     pub size: u64,
     pub etag: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ObjectMigrationOutcome {
+    Migrated,
+    AlreadyMigrated,
+    Missing,
 }
 
 struct OssClientInner {
@@ -168,6 +184,7 @@ impl OssClient {
     }
 
     /// 重命名文件 (CopyObject + DeleteObject)
+    #[cfg(test)]
     pub async fn rename(&self, old_key: &str, new_key: &str) -> Result<(), ObjectError> {
         let bucket = self.inner()?;
         let old_key = self.physical_key(old_key);
@@ -195,6 +212,76 @@ impl OssClient {
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
         Ok(())
+    }
+
+    /// 幂等地迁移对象，供日记 schema 升级使用。
+    pub async fn migrate_object(
+        &self,
+        old_key: &str,
+        new_key: &str,
+    ) -> Result<ObjectMigrationOutcome, ObjectError> {
+        if old_key == new_key {
+            return Ok(ObjectMigrationOutcome::AlreadyMigrated);
+        }
+
+        let bucket = self.inner()?;
+        let old_key = self.physical_key(old_key);
+        let new_key = self.physical_key(new_key);
+        let (old_metadata, old_status) = bucket
+            .head_object(&old_key)
+            .await
+            .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
+        let (new_metadata, new_status) = bucket
+            .head_object(&new_key)
+            .await
+            .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
+        let old_exists = (200..300).contains(&old_status);
+        let new_exists = (200..300).contains(&new_status);
+        if !old_exists && old_status != 404 {
+            return Err(ObjectError::OperationFailed(format!(
+                "HEAD {} failed: HTTP {}",
+                self.logical_key(old_key),
+                old_status
+            )));
+        }
+        if !new_exists && new_status != 404 {
+            return Err(ObjectError::OperationFailed(format!(
+                "HEAD {} failed: HTTP {}",
+                self.logical_key(new_key),
+                new_status
+            )));
+        }
+
+        match (old_exists, new_exists) {
+            (false, false) => Ok(ObjectMigrationOutcome::Missing),
+            (false, true) => Ok(ObjectMigrationOutcome::AlreadyMigrated),
+            (true, true) => {
+                if !etags_match(old_metadata.e_tag.as_deref(), new_metadata.e_tag.as_deref()) {
+                    return Err(ObjectError::KeyAlreadyExists(self.logical_key(new_key)));
+                }
+                bucket
+                    .delete_object(&old_key)
+                    .await
+                    .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
+                Ok(ObjectMigrationOutcome::AlreadyMigrated)
+            }
+            (true, false) => {
+                let copy_status = bucket
+                    .copy_object_internal(&old_key, &new_key)
+                    .await
+                    .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
+                if copy_status >= 300 {
+                    return Err(ObjectError::OperationFailed(format!(
+                        "Copy failed: HTTP {copy_status}"
+                    )));
+                }
+                bucket
+                    .delete_object(&old_key)
+                    .await
+                    .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
+                Ok(ObjectMigrationOutcome::Migrated)
+            }
+        }
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/putobject

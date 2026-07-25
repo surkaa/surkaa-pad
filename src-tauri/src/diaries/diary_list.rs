@@ -34,8 +34,8 @@ pub async fn get_diary_content(
     let diary = get_diary(cache, crypto, store, id).await?;
     let mut map = HashMap::new();
     for attachment in diary.attachments {
-        let url = attachment_server.url(id, &attachment.filename);
-        map.insert(attachment.filename, url);
+        let url = attachment_server.url(id, &attachment.id);
+        map.insert(attachment.id, url);
     }
     Ok((diary.content, map))
 }

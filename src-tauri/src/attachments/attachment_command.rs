@@ -1,7 +1,7 @@
 use crate::attachments::attachment::{
     add_attachment, caching_attachment, deduplicate_filename, delete_attachment,
-    rotate_image_attachment, save_decrypt_attachment, toggle_attachment_encryption,
-    update_attachment_filename,
+    generate_attachment_id, rotate_image_attachment, save_decrypt_attachment,
+    toggle_attachment_encryption, update_attachment_filename,
 };
 use crate::attachments::attachment_types::{
     AttachmentProcessEvent, ChunkedUploadChunkResult, ChunkedUploadFinishResult,
@@ -132,10 +132,17 @@ pub fn cmd_add_attachment_memory(
 pub async fn cmd_delete_attachment(
     state: State<'_, AppState>,
     id: &str,
-    filename: String,
+    attachment_id: String,
 ) -> Result<(), AppError> {
     let store = state.diary_store();
-    Ok(delete_attachment(&state.diary_cache(), &state.crypto(), &*store, id, filename).await?)
+    Ok(delete_attachment(
+        &state.diary_cache(),
+        &state.crypto(),
+        &*store,
+        id,
+        attachment_id,
+    )
+    .await?)
 }
 
 /// 拍摄图片来添加
@@ -210,12 +217,12 @@ pub fn cmd_toggle_attachment_encryption(
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
-    filename: String,
+    attachment_id: String,
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
-        toggle_attachment_encryption(&state, Arc::new(event), &id, filename).await;
+        toggle_attachment_encryption(&state, Arc::new(event), &id, attachment_id).await;
     }))
 }
 
@@ -232,13 +239,13 @@ pub fn cmd_rotate_image_attachment(
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
-    filename: String,
+    attachment_id: String,
     rotation: i32,
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
-        rotate_image_attachment(&state, Arc::new(event), &id, filename, rotation).await;
+        rotate_image_attachment(&state, Arc::new(event), &id, attachment_id, rotation).await;
     }))
 }
 
@@ -254,11 +261,11 @@ pub fn cmd_caching_attachment(
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
-    filename: String,
+    attachment_id: String,
 ) -> Result<String, AppError> {
     let store = state.diary_store();
     Ok(state.task_pool().spawn(async move {
-        caching_attachment(&*store, Arc::new(event), &id, &filename).await;
+        caching_attachment(&*store, Arc::new(event), &id, &attachment_id).await;
     }))
 }
 
@@ -275,14 +282,14 @@ pub async fn cmd_save_decrypt_attachment(
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
     id: String,
-    filename: String,
+    attachment_id: String,
 ) -> Result<String, AppError> {
     let store = state.diary_store();
     let diary = get_diary(&state.diary_cache(), &state.crypto(), &*store, &id).await?;
     let attachment = diary
         .attachments
         .iter()
-        .find(|a| a.filename == filename)
+        .find(|attachment| attachment.id == attachment_id)
         .ok_or_else(|| AppError {
             error_type: "attachment".into(),
             message: "附件不存在".into(),
@@ -316,7 +323,15 @@ pub async fn cmd_save_decrypt_attachment(
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
-        save_decrypt_attachment(&state, Arc::new(event), &id, filename, attachment, file).await;
+        save_decrypt_attachment(
+            &state,
+            Arc::new(event),
+            &id,
+            attachment_id,
+            attachment,
+            file,
+        )
+        .await;
     }))
 }
 
@@ -332,10 +347,10 @@ pub async fn cmd_save_decrypt_attachment(
 pub async fn cmd_update_attachment_filename(
     state: State<'_, AppState>,
     id: String,
-    old_filename: String,
+    attachment_id: String,
     new_filename: String,
 ) -> Result<(), AppError> {
-    Ok(update_attachment_filename(&state, &id, old_filename, new_filename).await?)
+    Ok(update_attachment_filename(&state, &id, attachment_id, new_filename).await?)
 }
 
 /// 初始化分片上传
@@ -362,96 +377,79 @@ pub async fn cmd_start_chunked_upload(
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
     let lfc = state.local_file_cache();
 
-    // 附件 ID / 文件名分配
-    let use_original = cfg!(target_os = "windows") && !filename.trim().is_empty();
-
-    let alloc_state = state
-        .attachment_allocators()
-        .entry(id.clone())
-        .or_default()
-        .clone();
-    let (allocated_id, attachment_filename) = if use_original {
-        // Windows 平台：使用原始文件名，冲突时追加 _1/_2 后缀去重
-        let str_alloc_state = state
-            .filename_allocators()
-            .entry(id.clone())
-            .or_default()
-            .clone();
-        let diary = get_diary(&cache, &crypto, &*store, &id)
-            .await
-            .map_err(|e| AppError {
-                error_type: "attachment".into(),
-                message: e.to_string(),
-            })?;
-        let existing_fns: HashSet<String> = diary
-            .attachments
-            .iter()
-            .map(|a| a.filename.clone())
-            .collect();
-
-        let mut pending_fns = str_alloc_state.lock().await;
-        let combined: HashSet<&String> = existing_fns.union(&*pending_fns).collect();
-        let combined_owned: HashSet<String> = combined.into_iter().cloned().collect();
-        let unique = deduplicate_filename(&filename, &combined_owned);
-        pending_fns.insert(unique.clone());
-        (0u32, unique)
-    } else {
-        // MEX 算法分配附件 ID
-        let allocated_id = {
-            let mut pending_ids = alloc_state.lock().await;
-            let diary = get_diary(&cache, &crypto, &*store, &id)
-                .await
-                .map_err(|e| AppError {
-                    error_type: "attachment".into(),
-                    message: e.to_string(),
-                })?;
-
-            let existing_ids: HashSet<u32> = diary
-                .attachments
-                .iter()
-                .filter_map(|att| att.filename.parse::<u32>().ok())
-                .collect();
-
-            let new_id = (1..).find(|i| !existing_ids.contains(i) && !pending_ids.contains(i));
-            let new_id = new_id.ok_or_else(|| AppError {
-                error_type: "attachment".into(),
-                message: "无法分配附件 ID".into(),
-            })?;
-
-            pending_ids.insert(new_id);
-            new_id
-        };
-        (allocated_id, allocated_id.to_string())
-    };
-    let key = remote_attachments_key(&id, &attachment_filename);
-
-    // 创建加密 cipher（如需要）
+    let attachment_id = generate_attachment_id()?;
+    // 先完成所有不需要占用 filename 的易失败准备工作。
     let (cipher, nonce) = if encrypted {
-        let (c, n) = crypto.create_ctr_cipher()?;
-        (Some(std::sync::Mutex::new(c)), Some(n))
+        let (cipher, nonce) = crypto.create_ctr_cipher()?;
+        (Some(std::sync::Mutex::new(cipher)), Some(nonce))
     } else {
         (None, None)
     };
+    let diary = get_diary(&cache, &crypto, &*store, &id)
+        .await
+        .map_err(|e| AppError {
+            error_type: "attachment".into(),
+            message: e.to_string(),
+        })?;
+    let existing_filenames: HashSet<String> = diary
+        .attachments
+        .iter()
+        .map(|attachment| attachment.filename.clone())
+        .collect();
+    let filename_allocator = state
+        .filename_allocators()
+        .entry(id.clone())
+        .or_default()
+        .clone();
+    let filename = {
+        let mut pending_filenames = filename_allocator.lock().await;
+        let combined = existing_filenames
+            .union(&pending_filenames)
+            .cloned()
+            .collect();
+        let filename = deduplicate_filename(&filename, &combined);
+        pending_filenames.insert(filename.clone());
+        filename
+    };
+    let key = remote_attachments_key(&id, &attachment_id);
 
     // 初始化 S3 分片上传（本地模式跳过）
     let upload_id = if state.is_remote_enabled() {
-        state
+        match state
             .oss_client()
             .initiate_multipart_upload(&key, &mimetype)
             .await
-            .map_err(|e| AppError {
-                error_type: "oss".into(),
-                message: e.to_string(),
-            })?
+        {
+            Ok(upload_id) => upload_id,
+            Err(error) => {
+                filename_allocator.lock().await.remove(&filename);
+                return Err(AppError {
+                    error_type: "oss".into(),
+                    message: error.to_string(),
+                });
+            }
+        }
     } else {
         String::new()
     };
 
     // 创建本地文件缓存句柄
-    let lfc_handle = lfc.begin_chunked_save(&key).await.map_err(|e| AppError {
-        error_type: "cache".into(),
-        message: e.to_string(),
-    })?;
+    let lfc_handle = match lfc.begin_chunked_save(&key).await {
+        Ok(handle) => handle,
+        Err(error) => {
+            if state.is_remote_enabled() {
+                let _ = state
+                    .oss_client()
+                    .abort_multipart_upload(&key, &upload_id)
+                    .await;
+            }
+            filename_allocator.lock().await.remove(&filename);
+            return Err(AppError {
+                error_type: "cache".into(),
+                message: error.to_string(),
+            });
+        }
+    };
 
     // 生成 upload token
     let upload_token = generate_descending_id();
@@ -459,11 +457,10 @@ pub async fn cmd_start_chunked_upload(
     // 存储分片上传状态
     let upload_state = ChunkedUploadState {
         diary_id: id,
-        allocated_id,
-        allocated_filename: attachment_filename.clone(),
+        attachment_id: attachment_id.clone(),
         upload_id,
         key,
-        filename: attachment_filename.clone(),
+        filename: filename.clone(),
         mimetype,
         encrypted,
         nonce: nonce.clone().unwrap_or_default(),
@@ -481,7 +478,8 @@ pub async fn cmd_start_chunked_upload(
 
     Ok(ChunkedUploadStartResult {
         upload_token,
-        attachment_filename,
+        attachment_id,
+        filename,
         nonce,
     })
 }
@@ -621,29 +619,16 @@ pub async fn cmd_finish_chunked_upload(
     // 固化本地缓存
     let _ = upload.lfc_handle.finalize(&etag).await;
 
-    // 释放文件名/MEX 占位
-    if upload.allocated_id == 0 {
-        // Windows 字符串文件名分配器
-        let str_alloc = state
-            .filename_allocators()
-            .entry(upload.diary_id.clone())
-            .or_default()
-            .clone();
-        let mut pending_fns = str_alloc.lock().await;
-        pending_fns.remove(&upload.allocated_filename);
-    } else {
-        let alloc_state = state
-            .attachment_allocators()
-            .entry(upload.diary_id.clone())
-            .or_default()
-            .clone();
-        let mut pending_ids = alloc_state.lock().await;
-        pending_ids.remove(&upload.allocated_id);
-        drop(pending_ids);
-    }
+    let filename_allocator = state
+        .filename_allocators()
+        .entry(upload.diary_id.clone())
+        .or_default()
+        .clone();
+    filename_allocator.lock().await.remove(&upload.filename);
 
     // 构建附件元数据
     let attachment = AttachmentMeta {
+        id: upload.attachment_id,
         filename: upload.filename.clone(),
         mimetype: upload.mimetype,
         size: if upload.total_size > 0 {
@@ -671,7 +656,7 @@ pub async fn cmd_finish_chunked_upload(
         message: e.to_string(),
     })?;
 
-    let url = state.attachment_url(&upload.diary_id, &attachment.filename);
+    let url = state.attachment_url(&upload.diary_id, &attachment.id);
 
     Ok(ChunkedUploadFinishResult { attachment, url })
 }
@@ -703,24 +688,12 @@ pub async fn cmd_abort_chunked_upload(
     // 删除本地临时文件
     upload.lfc_handle.abort().await;
 
-    // 释放文件名/MEX 占位
-    if upload.allocated_id == 0 {
-        let str_alloc = state
-            .filename_allocators()
-            .entry(upload.diary_id)
-            .or_default()
-            .clone();
-        let mut pending_fns = str_alloc.lock().await;
-        pending_fns.remove(&upload.allocated_filename);
-    } else {
-        let alloc_state = state
-            .attachment_allocators()
-            .entry(upload.diary_id)
-            .or_default()
-            .clone();
-        let mut pending_ids = alloc_state.lock().await;
-        pending_ids.remove(&upload.allocated_id);
-    }
+    let filename_allocator = state
+        .filename_allocators()
+        .entry(upload.diary_id)
+        .or_default()
+        .clone();
+    filename_allocator.lock().await.remove(&upload.filename);
 
     Ok(())
 }

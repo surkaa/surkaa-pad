@@ -346,6 +346,7 @@ mod diary_search_tests {
                 &store,
                 id,
                 AttachmentMeta {
+                    id: "att-1".to_string(),
                     filename: "1".to_string(),
                     mimetype: mimetype.to_string(),
                     size: 1,
@@ -456,10 +457,12 @@ mod diary_search_tests {
 
 #[cfg(test)]
 mod diary_migration_tests {
+    use crate::caches::LocalFileCache;
     use crate::diaries::diary_migration::{
-        default_registry, get_version, migrate_manifest_bytes, CURRENT_VERSION,
+        default_registry, get_version, legacy_attachment_id, migrate_manifest_bytes,
+        MigrationContext, CURRENT_VERSION,
     };
-    use crate::diaries::DiaryError;
+    use crate::diaries::{DiaryError, LocalStore};
     use serde_json::Value;
 
     // ---- 基础工具函数 ----
@@ -476,22 +479,44 @@ mod diary_migration_tests {
         assert_eq!(get_version(&json), 2);
     }
 
-    // ---- 边界情况 ----
-
     #[test]
-    fn test_no_migration_needed_when_already_current() {
-        let json_bytes = br#"{"id":"test","version":3,"content":{"nodes":[]},"attachments":[]}"#;
-        let (migrated, new_bytes) = migrate_manifest_bytes(json_bytes).unwrap();
-        assert!(!migrated);
-        assert!(new_bytes.is_none());
+    fn legacy_attachment_ids_are_deterministic_and_diary_scoped() {
+        let first = legacy_attachment_id("diary-a", "photo.jpg");
+        assert_eq!(first, legacy_attachment_id("diary-a", "photo.jpg"));
+        assert_ne!(first, legacy_attachment_id("diary-a", "other.jpg"));
+        assert_ne!(first, legacy_attachment_id("diary-b", "photo.jpg"));
+        assert!(first.starts_with("att-"));
     }
 
-    #[test]
-    fn test_version_greater_than_current_requests_app_upgrade() {
+    // ---- 边界情况 ----
+
+    #[tokio::test]
+    async fn test_no_migration_needed_when_already_current() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let context = MigrationContext {
+            diary_id: "test",
+            store: &store,
+        };
+        let json_bytes = br#"{"id":"test","version":4,"content":{"nodes":[]},"attachments":[]}"#;
+        assert!(migrate_manifest_bytes(&context, json_bytes)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn test_version_greater_than_current_requests_app_upgrade() {
         let mut json = serde_json::json!({"id": "test", "content": "hello"});
         json["version"] = Value::Number((CURRENT_VERSION + 1).into());
         let bytes = serde_json::to_vec(&json).unwrap();
-        let error = migrate_manifest_bytes(&bytes).unwrap_err();
+        let tempdir = tempfile::tempdir().unwrap();
+        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let context = MigrationContext {
+            diary_id: "test",
+            store: &store,
+        };
+        let error = migrate_manifest_bytes(&context, &bytes).await.unwrap_err();
 
         assert!(matches!(
             error,
@@ -517,8 +542,8 @@ mod diary_migration_tests {
         assert!(app_error.message.contains(&CURRENT_VERSION.to_string()));
     }
 
-    #[test]
-    fn test_v2_migration_groups_only_consecutive_images() {
+    #[tokio::test]
+    async fn test_v2_migration_groups_only_consecutive_images() {
         let source = serde_json::json!({
             "id": "migration-boundaries",
             "version": 2,
@@ -534,35 +559,99 @@ mod diary_migration_tests {
         });
 
         let bytes = serde_json::to_vec(&source).unwrap();
-        let (migrated, new_bytes) = migrate_manifest_bytes(&bytes).unwrap();
-        let result: Value = serde_json::from_slice(&new_bytes.unwrap()).unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let context = MigrationContext {
+            diary_id: "migration-boundaries",
+            store: &store,
+        };
+        let new_bytes = migrate_manifest_bytes(&context, &bytes)
+            .await
+            .unwrap()
+            .unwrap();
+        let result: Value = serde_json::from_slice(&new_bytes).unwrap();
         let nodes = result["content"]["nodes"].as_array().unwrap();
 
-        assert!(migrated);
         assert_eq!(get_version(&result), CURRENT_VERSION);
         assert_eq!(
             nodes.iter().filter(|node| node["type"] == "album").count(),
             2
         );
-        assert_eq!(nodes[1]["images"], serde_json::json!(["1.jpg", "2.jpg"]));
+        assert_eq!(
+            nodes[1]["attachmentIds"],
+            serde_json::json!([
+                legacy_attachment_id("migration-boundaries", "1.jpg"),
+                legacy_attachment_id("migration-boundaries", "2.jpg")
+            ])
+        );
         assert_eq!(nodes[1]["id"], "migration-v3-album-1");
         assert!(nodes.iter().any(|node| node["type"] == "file"));
         assert!(nodes
             .iter()
-            .any(|node| node["type"] == "image" && node["filename"] == "3.jpg"));
+            .any(|node| node["type"] == "image" && node.get("attachmentId").is_some()));
         assert_eq!(
             nodes
                 .iter()
                 .find(|node| node["id"] == "migration-v3-album-2")
-                .unwrap()["images"],
-            serde_json::json!(["4.jpg", "5.jpg", "6.jpg"])
+                .unwrap()["attachmentIds"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn test_v3_migration_rejects_duplicate_attachment_filenames() {
+        let source = serde_json::json!({
+            "id": "duplicate",
+            "version": 3,
+            "content": {"nodes": []},
+            "attachments": [
+                {"filename": "same.jpg"},
+                {"filename": "same.jpg"}
+            ]
+        });
+        let tempdir = tempfile::tempdir().unwrap();
+        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let context = MigrationContext {
+            diary_id: "duplicate",
+            store: &store,
+        };
+        let error = migrate_manifest_bytes(&context, &serde_json::to_vec(&source).unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, DiaryError::InvalidManifest(message) if message.contains("duplicate"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_v3_migration_rejects_requested_diary_id_mismatch() {
+        let source = serde_json::json!({
+            "id": "manifest-id",
+            "version": 3,
+            "content": {"nodes": []},
+            "attachments": []
+        });
+        let tempdir = tempfile::tempdir().unwrap();
+        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let context = MigrationContext {
+            diary_id: "requested-id",
+            store: &store,
+        };
+        let error = migrate_manifest_bytes(&context, &serde_json::to_vec(&source).unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, DiaryError::InvalidManifest(message) if message.contains("does not match"))
         );
     }
 
     // ---- 各迁移步骤统一测试：test_input → 转换为最新版本 ----
 
-    #[test]
-    fn test_each_step_input_migrates_to_latest() {
+    #[tokio::test]
+    async fn test_each_step_input_migrates_to_latest() {
         let registry = default_registry();
         assert!(!registry.steps().is_empty(), "至少应有一个迁移步骤");
 
@@ -577,10 +666,19 @@ mod diary_migration_tests {
 
             // 序列化后通过完整迁移管道升级到最新版本
             let bytes = serde_json::to_vec(&json).unwrap();
-            let (migrated, new_bytes) = migrate_manifest_bytes(&bytes).unwrap();
-            assert!(migrated, "V{} 数据应触发迁移", step.source_version());
+            let tempdir = tempfile::tempdir().unwrap();
+            let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+            let diary_id = json["id"].as_str().unwrap();
+            let context = MigrationContext {
+                diary_id,
+                store: &store,
+            };
+            let new_bytes = migrate_manifest_bytes(&context, &bytes)
+                .await
+                .unwrap()
+                .unwrap();
 
-            let result: Value = serde_json::from_slice(&new_bytes.unwrap()).unwrap();
+            let result: Value = serde_json::from_slice(&new_bytes).unwrap();
             assert_eq!(
                 get_version(&result),
                 CURRENT_VERSION,

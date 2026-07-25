@@ -23,6 +23,18 @@ use tokio::sync::Mutex;
 // 删除附件的互斥锁
 static DELETE_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
 
+pub fn generate_attachment_id() -> Result<String, AttachmentError> {
+    let mut bytes = [0_u8; 16];
+    getrandom::fill(&mut bytes).map_err(|_| AttachmentError::IdAssignmentFailed)?;
+    Ok(format!(
+        "att-{}",
+        bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ))
+}
+
 pub fn deduplicate_filename(desired: &str, existing: &HashSet<String>) -> String {
     let sanitized: String = desired
         .chars()
@@ -106,67 +118,31 @@ pub async fn add_attachment(
     });
 
     let logic = async move {
-        let allocators = state.attachment_allocators();
-        let alloc_state = allocators.entry(id.to_string()).or_default().clone();
         let str_alloc_state = state
             .filename_allocators()
             .entry(id.to_string())
             .or_default()
             .clone();
-
-        let use_original = cfg!(target_os = "windows")
-            && original_filename
-                .as_ref()
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false);
-
-        let allocated_id: u32;
-        let filename: String;
-
-        // Windows 平台：使用原始文件名，冲突时追加 _1/_2 后缀去重
-        if use_original {
-            let original = original_filename.as_ref().unwrap().trim().to_string();
-            let diary = get_diary(&cache, &crypto, &*store, id)
-                .await
-                .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
-            let existing_fns: HashSet<String> = diary
-                .attachments
-                .iter()
-                .map(|a| a.filename.clone())
+        let diary = get_diary(&cache, &crypto, &*store, id)
+            .await
+            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
+        let existing_filenames: HashSet<String> = diary
+            .attachments
+            .iter()
+            .map(|attachment| attachment.filename.clone())
+            .collect();
+        let desired_filename = original_filename.as_deref().unwrap_or("_file");
+        let filename = {
+            let mut pending_filenames = str_alloc_state.lock().await;
+            let combined = existing_filenames
+                .union(&pending_filenames)
+                .cloned()
                 .collect();
-
-            let mut pending_fns = str_alloc_state.lock().await;
-            let combined: HashSet<&String> = existing_fns.union(&*pending_fns).collect();
-            let combined_owned: HashSet<String> = combined.into_iter().cloned().collect();
-            filename = deduplicate_filename(&original, &combined_owned);
-            pending_fns.insert(filename.clone());
-            allocated_id = 0;
-        } else {
-            // 加锁获取模拟状态并执行 MEX 算法
-            let mut pending_ids = alloc_state.lock().await;
-            let diary = get_diary(&cache, &crypto, &*store, id)
-                .await
-                .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
-
-            // 提取已落盘的附件序号
-            let existing_ids: HashSet<u32> = diary
-                .attachments
-                .iter()
-                .filter_map(|att| att.filename.parse::<u32>().ok())
-                .collect();
-
-            // MEX 算法：寻找最小且不重复的正整数序号
-            let new_id = (1..).find(|i| !existing_ids.contains(i) && !pending_ids.contains(i));
-            let new_id = match new_id {
-                Some(id) => id,
-                None => return Err(AttachmentError::IdAssignmentFailed),
-            };
-
-            // 登记到模拟状态中，防止其他并发任务抢占
-            pending_ids.insert(new_id);
-            allocated_id = new_id;
-            filename = new_id.to_string();
-        }
+            let filename = deduplicate_filename(desired_filename, &combined);
+            pending_filenames.insert(filename.clone());
+            filename
+        };
+        let attachment_id = generate_attachment_id()?;
 
         // 直接上传
         let upload_task = async {
@@ -179,10 +155,11 @@ pub async fn add_attachment(
 
             // 通过 store 上传附件（LocalStore 写入 LFC，RemoteStore 写入 OSS + LFC 写透）
             match store
-                .upload_attachment(id, &filename, size, &mimetype, final_stream)
+                .upload_attachment(id, &attachment_id, size, &mimetype, final_stream)
                 .await
             {
                 Ok(etag) => Ok(AttachmentMeta {
+                    id: attachment_id.clone(),
                     filename: filename.clone(),
                     mimetype,
                     size,
@@ -200,14 +177,8 @@ pub async fn add_attachment(
         let attachment = match upload_result {
             Ok(a) => a,
             Err(e) => {
-                // 无论上传成功或失败，必须擦除占用状态，防止死锁或序号永久丢失
-                if use_original {
-                    let mut pending_fns = str_alloc_state.lock().await;
-                    pending_fns.remove(&filename);
-                } else {
-                    let mut pending_ids = alloc_state.lock().await;
-                    pending_ids.remove(&allocated_id);
-                }
+                let mut pending_filenames = str_alloc_state.lock().await;
+                pending_filenames.remove(&filename);
                 return Err(e);
             }
         };
@@ -218,20 +189,12 @@ pub async fn add_attachment(
                 .await
                 .map_err(|e| AttachmentError::InvalidOperation(e.to_string()));
 
-        // 重新加锁，清理模拟状态
-        if use_original {
-            let mut pending_fns = str_alloc_state.lock().await;
-            // 无论上传成功或失败，必须擦除占用状态，防止死锁或文件名永久丢失
-            pending_fns.remove(&filename);
-        } else {
-            let mut pending_ids = alloc_state.lock().await;
-            // 无论上传成功或失败，必须擦除占用状态，防止死锁或序号永久丢失
-            pending_ids.remove(&allocated_id);
-        }
+        let mut pending_filenames = str_alloc_state.lock().await;
+        pending_filenames.remove(&filename);
 
         manifest_result?;
 
-        let url = state.attachment_url(id, &attachment.filename);
+        let url = state.attachment_url(id, &attachment.id);
 
         Ok::<(AttachmentMeta, String), AttachmentError>((attachment, url))
     };
@@ -251,17 +214,17 @@ pub async fn delete_attachment(
     crypto: &Crypto,
     store: &dyn DiaryStore,
     id: &str,
-    filename: String,
+    attachment_id: String,
 ) -> Result<(), AttachmentError> {
     let delete_lock = DELETE_LOCKS.entry(id.to_string()).or_default().clone();
     let _guard = delete_lock.lock().await;
 
-    delete_diary_attachment(cache, crypto, store, id, &filename)
+    delete_diary_attachment(cache, crypto, store, id, &attachment_id)
         .await
         .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
     // 删除远端附件对象
-    store.delete_attachment(id, &filename).await?;
+    store.delete_attachment(id, &attachment_id).await?;
 
     Ok(())
 }
@@ -270,7 +233,7 @@ pub async fn toggle_attachment_encryption(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
-    filename: String,
+    attachment_id: String,
 ) {
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
     let _ = event.send(AttachmentProcessEvent::Started);
@@ -283,7 +246,7 @@ pub async fn toggle_attachment_encryption(
         let old_meta = diary
             .attachments
             .iter()
-            .find(|a| a.filename == filename)
+            .find(|attachment| attachment.id == attachment_id)
             .ok_or_else(|| AttachmentError::InvalidOperation("附件不存在".to_string()))?
             .clone();
 
@@ -292,7 +255,7 @@ pub async fn toggle_attachment_encryption(
 
         // 下载原始数据
         let (raw_stream, _size) = store
-            .download_attachment(id, &filename, None, old_meta.etag.as_deref())
+            .download_attachment(id, &attachment_id, None, old_meta.etag.as_deref())
             .await?;
         let size = old_meta.size;
 
@@ -319,7 +282,7 @@ pub async fn toggle_attachment_encryption(
 
         // 通过 store 上传
         let new_etag = store
-            .upload_attachment(id, &filename, size, &old_meta.mimetype, tracked_stream)
+            .upload_attachment(id, &attachment_id, size, &old_meta.mimetype, tracked_stream)
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
@@ -333,7 +296,7 @@ pub async fn toggle_attachment_encryption(
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
-        let url = state.attachment_url(id, &new_meta.filename);
+        let url = state.attachment_url(id, &new_meta.id);
         Ok((new_meta, url))
     };
 
@@ -351,7 +314,7 @@ pub async fn rotate_image_attachment(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
-    filename: String,
+    attachment_id: String,
     rotation: i32,
 ) {
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
@@ -371,7 +334,7 @@ pub async fn rotate_image_attachment(
         let old_meta = diary
             .attachments
             .iter()
-            .find(|a| a.filename == filename)
+            .find(|attachment| attachment.id == attachment_id)
             .ok_or_else(|| AttachmentError::InvalidOperation("附件不存在".to_string()))?
             .clone();
 
@@ -384,7 +347,7 @@ pub async fn rotate_image_attachment(
 
         // 下载并解密原始数据
         let (raw_stream, _size) = store
-            .download_attachment(id, &filename, None, old_meta.etag.as_deref())
+            .download_attachment(id, &attachment_id, None, old_meta.etag.as_deref())
             .await?;
 
         let stream = if old_meta.encrypted {
@@ -441,7 +404,13 @@ pub async fn rotate_image_attachment(
 
         // 通过 store 上传
         let new_etag = store
-            .upload_attachment(id, &filename, new_size, &old_meta.mimetype, upload_stream)
+            .upload_attachment(
+                id,
+                &attachment_id,
+                new_size,
+                &old_meta.mimetype,
+                upload_stream,
+            )
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
@@ -456,7 +425,7 @@ pub async fn rotate_image_attachment(
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
-        let url = state.attachment_url(id, &new_meta.filename);
+        let url = state.attachment_url(id, &new_meta.id);
         Ok((new_meta, url))
     };
 
@@ -474,7 +443,7 @@ pub async fn caching_attachment(
     store: &dyn DiaryStore,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
-    filename: &str,
+    attachment_id: &str,
 ) {
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async {
@@ -482,7 +451,7 @@ pub async fn caching_attachment(
         store
             .cache_attachment(
                 id,
-                filename,
+                attachment_id,
                 Arc::new(move |progress| {
                     let _ = progress_event.send(AttachmentProcessEvent::Progress(progress));
                 }),
@@ -504,7 +473,7 @@ pub async fn save_decrypt_attachment(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
-    filename: String,
+    attachment_id: String,
     attachment: AttachmentMeta,
     mut file: File,
 ) {
@@ -513,7 +482,7 @@ pub async fn save_decrypt_attachment(
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async move {
         let (stream, _size) = store
-            .download_attachment(id, &filename, None, attachment.etag.as_deref())
+            .download_attachment(id, &attachment_id, None, attachment.etag.as_deref())
             .await?;
         let event_clone = event.clone();
         let stream = tracker_stream(attachment.size, stream, move |p| {
@@ -552,7 +521,7 @@ pub async fn save_decrypt_attachment(
 pub async fn update_attachment_filename(
     state: &AppState,
     id: &str,
-    old_filename: String,
+    attachment_id: String,
     new_filename: String,
 ) -> Result<(), AttachmentError> {
     let cache = state.diary_cache();
@@ -563,18 +532,14 @@ pub async fn update_attachment_filename(
         .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
     // 确认存在那个附件
-    if !diary.attachments.iter().any(|a| a.filename == old_filename) {
+    if !diary.attachments.iter().any(|a| a.id == attachment_id) {
         return Err(AttachmentError::InvalidOperation(
             "原附件不存在".to_string(),
         ));
     }
 
-    // 通过 store 重命名附件
-    store
-        .rename_attachment(id, &old_filename, &new_filename)
-        .await?;
-
-    update_diary_attachment_filename(state, id, old_filename, new_filename)
+    // filename 仅为展示元数据，物理对象 key 始终保持 attachment ID 不变。
+    update_diary_attachment_filename(state, id, attachment_id, new_filename)
         .await
         .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 

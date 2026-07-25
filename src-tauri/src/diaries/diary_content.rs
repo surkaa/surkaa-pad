@@ -26,21 +26,21 @@ pub enum DiaryContentNode {
         text: String,
     },
     Image {
-        filename: String,
+        attachment_id: String,
         size: ImageSize,
     },
     Video {
-        filename: String,
+        attachment_id: String,
     },
     Audio {
-        filename: String,
+        attachment_id: String,
     },
     File {
-        filename: String,
+        attachment_id: String,
     },
     Album {
         id: String,
-        images: Vec<String>,
+        attachment_ids: Vec<String>,
         #[serde(rename = "displayMode")]
         #[specta(rename = "displayMode")]
         display_mode: AlbumDisplayMode,
@@ -102,47 +102,24 @@ impl DiaryContent {
             .to_string()
     }
 
-    pub fn rename_attachment(&mut self, old_filename: &str, new_filename: &str) {
-        for node in &mut self.nodes {
-            match node {
-                DiaryContentNode::Image { filename, .. }
-                | DiaryContentNode::Video { filename }
-                | DiaryContentNode::Audio { filename }
-                | DiaryContentNode::File { filename } => {
-                    if filename == old_filename {
-                        *filename = new_filename.to_string();
-                    }
-                }
-                DiaryContentNode::Album { images, .. } => {
-                    for filename in images {
-                        if filename == old_filename {
-                            *filename = new_filename.to_string();
-                        }
-                    }
-                }
-                DiaryContentNode::Markdown { .. } => {}
-            }
-        }
-    }
-
-    pub fn remove_attachment(&mut self, filename: &str) {
+    pub fn remove_attachment(&mut self, attachment_id: &str) {
         self.nodes.retain_mut(|node| match node {
             DiaryContentNode::Image {
-                filename: node_filename,
+                attachment_id: node_attachment_id,
                 ..
             }
             | DiaryContentNode::Video {
-                filename: node_filename,
+                attachment_id: node_attachment_id,
             }
             | DiaryContentNode::Audio {
-                filename: node_filename,
+                attachment_id: node_attachment_id,
             }
             | DiaryContentNode::File {
-                filename: node_filename,
-            } => node_filename != filename,
-            DiaryContentNode::Album { images, .. } => {
-                images.retain(|image| image != filename);
-                !images.is_empty()
+                attachment_id: node_attachment_id,
+            } => node_attachment_id != attachment_id,
+            DiaryContentNode::Album { attachment_ids, .. } => {
+                attachment_ids.retain(|id| id != attachment_id);
+                !attachment_ids.is_empty()
             }
             DiaryContentNode::Markdown { .. } => true,
         });
@@ -155,18 +132,18 @@ impl DiaryContent {
         let mut album_index = 1;
 
         while index < self.nodes.len() {
-            let DiaryContentNode::Image { filename, .. } = &self.nodes[index] else {
+            let DiaryContentNode::Image { attachment_id, .. } = &self.nodes[index] else {
                 grouped.push(self.nodes[index].clone());
                 index += 1;
                 continue;
             };
 
-            let mut images = vec![filename.clone()];
+            let mut attachment_ids = vec![attachment_id.clone()];
             let mut cursor = index + 1;
             while cursor < self.nodes.len() {
                 match &self.nodes[cursor] {
-                    DiaryContentNode::Image { filename, .. } => {
-                        images.push(filename.clone());
+                    DiaryContentNode::Image { attachment_id, .. } => {
+                        attachment_ids.push(attachment_id.clone());
                         cursor += 1;
                     }
                     DiaryContentNode::Markdown { text }
@@ -176,8 +153,10 @@ impl DiaryContent {
                                 Some(DiaryContentNode::Image { .. })
                             ) =>
                     {
-                        if let DiaryContentNode::Image { filename, .. } = &self.nodes[cursor + 1] {
-                            images.push(filename.clone());
+                        if let DiaryContentNode::Image { attachment_id, .. } =
+                            &self.nodes[cursor + 1]
+                        {
+                            attachment_ids.push(attachment_id.clone());
                         }
                         cursor += 2;
                     }
@@ -185,10 +164,10 @@ impl DiaryContent {
                 }
             }
 
-            if images.len() >= 2 {
+            if attachment_ids.len() >= 2 {
                 grouped.push(DiaryContentNode::Album {
                     id: format!("migration-v3-album-{album_index}"),
-                    images,
+                    attachment_ids,
                     display_mode: AlbumDisplayMode::HorizontalList,
                 });
                 album_index += 1;
@@ -226,8 +205,8 @@ fn push_markdown(nodes: &mut Vec<DiaryContentNode>, text: &str) {
 fn parse_attachment_marker(marker: &str) -> Option<DiaryContentNode> {
     let (kind, value) = marker.split_once(':')?;
     let mut parts = value.split('|');
-    let filename = parts.next()?.to_string();
-    if filename.is_empty() {
+    let attachment_id = parts.next()?.to_string();
+    if attachment_id.is_empty() {
         return None;
     }
 
@@ -238,11 +217,14 @@ fn parse_attachment_marker(marker: &str) -> Option<DiaryContentNode> {
             } else {
                 ImageSize::Normal
             };
-            Some(DiaryContentNode::Image { filename, size })
+            Some(DiaryContentNode::Image {
+                attachment_id,
+                size,
+            })
         }
-        "VID" => Some(DiaryContentNode::Video { filename }),
-        "AUD" => Some(DiaryContentNode::Audio { filename }),
-        "FILE" => Some(DiaryContentNode::File { filename }),
+        "VID" => Some(DiaryContentNode::Video { attachment_id }),
+        "AUD" => Some(DiaryContentNode::Audio { attachment_id }),
+        "FILE" => Some(DiaryContentNode::File { attachment_id }),
         _ => None,
     }
 }
@@ -260,12 +242,12 @@ mod tests {
         assert_eq!(content.nodes.len(), 5);
         assert!(matches!(
             &content.nodes[1],
-            DiaryContentNode::Image { filename, size }
-                if filename == "1.jpg" && *size == ImageSize::Small
+            DiaryContentNode::Image { attachment_id, size }
+                if attachment_id == "1.jpg" && *size == ImageSize::Small
         ));
         assert!(matches!(
             &content.nodes[3],
-            DiaryContentNode::File { filename } if filename == "a.pdf"
+            DiaryContentNode::File { attachment_id } if attachment_id == "a.pdf"
         ));
         assert_eq!(content.searchable_text(), "开头\n\n\n\n\n\n结尾");
         assert_eq!(content.title(), "开头");
@@ -285,16 +267,15 @@ mod tests {
     }
 
     #[test]
-    fn renames_and_removes_attachment_references() {
+    fn removes_attachment_references() {
         let mut content =
             DiaryContent::from_editor_text("[[IMG:1.jpg]][[FILE:1.jpg]][[VID:2.mp4]]");
-        content.rename_attachment("1.jpg", "renamed.jpg");
-        content.remove_attachment("renamed.jpg");
+        content.remove_attachment("1.jpg");
 
         assert_eq!(
             content.nodes,
             vec![DiaryContentNode::Video {
-                filename: "2.mp4".to_string()
+                attachment_id: "2.mp4".to_string()
             }]
         );
     }
@@ -304,7 +285,7 @@ mod tests {
         let content = DiaryContent {
             nodes: vec![DiaryContentNode::Album {
                 id: "album-1".to_string(),
-                images: vec!["1.jpg".to_string()],
+                attachment_ids: vec!["1.jpg".to_string()],
                 display_mode: super::AlbumDisplayMode::StackedCards,
             }],
         };
@@ -329,7 +310,7 @@ mod tests {
                 },
                 DiaryContentNode::Album {
                     id: "migration-v3-album-1".to_string(),
-                    images: vec![
+                    attachment_ids: vec![
                         "1.jpg".to_string(),
                         "2.jpg".to_string(),
                         "3.jpg".to_string(),
@@ -365,8 +346,8 @@ mod tests {
         assert_eq!(content, original);
         assert!(matches!(
             &content.nodes[1],
-            DiaryContentNode::Image { filename, size }
-                if filename == "only.jpg" && *size == ImageSize::Small
+            DiaryContentNode::Image { attachment_id, size }
+                if attachment_id == "only.jpg" && *size == ImageSize::Small
         ));
     }
 
@@ -386,14 +367,14 @@ mod tests {
         assert_eq!(first, second, "相同 V2 内容必须产生稳定的迁移结果");
         assert!(matches!(
             &first.nodes[0],
-            DiaryContentNode::Album { id, images, .. }
-                if id == "migration-v3-album-1" && images == &["1.jpg", "2.jpg"]
+            DiaryContentNode::Album { id, attachment_ids, .. }
+                if id == "migration-v3-album-1" && attachment_ids == &["1.jpg", "2.jpg"]
         ));
         assert!(matches!(
             &first.nodes[2],
-            DiaryContentNode::Album { id, images, .. }
+            DiaryContentNode::Album { id, attachment_ids, .. }
                 if id == "migration-v3-album-2"
-                    && images == &["3.jpg", "4.jpg", "5.jpg"]
+                    && attachment_ids == &["3.jpg", "4.jpg", "5.jpg"]
         ));
     }
 
@@ -404,7 +385,8 @@ mod tests {
         whitespace.group_consecutive_images_into_albums();
         assert!(matches!(
             whitespace.nodes.as_slice(),
-            [DiaryContentNode::Album { images, .. }] if images == &["1.jpg", "2.jpg"]
+            [DiaryContentNode::Album { attachment_ids, .. }]
+                if attachment_ids == &["1.jpg", "2.jpg"]
         ));
 
         let mut zero_width = DiaryContent::from_editor_text("[[IMG:1.jpg]]\u{200b}[[IMG:2.jpg]]");

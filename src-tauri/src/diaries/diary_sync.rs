@@ -744,10 +744,9 @@ mod tests {
         let target_dir = tempfile::tempdir().expect("target temp dir");
         let target_lfc = LocalFileCache::new(target_dir.path().to_path_buf());
         let (download_tx, mut download_rx) = unbounded_channel();
-        let download_summary =
-            sync_cloud_to_local(&target_lfc, &client, Arc::new(download_tx))
-                .await
-                .unwrap();
+        let download_summary = sync_cloud_to_local(&target_lfc, &client, Arc::new(download_tx))
+            .await
+            .unwrap();
         let download_events =
             std::iter::from_fn(|| download_rx.try_recv().ok()).collect::<Vec<_>>();
 

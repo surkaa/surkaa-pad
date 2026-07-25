@@ -42,7 +42,7 @@ impl AttachmentServerHandle {
         }
     }
 
-    pub fn url(&self, diary_id: &str, filename: &str) -> String {
+    pub fn url(&self, diary_id: &str, attachment_id: &str) -> String {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -52,7 +52,7 @@ impl AttachmentServerHandle {
             self.origin,
             self.token,
             urlencoding::encode(diary_id),
-            urlencoding::encode(filename),
+            urlencoding::encode(attachment_id),
             timestamp
         )
     }
@@ -235,7 +235,7 @@ async fn process_attachment(
 
     let path = request.uri().path().trim_start_matches('/');
     let segments: Vec<&str> = path.split('/').collect();
-    let [token, encoded_id, encoded_filename] = segments.as_slice() else {
+    let [token, encoded_id, encoded_attachment_id] = segments.as_slice() else {
         return Err(ServerError::BadRequest("Invalid URI path structure"));
     };
     if *token != expected_token {
@@ -245,8 +245,8 @@ async fn process_attachment(
     let id = urlencoding::decode(encoded_id)
         .map_err(|_| ServerError::BadRequest("Invalid URL encoding in diary id"))?
         .into_owned();
-    let filename = urlencoding::decode(encoded_filename)
-        .map_err(|_| ServerError::BadRequest("Invalid URL encoding in filename"))?
+    let attachment_id = urlencoding::decode(encoded_attachment_id)
+        .map_err(|_| ServerError::BadRequest("Invalid URL encoding in attachment id"))?
         .into_owned();
 
     let cache = state.diary_cache();
@@ -259,7 +259,7 @@ async fn process_attachment(
     let attachment = diary
         .attachments
         .iter()
-        .find(|attachment| attachment.filename == filename)
+        .find(|attachment| attachment.id == attachment_id)
         .ok_or(ServerError::NotFound("attachment"))?;
     if attachment.algorithm == Gcm {
         return Err(ServerError::Forbidden("GCM decryption is not supported"));
@@ -297,7 +297,7 @@ async fn process_attachment(
     }
 
     let (stream, _) = store
-        .download_attachment(&id, &filename, range, attachment.etag.as_deref())
+        .download_attachment(&id, &attachment_id, range, attachment.etag.as_deref())
         .await?;
     let start = range.map(|(start, _)| start).unwrap_or(0);
     let stream = if attachment.encrypted {
@@ -433,6 +433,7 @@ mod tests {
                 created: 0,
                 updated: 0,
                 attachments: vec![AttachmentMeta {
+                    id: filename.to_string(),
                     filename: filename.to_string(),
                     mimetype: mimetype.to_string(),
                     size: plaintext.len() as u64,

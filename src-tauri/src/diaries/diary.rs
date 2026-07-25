@@ -4,7 +4,7 @@ use crate::state::AppState;
 use crate::attachments::AttachmentMeta;
 use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
-use crate::diaries::diary_migration::{migrate_manifest_bytes, CURRENT_VERSION};
+use crate::diaries::diary_migration::{migrate_manifest_bytes, MigrationContext, CURRENT_VERSION};
 use crate::diaries::diary_store::DiaryStore;
 use crate::diaries::diary_types::DiarySummary;
 use crate::diaries::{DiaryContent, DiaryError, DiaryManifest};
@@ -78,8 +78,12 @@ pub async fn get_diary(
 
     let manifest_bytes = crypto.decrypt(&encrypted_data)?;
 
-    // 迁移钩子：JSON 层面版本升级
-    if let (true, Some(new_bytes)) = migrate_manifest_bytes(&manifest_bytes)? {
+    // 迁移步骤可以先幂等迁移附件对象；只有全部成功后才发布新版 manifest。
+    let migration_context = MigrationContext {
+        diary_id: id,
+        store,
+    };
+    if let Some(new_bytes) = migrate_manifest_bytes(&migration_context, &manifest_bytes).await? {
         let re_encrypted = crypto.encrypt(&new_bytes)?;
         let new_etag = store.upload_manifest(id, &re_encrypted).await?;
         let manifest: DiaryManifest = from_slice(&new_bytes)?;
@@ -166,11 +170,11 @@ pub async fn update_diary_attachment(
     let _guard = lock.lock().await;
 
     let mut diary = get_diary(cache, crypto, store, id).await?;
-    // 判断是否已存在同名附件，若存在则替换，否则添加
+    // ID 是附件身份；filename 仅用于展示，可以被重命名。
     if let Some(existing) = diary
         .attachments
         .iter_mut()
-        .find(|att| att.filename == new_attachment.filename)
+        .find(|att| att.id == new_attachment.id)
     {
         *existing = new_attachment;
     } else {
@@ -184,7 +188,7 @@ pub async fn update_diary_attachment(
 pub async fn update_diary_attachment_filename(
     state: &AppState,
     id: &str,
-    old_filename: String,
+    attachment_id: String,
     new_filename: String,
 ) -> Result<(), DiaryError> {
     let lock = MANIFEST_LOCKS
@@ -200,17 +204,14 @@ pub async fn update_diary_attachment_filename(
     if let Some(att) = diary
         .attachments
         .iter_mut()
-        .find(|att| att.filename == old_filename)
+        .find(|att| att.id == attachment_id)
     {
-        att.filename = new_filename.clone();
-        diary
-            .content
-            .rename_attachment(&old_filename, &new_filename);
+        att.filename = new_filename;
         diary.updated = Utc::now().timestamp_millis();
         update_diary(&cache, &crypto, &*store, &diary).await?;
         Ok(())
     } else {
-        Err(DiaryError::AttachmentNotFound(old_filename))
+        Err(DiaryError::AttachmentNotFound(attachment_id))
     }
 }
 
@@ -219,7 +220,7 @@ pub async fn delete_diary_attachment(
     crypto: &Crypto,
     store: &dyn DiaryStore,
     id: &str,
-    filename: &str,
+    attachment_id: &str,
 ) -> Result<(), DiaryError> {
     let lock = MANIFEST_LOCKS
         .entry(id.to_string())
@@ -228,8 +229,8 @@ pub async fn delete_diary_attachment(
     let _guard = lock.lock().await;
 
     let mut diary = get_diary(cache, crypto, store, id).await?;
-    diary.attachments.retain(|att| att.filename != filename);
-    diary.content.remove_attachment(filename);
+    diary.attachments.retain(|att| att.id != attachment_id);
+    diary.content.remove_attachment(attachment_id);
     diary.updated = Utc::now().timestamp_millis();
     update_diary(cache, crypto, store, &diary).await?;
     Ok(())

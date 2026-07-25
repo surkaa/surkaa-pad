@@ -23,6 +23,9 @@ pub enum AttachmentProcessEvent {
 // 单个附件的元数据
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
 pub struct AttachmentMeta {
+    /// 稳定附件 ID，同时作为存储对象 key 的末段。
+    pub id: String,
+    /// 仅用于展示和导出，不再参与对象寻址。
     pub filename: String,
     pub mimetype: String,
     #[specta(type = f64)]
@@ -38,7 +41,8 @@ pub struct AttachmentMeta {
 #[serde(rename_all = "camelCase")]
 pub struct ChunkedUploadStartResult {
     pub upload_token: String,
-    pub attachment_filename: String,
+    pub attachment_id: String,
+    pub filename: String,
     pub nonce: Option<Vec<u8>>,
 }
 
