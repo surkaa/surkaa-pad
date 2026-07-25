@@ -9,7 +9,7 @@ use crate::utils::message_sender::MessageSender;
 use futures_util::StreamExt;
 use serde::Serialize;
 use specta::Type;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::sync::Arc;
 use tauri_plugin_log::log;
@@ -370,11 +370,21 @@ fn build_plan(
 ) -> SyncPlan {
     let mut items = Vec::new();
     let mut skipped_files = 0u32;
+    let source_diary_ids = source_entries
+        .iter()
+        .filter_map(|entry| match classify_storage_key(&entry.key) {
+            Some((SyncItemKind::Manifest, diary_id)) => Some(diary_id),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
 
     for entry in source_entries {
         let Some((kind, diary_id)) = classify_storage_key(&entry.key) else {
             continue;
         };
+        if kind == SyncItemKind::Attachment && !source_diary_ids.contains(&diary_id) {
+            continue;
+        }
         if etag_options_match(entry.etag.as_deref(), target_etags.get(&entry.key)) {
             skipped_files += 1;
             continue;
@@ -613,15 +623,43 @@ mod tests {
     #[test]
     fn plan_treats_missing_or_changed_target_as_transfer() {
         let source = vec![
+            entry("diary/manifest.enc", Some("MANIFEST"), 10),
             entry("diary/a.jpg", Some("A"), 5),
             entry("diary/b.jpg", None, 7),
         ];
-        let target = HashMap::from([("diary/a.jpg".to_string(), Some("B".to_string()))]);
+        let target = HashMap::from([
+            (
+                "diary/manifest.enc".to_string(),
+                Some("MANIFEST".to_string()),
+            ),
+            ("diary/a.jpg".to_string(), Some("B".to_string())),
+        ]);
 
         let plan = build_plan(source, &target);
 
         assert_eq!(plan.items.len(), 2);
         assert_eq!(plan.total_bytes, 12);
+        assert_eq!(plan.skipped_files, 1);
+    }
+
+    #[test]
+    fn plan_ignores_attachments_without_source_manifest() {
+        let source = vec![
+            entry("valid/manifest.enc", Some("MANIFEST"), 10),
+            entry("valid/photo.jpg", Some("PHOTO"), 20),
+            entry("orphan/photo.jpg", Some("ORPHAN_PHOTO"), 30),
+            entry("orphan/audio.mp3", Some("ORPHAN_AUDIO"), 40),
+        ];
+
+        let plan = build_plan(source, &HashMap::new());
+        let keys = plan
+            .items
+            .iter()
+            .map(|item| item.key.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(keys, ["valid/photo.jpg", "valid/manifest.enc"]);
+        assert_eq!(plan.total_bytes, 30);
         assert_eq!(plan.skipped_files, 0);
     }
 
