@@ -118,6 +118,74 @@ mod lfc_tests {
     }
 
     #[tokio::test]
+    async fn test_save_stream_with_etag_replaces_cache_after_complete_stream() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let key = "nested/streamed-file";
+        cache.save_bytes(key, b"old data").await.unwrap();
+
+        cache
+            .save_stream_with_etag(
+                key,
+                "REMOTE-ETAG",
+                create_mock_stream(b"new streamed data".to_vec(), 4),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            cache.get(key).await.unwrap().as_deref(),
+            Some("REMOTE-ETAG")
+        );
+        assert_eq!(cache.get_data(key).await.unwrap(), b"new streamed data");
+    }
+
+    #[tokio::test]
+    async fn test_save_stream_with_etag_preserves_cache_on_stream_error() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let key = "stream-error";
+        cache.save_bytes(key, b"old data").await.unwrap();
+        let old_etag = cache.get(key).await.unwrap();
+        let stream = futures_util::stream::iter(vec![
+            Ok(Bytes::from_static(b"partial")),
+            Err(io::Error::other("simulated error")),
+        ]);
+
+        let result = cache
+            .save_stream_with_etag(key, "NEW-ETAG", Box::pin(stream))
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::caches::CacheError::StreamError)
+        ));
+        assert_eq!(cache.get(key).await.unwrap(), old_etag);
+        assert_eq!(cache.get_data(key).await.unwrap(), b"old data");
+        let files = std::fs::read_dir(temp_dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        assert!(files.iter().all(|name| !name.contains(".tmp.")));
+    }
+
+    #[tokio::test]
+    async fn test_save_stream_with_etag_rejects_empty_etag() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+
+        let result = cache
+            .save_stream_with_etag("file", " ", create_mock_stream(vec![], 1))
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::caches::CacheError::InvalidEtag)
+        ));
+        assert!(cache.get("file").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
     async fn test_delete_all() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();

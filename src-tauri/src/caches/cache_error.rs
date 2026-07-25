@@ -20,6 +20,9 @@ pub enum CacheError {
     #[error("Invalid filename")]
     InvalidFilename,
 
+    #[error("Invalid empty etag")]
+    InvalidEtag,
+
     #[error("Path error: {0}")]
     PathError(String),
 }

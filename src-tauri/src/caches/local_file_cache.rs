@@ -3,6 +3,7 @@ use crate::stream::ByteStream;
 use futures_util::StreamExt;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
@@ -14,6 +15,42 @@ pub const LOCAL_FILE_CACHE_FILENAME: &str = "lfc";
 const DATA_FILE_SUFFIX: &str = ".data";
 const MD5_FILE_SUFFIX: &str = ".md5";
 const TMP_FILE_SUFFIX: &str = ".tmp";
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+struct CacheWriteGuard {
+    cleanup_paths: Vec<PathBuf>,
+    committed: bool,
+}
+
+impl CacheWriteGuard {
+    fn new(paths: Vec<PathBuf>) -> Self {
+        Self {
+            cleanup_paths: paths,
+            committed: false,
+        }
+    }
+
+    fn track(&mut self, path: PathBuf) {
+        if !self.cleanup_paths.contains(&path) {
+            self.cleanup_paths.push(path);
+        }
+    }
+
+    fn commit(mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for CacheWriteGuard {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        for path in &self.cleanup_paths {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
 
 /// 保存流时返回的句柄，用于完成或放弃缓存
 pub struct SaveHandle {
@@ -130,6 +167,18 @@ impl LocalFileCache {
         let data_path = self.cache_dir.join(format!("{}{}", key, DATA_FILE_SUFFIX));
         let md5_path = self.cache_dir.join(format!("{}{}", key, MD5_FILE_SUFFIX));
         (data_path, md5_path)
+    }
+
+    fn unique_temp_path(path: &Path) -> PathBuf {
+        let sequence = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        path.with_extension(format!(
+            "{extension}{TMP_FILE_SUFFIX}.{}-{sequence}",
+            std::process::id()
+        ))
     }
 
     /// 确保存储文件的父目录存在
@@ -302,40 +351,49 @@ impl LocalFileCache {
         Ok((wrapped_stream, SaveHandle { state }))
     }
 
-    /// 流式直接存储数据
-    pub async fn direct_save_with_md5(
+    /// 流式保存数据，并在完整写入后使用远端 ETag 固化缓存。
+    ///
+    /// 数据下载期间保留原缓存；流失败或任务取消时会清理临时文件。
+    pub async fn save_stream_with_etag(
         &self,
         key: &str,
-        md5: &str,
+        etag: &str,
         mut stream: ByteStream,
     ) -> Result<(), CacheError> {
+        if etag.trim().is_empty() {
+            return Err(CacheError::InvalidEtag);
+        }
+
         let (data_path, md5_path) = self.get_path(key);
         Self::ensure_parent_dir(&data_path).await?;
 
-        // 创建临时文件
-        let tmp_path = data_path.with_extension(format!("{}{}", DATA_FILE_SUFFIX, TMP_FILE_SUFFIX));
-        let mut file = tokio::fs::File::create(&tmp_path).await?;
+        let data_tmp_path = Self::unique_temp_path(&data_path);
+        let etag_tmp_path = Self::unique_temp_path(&md5_path);
+        let mut cleanup = CacheWriteGuard::new(vec![data_tmp_path.clone(), etag_tmp_path.clone()]);
+        let mut data_file = tokio::fs::File::create(&data_tmp_path).await?;
 
-        // 写入数据
         while let Some(chunk) = stream.next().await {
-            if let Ok(chunk) = chunk {
-                if let Err(e) = file.write_all(&chunk).await {
-                    let _ = tokio::fs::remove_file(&tmp_path).await;
-                    return Err(CacheError::Io(e));
-                }
-            } else {
-                let _ = tokio::fs::remove_file(&tmp_path).await;
-                return Err(CacheError::StreamError);
-            }
+            let chunk = chunk.map_err(|_| CacheError::StreamError)?;
+            data_file.write_all(&chunk).await?;
         }
+        data_file.sync_all().await?;
+        drop(data_file);
 
-        file.sync_all().await?;
-        // 重命名
-        tokio::fs::rename(&tmp_path, &data_path).await?;
+        let mut etag_file = tokio::fs::File::create(&etag_tmp_path).await?;
+        etag_file.write_all(etag.trim().as_bytes()).await?;
+        etag_file.sync_all().await?;
+        drop(etag_file);
 
-        // 写入md5
-        tokio::fs::write(&md5_path, &md5).await?;
+        // Windows 不允许 rename 覆盖现有文件。先移除 ETag，使替换过程中的缓存不可见。
+        cleanup.track(data_path.clone());
+        cleanup.track(md5_path.clone());
+        let _ = tokio::fs::remove_file(&md5_path).await;
+        let _ = tokio::fs::remove_file(&data_path).await;
 
+        tokio::fs::rename(&data_tmp_path, &data_path).await?;
+        tokio::fs::rename(&etag_tmp_path, &md5_path).await?;
+
+        cleanup.commit();
         Ok(())
     }
 
