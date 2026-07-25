@@ -64,3 +64,12 @@ pub enum SearchDiariesEvent {
     Finished,
     Error(String),
 }
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum AttachmentTypeFilter {
+    Image,
+    Audio,
+    Video,
+    Other,
+}

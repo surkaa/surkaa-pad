@@ -247,27 +247,37 @@ mod diary_list_tests {
 
 #[cfg(test)]
 mod diary_search_tests {
+    use crate::attachments::AttachmentMeta;
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
+    use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
-    use crate::diaries::diary::save_diary;
+    use crate::diaries::diary::{save_diary, update_diary_attachment};
     use crate::diaries::diary_search::search_diaries;
-    use crate::diaries::diary_store::RemoteStore;
-    use crate::diaries::diary_types::{DiarySummary, SearchDiariesEvent};
-    use crate::object::OssClient;
-    use crate::test_utils::TestOssGuard;
+    use crate::diaries::diary_store::{DiaryStore, LocalStore};
+    use crate::diaries::diary_types::{AttachmentTypeFilter, DiarySummary, SearchDiariesEvent};
     use std::sync::Arc;
 
     async fn test_search(
         cache: &DiaryMemoryCache,
         crypto: &Crypto,
-        store: &RemoteStore,
+        store: &dyn DiaryStore,
         keyword: String,
         or: bool,
+        attachment_types: Vec<AttachmentTypeFilter>,
     ) -> (Vec<DiarySummary>, Vec<String>) {
         // 创建事件监听器
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SearchDiariesEvent>();
         let event_sender = Arc::new(tx);
-        let _ = search_diaries(cache, crypto, store, event_sender.clone(), keyword, or).await;
+        search_diaries(
+            cache,
+            crypto,
+            store,
+            event_sender.clone(),
+            keyword,
+            or,
+            attachment_types,
+        )
+        .await;
 
         let mut matches = Vec::new();
         let mut unmatches = Vec::new();
@@ -299,29 +309,59 @@ mod diary_search_tests {
     async fn test_diary_search() {
         // 初始化依赖
         let crypto = Crypto::from_env();
-        let client = OssClient::from_env();
-        let (client, _guard) = TestOssGuard::new(client).await;
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let lfc = LocalFileCache::new(path);
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let store = LocalStore::new(lfc);
 
         // 创建几个测试日记
-        let _ = save_diary(&cache, &crypto, &store, "这是第一篇日记，包含关键词 rust").await;
-        let _ = save_diary(&cache, &crypto, &store, "这是第二篇日记，不包含关键词").await;
-        let _ = save_diary(
+        let (first, _) = save_diary(&cache, &crypto, &store, "这是第一篇日记，包含关键词 rust")
+            .await
+            .unwrap();
+        let (second, _) = save_diary(&cache, &crypto, &store, "这是第二篇日记，不包含关键词")
+            .await
+            .unwrap();
+        let (third, _) = save_diary(
             &cache,
             &crypto,
             &store,
             "这是第三篇日记，包含关键词 rust 和 async",
         )
-        .await;
-        let _ = save_diary(&cache, &crypto, &store, "这是第四篇日记，包含关键词 async").await;
+        .await
+        .unwrap();
+        let (fourth, _) = save_diary(&cache, &crypto, &store, "这是第四篇日记，包含关键词 async")
+            .await
+            .unwrap();
+
+        for (id, mimetype) in [
+            (&first.id, "image/jpeg"),
+            (&second.id, "audio/mpeg"),
+            (&third.id, "audio/ogg"),
+            (&fourth.id, "video/mp4"),
+        ] {
+            update_diary_attachment(
+                &cache,
+                &crypto,
+                &store,
+                id,
+                AttachmentMeta {
+                    filename: "1".to_string(),
+                    mimetype: mimetype.to_string(),
+                    size: 1,
+                    encrypted: false,
+                    nonce: Vec::new(),
+                    algorithm: Gcm,
+                    etag: None,
+                },
+            )
+            .await
+            .unwrap();
+        }
 
         // 收集结果
         let (matches, unmatches) =
-            test_search(&cache, &crypto, &store, "rust".to_string(), true).await;
+            test_search(&cache, &crypto, &store, "rust".to_string(), true, vec![]).await;
         assert_eq!(matches.len(), 2, "使用 OR 搜索 'rust' 应该匹配 2 篇日记");
         assert_eq!(
             unmatches.len(),
@@ -330,7 +370,7 @@ mod diary_search_tests {
         );
 
         let (matches, unmatches) =
-            test_search(&cache, &crypto, &store, "async".to_string(), true).await;
+            test_search(&cache, &crypto, &store, "async".to_string(), true, vec![]).await;
         assert_eq!(matches.len(), 2, "使用 OR 搜索 'async' 应该匹配 2 篇日记");
         assert_eq!(
             unmatches.len(),
@@ -338,8 +378,15 @@ mod diary_search_tests {
             "使用 OR 搜索 'async' 应该不匹配 2 篇日记"
         );
 
-        let (matches, unmatches) =
-            test_search(&cache, &crypto, &store, "rust async".to_string(), false).await;
+        let (matches, unmatches) = test_search(
+            &cache,
+            &crypto,
+            &store,
+            "rust async".to_string(),
+            false,
+            vec![],
+        )
+        .await;
         assert_eq!(
             matches.len(),
             1,
@@ -351,8 +398,15 @@ mod diary_search_tests {
             "使用 AND 搜索 'rust async' 应该不匹配 3 篇日记"
         );
 
-        let (matches, unmatches) =
-            test_search(&cache, &crypto, &store, "rust async".to_string(), true).await;
+        let (matches, unmatches) = test_search(
+            &cache,
+            &crypto,
+            &store,
+            "rust async".to_string(),
+            true,
+            vec![],
+        )
+        .await;
         assert_eq!(
             matches.len(),
             3,
@@ -363,7 +417,40 @@ mod diary_search_tests {
             1,
             "使用 OR 搜索 'rust async' 应该不匹配 1 篇日记"
         );
-        _guard.cleanup().await;
+        let (matches, _) = test_search(
+            &cache,
+            &crypto,
+            &store,
+            String::new(),
+            false,
+            vec![AttachmentTypeFilter::Image],
+        )
+        .await;
+        assert_eq!(matches.len(), 1, "只选择图片时应匹配 1 篇日记");
+        assert_eq!(matches[0].id, first.id);
+
+        let (matches, _) = test_search(
+            &cache,
+            &crypto,
+            &store,
+            String::new(),
+            false,
+            vec![AttachmentTypeFilter::Image, AttachmentTypeFilter::Audio],
+        )
+        .await;
+        assert_eq!(matches.len(), 3, "多个附件类型之间应采用 OR 语义");
+
+        let (matches, _) = test_search(
+            &cache,
+            &crypto,
+            &store,
+            "rust".to_string(),
+            true,
+            vec![AttachmentTypeFilter::Audio],
+        )
+        .await;
+        assert_eq!(matches.len(), 1, "关键词和附件类型之间应采用 AND 语义");
+        assert_eq!(matches[0].id, third.id);
     }
 }
 
