@@ -11,8 +11,8 @@
 - **能写测试就写测试**。任何涉及逻辑判断、边界条件、数据处理、加解密、缓存校验的代码都应该有对应的测试用例。
 - 前端用 Vitest + happy-dom（DOM 环境），测试文件放在 `__test__/` 目录下。需 DOM 的测试在文件顶部加 `// @vitest-environment happy-dom` 指令。
 - 后端 Rust 测试放在各模块的 `*_tests.rs` 文件中，或通过 `#[cfg(test)]` 内嵌在模块内。
-- 写完测试后务必跑一遍确认通过：前端 `pnpm vitest -- run`，后端 `cargo test`。
-- 部分 Rust 测试需要阿里云 OSS 凭证，需在 `src-tauri/` 下配置 `.env` 文件（`ALIYUN_KEY`、`ALIYUN_SECRET`、`ALIYUN_BUCKET_NAME`、`ALIYUN_ENDPOINT`、`ALIYUN_REGION`），并使用 `serial_test` 控制互斥执行。
+- 写完测试后务必跑一遍确认通过：前端在项目根目录运行 `pnpm test`，后端在 `src-tauri/` 下运行 `cargo test`。
+- 部分 Rust 测试需要阿里云 OSS 凭证，需在 `src-tauri/` 下配置 `.env` 文件（`ALIYUN_KEY`、`ALIYUN_SECRET`、`ALIYUN_BUCKET_NAME`、`ALIYUN_ENDPOINT`）。OSS 测试使用唯一前缀隔离：测试通过后自动清理，失败时保留对象并在日志中输出前缀以便诊断。
 
 ### Rust 代码检查
 
@@ -30,6 +30,11 @@
 - **大修改开新分支**。任何涉及多文件、新功能、重构的修改都应在独立 feature 分支上进行，不要在 `master` 上直接大量修改。
 - **小步提交**，不要让未提交的修改大量堆积。每完成一个可独立工作的逻辑单元就提交一次。
 - 提交信息遵循已有风格：`<type>: <描述>`，如 `feat:`、`fix:`、`refactor:`、`perf:`、`docs:`、`test:`。
+
+### 待办管理
+
+- 跨模块、需要后续设计或暂不处理的事项统一记录在 `TODO.md`。
+- 局部且能明确定位到代码的短期事项可以保留 `TODO` 注释，但应同步检查是否需要在 `TODO.md` 中记录背景和验收条件。
 
 ### 不要做的事
 
