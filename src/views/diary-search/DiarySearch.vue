@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import {onActivated, onDeactivated, onUnmounted, ref} from "vue";
+import {computed, onActivated, onDeactivated, onUnmounted, ref} from "vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
-import {DiarySummary, SearchDiariesEvent} from "../../bindings.ts";
+import {AttachmentTypeFilter, DiarySummary, SearchDiariesEvent} from "../../bindings.ts";
 import {Channel} from "@tauri-apps/api/core";
 import {useQuasar} from "quasar";
 import {useOpenDiaryDetail} from "../../composables/useOpenDiaryDetail.ts";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
+import {
+  attachmentTypeOptions,
+  hasDiarySearchCriteria,
+} from "../../utils/diarySearchFilters.ts";
 
 const $q = useQuasar();
 const {openDiary} = useOpenDiaryDetail();
@@ -14,6 +18,8 @@ const keyword = ref('');
 
 const diarySummaries = ref<DiarySummary[]>([]);
 const or = ref(false);
+const attachmentTypes = ref<AttachmentTypeFilter[]>([]);
+const canSearch = computed(() => hasDiarySearchCriteria(keyword.value, attachmentTypes.value));
 
 // 用于记录滚动位置，保持在列表页和详情页切换时的滚动状态
 const savedScrollTop = ref(0);
@@ -31,7 +37,7 @@ async function searchHandle() {
   }
   // 清空
   diarySummaries.value = [];
-  if (!keyword.value || !keyword.value.trim()) {
+  if (!canSearch.value) {
     return;
   }
 
@@ -58,7 +64,12 @@ async function searchHandle() {
   };
   try {
     searchTotal.value = 0;
-    cancelToken.value = await api.cmdSearchDiaries(event, keyword.value, or.value);
+    cancelToken.value = await api.cmdSearchDiaries(
+        event,
+        keyword.value,
+        or.value,
+        attachmentTypes.value,
+    );
     console.log('搜索中，取消令牌：', cancelToken.value);
   } catch (e) {
     $q.notify({type: 'negative', message: formatError(e)});
@@ -104,13 +115,36 @@ onUnmounted(() => {
         </template>
 
         <template #append>
-          <q-btn dense round flat icon="search" size="sm" @click="searchHandle"/>
+          <q-btn
+              dense
+              round
+              flat
+              icon="search"
+              size="sm"
+              :disable="!canSearch && !cancelToken"
+              @click="searchHandle"
+          />
           <q-toggle dense v-model="or" size="sm" class="q-ml-xs" :icon="or ? 'alt_route' : 'reorder'"/>
         </template>
       </q-input>
     </Teleport>
 
     <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">
+      <q-select
+          v-model="attachmentTypes"
+          :options="attachmentTypeOptions"
+          label="按附件类型筛选"
+          multiple
+          use-chips
+          emit-value
+          map-options
+          dense
+          outlined
+          class="attachment-filter"
+      >
+        <template #hint>同时选择多个类型时，满足任一类型即可</template>
+      </q-select>
+
       <DiarySummaryCard
           v-for="d in diarySummaries"
           :key="d.id"
@@ -142,6 +176,10 @@ onUnmounted(() => {
     display: flex;
     flex-direction: column;
     gap: 12px;
+
+    .attachment-filter {
+      flex: none;
+    }
   }
 }
 </style>

@@ -244,9 +244,9 @@ async cmdGetDiaryContent(id: string) : Promise<Result<[DiaryContent, Partial<{ [
  * # Returns
  * * `Result<String, String>` - 成功时返回搜索任务token，可用于取消搜索任务，失败时返回错误信息
  */
-async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string, or: boolean) : Promise<Result<string, AppError>> {
+async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string, or: boolean, attachmentTypes: AttachmentTypeFilter[]) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_search_diaries", { event, keyword, or }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_search_diaries", { event, keyword, or, attachmentTypes }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -500,6 +500,7 @@ export type AttachmentProcessEvent = { event: "started" } |
  * 不返回数据但仍成功的场景
  */
 { event: "completedWithoutData" } | { event: "error"; data: string }
+export type AttachmentTypeFilter = "image" | "audio" | "video" | "other"
 export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
 export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
 export type ChunkedUploadStartResult = { uploadToken: string; attachmentFilename: string; nonce: number[] | null }
