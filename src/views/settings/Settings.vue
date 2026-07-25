@@ -71,9 +71,10 @@
             </q-item-section>
             <q-item-section side>
               <q-toggle
-                  v-model="remoteEnabled"
+                  :model-value="remoteEnabled"
                   @update:model-value="handleRemoteToggle"
                   color="primary"
+                  :disable="remoteStorageBusy"
               />
             </q-item-section>
           </q-item>
@@ -113,18 +114,18 @@
           <div class="text-caption desc-text">填写阿里云 OSS 配置以启用云同步</div>
         </q-card-section>
         <q-card-section class="q-pt-none q-gutter-y-sm">
-          <q-input v-model="ossConfig.akid" label="AccessKey ID" outlined dense color="primary" :disable="loading"
+          <q-input v-model="ossConfig.akid" label="AccessKey ID" outlined dense color="primary" :disable="remoteStorageBusy"
                    :rules="[val => !!val || '必填']" hide-bottom-space/>
           <q-input v-model="ossConfig.aks" type="password" label="AccessKey Secret" outlined dense color="primary"
-                   :disable="loading" :rules="[val => !!val || '必填']" hide-bottom-space/>
-          <q-input v-model="ossConfig.bucket" label="Bucket 名称" outlined dense color="primary" :disable="loading"
+                   :disable="remoteStorageBusy" :rules="[val => !!val || '必填']" hide-bottom-space/>
+          <q-input v-model="ossConfig.bucket" label="Bucket 名称" outlined dense color="primary" :disable="remoteStorageBusy"
                    :rules="[val => !!val || '必填']" hide-bottom-space/>
-          <q-input v-model="ossConfig.endpoint" label="Endpoint" outlined dense color="primary" :disable="loading"
+          <q-input v-model="ossConfig.endpoint" label="Endpoint" outlined dense color="primary" :disable="remoteStorageBusy"
                    :rules="[val => !!val || '必填']" hide-bottom-space/>
         </q-card-section>
         <q-card-actions align="right" class="q-pb-md q-pr-md">
-          <q-btn flat label="取消" color="grey-7" v-close-popup @click="remoteEnabled = false"/>
-          <q-btn unelevated label="启用云同步" color="primary" :loading="loading" @click="doEnableRemote"/>
+          <q-btn flat label="取消" color="grey-7" v-close-popup :disable="remoteStorageBusy"/>
+          <q-btn unelevated label="启用云同步" color="primary" :loading="remoteStorageBusy" @click="doEnableRemote"/>
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -202,6 +203,7 @@ import {
   reduceSyncProgressDisplay,
   type SyncProgressDisplay,
 } from "../../utils/syncProgress.ts";
+import {remoteStorageToggleAction} from "../../utils/remoteStorageToggle.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -216,7 +218,7 @@ const isAndroid = ref(platform() === 'android');
 
 // 云存储
 const remoteEnabled = ref(false);
-const skipRemoteToggleHandler = ref(false);
+const remoteStorageBusy = ref(false);
 const showOssConfigDialog = ref(false);
 const showSyncProgress = ref(false);
 const syncProgress = ref(0);
@@ -253,20 +255,24 @@ function applySyncProgressDisplay(display: SyncProgressDisplay) {
 }
 
 async function handleRemoteToggle(newValue: boolean) {
-  if (skipRemoteToggleHandler.value) {
-    skipRemoteToggleHandler.value = false;
-    return;
-  }
-  if (newValue) {
+  const action = remoteStorageToggleAction(
+      remoteEnabled.value,
+      newValue,
+      remoteStorageBusy.value,
+  );
+  if (action === 'enable') {
     // 开启：弹出 OSS 配置对话框
     ossConfig.value = {akid: '', aks: '', bucket: '', endpoint: ''};
     showOssConfigDialog.value = true;
-  } else {
+  } else if (action === 'disable') {
     // 关闭
-    if (await confirm('关闭云同步后，云端数据将下载到本地。确定继续？')) {
-      await doDisableRemote();
-    } else {
-      remoteEnabled.value = true;
+    remoteStorageBusy.value = true;
+    try {
+      if (await confirm('关闭云同步后，云端数据将下载到本地。确定继续？')) {
+        await doDisableRemote();
+      }
+    } finally {
+      remoteStorageBusy.value = false;
     }
   }
 }
@@ -277,6 +283,7 @@ async function doEnableRemote() {
     $q.notify({type: 'warning', message: '请填写完整的 OSS 配置'});
     return;
   }
+  remoteStorageBusy.value = true;
   showOssConfigDialog.value = false;
   showSyncProgress.value = true;
   resetSyncProgress('正在同步数据到云端...');
@@ -290,16 +297,14 @@ async function doEnableRemote() {
 
     await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
     await configStore.saveNormalConfig('remote_enabled', true);
-    skipRemoteToggleHandler.value = true;
     remoteEnabled.value = true;
     $q.notify({type: 'positive', message: '云同步已启用'});
   } catch (e) {
     $q.notify({type: 'negative', message: `启用云同步失败: ${formatError(e)}`});
-    skipRemoteToggleHandler.value = true;
-    remoteEnabled.value = false;
     await configStore.deleteConfig('encrypted_oss_config');
   } finally {
     showSyncProgress.value = false;
+    remoteStorageBusy.value = false;
   }
 }
 
@@ -313,13 +318,10 @@ async function doDisableRemote() {
 
     await api.cmdDisableRemoteStorage(event);
     await configStore.saveNormalConfig('remote_enabled', false);
-    skipRemoteToggleHandler.value = true;
     remoteEnabled.value = false;
     $q.notify({type: 'positive', message: '云同步已关闭，数据已下载到本地'});
   } catch (e) {
     $q.notify({type: 'negative', message: `关闭云同步失败: ${formatError(e)}`});
-    skipRemoteToggleHandler.value = true;
-    remoteEnabled.value = true;
   } finally {
     showSyncProgress.value = false;
   }
