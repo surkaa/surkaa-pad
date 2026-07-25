@@ -1,7 +1,4 @@
 use crate::caches::{LocalCacheEntry, LocalFileCache};
-use crate::cryptos::Crypto;
-use crate::diaries::diary_migration::migrate_manifest_bytes;
-use crate::diaries::DiaryManifest;
 use crate::object::{Object, OssClient};
 use crate::storages::diary_id_from_manifest_key;
 use crate::stream::ByteStream;
@@ -166,7 +163,6 @@ impl SyncFailure {
 pub async fn sync_local_to_cloud(
     lfc: &LocalFileCache,
     client: &OssClient,
-    crypto: &Crypto,
     event: Arc<dyn MessageSender<SyncProgressEvent>>,
 ) -> Result<SyncSummary, SyncFailure> {
     let local_entries = lfc
@@ -186,7 +182,7 @@ pub async fn sync_local_to_cloud(
 
     for item in &plan.items {
         let phase = item.kind.phase();
-        let display_name = local_display_name(lfc, crypto, item).await;
+        let display_name = item.key.clone();
         let stream = lfc
             .get_stream(&item.key, None)
             .await
@@ -253,7 +249,6 @@ pub async fn sync_local_to_cloud(
 pub async fn sync_cloud_to_local(
     lfc: &LocalFileCache,
     client: &OssClient,
-    crypto: &Crypto,
     event: Arc<dyn MessageSender<SyncProgressEvent>>,
 ) -> Result<SyncSummary, SyncFailure> {
     let remote_entries = list_remote_objects(client).await?;
@@ -273,7 +268,7 @@ pub async fn sync_cloud_to_local(
 
     for item in &plan.items {
         let phase = item.kind.phase();
-        let mut display_name = item.key.clone();
+        let display_name = item.key.clone();
         let etag = item.etag.as_deref().ok_or_else(|| {
             SyncFailure::new("云端对象缺少 ETag", phase, Some(display_name.clone()))
         })?;
@@ -299,9 +294,6 @@ pub async fn sync_cloud_to_local(
             .await
             .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
 
-        if item.kind == SyncItemKind::Manifest {
-            display_name = local_display_name(lfc, crypto, item).await;
-        }
         completed_files += 1;
         transferred_bytes = transferred_bytes.saturating_add(item.size);
         send_progress(
@@ -533,35 +525,13 @@ fn percentage(current: u64, total: u64) -> u8 {
     }
 }
 
-async fn local_display_name(lfc: &LocalFileCache, crypto: &Crypto, item: &SyncItem) -> String {
-    if item.kind != SyncItemKind::Manifest {
-        return item.key.clone();
-    }
-    let Ok(encrypted) = lfc.get_data(&item.key).await else {
-        return item.diary_id.clone();
-    };
-    manifest_title(crypto, &encrypted).unwrap_or_else(|| item.diary_id.clone())
-}
-
-fn manifest_title(crypto: &Crypto, encrypted: &[u8]) -> Option<String> {
-    let decrypted = crypto.decrypt(encrypted).ok()?;
-    let manifest_bytes = match migrate_manifest_bytes(&decrypted) {
-        Ok((true, Some(migrated))) => migrated,
-        Ok(_) => decrypted,
-        Err(_) => return None,
-    };
-    let manifest: DiaryManifest = serde_json::from_slice(&manifest_bytes).ok()?;
-    let title = manifest.content.title();
-    (!title.is_empty()).then_some(title)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::attachments::AttachmentMeta;
     use crate::caches::LocalFileCache;
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
-    use crate::diaries::DiaryContent;
+    use crate::cryptos::Crypto;
+    use crate::diaries::{DiaryContent, DiaryManifest};
     use crate::storages::remote_manifest_key;
     use crate::stream::collect_data;
     use crate::test_utils::TestOssGuard;
@@ -679,35 +649,6 @@ mod tests {
     }
 
     #[test]
-    fn encrypted_manifest_title_is_decoded_and_invalid_data_falls_back() {
-        let crypto = Crypto::new();
-        crypto
-            .derive_dek(
-                "password".to_string(),
-                "NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg",
-            )
-            .unwrap();
-        let manifest = DiaryManifest {
-            id: "diary".to_string(),
-            algorithm: Gcm,
-            content: DiaryContent::from_editor_text("真实标题\n正文"),
-            created: 1,
-            updated: 1,
-            attachments: Vec::<AttachmentMeta>::new(),
-            version: 3,
-        };
-        let encrypted = crypto
-            .encrypt(&serde_json::to_vec(&manifest).unwrap())
-            .unwrap();
-
-        assert_eq!(
-            manifest_title(&crypto, &encrypted).as_deref(),
-            Some("真实标题")
-        );
-        assert_eq!(manifest_title(&crypto, b"not encrypted"), None);
-    }
-
-    #[test]
     fn percentage_handles_empty_and_large_totals() {
         assert_eq!(percentage(0, 0), 100);
         assert_eq!(percentage(50, 100), 50);
@@ -749,7 +690,7 @@ mod tests {
             created: 1,
             updated: 1,
             attachments: Vec::new(),
-            version: 3,
+            version: crate::diaries::CURRENT_VERSION,
         };
         let encrypted_manifest = crypto
             .encrypt(&serde_json::to_vec(&manifest).unwrap())
@@ -764,10 +705,9 @@ mod tests {
             .unwrap();
 
         let (upload_tx, mut upload_rx) = unbounded_channel();
-        let upload_summary =
-            sync_local_to_cloud(&source_lfc, &client, &crypto, Arc::new(upload_tx))
-                .await
-                .unwrap();
+        let upload_summary = sync_local_to_cloud(&source_lfc, &client, Arc::new(upload_tx))
+            .await
+            .unwrap();
         let upload_events = std::iter::from_fn(|| upload_rx.try_recv().ok()).collect::<Vec<_>>();
 
         assert_eq!(upload_summary.transferred_files, 2);
@@ -795,7 +735,7 @@ mod tests {
         ));
 
         let (retry_tx, _retry_rx) = unbounded_channel();
-        let retry_summary = sync_local_to_cloud(&source_lfc, &client, &crypto, Arc::new(retry_tx))
+        let retry_summary = sync_local_to_cloud(&source_lfc, &client, Arc::new(retry_tx))
             .await
             .unwrap();
         assert_eq!(retry_summary.transferred_files, 0);
@@ -805,7 +745,7 @@ mod tests {
         let target_lfc = LocalFileCache::new(target_dir.path().to_path_buf());
         let (download_tx, mut download_rx) = unbounded_channel();
         let download_summary =
-            sync_cloud_to_local(&target_lfc, &client, &crypto, Arc::new(download_tx))
+            sync_cloud_to_local(&target_lfc, &client, Arc::new(download_tx))
                 .await
                 .unwrap();
         let download_events =

@@ -67,7 +67,6 @@ pub async fn cmd_enable_remote_storage(
     let summary = match sync_local_to_cloud(
         &state.local_file_cache(),
         &state.oss_client(),
-        &state.crypto(),
         event.clone(),
     )
     .await
@@ -124,7 +123,6 @@ pub async fn cmd_disable_remote_storage(
     let summary = match sync_cloud_to_local(
         &state.local_file_cache(),
         &state.oss_client(),
-        &state.crypto(),
         event.clone(),
     )
     .await
