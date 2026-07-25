@@ -183,37 +183,6 @@ impl OssClient {
         client
     }
 
-    /// 重命名文件 (CopyObject + DeleteObject)
-    #[cfg(test)]
-    pub async fn rename(&self, old_key: &str, new_key: &str) -> Result<(), ObjectError> {
-        let bucket = self.inner()?;
-        let old_key = self.physical_key(old_key);
-        let new_key = self.physical_key(new_key);
-        // 确保不存在新的键
-        let (_, status) = bucket
-            .head_object(&new_key)
-            .await
-            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
-        if (200..300).contains(&status) {
-            return Err(ObjectError::KeyAlreadyExists(self.logical_key(new_key)));
-        }
-        let copy_status = bucket
-            .copy_object_internal(&old_key, &new_key)
-            .await
-            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
-        if copy_status >= 300 {
-            return Err(ObjectError::OperationFailed(format!(
-                "Copy failed: HTTP {}",
-                copy_status
-            )));
-        }
-        bucket
-            .delete_object(&old_key)
-            .await
-            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
-        Ok(())
-    }
-
     /// 幂等地迁移对象，供日记 schema 升级使用。
     pub async fn migrate_object(
         &self,
