@@ -42,36 +42,44 @@ pub enum SyncProgressEvent {
     },
     Started {
         direction: SyncDirection,
+        #[specta(rename = "totalFiles")]
         total_files: u32,
-        #[specta(type = f64)]
+        #[specta(rename = "totalBytes", type = f64)]
         total_bytes: u64,
+        #[specta(rename = "skippedFiles")]
         skipped_files: u32,
     },
     Progress {
         direction: SyncDirection,
         phase: SyncPhase,
+        #[specta(rename = "currentFile")]
         current_file: String,
-        completed_files: u32,
+        #[specta(rename = "currentFileIndex")]
+        current_file_index: u32,
+        #[specta(rename = "totalFiles")]
         total_files: u32,
-        #[specta(type = f64)]
+        #[specta(rename = "currentFileBytes", type = f64)]
         current_file_bytes: u64,
-        #[specta(type = f64)]
+        #[specta(rename = "currentFileSize", type = f64)]
         current_file_size: u64,
-        #[specta(type = f64)]
+        #[specta(rename = "transferredBytes", type = f64)]
         transferred_bytes: u64,
-        #[specta(type = f64)]
+        #[specta(rename = "totalBytes", type = f64)]
         total_bytes: u64,
     },
     Completed {
         direction: SyncDirection,
+        #[specta(rename = "transferredFiles")]
         transferred_files: u32,
+        #[specta(rename = "skippedFiles")]
         skipped_files: u32,
-        #[specta(type = f64)]
+        #[specta(rename = "transferredBytes", type = f64)]
         transferred_bytes: u64,
     },
     Error {
         direction: SyncDirection,
         phase: SyncPhase,
+        #[specta(rename = "currentFile")]
         current_file: Option<String>,
         message: String,
     },
@@ -190,7 +198,7 @@ pub async fn sync_local_to_cloud(
                 direction: SyncDirection::Upload,
                 phase,
                 current_file: display_name.clone(),
-                completed_files,
+                current_file_index: completed_files + 1,
                 total_files,
                 current_file_size: item.size,
                 transferred_before: transferred_bytes,
@@ -218,7 +226,7 @@ pub async fn sync_local_to_cloud(
                 direction: SyncDirection::Upload,
                 phase,
                 current_file: display_name,
-                completed_files,
+                current_file_index: completed_files,
                 total_files,
                 current_file_size: item.size,
                 transferred_before: transferred_bytes.saturating_sub(item.size),
@@ -280,7 +288,7 @@ pub async fn sync_cloud_to_local(
                 direction: SyncDirection::Download,
                 phase,
                 current_file: display_name.clone(),
-                completed_files,
+                current_file_index: completed_files + 1,
                 total_files,
                 current_file_size: item.size,
                 transferred_before: transferred_bytes,
@@ -302,7 +310,7 @@ pub async fn sync_cloud_to_local(
                 direction: SyncDirection::Download,
                 phase,
                 current_file: display_name,
-                completed_files,
+                current_file_index: completed_files,
                 total_files,
                 current_file_size: item.size,
                 transferred_before: transferred_bytes.saturating_sub(item.size),
@@ -454,7 +462,7 @@ struct ProgressContext {
     direction: SyncDirection,
     phase: SyncPhase,
     current_file: String,
-    completed_files: u32,
+    current_file_index: u32,
     total_files: u32,
     current_file_size: u64,
     transferred_before: u64,
@@ -498,7 +506,7 @@ fn send_progress(
         direction: context.direction,
         phase: context.phase,
         current_file: context.current_file,
-        completed_files: context.completed_files,
+        current_file_index: context.current_file_index,
         total_files: context.total_files,
         current_file_bytes: current_file_bytes.min(context.current_file_size),
         current_file_size: context.current_file_size,
@@ -666,6 +674,23 @@ mod tests {
         assert_eq!(percentage(0, 0), 100);
         assert_eq!(percentage(50, 100), 50);
         assert_eq!(percentage(u64::MAX, u64::MAX), 100);
+    }
+
+    #[test]
+    fn progress_events_serialize_fields_as_camel_case() {
+        let value = serde_json::to_value(SyncProgressEvent::Started {
+            direction: SyncDirection::Upload,
+            total_files: 2,
+            total_bytes: 1024,
+            skipped_files: 1,
+        })
+        .unwrap();
+
+        assert_eq!(value["event"], "started");
+        assert_eq!(value["data"]["totalFiles"], 2);
+        assert_eq!(value["data"]["totalBytes"], 1024);
+        assert_eq!(value["data"]["skippedFiles"], 1);
+        assert!(value["data"].get("total_files").is_none());
     }
 
     #[tokio::test]

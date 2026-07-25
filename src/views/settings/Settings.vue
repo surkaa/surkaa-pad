@@ -137,9 +137,15 @@
         </q-card-section>
         <q-card-section class="q-pt-none">
           <div class="desc-text q-mb-sm">{{ syncStatusText }}</div>
+          <div v-if="syncCurrentFile" class="text-caption ellipsis q-mb-xs">
+            {{ syncCurrentFile }}
+          </div>
+          <div v-if="syncFileDetail" class="text-caption desc-text q-mb-sm">
+            {{ syncFileDetail }}
+          </div>
           <q-linear-progress
               v-if="syncTotal > 0"
-              :value="syncTotal > 0 ? syncProgress / syncTotal : 0"
+              :value="Math.min(syncProgress / syncTotal, 1)"
               color="primary"
               class="q-mt-sm"
           />
@@ -191,6 +197,11 @@ import {formatError} from "../../utils/formatError.ts";
 import {OssConfigType} from "../../types.ts";
 import {Channel} from "@tauri-apps/api/core";
 import {SyncProgressEvent} from "../../bindings.ts";
+import {
+  initialSyncProgressDisplay,
+  reduceSyncProgressDisplay,
+  type SyncProgressDisplay,
+} from "../../utils/syncProgress.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -211,11 +222,35 @@ const showSyncProgress = ref(false);
 const syncProgress = ref(0);
 const syncTotal = ref(0);
 const syncStatusText = ref('');
+const syncCurrentFile = ref('');
+const syncFileDetail = ref('');
 const ossConfig = ref<OssConfigType>({akid: '', aks: '', bucket: '', endpoint: ''});
 
 onMounted(async () => {
   remoteEnabled.value = await api.cmdGetStorageMode();
 });
+
+function resetSyncProgress(status: string) {
+  applySyncProgressDisplay(initialSyncProgressDisplay(status));
+}
+
+function handleSyncProgressEvent(msg: SyncProgressEvent) {
+  applySyncProgressDisplay(reduceSyncProgressDisplay({
+    progress: syncProgress.value,
+    total: syncTotal.value,
+    statusText: syncStatusText.value,
+    currentFile: syncCurrentFile.value,
+    fileDetail: syncFileDetail.value,
+  }, msg));
+}
+
+function applySyncProgressDisplay(display: SyncProgressDisplay) {
+  syncProgress.value = display.progress;
+  syncTotal.value = display.total;
+  syncStatusText.value = display.statusText;
+  syncCurrentFile.value = display.currentFile;
+  syncFileDetail.value = display.fileDetail;
+}
 
 async function handleRemoteToggle(newValue: boolean) {
   if (skipRemoteToggleHandler.value) {
@@ -244,27 +279,14 @@ async function doEnableRemote() {
   }
   showOssConfigDialog.value = false;
   showSyncProgress.value = true;
-  syncStatusText.value = '正在同步数据到云端...';
-  syncProgress.value = 0;
+  resetSyncProgress('正在同步数据到云端...');
 
   try {
     const encryptedConfig = await api.cmdEncryptData(JSON.stringify(ossConfig.value));
     await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig);
 
     const event = new Channel<SyncProgressEvent>();
-    event.onmessage = (msg: any) => {
-      if (msg.event === 'started') {
-        syncTotal.value = msg.data.total;
-      } else if (msg.event === 'progress') {
-        syncProgress.value = msg.data.current;
-        syncTotal.value = msg.data.total;
-        syncStatusText.value = `正在同步 ${msg.data.current}/${msg.data.total}...`;
-      } else if (msg.event === 'completed') {
-        syncStatusText.value = '同步完成';
-      } else if (msg.event === 'error') {
-        syncStatusText.value = `同步失败：${msg.data}`;
-      }
-    };
+    event.onmessage = handleSyncProgressEvent;
 
     await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
     await configStore.saveNormalConfig('remote_enabled', true);
@@ -283,24 +305,11 @@ async function doEnableRemote() {
 
 async function doDisableRemote() {
   showSyncProgress.value = true;
-  syncStatusText.value = '正在从云端下载数据...';
-  syncProgress.value = 0;
+  resetSyncProgress('正在从云端下载数据...');
 
   try {
     const event = new Channel<SyncProgressEvent>();
-    event.onmessage = (msg: any) => {
-      if (msg.event === 'started') {
-        syncTotal.value = msg.data.total;
-      } else if (msg.event === 'progress') {
-        syncProgress.value = msg.data.current;
-        syncTotal.value = msg.data.total;
-        syncStatusText.value = `正在下载 ${msg.data.current}/${msg.data.total}...`;
-      } else if (msg.event === 'completed') {
-        syncStatusText.value = '下载完成';
-      } else if (msg.event === 'error') {
-        syncStatusText.value = `下载失败：${msg.data}`;
-      }
-    };
+    event.onmessage = handleSyncProgressEvent;
 
     await api.cmdDisableRemoteStorage(event);
     await configStore.saveNormalConfig('remote_enabled', false);
