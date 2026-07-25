@@ -14,7 +14,7 @@ export const attachmentTypeOptions: AttachmentTypeOption[] = [
   { label: '图片', value: 'image' },
   { label: '录音', value: 'audio' },
   { label: '视频', value: 'video' },
-  { label: '其他附件', value: 'other' },
+  { label: '文件', value: 'other' },
 ]
 
 export function normalizeAttachmentFilterSelection(
