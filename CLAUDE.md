@@ -19,6 +19,12 @@
 - 所有 Rust 修改完成后，运行 `cargo clippy` 检查并修复警告。
 - 不要在代码中残留 `#[allow(dead_code)]` 或 `#[allow(unused)]` 标注，除非有明确的阶段性保留理由。
 
+### 开发启动与 bindings 生成
+
+- **Windows 开发版统一从项目根目录运行 `pnpm tauri:msi:dev`**。该命令会按项目配置启动 Vite 和正确的 Tauri bin；不要用 `cargo run` 直接启动应用，也不要用未指定项目配置的通用 `tauri dev`。
+- Rust 端新增或修改 Tauri command、Specta 类型后，使用 `pnpm tauri:msi:dev` 启动一次 Windows 调试版，让 tauri-specta 自动更新 `src/bindings.ts`。生成时弹出应用 GUI 属于正常现象，确认 bindings 已更新后可关闭应用。
+- Android 开发版使用 `pnpm tauri:android:dev`。`cargo test`、`cargo clippy` 等纯 Rust 检查仍在 `src-tauri/` 目录执行。
+
 ### 分支与提交
 
 - **大修改开新分支**。任何涉及多文件、新功能、重构的修改都应在独立 feature 分支上进行，不要在 `master` 上直接大量修改。
