@@ -26,20 +26,25 @@ pub enum DiaryContentNode {
         text: String,
     },
     Image {
+        #[specta(rename = "attachmentId")]
         attachment_id: String,
         size: ImageSize,
     },
     Video {
+        #[specta(rename = "attachmentId")]
         attachment_id: String,
     },
     Audio {
+        #[specta(rename = "attachmentId")]
         attachment_id: String,
     },
     File {
+        #[specta(rename = "attachmentId")]
         attachment_id: String,
     },
     Album {
         id: String,
+        #[specta(rename = "attachmentIds")]
         attachment_ids: Vec<String>,
         #[serde(rename = "displayMode")]
         #[specta(rename = "displayMode")]

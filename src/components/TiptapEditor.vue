@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -34,10 +34,10 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: DiaryContent): void
   (e: 'pasteAttachments', files: File[]): void
   (e: 'showImage', src: string): void
-  (e: 'toggleAttachmentEncryption', filename: string): void
-  (e: 'rotateAttachment', filename: string, rotation: number): void
-  (e: 'renameAttachment', filename: string, cb: (newFilename: string) => void): void
-  (e: 'saveDecryptAttachment', filename: string): void
+  (e: 'toggleAttachmentEncryption', attachmentId: string): void
+  (e: 'rotateAttachment', attachmentId: string, rotation: number): void
+  (e: 'renameAttachment', attachmentId: string, filename: string, cb: (newFilename: string) => void): void
+  (e: 'saveDecryptAttachment', attachmentId: string): void
   (e: 'editorFocused'): void
 }>()
 
@@ -58,12 +58,16 @@ const { y } = useScroll(editorElement, {
   },
 })
 
-function getAttachmentMeta(filename: string) {
-  return props.diarySummary?.attachments.find(a => a.filename === filename) || null
+function getAttachmentMeta(attachmentId: string) {
+  return props.diarySummary?.attachments.find(attachment => attachment.id === attachmentId) || null
 }
 
+const attachmentFilenames = computed<Record<string, string>>(() => Object.fromEntries(
+  (props.diarySummary?.attachments || []).map(attachment => [attachment.id, attachment.filename]),
+))
+
 const editor = useEditor({
-  content: diaryContentToHtml(props.modelValue, props.attachmentMap),
+  content: diaryContentToHtml(props.modelValue, props.attachmentMap, attachmentFilenames.value),
   extensions: [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
@@ -104,20 +108,22 @@ watch(() => props.modelValue, (newVal) => {
   if (!editor.value || newVal === undefined) return
   const currentContent = htmlToDiaryContent(editor.value.getHTML())
   if (JSON.stringify(newVal) !== JSON.stringify(currentContent)) {
-    editor.value.commands.setContent(diaryContentToHtml(newVal, props.attachmentMap))
+    editor.value.commands.setContent(
+      diaryContentToHtml(newVal, props.attachmentMap, attachmentFilenames.value),
+    )
   }
 })
 
 // --- Click handler (image preview) ---
 
-function findAttachmentNode(el: HTMLElement | null): { type: string; filename: string; el: HTMLElement } | null {
+function findAttachmentNode(el: HTMLElement | null): { type: string; attachmentId: string; el: HTMLElement } | null {
   while (el && el !== editorElement.value) {
     const tag = el.tagName.toUpperCase()
-    if (tag === 'IMG' && el.dataset.id) return { type: 'image', filename: el.dataset.id, el }
-    if (tag === 'VIDEO' && el.dataset.id) return { type: 'video', filename: el.dataset.id, el }
-    if (tag === 'AUDIO' && el.dataset.id) return { type: 'audio', filename: el.dataset.id, el }
+    if (tag === 'IMG' && el.dataset.id) return { type: 'image', attachmentId: el.dataset.id, el }
+    if (tag === 'VIDEO' && el.dataset.id) return { type: 'video', attachmentId: el.dataset.id, el }
+    if (tag === 'AUDIO' && el.dataset.id) return { type: 'audio', attachmentId: el.dataset.id, el }
     if (el.classList.contains('editor-file-attachment') && (el as HTMLElement).dataset.id) {
-      return { type: 'file', filename: (el as HTMLElement).dataset.id!, el }
+      return { type: 'file', attachmentId: (el as HTMLElement).dataset.id!, el }
     }
     el = el.parentElement
   }
@@ -131,7 +137,7 @@ function handleWrapperClick(e: MouseEvent) {
     const album = found.el.closest('.editor-image-album') as HTMLElement | null
     if (albumAnchor.value) {
       if (album) return
-      toggleAlbumImage(found.filename)
+      toggleAlbumImage(found.attachmentId)
       return
     }
     if (album?.dataset.displayMode === 'stackedCards') {
@@ -141,7 +147,7 @@ function handleWrapperClick(e: MouseEvent) {
       )
       return
     }
-    const url = props.attachmentMap[found.filename]
+    const url = props.attachmentMap[found.attachmentId]
     if (url) emit('showImage', url)
     return
   }
@@ -316,7 +322,7 @@ async function handleContextMenu(e: MouseEvent) {
   if (!found) return
   e.preventDefault()
 
-  const att = getAttachmentMeta(found.filename)
+  const att = getAttachmentMeta(found.attachmentId)
   if (!att) return
 
   interface MenuAction {
@@ -327,11 +333,11 @@ async function handleContextMenu(e: MouseEvent) {
   const buttons: MenuAction[] = [
     {
       label: `转成${att.encrypted ? '普通' : '加密'}附件`,
-      action: () => emit('toggleAttachmentEncryption', found.filename),
+      action: () => emit('toggleAttachmentEncryption', found.attachmentId),
     },
     {
       label: '保存到本地',
-      action: () => emit('saveDecryptAttachment', found.filename),
+      action: () => emit('saveDecryptAttachment', found.attachmentId),
     },
   ]
 
@@ -345,7 +351,7 @@ async function handleContextMenu(e: MouseEvent) {
         action: () => {
           editor.value?.commands.command(({ tr }) => {
             tr.doc.descendants((node, pos) => {
-              if (node.attrs.id === found.filename) {
+              if (node.attrs.id === found.attachmentId) {
                 tr.setNodeMarkup(pos, undefined, {
                   ...node.attrs,
                   size: isSmall ? null : 'small',
@@ -358,19 +364,19 @@ async function handleContextMenu(e: MouseEvent) {
       })
     }
     buttons.push(
-      { label: '顺时针旋转90°', action: () => emit('rotateAttachment', found.filename, 90) },
-      { label: '逆时针旋转90°', action: () => emit('rotateAttachment', found.filename, -90) },
-      { label: '旋转180°', action: () => emit('rotateAttachment', found.filename, 180) },
+      { label: '顺时针旋转90°', action: () => emit('rotateAttachment', found.attachmentId, 90) },
+      { label: '逆时针旋转90°', action: () => emit('rotateAttachment', found.attachmentId, -90) },
+      { label: '旋转180°', action: () => emit('rotateAttachment', found.attachmentId, 180) },
     )
     if (!isAlbumImage) {
       buttons.push({
         label: '创建图集',
-        action: () => startAlbumSelection(found.filename),
+        action: () => startAlbumSelection(found.attachmentId),
       })
       if (editor.value && listAlbums(editor.value.getJSON()).length > 0) {
         buttons.push({
           label: '加入已有图集',
-          action: () => openAlbumInsertDialog(found.filename),
+          action: () => openAlbumInsertDialog(found.attachmentId),
         })
       }
     } else {
@@ -380,7 +386,7 @@ async function handleContextMenu(e: MouseEvent) {
         buttons.push({
           label: '预览图片',
           action: () => {
-            const url = props.attachmentMap[found.filename]
+            const url = props.attachmentMap[found.attachmentId]
             if (url) emit('showImage', url)
           },
         })
@@ -395,15 +401,15 @@ async function handleContextMenu(e: MouseEvent) {
       buttons.push(
         {
           label: '拆分整个图集',
-          action: () => applyAlbumSplit(albumId, found.filename, { type: 'all' }),
+          action: () => applyAlbumSplit(albumId, found.attachmentId, { type: 'all' }),
         },
         {
           label: '仅拆分当前图片',
-          action: () => requestSingleImageSplit(albumId, found.filename),
+          action: () => requestSingleImageSplit(albumId, found.attachmentId),
         },
         {
           label: '拆分当前及前后图片',
-          action: () => requestRangeSplit(albumId, found.filename),
+          action: () => requestRangeSplit(albumId, found.attachmentId),
         },
       )
     }
@@ -412,12 +418,12 @@ async function handleContextMenu(e: MouseEvent) {
   if (found.type === 'file') {
     buttons.push({
       label: '重命名附件',
-      action: () => emit('renameAttachment', found.filename, (newFilename: string) => {
+      action: () => emit('renameAttachment', found.attachmentId, att.filename, (newFilename: string) => {
         if (!editor.value) return
         editor.value.commands.command(({ tr }) => {
           tr.doc.descendants((node, pos) => {
-            if (node.attrs.id === found.filename) {
-              tr.setNodeMarkup(pos, undefined, { ...node.attrs, id: newFilename })
+            if (node.attrs.id === found.attachmentId) {
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, filename: newFilename })
             }
           })
           return true
@@ -480,15 +486,16 @@ defineExpose({
   }).run(),
   insertVideo: (id: string) => (editor.value?.chain().focus() as any).insertVideo({ id, src: props.attachmentMap[id] || '' }).run(),
   insertAudio: (id: string) => (editor.value?.chain().focus() as any).insertAudio({ id, src: props.attachmentMap[id] || '' }).run(),
-  insertFile: (id: string) => (editor.value?.chain().focus() as any).insertFile({ id }).run(),
-  updateSrc(filename: string, newUrl: string) {
+  insertFile: (id: string, filename: string) => (editor.value?.chain().focus() as any)
+    .insertFile({ id, filename }).run(),
+  updateSrc(attachmentId: string, newUrl: string) {
     if (!editor.value) return false
     editor.value.commands.command(({ tr }) => {
       tr.doc.descendants((node, pos) => {
-        if (node.attrs.id === filename) {
+        if (node.attrs.id === attachmentId) {
           tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: newUrl })
         } else if (node.type.name === 'albumNode') {
-          const imageIndex = (node.attrs.images as string[]).indexOf(filename)
+          const imageIndex = (node.attrs.images as string[]).indexOf(attachmentId)
           if (imageIndex >= 0) {
             const urls = [...node.attrs.urls]
             urls[imageIndex] = newUrl

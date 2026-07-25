@@ -259,7 +259,9 @@ describe('markdownToHtml', () => {
 
   it('converts [[FILE:...]] to div with class', () => {
     const result = markdownToHtml('[[FILE:doc.pdf]]', map)
-    expect(result).toContain('<div data-id="doc.pdf" class="editor-file-attachment">')
+    expect(result).toContain('data-id="doc.pdf"')
+    expect(result).toContain('data-filename="doc.pdf"')
+    expect(result).toContain('class="editor-file-attachment"')
   })
 
   it('uses empty src when attachment not in map', () => {
@@ -324,7 +326,7 @@ describe('structured diary content', () => {
     expect(markdownToDiaryContent('before [[IMG:photo.png|size=small]] after')).toEqual({
       nodes: [
         { type: 'markdown', text: 'before ' },
-        { type: 'image', filename: 'photo.png', size: 'small' },
+        { type: 'image', attachmentId: 'photo.png', size: 'small' },
         { type: 'markdown', text: ' after' },
       ],
     })
@@ -334,10 +336,10 @@ describe('structured diary content', () => {
     expect(diaryContentToMarkdown({
       nodes: [
         { type: 'markdown', text: 'before\n\n' },
-        { type: 'file', filename: 'doc.pdf' },
-        { type: 'album', id: 'a1', images: ['1.jpg', '2.jpg'], displayMode: 'stackedCards' },
+        { type: 'file', attachmentId: 'att-doc' },
+        { type: 'album', id: 'a1', attachmentIds: ['att-1', 'att-2'], displayMode: 'stackedCards' },
       ],
-    })).toBe('before\n\n[[FILE:doc.pdf]][[ALBUM:a1|mode=stackedCards|images=1.jpg,2.jpg]]')
+    })).toBe('before\n\n[[FILE:att-doc]][[ALBUM:a1|mode=stackedCards|images=att-1,att-2]]')
   })
 
   it('round-trips album nodes with encoded filenames', () => {
@@ -345,7 +347,7 @@ describe('structured diary content', () => {
       nodes: [{
         type: 'album' as const,
         id: 'a1',
-        images: ['one,1.jpg', '二.jpg'],
+        attachmentIds: ['att,1', '附件-2'],
         displayMode: 'horizontalList' as const,
       }],
     }
@@ -353,8 +355,8 @@ describe('structured diary content', () => {
 
     expect(markdownToDiaryContent(markdown)).toEqual(content)
     expect(diaryContentToHtml(content, {
-      'one,1.jpg': 'url-1',
-      '二.jpg': 'url-2',
+      'att,1': 'url-1',
+      '附件-2': 'url-2',
     })).toContain('class="editor-image-album"')
   })
 
@@ -364,9 +366,22 @@ describe('structured diary content', () => {
     )
     expect(content.nodes).toEqual([
       { type: 'markdown', text: 'hello\n\n' },
-      { type: 'image', filename: 'photo.png', size: 'small' },
+      { type: 'image', attachmentId: 'photo.png', size: 'small' },
     ])
     expect(diaryContentToHtml(content, { 'photo.png': 'blob:u' }))
       .toContain('data-id="photo.png"')
+  })
+
+  it('uses attachment metadata filename only for file display', () => {
+    const html = diaryContentToHtml(
+      { nodes: [{ type: 'file', attachmentId: 'att-file' }] },
+      {},
+      { 'att-file': '报告.pdf' },
+    )
+    expect(html).toContain('data-id="att-file"')
+    expect(html).toContain('data-filename="报告.pdf"')
+    expect(htmlToDiaryContent(html)).toEqual({
+      nodes: [{ type: 'file', attachmentId: 'att-file' }],
+    })
   })
 })

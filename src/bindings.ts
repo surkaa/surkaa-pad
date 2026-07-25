@@ -295,9 +295,9 @@ async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: s
  * # Returns
  * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
  */
-async cmdDeleteAttachment(id: string, filename: string) : Promise<Result<null, AppError>> {
+async cmdDeleteAttachment(id: string, attachmentId: string) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_delete_attachment", { id, filename }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_delete_attachment", { id, attachmentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -327,9 +327,9 @@ async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEven
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, AppError>> {
+async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_toggle_attachment_encryption", { event, id, filename }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_toggle_attachment_encryption", { event, id, attachmentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -344,9 +344,9 @@ async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string, rotation: number) : Promise<Result<string, AppError>> {
+async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string, rotation: number) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_rotate_image_attachment", { event, id, filename, rotation }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_rotate_image_attachment", { event, id, attachmentId, rotation }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -360,9 +360,9 @@ async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, AppError>> {
+async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_caching_attachment", { event, id, filename }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_caching_attachment", { event, id, attachmentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -376,9 +376,9 @@ async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: str
  * # Returns
  * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
  */
-async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, filename: string) : Promise<Result<string, AppError>> {
+async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_save_decrypt_attachment", { event, id, filename }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_save_decrypt_attachment", { event, id, attachmentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -393,9 +393,9 @@ async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
  * # Returns
  * * `Result<(), String>` - 成功时返回null，失败时返回错误信息
  */
-async cmdUpdateAttachmentFilename(id: string, oldFilename: string, newFilename: string) : Promise<Result<null, AppError>> {
+async cmdUpdateAttachmentFilename(id: string, attachmentId: string, newFilename: string) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_update_attachment_filename", { id, oldFilename, newFilename }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_update_attachment_filename", { id, attachmentId, newFilename }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -486,7 +486,15 @@ async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
 
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }
-export type AttachmentMeta = { filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm; etag?: string | null }
+export type AttachmentMeta = { 
+/**
+ * 稳定附件 ID，同时作为存储对象 key 的末段。
+ */
+id: string; 
+/**
+ * 仅用于展示和导出，不再参与对象寻址。
+ */
+filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm; etag?: string | null }
 export type AttachmentProcessEvent = { event: "started" } | 
 /**
  * 0-100 的上传进度百分比
@@ -503,9 +511,9 @@ export type AttachmentProcessEvent = { event: "started" } |
 export type AttachmentTypeFilter = "image" | "audio" | "video" | "other"
 export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
 export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
-export type ChunkedUploadStartResult = { uploadToken: string; attachmentFilename: string; nonce: number[] | null }
+export type ChunkedUploadStartResult = { uploadToken: string; attachmentId: string; filename: string; nonce: number[] | null }
 export type DiaryContent = { nodes: DiaryContentNode[] }
-export type DiaryContentNode = { type: "markdown"; text: string } | { type: "image"; filename: string; size: ImageSize } | { type: "video"; filename: string } | { type: "audio"; filename: string } | { type: "file"; filename: string } | { type: "album"; id: string; images: string[]; displayMode: AlbumDisplayMode }
+export type DiaryContentNode = { type: "markdown"; text: string } | { type: "image"; attachmentId: string; size: ImageSize } | { type: "video"; attachmentId: string } | { type: "audio"; attachmentId: string } | { type: "file"; attachmentId: string } | { type: "album"; id: string; attachmentIds: string[]; displayMode: AlbumDisplayMode }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行

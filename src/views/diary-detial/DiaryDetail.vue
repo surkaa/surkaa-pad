@@ -24,6 +24,7 @@ const tiptapEditorRef = ref<InstanceType<typeof TiptapEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
 const showRenameDialog = ref(false);
+const renameAttachmentId = ref('');
 const oldFilename = ref('');
 const newFilename = ref('');
 const pinnedDiaryIds = configStore.useTauriConfig('pinned_diary_ids');
@@ -31,7 +32,7 @@ let renameCb: ((newFilename: string) => void) | null = null;
 
 const {
   diaryId, diary, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
-  loadDiaryInfo, deleteDiary, updateContent
+  loadDiaryInfo, deleteDiary
 } = useDiaryCore();
 
 // UI交互
@@ -75,8 +76,9 @@ function showImage(src: string) {
   })
 }
 
-function renameAttachment(filename: string, cb: (newFilename: string) => void) {
+function renameAttachment(attachmentId: string, filename: string, cb: (newFilename: string) => void) {
   showRenameDialog.value = true;
+  renameAttachmentId.value = attachmentId;
   oldFilename.value = filename;
   newFilename.value = filename;
   renameCb = cb;
@@ -87,29 +89,13 @@ async function handleRenameAttachment() {
     showRenameDialog.value = false;
     return;
   }
-  const illegal = newFilename.value.includes('[[') || newFilename.value.includes(']]');
-  if (illegal) {
-    $q.notify({type: 'negative', message: `重命名失败，请去掉新文件名的特殊字符：'[[' 或 ']]'`});
-    return;
-  }
   try {
     await api.cmdUpdateAttachmentFilename(
         diaryId.value,
-        oldFilename.value,
+        renameAttachmentId.value,
         newFilename.value
     );
-    updateAttachmentFilename(diaryId.value, oldFilename.value, newFilename.value);
-    const renamedContent = structuredClone(diaryContent.value);
-    for (const node of renamedContent.nodes) {
-      if (node.type === 'album') {
-        node.images = node.images.map(filename =>
-          filename === oldFilename.value ? newFilename.value : filename
-        );
-      } else if (node.type !== 'markdown' && node.filename === oldFilename.value) {
-        node.filename = newFilename.value;
-      }
-    }
-    updateContent(renamedContent);
+    updateAttachmentFilename(diaryId.value, renameAttachmentId.value, newFilename.value);
     showRenameDialog.value = false;
     renameCb?.(newFilename.value);
   } catch (e) {
@@ -156,9 +142,9 @@ onBeforeRouteLeave((_to, _from, next) => {
     cancel: {label: '保留', color: 'primary'},
   }).onOk(() => {
     Promise
-        .all(orphans.map(att => api.cmdDeleteAttachment(diaryId.value, att.filename)))
+        .all(orphans.map(att => api.cmdDeleteAttachment(diaryId.value, att.id)))
         .then(() => {
-          deleteAttachment(diaryId.value, orphans.map(att => att.filename));
+          deleteAttachment(diaryId.value, orphans.map(att => att.id));
           next();
         })
         .catch(e => {
@@ -251,7 +237,7 @@ onActivated(async () => {
             <q-item-section>删除</q-item-section>
           </q-item>
           <q-item :disable="diary == undefined" clickable v-ripple
-                  @click="() => {mediaAction.cachingAttachment(diary!.attachments.map(att => att.filename)); showMenu = false}">
+                  @click="() => {mediaAction.cachingAttachment(diary!.attachments.map(att => att.id)); showMenu = false}">
             <q-item-section>缓存所有附件到本地</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="showMenu = false">
@@ -280,7 +266,7 @@ onActivated(async () => {
           <q-list bordered separator v-if="diary?.attachments.length">
             <AttachmentCard
                 v-for="att in diary.attachments"
-                :key="att.filename"
+                :key="att.id"
                 :att="att"
             />
           </q-list>

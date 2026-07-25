@@ -43,7 +43,7 @@ export const useDataStore = defineStore('data', () => {
     function updateAttachment(diaryId: string, newMeta: AttachmentMeta) {
         const summary = diarySummaries.value[diaryId];
         if (summary) {
-            const attachmentIndex = summary.attachments.findIndex(att => att.filename === newMeta.filename);
+            const attachmentIndex = summary.attachments.findIndex(att => att.id === newMeta.id);
             if (attachmentIndex !== -1) {
                 summary.attachments[attachmentIndex] = newMeta;
             } else {
@@ -52,20 +52,20 @@ export const useDataStore = defineStore('data', () => {
         }
     }
 
-    function updateAttachmentFilename(diaryId: string, oldFilename: string, newFilename: string) {
+    function updateAttachmentFilename(diaryId: string, attachmentId: string, newFilename: string) {
         const summary = diarySummaries.value[diaryId];
         if (summary) {
-            const attachmentIndex = summary.attachments.findIndex(att => att.filename === oldFilename);
+            const attachmentIndex = summary.attachments.findIndex(att => att.id === attachmentId);
             if (attachmentIndex !== -1) {
                 summary.attachments[attachmentIndex].filename = newFilename;
             }
         }
     }
 
-    function deleteAttachment(diaryId: string, filenames: string[]) {
+    function deleteAttachment(diaryId: string, attachmentIds: string[]) {
         const summary = diarySummaries.value[diaryId];
         if (summary) {
-            summary.attachments = summary.attachments.filter(att => !filenames.includes(att.filename));
+            summary.attachments = summary.attachments.filter(att => !attachmentIds.includes(att.id));
         }
     }
 

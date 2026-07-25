@@ -189,7 +189,7 @@ pub async fn cmd_add_image_attachment_from_camera(
                 len as u64,
                 MIMETYPE.to_string(),
                 stream,
-                None,
+                Some(format!("Photo_{}.jpg", generate_descending_id())),
             )
             .await;
         }))

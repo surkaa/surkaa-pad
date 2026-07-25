@@ -40,8 +40,9 @@ export function htmlToDiaryContent(html: string): DiaryContent {
 export function diaryContentToHtml(
   content: DiaryContent,
   attachmentMap: Record<string, string>,
+  attachmentFilenames: Record<string, string> = {},
 ): string {
-  return markdownToHtml(diaryContentToMarkdown(content), attachmentMap)
+  return markdownToHtml(diaryContentToMarkdown(content), attachmentMap, attachmentFilenames)
 }
 
 export function diaryContentToMarkdown(content: DiaryContent): string {
@@ -51,16 +52,16 @@ export function diaryContentToMarkdown(content: DiaryContent): string {
         return node.text
       case 'image':
         return node.size === 'small'
-          ? `[[IMG:${node.filename}|size=small]]`
-          : `[[IMG:${node.filename}]]`
+          ? `[[IMG:${node.attachmentId}|size=small]]`
+          : `[[IMG:${node.attachmentId}]]`
       case 'video':
-        return `[[VID:${node.filename}]]`
+        return `[[VID:${node.attachmentId}]]`
       case 'audio':
-        return `[[AUD:${node.filename}]]`
+        return `[[AUD:${node.attachmentId}]]`
       case 'file':
-        return `[[FILE:${node.filename}]]`
+        return `[[FILE:${node.attachmentId}]]`
       case 'album':
-        return `[[ALBUM:${node.id}|mode=${node.displayMode}|images=${node.images.map(encodeURIComponent).join(',')}]]`
+        return `[[ALBUM:${node.id}|mode=${node.displayMode}|images=${node.attachmentIds.map(encodeURIComponent).join(',')}]]`
     }
   }).join('')
 }
@@ -75,30 +76,30 @@ export function markdownToDiaryContent(markdown: string): DiaryContent {
     if (match.index > textStart) {
       nodes.push({ type: 'markdown', text: markdown.slice(textStart, match.index) })
     }
-    const [, type, filename, config] = match
+    const [, type, attachmentId, config] = match
     switch (type) {
       case 'IMG':
         nodes.push({
           type: 'image',
-          filename,
+          attachmentId,
           size: config?.split('|').includes('size=small') ? 'small' : 'normal',
         })
         break
       case 'VID':
-        nodes.push({ type: 'video', filename })
+        nodes.push({ type: 'video', attachmentId })
         break
       case 'AUD':
-        nodes.push({ type: 'audio', filename })
+        nodes.push({ type: 'audio', attachmentId })
         break
       case 'FILE':
-        nodes.push({ type: 'file', filename })
+        nodes.push({ type: 'file', attachmentId })
         break
       case 'ALBUM': {
         const albumConfig = parseConfig(config)
         nodes.push({
           type: 'album',
-          id: filename,
-          images: (albumConfig.images || '')
+          id: attachmentId,
+          attachmentIds: (albumConfig.images || '')
             .split(',')
             .filter(Boolean)
             .map(decodeURIComponent),
@@ -278,6 +279,7 @@ const ATTACHMENT_RE = /\[\[(IMG|VID|AUD|FILE|ALBUM):([^\]|]+)(?:\|([^\]]*))?\]\]
 export function markdownToHtml(
   markdown: string,
   attachmentMap: Record<string, string>,
+  attachmentFilenames: Record<string, string> = {},
 ): string {
   if (!markdown) return '<p></p>';
   if (markdown.startsWith('<')) return markdown; // 已是 HTML，原样返回
@@ -286,28 +288,28 @@ export function markdownToHtml(
   const attachmentPlaceholders: Record<string, string> = {};
   let placeholderIndex = 0;
 
-  let text = markdown.replace(ATTACHMENT_RE, (_match, type: string, filename: string, config: string) => {
+  let text = markdown.replace(ATTACHMENT_RE, (_match, type: string, attachmentId: string, config: string) => {
     const placeholder = ` ATT${placeholderIndex} `;
-    const url = attachmentMap[filename] || '';
+    const url = attachmentMap[attachmentId] || '';
 
     switch (type) {
       case 'IMG': {
         const sizeAttr = config?.includes('size=small') ? ' data-size="small"' : '';
         attachmentPlaceholders[placeholder] =
-          `<img src="${escapeAttr(url)}" data-id="${escapeAttr(filename)}"${sizeAttr}>`;
+          `<img src="${escapeAttr(url)}" data-id="${escapeAttr(attachmentId)}"${sizeAttr}>`;
         break;
       }
       case 'VID':
         attachmentPlaceholders[placeholder] =
-          `<video controls src="${escapeAttr(url)}" data-id="${escapeAttr(filename)}"></video>`;
+          `<video controls src="${escapeAttr(url)}" data-id="${escapeAttr(attachmentId)}"></video>`;
         break;
       case 'AUD':
         attachmentPlaceholders[placeholder] =
-          `<audio controls src="${escapeAttr(url)}" data-id="${escapeAttr(filename)}"></audio>`;
+          `<audio controls src="${escapeAttr(url)}" data-id="${escapeAttr(attachmentId)}"></audio>`;
         break;
       case 'FILE':
         attachmentPlaceholders[placeholder] =
-          `<div data-id="${escapeAttr(filename)}" class="editor-file-attachment"></div>`;
+          `<div data-id="${escapeAttr(attachmentId)}" data-filename="${escapeAttr(attachmentFilenames[attachmentId] || attachmentId)}" class="editor-file-attachment"></div>`;
         break;
       case 'ALBUM': {
         const albumConfig = parseConfig(config)
@@ -318,7 +320,7 @@ export function markdownToHtml(
         const urls = images.map(image => attachmentMap[image] || '')
         const mode = albumConfig.mode === 'stackedCards' ? 'stackedCards' : 'horizontalList'
         attachmentPlaceholders[placeholder] =
-          `<div class="editor-image-album" data-id="${escapeAttr(filename)}" data-images="${escapeAttr(JSON.stringify(images))}" data-display-mode="${mode}" data-urls="${escapeAttr(JSON.stringify(urls))}">`
+          `<div class="editor-image-album" data-id="${escapeAttr(attachmentId)}" data-images="${escapeAttr(JSON.stringify(images))}" data-display-mode="${mode}" data-urls="${escapeAttr(JSON.stringify(urls))}">`
           + images.map((image, index) =>
             `<img src="${escapeAttr(urls[index])}" data-id="${escapeAttr(image)}">`
           ).join('')

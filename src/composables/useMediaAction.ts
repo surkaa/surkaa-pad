@@ -40,7 +40,7 @@ export function useMediaAction(
 ) {
     const $q = useQuasar();
     const dataStore = useDataStore();
-    const {currentDiaryAttachmentUrlMap} = storeToRefs(dataStore);
+    const {currentDiaryAttachmentUrlMap, currentDiary} = storeToRefs(dataStore);
 
     const cancelTokens = new Set<string>();
     const chunkedUploadTokens = new Set<string>();
@@ -102,9 +102,7 @@ export function useMediaAction(
         const event = createUploadChannel(key, completedCallback, errorCallback);
 
         try {
-            const p = platform();
-            const originalFilename = p === 'windows' ? rawName : null;
-            const res = await api.cmdAddAttachment(event, diaryId.value, accessStr, encrypted, originalFilename);
+            const res = await api.cmdAddAttachment(event, diaryId.value, accessStr, encrypted, rawName);
             cancelTokens.add(res);
         } catch (e) {
             uploadTaskMap.value[key].status = 'error';
@@ -186,7 +184,7 @@ export function useMediaAction(
 
         for (const item of results) {
             if (item && item.nodeKind !== 'file') {
-                currentDiaryAttachmentUrlMap.value[item.filename] = item.url;
+                currentDiaryAttachmentUrlMap.value[item.attachmentId] = item.url;
             }
         }
         if (platform() !== 'android') editor.focusEnd();
@@ -217,7 +215,12 @@ export function useMediaAction(
         const results = await Promise.all(accessStrArr.map(accessStr =>
             promisifyUpload<UploadedAttachment>((onSuccess, onError) => {
                 uploadAttachment(accessStr, encrypted,
-                    (meta, url) => onSuccess({ nodeKind, filename: meta.filename, url }),
+                    (meta, url) => onSuccess({
+                        nodeKind,
+                        attachmentId: meta.id,
+                        filename: meta.filename,
+                        url,
+                    }),
                     onError
                 );
             })
@@ -226,15 +229,13 @@ export function useMediaAction(
     }
 
     async function performAttachmentOperation<Args extends any[]>(
-        filename: string,
+        attachmentId: string,
         operationName: string,
-        apiCall: (event: Channel<AttachmentProcessEvent>, diaryId: string, filename: string, ...args: Args) => Promise<string>,
+        apiCall: (event: Channel<AttachmentProcessEvent>, diaryId: string, attachmentId: string, ...args: Args) => Promise<string>,
         ...apiArgs: Args
     ) {
-        // 验证日记ID和文件名
-        if (!diaryId.value || !filename || !diaryId.value.trim() || !filename.trim()) {
-            console.log(`无法获取日记ID或文件名，无法执行${operationName}。diaryId: ${diaryId.value}, filename: ${filename}`);
-            $q.notify({type: 'negative', message: `无法获取日记ID或文件名，无法执行${operationName}`});
+        if (!diaryId.value.trim() || !attachmentId.trim()) {
+            $q.notify({type: 'negative', message: `无法获取日记ID或附件ID，无法执行${operationName}`});
             return;
         }
 
@@ -242,7 +243,9 @@ export function useMediaAction(
         editorDomRef.value?.focus();
 
         const key = uuidv4();
-        uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
+        const displayFilename = currentDiary.value?.attachments
+            .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
+        uploadTaskMap.value[key] = {filename: displayFilename, progress: 0, status: 'pending'};
 
         const event = createUploadChannel(key, (meta, url) => {
             dataStore.updateAttachment(diaryId.value, meta);
@@ -251,14 +254,14 @@ export function useMediaAction(
                 $q.notify({type: 'negative', message: '编辑器内容引用未定义，无法更新媒体链接'});
                 return;
             }
-            const res = editorContentRef.value.updateSrc(filename, url);
+            const res = editorContentRef.value.updateSrc(attachmentId, url);
             if (!res) {
-                console.warn('未找到对应的附件元素，无法更新链接:', filename);
+                console.warn('未找到对应的附件元素，无法更新链接:', attachmentId);
             }
         });
 
         try {
-            const cancelRes = await apiCall(event, diaryId.value, filename, ...apiArgs);
+            const cancelRes = await apiCall(event, diaryId.value, attachmentId, ...apiArgs);
             showUploadDialog.value = true;
             cancelTokens.add(cancelRes);
             console.log(`${operationName}命令已发送，取消令牌:`, cancelRes);
@@ -307,8 +310,8 @@ export function useMediaAction(
                     console.error('编辑器内容引用未定义，无法插入音频节点');
                     return;
                 }
-                currentDiaryAttachmentUrlMap.value[att.filename] = url;
-                editorContentRef.value.insertAudio(att.filename);
+                currentDiaryAttachmentUrlMap.value[att.id] = url;
+                editorContentRef.value.insertAudio(att.id);
             });
         },
         insertPhoto: () => genericBatchUpload(true, PHOTO_TYPES, 'image', "image"),
@@ -321,8 +324,8 @@ export function useMediaAction(
                     console.error('编辑器内容引用未定义，无法插入图片节点');
                     return;
                 }
-                currentDiaryAttachmentUrlMap.value[meta.filename] = url;
-                editorContentRef.value.insertImage(meta.filename);
+                currentDiaryAttachmentUrlMap.value[meta.id] = url;
+                editorContentRef.value.insertImage(meta.id);
             });
             try {
                 const res = await api.cmdAddImageAttachmentFromCamera(event, diaryId.value, true);
@@ -339,15 +342,17 @@ export function useMediaAction(
         insertAudio: () => genericBatchUpload(false, AUDIO_TYPES, 'audio'),
         insertVideo: () => genericBatchUpload(false, VIDEO_TYPES, 'video', "video"),
         insertFile: async () => genericBatchUpload(true),
-        cachingAttachment: async (filenames: string[]) => {
-            if (!filenames.length) return;
+        cachingAttachment: async (attachmentIds: string[]) => {
+            if (!attachmentIds.length) return;
             showUploadDialog.value = true;
-            for (const filename of filenames) {
+            for (const attachmentId of attachmentIds) {
                 const key = uuidv4();
+                const filename = currentDiary.value?.attachments
+                    .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
                 uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
                 const event = createUploadChannel(key);
                 try {
-                    const cancelToken = await api.cmdCachingAttachment(event, diaryId.value, filename);
+                    const cancelToken = await api.cmdCachingAttachment(event, diaryId.value, attachmentId);
                     cancelTokens.add(cancelToken);
                 } catch (e) {
                     uploadTaskMap.value[key].status = 'error';
@@ -357,19 +362,19 @@ export function useMediaAction(
             }
         },
         // 保存解密附件
-        saveDecryptAttachment: async (filename: string) => await performAttachmentOperation(
-            filename,
+        saveDecryptAttachment: async (attachmentId: string) => await performAttachmentOperation(
+            attachmentId,
             '保存解密附件',
             api.cmdSaveDecryptAttachment
         ),
         // 切换附件加密状态
-        toggleAttachmentEncryption: async (filename: string) => await performAttachmentOperation(
-            filename,
+        toggleAttachmentEncryption: async (attachmentId: string) => await performAttachmentOperation(
+            attachmentId,
             '切换附件加密',
             api.cmdToggleAttachmentEncryption
         ),
         // 旋转图片附件
-        async rotateAttachment(filename: string, rotation: number) {
+        async rotateAttachment(attachmentId: string, rotation: number) {
             // 验证旋转角度
             if ([90, 180, -90].indexOf(rotation) === -1) {
                 console.log(`无效的旋转角度: ${rotation}`);
@@ -378,7 +383,7 @@ export function useMediaAction(
             }
 
             await performAttachmentOperation(
-                filename,
+                attachmentId,
                 '旋转图片',
                 api.cmdRotateImageAttachment,
                 rotation
@@ -407,7 +412,12 @@ export function useMediaAction(
                             const arrayBuffer = reader.result as ArrayBuffer;
                             const uint8Array = new Uint8Array(arrayBuffer);
                             await uploadMemoryAttachmentChunked(file.name, uint8Array, file.type, false,
-                                (meta, url) => onSuccess({ nodeKind, filename: meta.filename, url }),
+                                (meta, url) => onSuccess({
+                                    nodeKind,
+                                    attachmentId: meta.id,
+                                    filename: meta.filename,
+                                    url,
+                                }),
                                 () => onError()
                             );
                         };

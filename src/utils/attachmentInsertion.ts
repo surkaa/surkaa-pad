@@ -2,19 +2,21 @@ export type AttachmentNodeKind = 'image' | 'audio' | 'video' | 'file'
 
 export interface UploadedAttachment {
   nodeKind: AttachmentNodeKind
+  attachmentId: string
   filename: string
   url: string
 }
 
 export type AttachmentInsertion =
-  | { type: 'image' | 'audio' | 'video' | 'file'; filename: string; url: string }
+  | { type: 'image' | 'audio' | 'video'; attachmentId: string; url: string }
+  | { type: 'file'; attachmentId: string; filename: string; url: string }
   | { type: 'album'; id: string; images: string[]; urls: string[] }
 
 export interface AttachmentInsertionTarget {
-  insertImage(filename: string): void
-  insertAudio(filename: string): void
-  insertVideo(filename: string): void
-  insertFile(filename: string): void
+  insertImage(attachmentId: string): void
+  insertAudio(attachmentId: string): void
+  insertVideo(attachmentId: string): void
+  insertFile(attachmentId: string, filename: string): void
   insertAlbum(id: string, images: string[], urls: string[]): void
 }
 
@@ -31,7 +33,9 @@ export function planAttachmentInsertions(
   for (let index = 0; index < successful.length;) {
     const item = successful[index]
     if (item.nodeKind !== 'image') {
-      insertions.push({ type: item.nodeKind, filename: item.filename, url: item.url })
+      insertions.push(item.nodeKind === 'file'
+        ? { type: 'file', attachmentId: item.attachmentId, filename: item.filename, url: item.url }
+        : { type: item.nodeKind, attachmentId: item.attachmentId, url: item.url })
       index += 1
       continue
     }
@@ -43,12 +47,12 @@ export function planAttachmentInsertions(
     }
 
     if (images.length === 1) {
-      insertions.push({ type: 'image', filename: images[0].filename, url: images[0].url })
+      insertions.push({ type: 'image', attachmentId: images[0].attachmentId, url: images[0].url })
     } else {
       insertions.push({
         type: 'album',
         id: createAlbumId(),
-        images: images.map(image => image.filename),
+        images: images.map(image => image.attachmentId),
         urls: images.map(image => image.url),
       })
     }
@@ -64,10 +68,10 @@ export async function applyAttachmentInsertions(
 ): Promise<void> {
   for (const insertion of insertions) {
     switch (insertion.type) {
-      case 'image': target.insertImage(insertion.filename); break
-      case 'audio': target.insertAudio(insertion.filename); break
-      case 'video': target.insertVideo(insertion.filename); break
-      case 'file': target.insertFile(insertion.filename); break
+      case 'image': target.insertImage(insertion.attachmentId); break
+      case 'audio': target.insertAudio(insertion.attachmentId); break
+      case 'video': target.insertVideo(insertion.attachmentId); break
+      case 'file': target.insertFile(insertion.attachmentId, insertion.filename); break
       case 'album': target.insertAlbum(insertion.id, insertion.images, insertion.urls); break
     }
     await afterEach()

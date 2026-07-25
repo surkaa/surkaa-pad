@@ -3,7 +3,7 @@ import { Node, mergeAttributes } from '@tiptap/vue-3'
 declare module '@tiptap/vue-3' {
   interface Commands<ReturnType> {
     fileNode: {
-      insertFile: (attrs: { id: string }) => ReturnType
+      insertFile: (attrs: { id: string; filename: string }) => ReturnType
     }
   }
 }
@@ -19,6 +19,7 @@ export const FileNode = Node.create({
   addAttributes() {
     return {
       id: { default: null },
+      filename: { default: '' },
     }
   },
 
@@ -28,6 +29,7 @@ export const FileNode = Node.create({
         tag: 'div.editor-file-attachment',
         getAttrs: (el) => ({
           id: (el as HTMLElement).getAttribute('data-id'),
+          filename: (el as HTMLElement).getAttribute('data-filename') || '',
         }),
       },
     ]
@@ -38,12 +40,13 @@ export const FileNode = Node.create({
       'div',
       mergeAttributes({
         'data-id': node.attrs.id,
+        'data-filename': node.attrs.filename,
         class: 'editor-file-attachment',
         contenteditable: 'false',
       }),
       ['div', { class: 'file-title' },
         ['span', { class: 'file-icon' }, '📎'],
-        ['span', { class: 'file-name' }, node.attrs.id],
+        ['span', { class: 'file-name' }, node.attrs.filename || node.attrs.id],
       ],
       ['span', { class: 'file-size' }, ''],
     ]
@@ -52,7 +55,7 @@ export const FileNode = Node.create({
   addCommands() {
     return {
       insertFile:
-        (attrs: { id: string }) =>
+        (attrs: { id: string; filename: string }) =>
         ({ commands }) => {
           return commands.insertContent({ type: this.name, attrs })
         },

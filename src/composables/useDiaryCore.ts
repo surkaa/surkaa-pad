@@ -38,14 +38,14 @@ export function useDiaryCore() {
         const referencedIds = new Set<string>();
         for (const node of diaryContent.value.nodes) {
             if (node.type === 'album') {
-                node.images.forEach(filename => referencedIds.add(filename));
+                node.attachmentIds.forEach(attachmentId => referencedIds.add(attachmentId));
             } else if (node.type !== 'markdown') {
-                referencedIds.add(node.filename);
+                referencedIds.add(node.attachmentId);
             }
         }
 
         return currentDiary.value.attachments.filter(
-            attachment => !referencedIds.has(attachment.filename)
+            attachment => !referencedIds.has(attachment.id)
         );
     });
 
