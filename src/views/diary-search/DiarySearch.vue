@@ -138,6 +138,7 @@ onUnmounted(() => {
           use-chips
           emit-value
           map-options
+          popup-content-class="attachment-filter-popup"
           dense
           outlined
           class="attachment-filter"
@@ -179,7 +180,38 @@ onUnmounted(() => {
 
     .attachment-filter {
       flex: none;
+
+      :deep(.q-field__control) {
+        background-color: var(--pad-bg-color-200);
+        color: var(--pad-text-color);
+      }
+
+      :deep(.q-field__native),
+      :deep(.q-field__label),
+      :deep(.q-field__marginal) {
+        color: var(--pad-text-color-200);
+      }
+
+      :deep(.q-chip) {
+        background-color: var(--pad-bg-color-400);
+        color: var(--pad-text-color);
+      }
     }
   }
+}
+
+:global(.attachment-filter-popup) {
+  background-color: var(--pad-bg-color-200);
+  color: var(--pad-text-color);
+  border: 1px solid var(--pad-border-color-100);
+}
+
+:global(.attachment-filter-popup .q-item) {
+  color: var(--pad-text-color-200);
+}
+
+:global(.attachment-filter-popup .q-item--active) {
+  background-color: var(--pad-bg-color-300);
+  color: var(--pad-primary-color);
 }
 </style>
