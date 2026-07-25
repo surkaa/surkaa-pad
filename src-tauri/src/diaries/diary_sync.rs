@@ -1,13 +1,35 @@
-use crate::caches::LocalFileCache;
-use crate::diaries::diary_store::{DiaryStore, LocalStore, RemoteStore};
-use crate::diaries::DiaryError;
-use crate::object::OssClient;
+use crate::caches::{LocalCacheEntry, LocalFileCache};
+use crate::cryptos::Crypto;
+use crate::diaries::diary_migration::migrate_manifest_bytes;
+use crate::diaries::DiaryManifest;
+use crate::object::{Object, OssClient};
+use crate::storages::diary_id_from_manifest_key;
+use crate::stream::ByteStream;
+use crate::utils::message_sender::MessageSender;
+use futures_util::StreamExt;
 use serde::Serialize;
 use specta::Type;
-use tauri::ipc::Channel;
+use std::collections::HashMap;
+use std::fmt::Display;
+use std::sync::Arc;
 use tauri_plugin_log::log;
 
-#[derive(Clone, Serialize, Type)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncDirection {
+    Upload,
+    Download,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncPhase {
+    Preparing,
+    Attachments,
+    Manifests,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
 #[serde(
     rename_all = "camelCase",
     rename_all_fields = "camelCase",
@@ -15,192 +37,740 @@ use tauri_plugin_log::log;
     content = "data"
 )]
 pub enum SyncProgressEvent {
+    Preparing {
+        direction: SyncDirection,
+    },
     Started {
-        total: u32,
+        direction: SyncDirection,
+        total_files: u32,
+        #[specta(type = f64)]
+        total_bytes: u64,
+        skipped_files: u32,
     },
     Progress {
-        current: u32,
-        total: u32,
-        diary_title: String,
+        direction: SyncDirection,
+        phase: SyncPhase,
+        current_file: String,
+        completed_files: u32,
+        total_files: u32,
+        #[specta(type = f64)]
+        current_file_bytes: u64,
+        #[specta(type = f64)]
+        current_file_size: u64,
+        #[specta(type = f64)]
+        transferred_bytes: u64,
+        #[specta(type = f64)]
+        total_bytes: u64,
     },
-    Completed,
-    Error(String),
+    Completed {
+        direction: SyncDirection,
+        transferred_files: u32,
+        skipped_files: u32,
+        #[specta(type = f64)]
+        transferred_bytes: u64,
+    },
+    Error {
+        direction: SyncDirection,
+        phase: SyncPhase,
+        current_file: Option<String>,
+        message: String,
+    },
 }
 
-/// 将本地数据同步到云端（启用远程存储时调用）
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SyncItemKind {
+    Attachment,
+    Manifest,
+}
+
+impl SyncItemKind {
+    fn phase(self) -> SyncPhase {
+        match self {
+            Self::Attachment => SyncPhase::Attachments,
+            Self::Manifest => SyncPhase::Manifests,
+        }
+    }
+
+    fn order(self) -> u8 {
+        match self {
+            Self::Attachment => 0,
+            Self::Manifest => 1,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SyncObjectEntry {
+    key: String,
+    etag: Option<String>,
+    size: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SyncItem {
+    key: String,
+    diary_id: String,
+    etag: Option<String>,
+    size: u64,
+    kind: SyncItemKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SyncPlan {
+    items: Vec<SyncItem>,
+    skipped_files: u32,
+    total_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SyncSummary {
+    pub transferred_files: u32,
+    pub skipped_files: u32,
+    pub transferred_bytes: u64,
+}
+
+#[derive(Debug)]
+pub struct SyncFailure {
+    pub phase: SyncPhase,
+    pub current_file: Option<String>,
+    pub message: String,
+}
+
+impl SyncFailure {
+    fn new(error: impl Display, phase: SyncPhase, current_file: Option<String>) -> Self {
+        Self {
+            phase,
+            current_file,
+            message: error.to_string(),
+        }
+    }
+
+    pub fn into_event(self, direction: SyncDirection) -> SyncProgressEvent {
+        SyncProgressEvent::Error {
+            direction,
+            phase: self.phase,
+            current_file: self.current_file,
+            message: self.message,
+        }
+    }
+}
+
 pub async fn sync_local_to_cloud(
     lfc: &LocalFileCache,
     client: &OssClient,
-    event: &Channel<SyncProgressEvent>,
-) -> Result<(), DiaryError> {
-    let local_store = LocalStore::new(lfc.clone());
-    let remote_store = RemoteStore::new(lfc.clone(), client.clone());
+    crypto: &Crypto,
+    event: Arc<dyn MessageSender<SyncProgressEvent>>,
+) -> Result<SyncSummary, SyncFailure> {
+    let local_entries = lfc
+        .get_all_entries()
+        .await
+        .map_err(|error| SyncFailure::new(error, SyncPhase::Preparing, None))?;
+    let remote_entries = list_remote_objects(client).await?;
+    let plan = build_plan(
+        local_entries.into_iter().map(local_entry).collect(),
+        &remote_entry_map(&remote_entries),
+    );
+    send_started(&event, SyncDirection::Upload, &plan);
 
-    // 获取所有本地日记 ID
-    let (ids, _) = local_store.list_diary_ids(None).await?;
-    let total = ids.len() as u32;
-    let _ = event.send(SyncProgressEvent::Started { total });
+    let total_files = plan.items.len() as u32;
+    let mut completed_files = 0u32;
+    let mut transferred_bytes = 0u64;
 
-    for (i, id) in ids.iter().enumerate() {
-        // 获取日记 manifest
-        let (manifest_data, _etag) = local_store.download_manifest(id).await?;
-
-        // 上传 manifest 到云端
-        let new_etag = remote_store.upload_manifest(id, &manifest_data).await?;
-
-        // 解析 manifest 获取标题（用于进度显示）
-        let title = {
-            let manifest_bytes = manifest_data.clone();
-            // 尝试解密获取标题，失败则用 ID
-            String::from_utf8_lossy(&manifest_bytes)
-                .chars()
-                .take(20)
-                .collect::<String>()
-        };
-
-        let _ = event.send(SyncProgressEvent::Progress {
-            current: i as u32 + 1,
-            total,
-            diary_title: title,
-        });
-
-        log::info!(
-            "[sync] uploaded manifest {}/{}: id={}, etag={}",
-            i + 1,
-            total,
-            id,
-            new_etag
-        );
-    }
-
-    // 同步附件：遍历 LFC 中所有非 manifest 的文件
-    let all_entries = lfc.get_all().await?;
-    let attachment_entries: Vec<_> = all_entries
-        .into_iter()
-        .filter(|(key, _)| {
-            // 过滤出附件文件（不是 manifest.enc 的文件）
-            !key.ends_with("/manifest.enc") && key.contains('/')
-        })
-        .collect();
-
-    for (key, local_md5) in &attachment_entries {
-        if client
-            .get_metadata(key)
+    for item in &plan.items {
+        let phase = item.kind.phase();
+        let display_name = local_display_name(lfc, crypto, item).await;
+        let stream = lfc
+            .get_stream(&item.key, None)
             .await
-            .ok()
-            .and_then(|metadata| metadata.etag)
-            .is_some_and(|remote_etag| etags_match(local_md5, &remote_etag))
-        {
-            log::info!("[sync] skipped unchanged attachment: key={}", key);
-            continue;
-        }
-
-        // 上传附件到云端
-        let data = lfc.get_data(key).await?;
-        let remote_etag = client.upload_bytes(key, &data).await?;
-        // 更新本地 MD5 为云端 etag
-        lfc.save_bytes(key, &data).await?;
-
-        log::info!(
-            "[sync] uploaded attachment: key={}, etag={}",
-            key,
-            remote_etag
+            .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
+        let tracked_stream = track_sync_stream(
+            stream,
+            event.clone(),
+            ProgressContext {
+                direction: SyncDirection::Upload,
+                phase,
+                current_file: display_name.clone(),
+                completed_files,
+                total_files,
+                current_file_size: item.size,
+                transferred_before: transferred_bytes,
+                total_bytes: plan.total_bytes,
+            },
         );
-    }
+        let etag = client
+            .upload(
+                &item.key,
+                item.size,
+                tracked_stream,
+                "application/octet-stream",
+            )
+            .await
+            .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
+        lfc.set_etag(&item.key, &etag)
+            .await
+            .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
 
-    let _ = event.send(SyncProgressEvent::Completed);
-    Ok(())
-}
-
-fn etags_match(local_md5: &str, remote_etag: &str) -> bool {
-    local_md5
-        .trim_matches('"')
-        .eq_ignore_ascii_case(remote_etag.trim_matches('"'))
-}
-
-/// 将云端数据同步到本地（禁用远程存储时调用）
-pub async fn sync_cloud_to_local(
-    lfc: &LocalFileCache,
-    client: &OssClient,
-    event: &Channel<SyncProgressEvent>,
-) -> Result<(), DiaryError> {
-    let remote_store = RemoteStore::new(lfc.clone(), client.clone());
-
-    // 分页列举所有云端日记
-    let mut all_ids = Vec::new();
-    let mut next_token = None;
-    loop {
-        let (ids, nt) = remote_store.list_diary_ids(next_token).await?;
-        all_ids.extend(ids);
-        if nt.is_none() {
-            break;
-        }
-        next_token = nt;
-    }
-
-    let total = all_ids.len() as u32;
-    let _ = event.send(SyncProgressEvent::Started { total });
-
-    for (i, id) in all_ids.iter().enumerate() {
-        // 下载 manifest 到本地
-        let (manifest_data, etag) = remote_store.download_manifest(id).await?;
-        // 确保本地缓存是最新的
-        let key = crate::storages::remote_manifest_key(id);
-        lfc.save_bytes(&key, &manifest_data).await?;
-
-        let _ = event.send(SyncProgressEvent::Progress {
-            current: i as u32 + 1,
-            total,
-            diary_title: id.clone(),
-        });
-
+        completed_files += 1;
+        transferred_bytes = transferred_bytes.saturating_add(item.size);
+        send_progress(
+            &event,
+            ProgressContext {
+                direction: SyncDirection::Upload,
+                phase,
+                current_file: display_name,
+                completed_files,
+                total_files,
+                current_file_size: item.size,
+                transferred_before: transferred_bytes.saturating_sub(item.size),
+                total_bytes: plan.total_bytes,
+            },
+            item.size,
+        );
         log::info!(
-            "[sync] downloaded manifest {}/{}: id={}, etag={}",
-            i + 1,
-            total,
-            id,
+            "[sync] uploaded {}/{}: key={}, etag={}",
+            completed_files,
+            total_files,
+            item.key,
             etag
         );
     }
 
-    // 下载所有附件：遍历云端所有对象，过滤出附件
-    let mut next_token = None;
-    loop {
-        let (objects, nt) = client.list("", next_token).await?;
-        for obj in objects {
-            // 跳过 manifest 文件
-            if obj.key.ends_with("/manifest.enc") {
-                continue;
-            }
-            // 检查本地是否已有且 etag 匹配
-            if let Some(local_md5) = lfc.get(&obj.key).await? {
-                if obj.etag.as_deref() == Some(&local_md5) {
-                    continue; // 本地已是最新
-                }
-            }
-            // 下载附件到本地
-            let data = client.download_bytes(&obj.key).await?;
-            lfc.save_bytes(&obj.key, &data).await?;
-            log::info!("[sync] downloaded attachment: key={}", obj.key);
+    Ok(SyncSummary {
+        transferred_files: completed_files,
+        skipped_files: plan.skipped_files,
+        transferred_bytes,
+    })
+}
+
+pub async fn sync_cloud_to_local(
+    lfc: &LocalFileCache,
+    client: &OssClient,
+    crypto: &Crypto,
+    event: Arc<dyn MessageSender<SyncProgressEvent>>,
+) -> Result<SyncSummary, SyncFailure> {
+    let remote_entries = list_remote_objects(client).await?;
+    let local_entries = lfc
+        .get_all_entries()
+        .await
+        .map_err(|error| SyncFailure::new(error, SyncPhase::Preparing, None))?;
+    let plan = build_plan(
+        remote_entries.iter().map(remote_entry).collect(),
+        &local_entry_map(&local_entries),
+    );
+    send_started(&event, SyncDirection::Download, &plan);
+
+    let total_files = plan.items.len() as u32;
+    let mut completed_files = 0u32;
+    let mut transferred_bytes = 0u64;
+
+    for item in &plan.items {
+        let phase = item.kind.phase();
+        let mut display_name = item.key.clone();
+        let etag = item.etag.as_deref().ok_or_else(|| {
+            SyncFailure::new("云端对象缺少 ETag", phase, Some(display_name.clone()))
+        })?;
+        let (stream, _) = client
+            .download(&item.key, None)
+            .await
+            .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
+        let tracked_stream = track_sync_stream(
+            stream,
+            event.clone(),
+            ProgressContext {
+                direction: SyncDirection::Download,
+                phase,
+                current_file: display_name.clone(),
+                completed_files,
+                total_files,
+                current_file_size: item.size,
+                transferred_before: transferred_bytes,
+                total_bytes: plan.total_bytes,
+            },
+        );
+        lfc.save_stream_with_etag(&item.key, etag, tracked_stream)
+            .await
+            .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
+
+        if item.kind == SyncItemKind::Manifest {
+            display_name = local_display_name(lfc, crypto, item).await;
         }
-        if nt.is_none() {
-            break;
-        }
-        next_token = nt;
+        completed_files += 1;
+        transferred_bytes = transferred_bytes.saturating_add(item.size);
+        send_progress(
+            &event,
+            ProgressContext {
+                direction: SyncDirection::Download,
+                phase,
+                current_file: display_name,
+                completed_files,
+                total_files,
+                current_file_size: item.size,
+                transferred_before: transferred_bytes.saturating_sub(item.size),
+                total_bytes: plan.total_bytes,
+            },
+            item.size,
+        );
+        log::info!(
+            "[sync] downloaded {}/{}: key={}, etag={}",
+            completed_files,
+            total_files,
+            item.key,
+            etag
+        );
     }
 
-    let _ = event.send(SyncProgressEvent::Completed);
-    Ok(())
+    Ok(SyncSummary {
+        transferred_files: completed_files,
+        skipped_files: plan.skipped_files,
+        transferred_bytes,
+    })
+}
+
+fn local_entry(entry: LocalCacheEntry) -> SyncObjectEntry {
+    SyncObjectEntry {
+        key: entry.key,
+        etag: Some(entry.etag),
+        size: entry.size,
+    }
+}
+
+fn remote_entry(entry: &Object) -> SyncObjectEntry {
+    SyncObjectEntry {
+        key: entry.key.clone(),
+        etag: entry.etag.clone(),
+        size: entry.size,
+    }
+}
+
+fn local_entry_map(entries: &[LocalCacheEntry]) -> HashMap<String, Option<String>> {
+    entries
+        .iter()
+        .map(|entry| (entry.key.clone(), Some(entry.etag.clone())))
+        .collect()
+}
+
+fn remote_entry_map(entries: &[Object]) -> HashMap<String, Option<String>> {
+    entries
+        .iter()
+        .map(|entry| (entry.key.clone(), entry.etag.clone()))
+        .collect()
+}
+
+fn build_plan(
+    source_entries: Vec<SyncObjectEntry>,
+    target_etags: &HashMap<String, Option<String>>,
+) -> SyncPlan {
+    let mut items = Vec::new();
+    let mut skipped_files = 0u32;
+
+    for entry in source_entries {
+        let Some((kind, diary_id)) = classify_storage_key(&entry.key) else {
+            continue;
+        };
+        if etag_options_match(entry.etag.as_deref(), target_etags.get(&entry.key)) {
+            skipped_files += 1;
+            continue;
+        }
+        items.push(SyncItem {
+            key: entry.key,
+            diary_id,
+            etag: entry.etag,
+            size: entry.size,
+            kind,
+        });
+    }
+
+    items.sort_by(|left, right| {
+        left.kind
+            .order()
+            .cmp(&right.kind.order())
+            .then_with(|| left.key.cmp(&right.key))
+    });
+    let total_bytes = items
+        .iter()
+        .fold(0u64, |total, item| total.saturating_add(item.size));
+    SyncPlan {
+        items,
+        skipped_files,
+        total_bytes,
+    }
+}
+
+fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
+    if let Some(id) = diary_id_from_manifest_key(key).filter(|id| !id.is_empty()) {
+        return Some((SyncItemKind::Manifest, id));
+    }
+    let (id, filename) = key.split_once('/')?;
+    if id.is_empty() || filename.is_empty() || filename.contains('/') {
+        return None;
+    }
+    Some((SyncItemKind::Attachment, id.to_string()))
+}
+
+fn etag_options_match(source: Option<&str>, target: Option<&Option<String>>) -> bool {
+    match (source, target.and_then(Option::as_deref)) {
+        (Some(source), Some(target)) => etags_match(source, target),
+        _ => false,
+    }
+}
+
+fn etags_match(left: &str, right: &str) -> bool {
+    left.trim_matches('"')
+        .eq_ignore_ascii_case(right.trim_matches('"'))
+}
+
+async fn list_remote_objects(client: &OssClient) -> Result<Vec<Object>, SyncFailure> {
+    let mut entries = Vec::new();
+    let mut next_token = None;
+    loop {
+        let (page, token) = client
+            .list("", next_token)
+            .await
+            .map_err(|error| SyncFailure::new(error, SyncPhase::Preparing, None))?;
+        entries.extend(page);
+        if token.is_none() {
+            break;
+        }
+        next_token = token;
+    }
+    Ok(entries)
+}
+
+fn send_started(
+    event: &Arc<dyn MessageSender<SyncProgressEvent>>,
+    direction: SyncDirection,
+    plan: &SyncPlan,
+) {
+    let _ = event.send(SyncProgressEvent::Started {
+        direction,
+        total_files: plan.items.len() as u32,
+        total_bytes: plan.total_bytes,
+        skipped_files: plan.skipped_files,
+    });
+}
+
+#[derive(Clone)]
+struct ProgressContext {
+    direction: SyncDirection,
+    phase: SyncPhase,
+    current_file: String,
+    completed_files: u32,
+    total_files: u32,
+    current_file_size: u64,
+    transferred_before: u64,
+    total_bytes: u64,
+}
+
+fn track_sync_stream(
+    stream: ByteStream,
+    event: Arc<dyn MessageSender<SyncProgressEvent>>,
+    context: ProgressContext,
+) -> ByteStream {
+    let mut current_file_bytes = 0u64;
+    let mut last_percentage = percentage(context.transferred_before, context.total_bytes);
+    Box::pin(stream.inspect(move |result| {
+        let Ok(bytes) = result else {
+            return;
+        };
+        current_file_bytes = current_file_bytes.saturating_add(bytes.len() as u64);
+        let transferred = context
+            .transferred_before
+            .saturating_add(current_file_bytes)
+            .min(context.total_bytes);
+        let current_percentage = percentage(transferred, context.total_bytes);
+        if current_percentage > last_percentage {
+            send_progress(&event, context.clone(), current_file_bytes);
+            last_percentage = current_percentage;
+        }
+    }))
+}
+
+fn send_progress(
+    event: &Arc<dyn MessageSender<SyncProgressEvent>>,
+    context: ProgressContext,
+    current_file_bytes: u64,
+) {
+    let transferred_bytes = context
+        .transferred_before
+        .saturating_add(current_file_bytes)
+        .min(context.total_bytes);
+    let _ = event.send(SyncProgressEvent::Progress {
+        direction: context.direction,
+        phase: context.phase,
+        current_file: context.current_file,
+        completed_files: context.completed_files,
+        total_files: context.total_files,
+        current_file_bytes: current_file_bytes.min(context.current_file_size),
+        current_file_size: context.current_file_size,
+        transferred_bytes,
+        total_bytes: context.total_bytes,
+    });
+}
+
+fn percentage(current: u64, total: u64) -> u8 {
+    if total == 0 {
+        100
+    } else {
+        ((current as u128 * 100 / total as u128).min(100)) as u8
+    }
+}
+
+async fn local_display_name(lfc: &LocalFileCache, crypto: &Crypto, item: &SyncItem) -> String {
+    if item.kind != SyncItemKind::Manifest {
+        return item.key.clone();
+    }
+    let Ok(encrypted) = lfc.get_data(&item.key).await else {
+        return item.diary_id.clone();
+    };
+    manifest_title(crypto, &encrypted).unwrap_or_else(|| item.diary_id.clone())
+}
+
+fn manifest_title(crypto: &Crypto, encrypted: &[u8]) -> Option<String> {
+    let decrypted = crypto.decrypt(encrypted).ok()?;
+    let manifest_bytes = match migrate_manifest_bytes(&decrypted) {
+        Ok((true, Some(migrated))) => migrated,
+        Ok(_) => decrypted,
+        Err(_) => return None,
+    };
+    let manifest: DiaryManifest = serde_json::from_slice(&manifest_bytes).ok()?;
+    let title = manifest.content.title();
+    (!title.is_empty()).then_some(title)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::etags_match;
+    use super::*;
+    use crate::attachments::AttachmentMeta;
+    use crate::caches::LocalFileCache;
+    use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
+    use crate::diaries::DiaryContent;
+    use crate::storages::remote_manifest_key;
+    use crate::stream::collect_data;
+    use crate::test_utils::TestOssGuard;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    fn entry(key: &str, etag: Option<&str>, size: u64) -> SyncObjectEntry {
+        SyncObjectEntry {
+            key: key.to_string(),
+            etag: etag.map(str::to_string),
+            size,
+        }
+    }
 
     #[test]
-    fn etag_comparison_ignores_case_and_oss_quotes() {
-        assert!(etags_match("ABC123", "abc123"));
-        assert!(etags_match("\"ABC123\"", "abc123"));
-        assert!(!etags_match("ABC123", "ABC124"));
+    fn plan_skips_matching_etags_and_counts_transfer_bytes() {
+        let source = vec![
+            entry("diary/manifest.enc", Some("MANIFEST"), 10),
+            entry("diary/photo.jpg", Some("PHOTO"), 1_000),
+            entry("invalid", Some("IGNORED"), 99),
+        ];
+        let target = HashMap::from([
+            (
+                "diary/manifest.enc".to_string(),
+                Some("manifest".to_string()),
+            ),
+            ("diary/photo.jpg".to_string(), Some("OLD".to_string())),
+        ]);
+
+        let plan = build_plan(source, &target);
+
+        assert_eq!(plan.skipped_files, 1);
+        assert_eq!(plan.total_bytes, 1_000);
+        assert_eq!(plan.items.len(), 1);
+        assert_eq!(plan.items[0].key, "diary/photo.jpg");
+    }
+
+    #[test]
+    fn plan_orders_attachments_before_manifests() {
+        let source = vec![
+            entry("b/manifest.enc", Some("1"), 1),
+            entry("a/manifest.enc", Some("2"), 1),
+            entry("b/2.jpg", Some("3"), 1),
+            entry("a/1.jpg", Some("4"), 1),
+        ];
+
+        let plan = build_plan(source, &HashMap::new());
+        let keys = plan
+            .items
+            .iter()
+            .map(|item| item.key.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            keys,
+            ["a/1.jpg", "b/2.jpg", "a/manifest.enc", "b/manifest.enc"]
+        );
+    }
+
+    #[test]
+    fn plan_treats_missing_or_changed_target_as_transfer() {
+        let source = vec![
+            entry("diary/a.jpg", Some("A"), 5),
+            entry("diary/b.jpg", None, 7),
+        ];
+        let target = HashMap::from([("diary/a.jpg".to_string(), Some("B".to_string()))]);
+
+        let plan = build_plan(source, &target);
+
+        assert_eq!(plan.items.len(), 2);
+        assert_eq!(plan.total_bytes, 12);
+        assert_eq!(plan.skipped_files, 0);
+    }
+
+    #[test]
+    fn storage_key_classification_rejects_unrelated_paths() {
+        assert_eq!(
+            classify_storage_key("id/manifest.enc"),
+            Some((SyncItemKind::Manifest, "id".to_string()))
+        );
+        assert_eq!(
+            classify_storage_key("id/photo.jpg"),
+            Some((SyncItemKind::Attachment, "id".to_string()))
+        );
+        assert_eq!(classify_storage_key("invalid"), None);
+        assert_eq!(classify_storage_key("/photo.jpg"), None);
+        assert_eq!(classify_storage_key("id/folder/photo.jpg"), None);
+    }
+
+    #[test]
+    fn encrypted_manifest_title_is_decoded_and_invalid_data_falls_back() {
+        let crypto = Crypto::new();
+        crypto
+            .derive_dek(
+                "password".to_string(),
+                "NFI2cXl3cUpiSDk4bVVkdEY4cDMzRzlqcTdMMkY5WDg",
+            )
+            .unwrap();
+        let manifest = DiaryManifest {
+            id: "diary".to_string(),
+            algorithm: Gcm,
+            content: DiaryContent::from_editor_text("真实标题\n正文"),
+            created: 1,
+            updated: 1,
+            attachments: Vec::<AttachmentMeta>::new(),
+            version: 3,
+        };
+        let encrypted = crypto
+            .encrypt(&serde_json::to_vec(&manifest).unwrap())
+            .unwrap();
+
+        assert_eq!(
+            manifest_title(&crypto, &encrypted).as_deref(),
+            Some("真实标题")
+        );
+        assert_eq!(manifest_title(&crypto, b"not encrypted"), None);
+    }
+
+    #[test]
+    fn percentage_handles_empty_and_large_totals() {
+        assert_eq!(percentage(0, 0), 100);
+        assert_eq!(percentage(50, 100), 50);
+        assert_eq!(percentage(u64::MAX, u64::MAX), 100);
+    }
+
+    #[tokio::test]
+    async fn storage_sync_streams_roundtrip_and_skips_unchanged_files() {
+        let crypto = Crypto::from_env();
+        let client = OssClient::from_env();
+        let (client, guard) = TestOssGuard::new(client).await;
+        let source_dir = tempfile::tempdir().expect("source temp dir");
+        let source_lfc = LocalFileCache::new(source_dir.path().to_path_buf());
+        let diary_id = "sync-roundtrip";
+        let attachment_key = format!("{diary_id}/large.bin");
+        let manifest_key = remote_manifest_key(diary_id);
+        let attachment = vec![0x5a; 256 * 1024];
+        let manifest = DiaryManifest {
+            id: diary_id.to_string(),
+            algorithm: Gcm,
+            content: DiaryContent::from_editor_text("同步测试标题\n正文"),
+            created: 1,
+            updated: 1,
+            attachments: Vec::new(),
+            version: 3,
+        };
+        let encrypted_manifest = crypto
+            .encrypt(&serde_json::to_vec(&manifest).unwrap())
+            .unwrap();
+        source_lfc
+            .save_bytes(&attachment_key, &attachment)
+            .await
+            .unwrap();
+        source_lfc
+            .save_bytes(&manifest_key, &encrypted_manifest)
+            .await
+            .unwrap();
+
+        let (upload_tx, mut upload_rx) = unbounded_channel();
+        let upload_summary =
+            sync_local_to_cloud(&source_lfc, &client, &crypto, Arc::new(upload_tx))
+                .await
+                .unwrap();
+        let upload_events = std::iter::from_fn(|| upload_rx.try_recv().ok()).collect::<Vec<_>>();
+
+        assert_eq!(upload_summary.transferred_files, 2);
+        assert_eq!(upload_summary.skipped_files, 0);
+        assert_eq!(
+            upload_summary.transferred_bytes,
+            attachment.len() as u64 + encrypted_manifest.len() as u64
+        );
+        let phases = upload_events
+            .iter()
+            .filter_map(|event| match event {
+                SyncProgressEvent::Progress { phase, .. } => Some(*phase),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(phases.first(), Some(&SyncPhase::Attachments));
+        assert_eq!(phases.last(), Some(&SyncPhase::Manifests));
+        assert!(matches!(
+            upload_events.last(),
+            Some(SyncProgressEvent::Progress {
+                transferred_bytes,
+                total_bytes,
+                ..
+            }) if transferred_bytes == total_bytes
+        ));
+
+        let (retry_tx, _retry_rx) = unbounded_channel();
+        let retry_summary = sync_local_to_cloud(&source_lfc, &client, &crypto, Arc::new(retry_tx))
+            .await
+            .unwrap();
+        assert_eq!(retry_summary.transferred_files, 0);
+        assert_eq!(retry_summary.skipped_files, 2);
+
+        let target_dir = tempfile::tempdir().expect("target temp dir");
+        let target_lfc = LocalFileCache::new(target_dir.path().to_path_buf());
+        let (download_tx, mut download_rx) = unbounded_channel();
+        let download_summary =
+            sync_cloud_to_local(&target_lfc, &client, &crypto, Arc::new(download_tx))
+                .await
+                .unwrap();
+        let download_events =
+            std::iter::from_fn(|| download_rx.try_recv().ok()).collect::<Vec<_>>();
+
+        assert_eq!(download_summary.transferred_files, 2);
+        assert_eq!(
+            target_lfc.get_data(&attachment_key).await.unwrap(),
+            attachment
+        );
+        assert_eq!(
+            target_lfc.get_data(&manifest_key).await.unwrap(),
+            encrypted_manifest
+        );
+        let downloaded_stream = target_lfc.get_stream(&attachment_key, None).await.unwrap();
+        assert_eq!(
+            collect_data(downloaded_stream).await.unwrap().len(),
+            256 * 1024
+        );
+        assert!(matches!(
+            download_events.last(),
+            Some(SyncProgressEvent::Progress {
+                transferred_bytes,
+                total_bytes,
+                ..
+            }) if transferred_bytes == total_bytes
+        ));
+
+        guard.cleanup().await;
     }
 }

@@ -1,6 +1,10 @@
-use crate::diaries::diary_sync::{sync_cloud_to_local, sync_local_to_cloud, SyncProgressEvent};
+use crate::diaries::diary_sync::{
+    sync_cloud_to_local, sync_local_to_cloud, SyncDirection, SyncPhase, SyncProgressEvent,
+};
 use crate::error::AppError;
 use crate::state::AppState;
+use crate::utils::message_sender::MessageSender;
+use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::State;
 use tauri_plugin_log::log;
@@ -40,24 +44,54 @@ pub async fn cmd_enable_remote_storage(
     endpoint: String,
 ) -> Result<(), AppError> {
     log::info!("[remote] enabling remote storage...");
+    let event: Arc<dyn MessageSender<SyncProgressEvent>> = Arc::new(event);
+    let direction = SyncDirection::Upload;
+    let _ = event.send(SyncProgressEvent::Preparing { direction });
 
     // 1. 初始化 OSS 客户端
-    state.oss_client().initialize(endpoint, akid, aks, bucket)?;
-
-    // 2. 同步本地数据到云端
-    if let Err(error) =
-        sync_local_to_cloud(&state.local_file_cache(), &state.oss_client(), &event).await
-    {
+    if let Err(error) = state.oss_client().initialize(endpoint, akid, aks, bucket) {
         let message = error.to_string();
-        let _ = event.send(SyncProgressEvent::Error(message.clone()));
+        let _ = event.send(SyncProgressEvent::Error {
+            direction,
+            phase: SyncPhase::Preparing,
+            current_file: None,
+            message: message.clone(),
+        });
         return Err(AppError {
             error_type: "sync".into(),
             message,
         });
     }
 
+    // 2. 同步本地数据到云端
+    let summary = match sync_local_to_cloud(
+        &state.local_file_cache(),
+        &state.oss_client(),
+        &state.crypto(),
+        event.clone(),
+    )
+    .await
+    {
+        Ok(summary) => summary,
+        Err(error) => {
+            let message = error.message.clone();
+            let _ = event.send(error.into_event(direction));
+            state.oss_client().reset();
+            return Err(AppError {
+                error_type: "sync".into(),
+                message,
+            });
+        }
+    };
+
     // 3. 设置远程存储启用
     state.set_remote_enabled(true);
+    let _ = event.send(SyncProgressEvent::Completed {
+        direction,
+        transferred_files: summary.transferred_files,
+        skipped_files: summary.skipped_files,
+        transferred_bytes: summary.transferred_bytes,
+    });
     log::info!("[remote] remote storage enabled successfully");
     Ok(())
 }
@@ -70,24 +104,41 @@ pub async fn cmd_disable_remote_storage(
     event: Channel<SyncProgressEvent>,
 ) -> Result<(), AppError> {
     log::info!("[remote] disabling remote storage...");
+    let event: Arc<dyn MessageSender<SyncProgressEvent>> = Arc::new(event);
+    let direction = SyncDirection::Download;
+    let _ = event.send(SyncProgressEvent::Preparing { direction });
 
     // 1. 同步云端数据到本地
-    if let Err(error) =
-        sync_cloud_to_local(&state.local_file_cache(), &state.oss_client(), &event).await
+    let summary = match sync_cloud_to_local(
+        &state.local_file_cache(),
+        &state.oss_client(),
+        &state.crypto(),
+        event.clone(),
+    )
+    .await
     {
-        let message = error.to_string();
-        let _ = event.send(SyncProgressEvent::Error(message.clone()));
-        return Err(AppError {
-            error_type: "sync".into(),
-            message,
-        });
-    }
+        Ok(summary) => summary,
+        Err(error) => {
+            let message = error.message.clone();
+            let _ = event.send(error.into_event(direction));
+            return Err(AppError {
+                error_type: "sync".into(),
+                message,
+            });
+        }
+    };
 
     // 2. 设置远程存储禁用
     state.set_remote_enabled(false);
 
     // 3. 重置 OSS 客户端
     state.oss_client().reset();
+    let _ = event.send(SyncProgressEvent::Completed {
+        direction,
+        transferred_files: summary.transferred_files,
+        skipped_files: summary.skipped_files,
+        transferred_bytes: summary.transferred_bytes,
+    });
     log::info!("[remote] remote storage disabled successfully");
     Ok(())
 }

@@ -156,6 +156,13 @@ pub struct LocalFileCache {
     cache_dir: Arc<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalCacheEntry {
+    pub key: String,
+    pub etag: String,
+    pub size: u64,
+}
+
 impl LocalFileCache {
     pub fn new(exists_dir: PathBuf) -> Self {
         Self {
@@ -397,6 +404,30 @@ impl LocalFileCache {
         Ok(())
     }
 
+    /// 只更新现有缓存的 ETag 标记，不重复写入数据文件。
+    pub async fn set_etag(&self, key: &str, etag: &str) -> Result<(), CacheError> {
+        if etag.trim().is_empty() {
+            return Err(CacheError::InvalidEtag);
+        }
+        let (data_path, md5_path) = self.get_path(key);
+        if !tokio::fs::try_exists(&data_path).await.unwrap_or(false) {
+            return Err(CacheError::NotFound);
+        }
+
+        let etag_tmp_path = Self::unique_temp_path(&md5_path);
+        let mut cleanup = CacheWriteGuard::new(vec![etag_tmp_path.clone()]);
+        let mut etag_file = tokio::fs::File::create(&etag_tmp_path).await?;
+        etag_file.write_all(etag.trim().as_bytes()).await?;
+        etag_file.sync_all().await?;
+        drop(etag_file);
+
+        cleanup.track(md5_path.clone());
+        let _ = tokio::fs::remove_file(&md5_path).await;
+        tokio::fs::rename(&etag_tmp_path, &md5_path).await?;
+        cleanup.commit();
+        Ok(())
+    }
+
     /// 根据key直接返回完整的数据
     pub async fn get_data(&self, key: &str) -> Result<Vec<u8>, CacheError> {
         let (data_path, md5_path) = self.get_path(key);
@@ -423,8 +454,8 @@ impl LocalFileCache {
         Ok(())
     }
 
-    /// 获取所有缓存文件信息(Key, Md5)
-    pub async fn get_all(&self) -> Result<Vec<(String, String)>, CacheError> {
+    /// 获取所有有效缓存文件的信息。
+    pub async fn get_all_entries(&self) -> Result<Vec<LocalCacheEntry>, CacheError> {
         let mut results = Vec::new();
         let mut stack = vec![self.cache_dir.as_ref().to_path_buf()];
 
@@ -460,7 +491,12 @@ impl LocalFileCache {
                     let md5_path = self.cache_dir.join(format!("{}{}", key, MD5_FILE_SUFFIX));
                     if md5_path.exists() {
                         if let Ok(md5) = tokio::fs::read_to_string(&md5_path).await {
-                            results.push((key.to_string(), md5.trim().to_string()));
+                            let size = tokio::fs::metadata(&path).await?.len();
+                            results.push(LocalCacheEntry {
+                                key: key.to_string(),
+                                etag: md5.trim().to_string(),
+                                size,
+                            });
                         }
                     }
                 }
@@ -468,5 +504,15 @@ impl LocalFileCache {
         }
 
         Ok(results)
+    }
+
+    /// 获取所有缓存文件信息(Key, ETag)。
+    pub async fn get_all(&self) -> Result<Vec<(String, String)>, CacheError> {
+        Ok(self
+            .get_all_entries()
+            .await?
+            .into_iter()
+            .map(|entry| (entry.key, entry.etag))
+            .collect())
     }
 }

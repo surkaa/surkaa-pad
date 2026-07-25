@@ -186,6 +186,34 @@ mod lfc_tests {
     }
 
     #[tokio::test]
+    async fn test_set_etag_without_rewriting_data() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        cache.save_bytes("file", b"cached data").await.unwrap();
+
+        cache.set_etag("file", "REMOTE-ETAG").await.unwrap();
+
+        assert_eq!(
+            cache.get("file").await.unwrap().as_deref(),
+            Some("REMOTE-ETAG")
+        );
+        assert_eq!(cache.get_data("file").await.unwrap(), b"cached data");
+    }
+
+    #[tokio::test]
+    async fn test_get_all_entries_includes_file_size() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        cache.save_bytes("diary/file", b"12345").await.unwrap();
+
+        let entries = cache.get_all_entries().await.unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].key, "diary/file");
+        assert_eq!(entries[0].size, 5);
+    }
+
+    #[tokio::test]
     async fn test_delete_all() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
