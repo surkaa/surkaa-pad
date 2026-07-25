@@ -108,6 +108,18 @@ pub async fn cmd_disable_remote_storage(
     let direction = SyncDirection::Download;
     let _ = event.send(SyncProgressEvent::Preparing { direction });
 
+    // 已处于本地模式时按幂等成功处理，避免状态恢复期间重复关闭访问未初始化的 OSS。
+    if !state.is_remote_enabled() {
+        let _ = event.send(SyncProgressEvent::Completed {
+            direction,
+            transferred_files: 0,
+            skipped_files: 0,
+            transferred_bytes: 0,
+        });
+        log::info!("[remote] remote storage already disabled");
+        return Ok(());
+    }
+
     // 1. 同步云端数据到本地
     let summary = match sync_cloud_to_local(
         &state.local_file_cache(),

@@ -320,13 +320,13 @@ async function unlock() {
     await api.cmdUnlock(masterPassword.value);
 
     const remoteEnabled = await configStore.getNormalConfig('remote_enabled');
-    await api.cmdSetRemoteEnabled(remoteEnabled);
-
     if (remoteEnabled) {
       if (!(await initOss())) {
+        await api.cmdSetRemoteEnabled(false);
         return;
       }
     }
+    await api.cmdSetRemoteEnabled(remoteEnabled);
 
     console.log('Unlock Successful');
     setTimeoutForCloseApp();
@@ -380,13 +380,13 @@ async function tryBiometricUnlock() {
     await api.cmdBiometricUnlock(data);
 
     const remoteEnabled = await configStore.getNormalConfig('remote_enabled');
-    await api.cmdSetRemoteEnabled(remoteEnabled);
-
     if (remoteEnabled) {
       if (!(await initOss())) {
+        await api.cmdSetRemoteEnabled(false);
         return;
       }
     }
+    await api.cmdSetRemoteEnabled(remoteEnabled);
 
     console.log('Biometric Unlock Successful');
     setTimeoutForCloseApp();
