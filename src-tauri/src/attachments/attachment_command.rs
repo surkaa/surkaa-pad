@@ -73,7 +73,7 @@ pub fn cmd_add_attachment(
             original_filename,
         )
         .await;
-    })?)
+    }))
 }
 
 /// 直接传字节数据给日记添加附件
@@ -118,7 +118,7 @@ pub fn cmd_add_attachment_memory(
             None,
         )
         .await;
-    })?)
+    }))
 }
 
 /// 删除日记的附件
@@ -185,7 +185,7 @@ pub async fn cmd_add_image_attachment_from_camera(
                 None,
             )
             .await;
-        })?)
+        }))
     }
     #[cfg(not(target_os = "android"))]
     {
@@ -216,7 +216,7 @@ pub fn cmd_toggle_attachment_encryption(
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
         toggle_attachment_encryption(&state, Arc::new(event), &id, filename).await;
-    })?)
+    }))
 }
 
 /// 旋转图片附件 顺时针90度、逆时针90度和180度
@@ -239,7 +239,7 @@ pub fn cmd_rotate_image_attachment(
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
         rotate_image_attachment(&state, Arc::new(event), &id, filename, rotation).await;
-    })?)
+    }))
 }
 
 /// 主动缓存云端附件到本地
@@ -259,7 +259,7 @@ pub fn cmd_caching_attachment(
     let store = state.diary_store();
     Ok(state.task_pool().spawn(async move {
         caching_attachment(&*store, Arc::new(event), &id, &filename).await;
-    })?)
+    }))
 }
 
 /// 让用户选择一个位置保存附近明文
@@ -317,7 +317,7 @@ pub async fn cmd_save_decrypt_attachment(
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
         save_decrypt_attachment(&state, Arc::new(event), &id, filename, attachment, file).await;
-    })?)
+    }))
 }
 
 /// 重命名附件

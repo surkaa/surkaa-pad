@@ -145,5 +145,5 @@ pub fn cmd_search_diaries(
             attachment_types,
         )
         .await;
-    })?)
+    }))
 }
