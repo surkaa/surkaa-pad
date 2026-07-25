@@ -89,34 +89,49 @@ mod tests {
             "并发写导致了附件元数据覆盖或丢失"
         );
 
-        let mut filenames: Vec<u32> = manifest
+        let attachment_ids: Vec<String> = manifest
             .attachments
             .iter()
-            .filter_map(|a| a.filename.parse::<u32>().ok())
+            .map(|attachment| attachment.id.clone())
             .collect();
-        filenames.sort_unstable();
-
-        // 验证短文件名是否为 1 到 concurrency_level 的无间断严格递增序列
-        let expected_filenames: Vec<u32> = (1..=concurrency_level as u32).collect();
         assert_eq!(
-            filenames, expected_filenames,
-            "并发环境下的短文件名分配出现冲突或跳号"
+            attachment_ids
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            concurrency_level,
+            "并发环境下生成了重复附件 ID"
+        );
+        assert!(attachment_ids.iter().all(|id| id.starts_with("att-")));
+        assert_eq!(
+            manifest
+                .attachments
+                .iter()
+                .map(|attachment| &attachment.filename)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            concurrency_level,
+            "并发环境下展示文件名未正确去重"
         );
 
         // 4. 核心测试: 并发删除附件
         let mut del_tasks: Vec<JoinHandle<_>> = Vec::with_capacity(concurrency_level);
-        for filename in filenames {
+        for attachment_id in attachment_ids {
             let cache_clone = cache.clone();
             let crypto_clone = crypto.clone();
             let lfc_clone = lfc.clone();
             let client_clone = client.clone();
             let id_clone = diary_id.clone();
-            let filename_str = filename.to_string();
-
             del_tasks.push(tokio::spawn(async move {
                 let store = RemoteStore::new(lfc_clone, client_clone);
-                delete_attachment(&cache_clone, &crypto_clone, &store, &id_clone, filename_str)
-                    .await
+                delete_attachment(
+                    &cache_clone,
+                    &crypto_clone,
+                    &store,
+                    &id_clone,
+                    attachment_id,
+                )
+                .await
             }));
         }
 
@@ -171,11 +186,16 @@ mod tests {
         )
         .await;
 
-        let filename = "1"; // 第一个附件 ID 为 1
+        let attachment_id = get_diary(&cache, &crypto, &store, &diary_id)
+            .await
+            .unwrap()
+            .attachments[0]
+            .id
+            .clone();
 
         // 切换为加密状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, filename.to_string()).await;
+        toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, attachment_id.clone()).await;
 
         // 验证元数据是否已更新为加密
         let store = RemoteStore::new(lfc.clone(), client.clone());
@@ -186,7 +206,7 @@ mod tests {
 
         // 切换回明文状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, filename.to_string()).await;
+        toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, attachment_id.clone()).await;
 
         // 检查数据是否还原
         let store = RemoteStore::new(lfc.clone(), client.clone());
@@ -197,7 +217,7 @@ mod tests {
 
         // 下载并检查内容是否依然正确
         let (down_stream, _) = client
-            .download(&remote_attachments_key(&diary_id, filename), None)
+            .download(&remote_attachments_key(&diary_id, &attachment_id), None)
             .await
             .unwrap();
         let downloaded_bytes = collect_data(down_stream).await.expect("收集失败");
@@ -247,7 +267,12 @@ mod tests {
         )
         .await;
 
-        let filename = "1";
+        let attachment_id = get_diary(&cache, &crypto, &store, &diary_id)
+            .await
+            .unwrap()
+            .attachments[0]
+            .id
+            .clone();
 
         // 执行旋转操作：顺时针 90 度
         let (tx_rot, mut rx_rot) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
@@ -257,7 +282,7 @@ mod tests {
             &state,
             event_sender,
             &diary_id,
-            filename.to_string(),
+            attachment_id.clone(),
             90, // 顺时针 90
         )
         .await;
@@ -269,7 +294,7 @@ mod tests {
                 AttachmentProcessEvent::Started => {}
                 AttachmentProcessEvent::Progress(_) => {}
                 AttachmentProcessEvent::Completed(meta, _url) => {
-                    assert_eq!(meta.filename, filename);
+                    assert_eq!(meta.id, attachment_id);
                     assert!(meta.encrypted, "旋转后应保持加密状态");
                     completed = true;
                 }
@@ -285,7 +310,7 @@ mod tests {
 
         // 验证数据确实被修改（下载并检查）
         let (raw_stream, _) = client
-            .download(&remote_attachments_key(&diary_id, filename), None)
+            .download(&remote_attachments_key(&diary_id, &attachment_id), None)
             .await
             .unwrap();
 
@@ -342,16 +367,16 @@ mod tests {
         )
         .await;
 
-        let mut filename = String::new();
+        let mut attachment_id = String::new();
         while let Some(event) = rx.recv().await {
             if let AttachmentProcessEvent::Completed(m, _) = event {
-                filename = m.filename;
+                attachment_id = m.id;
                 break;
             }
         }
-        assert!(!filename.is_empty(), "附件上传未完成");
+        assert!(!attachment_id.is_empty(), "附件上传未完成");
 
-        let key = remote_attachments_key(&diary_id, &filename);
+        let key = remote_attachments_key(&diary_id, &attachment_id);
 
         // 验证缓存是否存在以及数据内容
         let cached = lfc.get(&key).await.unwrap();
@@ -365,7 +390,7 @@ mod tests {
 
         let (cache_tx, mut cache_rx) =
             tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        caching_attachment(&store, Arc::new(cache_tx), &diary_id, &filename).await;
+        caching_attachment(&store, Arc::new(cache_tx), &diary_id, &attachment_id).await;
 
         let mut started_count = 0;
         let mut completed_count = 0;
@@ -392,7 +417,7 @@ mod tests {
 
         // 触发 toggle_attachment_encryption，验证缓存是否被正确替换
         let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        toggle_attachment_encryption(&state, Arc::new(tx2), &diary_id, filename.clone()).await;
+        toggle_attachment_encryption(&state, Arc::new(tx2), &diary_id, attachment_id.clone()).await;
 
         while let Some(event) = rx2.recv().await {
             if let AttachmentProcessEvent::Completed(_, _) = event {
@@ -409,7 +434,7 @@ mod tests {
 
         // 删除附件，验证缓存被清空
         let store = RemoteStore::new(lfc.clone(), client.clone());
-        delete_attachment(&cache, &crypto, &store, &diary_id, filename)
+        delete_attachment(&cache, &crypto, &store, &diary_id, attachment_id)
             .await
             .unwrap();
         let cached_after_delete = lfc.get(&key).await.unwrap();
@@ -450,23 +475,23 @@ mod tests {
             None,
         )
         .await;
-        let mut filename = None;
+        let mut attachment = None;
         while let Some(event) = rx.recv().await {
             match event {
                 AttachmentProcessEvent::Started => {}
                 AttachmentProcessEvent::Progress(_) => {}
-                AttachmentProcessEvent::Completed(m, _) => filename = Some(m.filename),
+                AttachmentProcessEvent::Completed(m, _) => attachment = Some(m),
                 AttachmentProcessEvent::CompletedWithoutData => {}
                 AttachmentProcessEvent::Error(e) => panic!("添加附件失败: {}", e),
             }
         }
-        assert!(filename.is_some(), "附件上传未完成");
+        let attachment = attachment.expect("附件上传未完成");
         let new_filename = "test";
         // 更名
         update_attachment_filename(
             &state,
             &diary_id,
-            filename.unwrap(),
+            attachment.id.clone(),
             new_filename.to_string(),
         )
         .await
@@ -478,6 +503,12 @@ mod tests {
             .expect("获取日记失败");
         let meta = diary.attachments.first().unwrap();
         assert_eq!(meta.filename, new_filename, "附件更名后元数据未更新");
+        assert_eq!(meta.id, attachment.id, "重命名不应改变附件 ID");
+        let (stream, _) = client
+            .download(&remote_attachments_key(&diary_id, &attachment.id), None)
+            .await
+            .expect("重命名后原附件 ID 对象应该仍然存在");
+        assert_eq!(collect_data(stream).await.unwrap(), raw_data);
         _guard.cleanup().await;
     }
 }
