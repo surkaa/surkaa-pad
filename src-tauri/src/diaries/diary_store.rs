@@ -58,30 +58,6 @@ pub trait DiaryStore: Send + Sync {
         old_filename: &str,
         attachment_id: &str,
     ) -> Result<ObjectMigrationOutcome, DiaryError>;
-    /// 初始化分片上传，返回 upload_id
-    async fn initiate_multipart_upload(
-        &self,
-        key: &str,
-        content_type: &str,
-    ) -> Result<String, DiaryError>;
-    /// 上传单个分片，返回 (etag, part_number)
-    async fn upload_part(
-        &self,
-        key: &str,
-        part_number: u32,
-        upload_id: &str,
-        data: Vec<u8>,
-        content_type: &str,
-    ) -> Result<(String, u32), DiaryError>;
-    /// 完成分片上传，返回 composite ETag
-    async fn complete_multipart_upload(
-        &self,
-        key: &str,
-        upload_id: &str,
-        parts: Vec<(String, u32)>,
-    ) -> Result<String, DiaryError>;
-    /// 取消分片上传
-    async fn abort_multipart_upload(&self, key: &str, upload_id: &str) -> Result<(), DiaryError>;
 }
 
 // =============================================================================
@@ -241,50 +217,6 @@ impl DiaryStore for LocalStore {
                 Ok(ObjectMigrationOutcome::Migrated)
             }
         }
-    }
-
-    async fn initiate_multipart_upload(
-        &self,
-        _key: &str,
-        _content_type: &str,
-    ) -> Result<String, DiaryError> {
-        // 本地模式不需要 multipart upload，返回空 upload_id
-        Ok(String::new())
-    }
-
-    async fn upload_part(
-        &self,
-        _key: &str,
-        _part_number: u32,
-        _upload_id: &str,
-        _data: Vec<u8>,
-        _content_type: &str,
-    ) -> Result<(String, u32), DiaryError> {
-        // 本地模式下分片由 ChunkedSaveHandle 直接写入，此方法不应被调用
-        Err(DiaryError::Object(
-            crate::object::ObjectError::OperationFailed(
-                "LocalStore does not support upload_part".into(),
-            ),
-        ))
-    }
-
-    async fn complete_multipart_upload(
-        &self,
-        _key: &str,
-        _upload_id: &str,
-        _parts: Vec<(String, u32)>,
-    ) -> Result<String, DiaryError> {
-        // 本地模式下由 ChunkedSaveHandle::finalize 处理
-        Err(DiaryError::Object(
-            crate::object::ObjectError::OperationFailed(
-                "LocalStore does not support complete_multipart_upload".into(),
-            ),
-        ))
-    }
-
-    async fn abort_multipart_upload(&self, _key: &str, _upload_id: &str) -> Result<(), DiaryError> {
-        // 本地模式下由 ChunkedSaveHandle::abort 处理
-        Ok(())
     }
 }
 
@@ -472,47 +404,6 @@ impl DiaryStore for RemoteStore {
         self.lfc.delete(&old_key).await;
         self.lfc.delete(&new_key).await;
         Ok(outcome)
-    }
-
-    async fn initiate_multipart_upload(
-        &self,
-        key: &str,
-        content_type: &str,
-    ) -> Result<String, DiaryError> {
-        Ok(self
-            .client
-            .initiate_multipart_upload(key, content_type)
-            .await?)
-    }
-
-    async fn upload_part(
-        &self,
-        key: &str,
-        part_number: u32,
-        upload_id: &str,
-        data: Vec<u8>,
-        content_type: &str,
-    ) -> Result<(String, u32), DiaryError> {
-        Ok(self
-            .client
-            .upload_part(key, part_number, upload_id, data, content_type)
-            .await?)
-    }
-
-    async fn complete_multipart_upload(
-        &self,
-        key: &str,
-        upload_id: &str,
-        parts: Vec<(String, u32)>,
-    ) -> Result<String, DiaryError> {
-        Ok(self
-            .client
-            .complete_multipart_upload(key, upload_id, parts)
-            .await?)
-    }
-
-    async fn abort_multipart_upload(&self, key: &str, upload_id: &str) -> Result<(), DiaryError> {
-        Ok(self.client.abort_multipart_upload(key, upload_id).await?)
     }
 }
 
