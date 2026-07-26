@@ -435,8 +435,11 @@ fn build_plan(
 }
 
 fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
-    if let Some(id) = diary_id_from_manifest_key(key).filter(|id| !id.is_empty()) {
+    if let Some(id) = diary_id_from_manifest_key(key) {
         return Some((SyncItemKind::Manifest, id));
+    }
+    if key.ends_with("/manifest.enc") {
+        return None;
     }
     let (id, filename) = key.split_once('/')?;
     if id.is_empty() || filename.is_empty() || filename.contains('/') {
@@ -576,16 +579,13 @@ mod tests {
     #[test]
     fn plan_skips_matching_etags_and_counts_transfer_bytes() {
         let source = vec![
-            entry("diary/manifest.enc", Some("MANIFEST"), 10),
-            entry("diary/photo.jpg", Some("PHOTO"), 1_000),
+            entry("123/manifest.enc", Some("MANIFEST"), 10),
+            entry("123/photo.jpg", Some("PHOTO"), 1_000),
             entry("invalid", Some("IGNORED"), 99),
         ];
         let target = HashMap::from([
-            (
-                "diary/manifest.enc".to_string(),
-                Some("manifest".to_string()),
-            ),
-            ("diary/photo.jpg".to_string(), Some("OLD".to_string())),
+            ("123/manifest.enc".to_string(), Some("manifest".to_string())),
+            ("123/photo.jpg".to_string(), Some("OLD".to_string())),
         ]);
 
         let plan = build_plan(source, &target);
@@ -593,16 +593,16 @@ mod tests {
         assert_eq!(plan.skipped_files, 1);
         assert_eq!(plan.total_bytes, 1_000);
         assert_eq!(plan.items.len(), 1);
-        assert_eq!(plan.items[0].key, "diary/photo.jpg");
+        assert_eq!(plan.items[0].key, "123/photo.jpg");
     }
 
     #[test]
     fn plan_orders_attachments_before_manifests() {
         let source = vec![
-            entry("b/manifest.enc", Some("1"), 1),
-            entry("a/manifest.enc", Some("2"), 1),
-            entry("b/2.jpg", Some("3"), 1),
-            entry("a/1.jpg", Some("4"), 1),
+            entry("200/manifest.enc", Some("1"), 1),
+            entry("100/manifest.enc", Some("2"), 1),
+            entry("200/2.jpg", Some("3"), 1),
+            entry("100/1.jpg", Some("4"), 1),
         ];
 
         let plan = build_plan(source, &HashMap::new());
@@ -614,23 +614,25 @@ mod tests {
 
         assert_eq!(
             keys,
-            ["a/1.jpg", "b/2.jpg", "a/manifest.enc", "b/manifest.enc"]
+            [
+                "100/1.jpg",
+                "200/2.jpg",
+                "100/manifest.enc",
+                "200/manifest.enc"
+            ]
         );
     }
 
     #[test]
     fn plan_treats_missing_or_changed_target_as_transfer() {
         let source = vec![
-            entry("diary/manifest.enc", Some("MANIFEST"), 10),
-            entry("diary/a.jpg", Some("A"), 5),
-            entry("diary/b.jpg", None, 7),
+            entry("123/manifest.enc", Some("MANIFEST"), 10),
+            entry("123/a.jpg", Some("A"), 5),
+            entry("123/b.jpg", None, 7),
         ];
         let target = HashMap::from([
-            (
-                "diary/manifest.enc".to_string(),
-                Some("MANIFEST".to_string()),
-            ),
-            ("diary/a.jpg".to_string(), Some("B".to_string())),
+            ("123/manifest.enc".to_string(), Some("MANIFEST".to_string())),
+            ("123/a.jpg".to_string(), Some("B".to_string())),
         ]);
 
         let plan = build_plan(source, &target);
@@ -643,8 +645,8 @@ mod tests {
     #[test]
     fn plan_ignores_attachments_without_source_manifest() {
         let source = vec![
-            entry("valid/manifest.enc", Some("MANIFEST"), 10),
-            entry("valid/photo.jpg", Some("PHOTO"), 20),
+            entry("123/manifest.enc", Some("MANIFEST"), 10),
+            entry("123/photo.jpg", Some("PHOTO"), 20),
             entry("orphan/photo.jpg", Some("ORPHAN_PHOTO"), 30),
             entry("orphan/audio.mp3", Some("ORPHAN_AUDIO"), 40),
         ];
@@ -656,7 +658,7 @@ mod tests {
             .map(|item| item.key.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(keys, ["valid/photo.jpg", "valid/manifest.enc"]);
+        assert_eq!(keys, ["123/photo.jpg", "123/manifest.enc"]);
         assert_eq!(plan.total_bytes, 30);
         assert_eq!(plan.skipped_files, 0);
     }
@@ -664,14 +666,19 @@ mod tests {
     #[test]
     fn storage_key_classification_rejects_unrelated_paths() {
         assert_eq!(
-            classify_storage_key("id/manifest.enc"),
-            Some((SyncItemKind::Manifest, "id".to_string()))
+            classify_storage_key("123/manifest.enc"),
+            Some((SyncItemKind::Manifest, "123".to_string()))
         );
         assert_eq!(
             classify_storage_key("id/photo.jpg"),
             Some((SyncItemKind::Attachment, "id".to_string()))
         );
         assert_eq!(classify_storage_key("invalid"), None);
+        assert_eq!(classify_storage_key("id/manifest.enc"), None);
+        assert_eq!(
+            classify_storage_key("rust-tests/run/123/manifest.enc"),
+            None
+        );
         assert_eq!(classify_storage_key("/photo.jpg"), None);
         assert_eq!(classify_storage_key("id/folder/photo.jpg"), None);
     }
@@ -707,7 +714,7 @@ mod tests {
         let (client, guard) = TestOssGuard::new(client).await;
         let source_dir = tempfile::tempdir().expect("source temp dir");
         let source_lfc = LocalFileCache::new(source_dir.path().to_path_buf());
-        let diary_id = "sync-roundtrip";
+        let diary_id = "1234567890123";
         let attachment_key = format!("{diary_id}/large.bin");
         let manifest_key = remote_manifest_key(diary_id);
         let attachment = vec![0x5a; 256 * 1024];
