@@ -6,7 +6,7 @@ use tauri::ipc::Channel;
 
 use crate::diaries::diary::{delete_diary, save_diary, update_diary_content_only};
 use crate::diaries::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
-use crate::diaries::diary_search::search_diaries;
+use crate::diaries::diary_search::{search_diaries, SearchDiaryQuery};
 use crate::diaries::diary_types::{AttachmentTypeFilter, DiarySummary, SearchDiariesEvent};
 use crate::diaries::DiaryContent;
 use crate::state::AppState;
@@ -144,10 +144,12 @@ pub fn cmd_search_diaries(
             &crypto,
             &*store,
             Arc::new(event),
-            keyword,
-            or,
-            attachment_types,
-            attachment_or,
+            SearchDiaryQuery {
+                keyword,
+                keyword_or: or,
+                attachment_types,
+                attachment_or,
+            },
         )
         .await;
     }))

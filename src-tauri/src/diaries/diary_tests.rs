@@ -290,7 +290,7 @@ mod diary_search_tests {
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
     use crate::diaries::diary::{save_diary, update_diary_attachment};
-    use crate::diaries::diary_search::search_diaries;
+    use crate::diaries::diary_search::{search_diaries, SearchDiaryQuery};
     use crate::diaries::diary_store::{DiaryStore, LocalStore};
     use crate::diaries::diary_types::{AttachmentTypeFilter, DiarySummary, SearchDiariesEvent};
     use std::sync::Arc;
@@ -312,10 +312,12 @@ mod diary_search_tests {
             crypto,
             store,
             event_sender.clone(),
-            keyword,
-            or,
-            attachment_types,
-            attachment_or,
+            SearchDiaryQuery {
+                keyword,
+                keyword_or: or,
+                attachment_types,
+                attachment_or,
+            },
         )
         .await;
 

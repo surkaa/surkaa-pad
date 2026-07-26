@@ -9,18 +9,31 @@ use crate::object::NextToken;
 use crate::utils::message_sender::MessageSender;
 use std::sync::Arc;
 
+pub struct SearchDiaryQuery {
+    pub keyword: String,
+    pub keyword_or: bool,
+    pub attachment_types: Vec<AttachmentTypeFilter>,
+    pub attachment_or: bool,
+}
+
 pub async fn search_diaries(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
     event: Arc<dyn MessageSender<SearchDiariesEvent>>,
-    keyword: String,
-    or: bool,
-    attachment_types: Vec<AttachmentTypeFilter>,
-    attachment_or: bool,
+    query: SearchDiaryQuery,
 ) {
     let ec = event.clone();
-    let keywords = keyword.split_whitespace().collect::<Vec<_>>();
+    let SearchDiaryQuery {
+        keyword,
+        keyword_or,
+        attachment_types,
+        attachment_or,
+    } = query;
+    let keywords = keyword
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
     let logic = async move {
         let mut nt: NextToken = None;
         loop {
@@ -39,7 +52,7 @@ pub async fn search_diaries(
                     // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词
                     let keyword_matches = if kc.is_empty() {
                         true
-                    } else if or {
+                    } else if keyword_or {
                         kc.iter().any(|keyword| content.contains(keyword))
                     } else {
                         kc.iter().all(|keyword| content.contains(keyword))
