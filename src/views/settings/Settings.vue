@@ -61,7 +61,7 @@
             </q-item-section>
             <q-item-section>
               <q-item-label class="label-text text-weight-medium">生物识别解锁</q-item-label>
-              <q-item-label caption class="desc-text">使用指纹或面容快速解锁应用</q-item-label>
+              <q-item-label caption class="desc-text">使用指纹或面容快速解锁，每 7 天需验证一次主密码</q-item-label>
             </q-item-section>
             <q-item-section side>
               <q-toggle
@@ -446,6 +446,7 @@ async function confirmEnableBiometric() {
   loading.value = true;
   try {
     const dataToEncrypt = await api.cmdValidPassword(verifyPassword.value);
+    await configStore.saveNormalConfig('last_password_unlock_at', Date.now());
     const response = await biometricCipher('请验证生物识别以启用快速解锁', {dataToEncrypt});
     await configStore.saveNormalConfig('biometric_enabled', true);
     await configStore.saveNormalConfig('biometric_dek', response.data);
@@ -470,6 +471,7 @@ async function handleReset() {
         'remote_enabled',
         'biometric_dek',
         'biometric_enabled',
+        'last_password_unlock_at',
         'encrypt_image_attachments',
         'encrypt_audio_attachments',
         'encrypt_video_attachments',
