@@ -579,6 +579,7 @@ export type AttachmentTypeFilter = "image" | "audio" | "video" | "other"
 export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
 export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
 export type ChunkedUploadStartResult = { uploadToken: string; attachmentId: string; filename: string; nonce: number[] | null }
+export type DiaryAttachmentCounts = { image: number; audio: number; video: number; file: number }
 export type DiaryContent = { nodes: DiaryContentNode[] }
 export type DiaryContentNode = { type: "markdown"; text: string } | { type: "image"; attachmentId: string; size: ImageSize } | { type: "video"; attachmentId: string } | { type: "audio"; attachmentId: string } | { type: "file"; attachmentId: string } | { type: "album"; id: string; attachmentIds: string[]; displayMode: AlbumDisplayMode }
 export type DiarySummary = { id: string; created: number; updated: number; 
@@ -589,7 +590,11 @@ title: string;
 /**
  * 附件列表
  */
-attachments: AttachmentMeta[] }
+attachments: AttachmentMeta[]; 
+/**
+ * 正文节点中各类附件的数量，不包含未插入正文的附件
+ */
+attachmentCounts: DiaryAttachmentCounts }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
