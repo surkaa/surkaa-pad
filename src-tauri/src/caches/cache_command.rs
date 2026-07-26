@@ -23,6 +23,7 @@ pub async fn cmd_clean_unused_file(state: State<'_, AppState>) -> Result<Vec<Str
 }
 
 async fn clean_unused_file(state: &AppState) -> Result<Vec<String>, AppError> {
+    let _storage_mode_guard = state.lock_storage_operation().await;
     // 本地模式下 LFC 是权威存储，不能用云端对象列表作为删除依据。
     if !state.is_remote_enabled() {
         return Ok(Vec::new());

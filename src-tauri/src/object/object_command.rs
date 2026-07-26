@@ -50,6 +50,12 @@ pub async fn cmd_enable_remote_storage(
     bucket: String,
     endpoint: String,
 ) -> Result<(), AppError> {
+    let _storage_mode_guard = state
+        .try_lock_storage_mode_change()
+        .ok_or_else(|| AppError {
+            error_type: "storage_busy".into(),
+            message: "有存储操作正在进行，请等待完成后再切换云存储".into(),
+        })?;
     log::info!("[remote] enabling remote storage...");
     let event: Arc<dyn MessageSender<SyncProgressEvent>> = Arc::new(event);
     let direction = SyncDirection::Upload;
@@ -58,6 +64,7 @@ pub async fn cmd_enable_remote_storage(
     // 1. 初始化 OSS 客户端
     if let Err(error) = state.oss_client().initialize(endpoint, akid, aks, bucket) {
         let message = error.to_string();
+        log::error!("[remote] OSS initialization failed: {message}");
         let _ = event.send(SyncProgressEvent::Error {
             direction,
             phase: SyncPhase::Preparing,
@@ -81,6 +88,12 @@ pub async fn cmd_enable_remote_storage(
         Ok(summary) => summary,
         Err(error) => {
             let message = error.message.clone();
+            log::error!(
+                "[remote] upload sync failed: phase={:?}, current_file={:?}, error={}",
+                error.phase,
+                error.current_file,
+                message
+            );
             let _ = event.send(error.into_event(direction));
             state.oss_client().reset();
             return Err(AppError {
@@ -129,6 +142,13 @@ pub async fn cmd_disable_remote_storage(
         log::info!("[remote] remote storage already disabled");
         return Ok(());
     }
+
+    let _storage_mode_guard = state
+        .try_lock_storage_mode_change()
+        .ok_or_else(|| AppError {
+            error_type: "storage_busy".into(),
+            message: "有存储操作正在进行，请等待完成后再切换云存储".into(),
+        })?;
 
     // 1. 同步云端数据到本地
     let summary = match sync_cloud_to_local(

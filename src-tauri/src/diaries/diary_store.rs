@@ -1,13 +1,44 @@
 use async_trait::async_trait;
 
-use crate::caches::LocalFileCache;
-use crate::diaries::DiaryError;
+use crate::caches::{CacheError, LocalFileCache};
+use crate::diaries::attachment_upload::{LocalAttachmentUpload, RemoteAttachmentUpload};
+use crate::diaries::{AttachmentUploadSession, DiaryError};
 use crate::object::{NextToken, ObjectError, ObjectMigrationOutcome, OssClient};
 use crate::storages::{diary_id_from_manifest_key, remote_attachments_key, remote_manifest_key};
 use crate::stream::{tracker_stream, ByteStream};
 use std::sync::Arc;
 
 pub type StoreProgressCallback = Arc<dyn Fn(u8) + Send + Sync>;
+
+fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: &str) -> (Vec<String>, String) {
+    let prefix = format!("{id}/");
+    let manifest_key = remote_manifest_key(id);
+    let mut attachment_keys: Vec<String> = keys
+        .into_iter()
+        .filter(|key| key.starts_with(&prefix) && key != &manifest_key)
+        .collect();
+    attachment_keys.sort();
+    (attachment_keys, manifest_key)
+}
+
+async fn delete_local_diary_files(lfc: &LocalFileCache, id: &str) -> Result<(), DiaryError> {
+    let entries = match lfc.get_all().await {
+        Ok(entries) => entries,
+        // 尚未产生任何本地缓存时，LFC 目录可能还没有创建；删除应保持幂等。
+        Err(CacheError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let keys = entries.into_iter().map(|(key, _)| key);
+    let (attachment_keys, manifest_key) = diary_object_keys(keys, id);
+
+    // manifest 是日记是否存在的提交标志。只有附件全部删除成功后才删除它，
+    // 这样失败时日记仍可见且可以安全重试。
+    for key in attachment_keys {
+        lfc.delete(&key).await?;
+    }
+    lfc.delete(&manifest_key).await?;
+    Ok(())
+}
 
 /// 日记存储抽象，隔离本地与远程的 I/O 差异
 #[async_trait]
@@ -34,6 +65,14 @@ pub trait DiaryStore: Send + Sync {
         mimetype: &str,
         stream: ByteStream,
     ) -> Result<String, DiaryError>;
+    /// 创建附件分片写入会话；会话负责当前存储模式下的落盘、远端上传与回滚。
+    async fn begin_attachment_upload(
+        &self,
+        id: &str,
+        filename: &str,
+        size: u64,
+        mimetype: &str,
+    ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError>;
     /// 获取附件流，支持 Range 请求
     async fn download_attachment(
         &self,
@@ -100,15 +139,7 @@ impl DiaryStore for LocalStore {
     }
 
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
-        let prefix = format!("{}/", id);
-        if let Ok(all) = self.lfc.get_all().await {
-            for (key, _) in all {
-                if key.starts_with(&prefix) || key == id {
-                    let _ = self.lfc.delete(&key).await;
-                }
-            }
-        }
-        Ok(())
+        delete_local_diary_files(&self.lfc, id).await
     }
 
     async fn list_diary_ids(
@@ -120,7 +151,9 @@ impl DiaryStore for LocalStore {
             .into_iter()
             .filter_map(|(key, _)| diary_id_from_manifest_key(&key))
             .collect();
-        ids.sort_by(|a, b| b.cmp(a));
+        // 日记 ID 是反向时间戳：时间越新，ID 的字典序越小。
+        // 因此升序排列才是“最新日记在前”，并与 OSS 的对象键顺序一致。
+        ids.sort();
 
         // 简单分页：next_token 编码为偏移量
         let offset: usize = next_token.and_then(|t| t.parse().ok()).unwrap_or(0);
@@ -150,6 +183,19 @@ impl DiaryStore for LocalStore {
         self.lfc.save_bytes(&key, &data).await?;
         let etag = format!("{:X}", md5::compute(&data));
         Ok(etag)
+    }
+
+    async fn begin_attachment_upload(
+        &self,
+        id: &str,
+        filename: &str,
+        size: u64,
+        _mimetype: &str,
+    ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        Ok(Box::new(
+            LocalAttachmentUpload::begin(self.lfc.clone(), key, size).await?,
+        ))
     }
 
     async fn download_attachment(
@@ -268,17 +314,16 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
-        self.client.delete_with_prefix(id).await?;
-        // 清理本地缓存
-        let prefix = format!("{}/", id);
-        if let Ok(all) = self.lfc.get_all().await {
-            for (key, _) in all {
-                if key.starts_with(&prefix) || key == id {
-                    let _ = self.lfc.delete(&key).await;
-                }
-            }
-        }
-        Ok(())
+        let prefix = format!("{id}/");
+        let keys = self.client.list_all_keys(&prefix).await?;
+        let (attachment_keys, manifest_key) = diary_object_keys(keys, id);
+
+        self.client.delete_keys(attachment_keys).await?;
+        self.client.delete(&manifest_key).await?;
+
+        // 远端是权威来源；远端完整删除后再清理本地副本。缓存清理失败也要
+        // 返回错误，使用户可以重试，避免切换本地模式后旧日记重新出现。
+        delete_local_diary_files(&self.lfc, id).await
     }
 
     async fn list_diary_ids(
@@ -311,7 +356,15 @@ impl DiaryStore for RemoteStore {
             .await
         {
             Ok(etag) => {
-                let _ = handle.finalize(&etag).await;
+                if let Err(cache_error) = handle.finalize(&etag).await {
+                    let _ = self.lfc.delete(&key).await;
+                    if let Err(rollback_error) = self.client.delete(&key).await {
+                        return Err(DiaryError::Object(ObjectError::OperationFailed(format!(
+                            "本地附件固化失败：{cache_error}；远端回滚失败：{rollback_error}"
+                        ))));
+                    }
+                    return Err(cache_error.into());
+                }
                 Ok(etag)
             }
             Err(e) => {
@@ -319,6 +372,26 @@ impl DiaryStore for RemoteStore {
                 Err(DiaryError::Object(e))
             }
         }
+    }
+
+    async fn begin_attachment_upload(
+        &self,
+        id: &str,
+        filename: &str,
+        size: u64,
+        mimetype: &str,
+    ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        Ok(Box::new(
+            RemoteAttachmentUpload::begin(
+                self.lfc.clone(),
+                self.client.clone(),
+                key,
+                size,
+                mimetype.to_string(),
+            )
+            .await?,
+        ))
     }
 
     async fn download_attachment(
@@ -415,10 +488,13 @@ mod tests {
     use crate::caches::DiaryMemoryCache;
     use crate::cryptos::crypto_types::EncryptionAlgorithm::{Ctr, Gcm};
     use crate::cryptos::Crypto;
-    use crate::diaries::diary::{delete_diary, get_diary, save_diary, update_diary_content_only};
+    use crate::diaries::diary::{
+        delete_diary, get_diary, lock_diary_operation, save_diary, update_diary_content_only,
+    };
     use crate::diaries::diary_content::DiaryContentNode;
     use crate::diaries::diary_migration::{legacy_attachment_id, CURRENT_VERSION};
     use crate::stream::create_mock_stream;
+    use crate::utils::id_generate::generate_descending_id_with_timestamp;
     use std::sync::Mutex;
 
     /// 创建带测试密钥的 Crypto 实例（使用与 .env 相同的测试凭据）
@@ -520,6 +596,50 @@ mod tests {
             .is_err());
     }
 
+    #[test]
+    fn diary_delete_plan_scopes_prefix_and_keeps_manifest_separate() {
+        let id = "1234567890123";
+        let manifest = remote_manifest_key(id);
+        let (attachments, manifest_key) = diary_object_keys(
+            vec![
+                manifest.clone(),
+                format!("{id}/att-b"),
+                format!("{id}/att-a"),
+                format!("{id}4/att-unrelated"),
+                "unrelated/manifest.enc".to_string(),
+            ],
+            id,
+        );
+
+        assert_eq!(
+            attachments,
+            vec![format!("{id}/att-a"), format!("{id}/att-b")]
+        );
+        assert_eq!(manifest_key, manifest);
+    }
+
+    #[tokio::test]
+    async fn local_delete_is_idempotent_without_cache_directory() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let lfc = LocalFileCache::new(temp_dir.path().join("missing"));
+        let store = LocalStore::new(lfc);
+
+        store.delete_diary_all("missing-diary").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn local_delete_propagates_cache_scan_errors() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache_file = temp_dir.path().join("not-a-directory");
+        tokio::fs::write(&cache_file, b"file").await.unwrap();
+        let store = LocalStore::new(LocalFileCache::new(cache_file));
+
+        assert!(matches!(
+            store.delete_diary_all("diary").await,
+            Err(DiaryError::Cache(CacheError::Io(_)))
+        ));
+    }
+
     #[tokio::test]
     async fn test_local_store_list_diary_ids() {
         let (store, _lfc, _td) = make_local_store();
@@ -529,42 +649,38 @@ mod tests {
         assert!(ids.is_empty());
         assert!(next.is_none());
 
-        // 创建几个日记
-        store
-            .upload_manifest("20250101000000000", b"diary1")
-            .await
-            .unwrap();
-        store
-            .upload_manifest("20250102000000000", b"diary2")
-            .await
-            .unwrap();
-        store
-            .upload_manifest("20250103000000000", b"diary3")
-            .await
-            .unwrap();
+        // 使用真实的反向时间戳 ID，并故意打乱写入顺序。
+        let oldest = generate_descending_id_with_timestamp(1_700_000_000_000);
+        let middle = generate_descending_id_with_timestamp(1_700_000_001_000);
+        let newest = generate_descending_id_with_timestamp(1_700_000_002_000);
+        store.upload_manifest(&middle, b"diary2").await.unwrap();
+        store.upload_manifest(&oldest, b"diary1").await.unwrap();
+        store.upload_manifest(&newest, b"diary3").await.unwrap();
 
         let (ids, next) = store.list_diary_ids(None).await.unwrap();
-        assert_eq!(ids.len(), 3);
+        assert_eq!(ids, vec![newest, middle, oldest]);
         assert!(next.is_none());
-        // 应该按降序排列
-        assert_eq!(ids[0], "20250103000000000");
-        assert_eq!(ids[1], "20250102000000000");
-        assert_eq!(ids[2], "20250101000000000");
     }
 
     #[tokio::test]
     async fn test_local_store_list_diary_ids_pagination() {
         let (store, _lfc, _td) = make_local_store();
 
-        // 创建 5 个日记
-        for i in 0..5 {
-            let id = format!("id_{:03}", i);
+        // 跨过 50 条的分页边界，验证每一页拼接后仍保持最新在前。
+        let mut expected = Vec::new();
+        for i in 0..55 {
+            let id = generate_descending_id_with_timestamp(1_700_000_000_000 + i);
             store.upload_manifest(&id, b"data").await.unwrap();
+            expected.push(id);
         }
+        expected.sort();
 
-        // 第一页（page_size = 50，所以全部返回）
-        let (ids, next) = store.list_diary_ids(None).await.unwrap();
-        assert_eq!(ids.len(), 5);
+        let (first_page, next) = store.list_diary_ids(None).await.unwrap();
+        assert_eq!(first_page, expected[..50]);
+        assert_eq!(next.as_deref(), Some("50"));
+
+        let (second_page, next) = store.list_diary_ids(next).await.unwrap();
+        assert_eq!(second_page, expected[50..]);
         assert!(next.is_none());
     }
 
@@ -900,6 +1016,33 @@ mod tests {
 
         // 确认不存在
         assert!(get_diary(&cache, &crypto, &store, &id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn delete_waits_for_an_active_diary_operation() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = make_crypto();
+        let (store, lfc, _td) = make_local_store();
+        let (summary, _) = save_diary(&cache, &crypto, &store, "serialized delete")
+            .await
+            .unwrap();
+        let guard = lock_diary_operation(&summary.id).await;
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let task_cache = cache.clone();
+        let task_id = summary.id.clone();
+        let deletion = tokio::spawn(async move {
+            let _ = started_tx.send(());
+            let task_store = LocalStore::new(lfc);
+            delete_diary(&task_cache, &task_store, &task_id).await
+        });
+
+        started_rx.await.unwrap();
+        tokio::task::yield_now().await;
+        assert!(!deletion.is_finished(), "删除不应越过日记操作锁");
+
+        drop(guard);
+        deletion.await.unwrap().unwrap();
     }
 
     #[tokio::test]

@@ -267,27 +267,53 @@ impl OssClient {
     pub async fn upload(
         &self,
         key: &str,
-        _len: u64,
+        len: u64,
         stream: ByteStream,
         mimetype: &str,
     ) -> Result<String, ObjectError> {
+        log::info!(
+            "[oss] stream upload started: key={}, size={}, content_type={}",
+            key,
+            len,
+            mimetype
+        );
         let bucket = self.inner()?;
         let key = self.physical_key(key);
         let mut reader = tokio_util::io::StreamReader::new(stream);
-        bucket
+        if let Err(error) = bucket
             .put_object_stream_with_content_type(&mut reader, &key, mimetype)
             .await
-            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        {
+            log::error!(
+                "[oss] stream upload body failed: key={}, size={}, error={}",
+                key,
+                len,
+                error
+            );
+            return Err(ObjectError::OperationFailed(error.to_string()));
+        }
         // PutStreamResponse 不含 etag，通过 HEAD 获取
-        let (result, _) = bucket
-            .head_object(&key)
-            .await
-            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
-        Ok(result
+        let (result, _) = bucket.head_object(&key).await.map_err(|error| {
+            log::error!(
+                "[oss] stream upload HEAD failed: key={}, size={}, error={}",
+                key,
+                len,
+                error
+            );
+            ObjectError::OperationFailed(error.to_string())
+        })?;
+        let etag = result
             .e_tag
             .unwrap_or_default()
             .trim_matches('"')
-            .to_string())
+            .to_string();
+        log::info!(
+            "[oss] stream upload completed: key={}, size={}, etag={}",
+            key,
+            len,
+            etag
+        );
+        Ok(etag)
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/putobject
@@ -323,7 +349,7 @@ impl OssClient {
         Ok(())
     }
 
-    async fn list_all_keys(&self, prefix: &str) -> Result<Vec<String>, ObjectError> {
+    pub(crate) async fn list_all_keys(&self, prefix: &str) -> Result<Vec<String>, ObjectError> {
         let mut keys = Vec::new();
         let mut token = None;
         loop {
@@ -337,25 +363,49 @@ impl OssClient {
         Ok(keys)
     }
 
-    pub async fn delete_with_prefix(&self, prefix: &str) -> Result<Vec<String>, ObjectError> {
-        let keys = self.list_all_keys(prefix).await?;
+    pub(crate) async fn delete_keys(&self, keys: Vec<String>) -> Result<Vec<String>, ObjectError> {
         if keys.is_empty() {
-            return Ok(vec![]);
+            return Ok(Vec::new());
         }
-        // 并发删除，最多 10 个并发
-        let deleted_keys = keys.clone();
-        let results: Vec<Result<_, _>> = stream::iter(keys)
+
+        // 尽量完成同批次中的所有删除，并汇总失败；调用方可以据此决定是否
+        // 继续删除作为提交标志的 manifest。
+        let results: Vec<(String, Result<(), ObjectError>)> = stream::iter(keys)
             .map(|key| {
                 let client = self.clone();
-                async move { client.delete(&key).await }
+                async move {
+                    let result = client.delete(&key).await;
+                    (key, result)
+                }
             })
             .buffer_unordered(10)
             .collect()
             .await;
-        for result in results {
-            result?;
+
+        let mut deleted_keys = Vec::new();
+        let mut failures = Vec::new();
+        for (key, result) in results {
+            match result {
+                Ok(()) => deleted_keys.push(key),
+                Err(error) => failures.push(format!("{key}: {error}")),
+            }
         }
-        Ok(deleted_keys)
+
+        if failures.is_empty() {
+            Ok(deleted_keys)
+        } else {
+            Err(ObjectError::OperationFailed(format!(
+                "failed to delete {} object(s): {}",
+                failures.len(),
+                failures.join("; ")
+            )))
+        }
+    }
+
+    #[cfg(test)]
+    pub async fn delete_with_prefix(&self, prefix: &str) -> Result<Vec<String>, ObjectError> {
+        let keys = self.list_all_keys(prefix).await?;
+        self.delete_keys(keys).await
     }
 
     pub async fn get_metadata(&self, key: &str) -> Result<HeadObjectOutput, ObjectError> {

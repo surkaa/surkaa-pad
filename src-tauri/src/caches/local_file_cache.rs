@@ -85,10 +85,26 @@ impl ChunkedSaveHandle {
         }
         guard.finalized = true;
 
+        if md5.trim().is_empty() {
+            guard.file.take();
+            let _ = tokio::fs::remove_file(&guard.tmp_path).await;
+            return Err(CacheError::InvalidEtag);
+        }
+
         if let Some(file) = guard.file.take() {
-            file.sync_all().await?;
-            tokio::fs::rename(&guard.tmp_path, &guard.data_path).await?;
-            tokio::fs::write(&guard.md5_path, md5).await?;
+            if let Err(error) = file.sync_all().await {
+                let _ = tokio::fs::remove_file(&guard.tmp_path).await;
+                return Err(error.into());
+            }
+            if let Err(error) = tokio::fs::rename(&guard.tmp_path, &guard.data_path).await {
+                let _ = tokio::fs::remove_file(&guard.tmp_path).await;
+                return Err(error.into());
+            }
+            if let Err(error) = tokio::fs::write(&guard.md5_path, md5).await {
+                let _ = tokio::fs::remove_file(&guard.data_path).await;
+                let _ = tokio::fs::remove_file(&guard.md5_path).await;
+                return Err(error.into());
+            }
             Ok(())
         } else {
             Err(CacheError::FileOrContextMissing)
@@ -250,7 +266,9 @@ impl LocalFileCache {
     /// 删除指定 key 的缓存文件
     pub async fn delete(&self, key: &str) -> Result<(), CacheError> {
         let (data_path, md5_path) = self.get_path(key);
-        for path in [&md5_path, &data_path] {
+        // 先删除真正的数据，再删除 ETag 标记。如果数据文件因占用等原因删除失败，
+        // 标记仍然存在，后续重试仍能枚举到该缓存项。
+        for path in [&data_path, &md5_path] {
             match tokio::fs::remove_file(path).await {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

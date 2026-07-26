@@ -262,7 +262,6 @@ async function handleRemoteToggle(newValue: boolean) {
   );
   if (action === 'enable') {
     // 开启：弹出 OSS 配置对话框
-    ossConfig.value = {akid: '', aks: '', bucket: '', endpoint: ''};
     showOssConfigDialog.value = true;
   } else if (action === 'disable') {
     // 关闭
@@ -290,6 +289,8 @@ async function doEnableRemote() {
 
   try {
     const encryptedConfig = await api.cmdEncryptData(JSON.stringify(ossConfig.value));
+    // 先明确记录尚未启用，避免只有加密配置时触发旧版本兼容逻辑。
+    await configStore.saveNormalConfig('remote_enabled', false);
     await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig);
 
     const event = new Channel<SyncProgressEvent>();
@@ -301,7 +302,9 @@ async function doEnableRemote() {
     $q.notify({type: 'positive', message: '云同步已启用'});
   } catch (e) {
     $q.notify({type: 'negative', message: `启用云同步失败: ${formatError(e)}`});
-    await configStore.deleteConfig('encrypted_oss_config');
+    // 同步可能只是暂时的网络错误。保留已加密配置与当前表单，直接回到
+    // 配置对话框即可重试；后端仍保持本地模式。
+    showOssConfigDialog.value = true;
   } finally {
     showSyncProgress.value = false;
     remoteStorageBusy.value = false;
