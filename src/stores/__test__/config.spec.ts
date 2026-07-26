@@ -79,6 +79,16 @@ describe('config store', () => {
             expect(await store.getNormalConfig('biometric_enabled')).toBe(true)
         })
 
+        it('defaults the last password unlock time to missing and persists it', async () => {
+            const store = useConfigStore()
+            await expect(store.getNormalConfig('last_password_unlock_at')).resolves.toBeNull()
+
+            await store.saveNormalConfig('last_password_unlock_at', 1_700_000_000_000)
+
+            await expect(store.getNormalConfig('last_password_unlock_at'))
+                .resolves.toBe(1_700_000_000_000)
+        })
+
         it('saves and retrieves number[]', async () => {
             const store = useConfigStore()
             await store.saveNormalConfig('encrypted_oss_config', [1, 2, 3])

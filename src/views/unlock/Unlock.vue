@@ -85,7 +85,7 @@
           />
 
           <q-btn
-              v-if="biometricEnabled"
+              v-if="biometricUnlockAllowed"
               type="button"
               outline
               color="primary"
@@ -96,6 +96,14 @@
               :loading="loading"
               @click="tryBiometricUnlock"
           />
+
+          <div
+              v-if="biometricEnabled && !biometricUnlockAllowed"
+              class="row items-center justify-center q-gutter-x-xs text-caption password-required-hint"
+          >
+            <q-icon name="schedule" size="16px"/>
+            <span>生物识别已暂停，请输入一次主密码；之后 7 天内可继续使用</span>
+          </div>
 
           <div class="q-mt-lg pt-md row justify-center">
             <q-btn flat color="grey-6" size="sm" label="重置配置" @click="confirmReset" :disable="loading"/>
@@ -201,6 +209,7 @@ import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {platform} from "@tauri-apps/plugin-os";
 import {formatKiB} from "../../utils";
+import {canUseBiometricUnlock} from "../../utils/biometricUnlockPolicy.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -224,6 +233,25 @@ const appName = ref('App Name');
 const encryptedMemoryCost = ref(0);
 const isAndroid = platform() === 'android';
 const biometricEnabled = ref(false);
+const biometricUnlockAllowed = ref(false);
+
+async function recordPasswordUnlock() {
+  try {
+    await configStore.saveNormalConfig('last_password_unlock_at', Date.now());
+  } catch (e) {
+    console.warn(`记录主密码解锁时间失败: ${formatError(e)}`);
+  }
+}
+
+async function refreshBiometricUnlockAllowed() {
+  if (!biometricEnabled.value) {
+    biometricUnlockAllowed.value = false;
+    return;
+  }
+
+  const lastPasswordUnlockAt = await configStore.getNormalConfig('last_password_unlock_at');
+  biometricUnlockAllowed.value = canUseBiometricUnlock(lastPasswordUnlockAt);
+}
 
 async function saveConfigAndLogin() {
   if (loading.value) return;
@@ -270,6 +298,7 @@ async function saveConfigAndLogin() {
 
   try {
     await api.cmdUnlock(masterPassword.value);
+    await recordPasswordUnlock();
   } catch (e) {
     $q.notify({type: 'negative', message: `主密码验证失败: ${formatError(e)}`});
     loading.value = false;
@@ -329,6 +358,7 @@ async function unlock() {
 
   try {
     await api.cmdUnlock(masterPassword.value);
+    await recordPasswordUnlock();
 
     const remoteEnabled = await configStore.getNormalConfig('remote_enabled');
     if (remoteEnabled) {
@@ -355,6 +385,7 @@ async function startLocalOnly() {
 
   try {
     await api.cmdUnlock(masterPassword.value);
+    await recordPasswordUnlock();
     await configStore.saveNormalConfig('remote_enabled', false);
     await api.cmdSetRemoteEnabled(false);
 
@@ -370,7 +401,13 @@ async function startLocalOnly() {
 
 async function confirmReset() {
   if (await confirm('确定要重置OssClient配置吗？这将删除所有本地配置。')) {
-    await configStore.deleteConfig('encrypted_oss_config', 'remote_enabled', 'biometric_enabled', 'biometric_dek');
+    await configStore.deleteConfig(
+        'encrypted_oss_config',
+        'remote_enabled',
+        'biometric_enabled',
+        'biometric_dek',
+        'last_password_unlock_at',
+    );
     pipeline.value = 'first-time';
     masterPassword.value = '';
   }
@@ -380,6 +417,12 @@ async function tryBiometricUnlock() {
   if (loading.value) return;
   loading.value = true;
   try {
+    await refreshBiometricUnlockAllowed();
+    if (!biometricUnlockAllowed.value) {
+      $q.notify({type: 'warning', message: '本周需要使用主密码解锁一次'});
+      return;
+    }
+
     const dataToDecrypt = await configStore.getNormalConfig('biometric_dek');
     if (!dataToDecrypt) {
       $q.notify({type: 'warning', message: "未找到生物识别凭据"});
@@ -419,7 +462,8 @@ onMounted(async () => {
     encryptedConfig.value = ec;
     biometricEnabled.value = isAndroid
         && await configStore.getNormalConfig('biometric_enabled');
-    if (biometricEnabled.value) {
+    await refreshBiometricUnlockAllowed();
+    if (biometricUnlockAllowed.value) {
       await nextTick(); // 等待加载完成再请求生物解锁
       await tryBiometricUnlock();
     }
@@ -479,6 +523,11 @@ onMounted(async () => {
   &:active:not(.disabled) {
     transform: translateY(0);
   }
+}
+
+.password-required-hint {
+  color: var(--pad-text-color-400);
+  line-height: 1.5;
 }
 
 .quick-config-input :deep(textarea) {

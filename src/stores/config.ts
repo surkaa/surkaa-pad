@@ -11,6 +11,7 @@ type ConfigMap = {
     "app-theme": ThemeType;
     "biometric_enabled": boolean;
     "biometric_dek": string | null;
+    "last_password_unlock_at": number | null;
     "encrypted_oss_config": number[] | null;
     "remote_enabled": boolean;
     "default_image_size_is_small": boolean;
@@ -24,6 +25,7 @@ const DEFAULT_CONFIG = {
     "app-theme": DEFAULT_THEME,
     "biometric_enabled": false,
     "biometric_dek": null,
+    "last_password_unlock_at": null,
     "encrypted_oss_config": null,
     "remote_enabled": false,
     "default_image_size_is_small": false,
