@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
-import { shouldFocusEditorEnd } from '../editorClick'
+import { shouldFocusEditorEnd, shouldPreventStackedAlbumEditorFocus } from '../editorClick'
 
 describe('shouldFocusEditorEnd', () => {
   it('focuses the end when clicking below the final document node', () => {
@@ -37,5 +37,31 @@ describe('shouldFocusEditorEnd', () => {
 
     expect(shouldFocusEditorEnd(proseMirror, wrapper, proseMirror, 0)).toBe(true)
     expect(shouldFocusEditorEnd(paragraph, wrapper, proseMirror, 500)).toBe(false)
+  })
+})
+
+describe('shouldPreventStackedAlbumEditorFocus', () => {
+  it('prevents Android interactions inside a stacked album from focusing the editor', () => {
+    const album = document.createElement('div')
+    album.className = 'editor-image-album'
+    album.dataset.displayMode = 'stackedCards'
+    const image = document.createElement('img')
+    album.append(image)
+
+    expect(shouldPreventStackedAlbumEditorFocus(image, 'android')).toBe(true)
+    expect(shouldPreventStackedAlbumEditorFocus(album, 'android')).toBe(true)
+  })
+
+  it('keeps desktop and horizontal album interactions unchanged', () => {
+    const album = document.createElement('div')
+    album.className = 'editor-image-album'
+    album.dataset.displayMode = 'horizontalList'
+    const image = document.createElement('img')
+    album.append(image)
+
+    expect(shouldPreventStackedAlbumEditorFocus(image, 'android')).toBe(false)
+    album.dataset.displayMode = 'stackedCards'
+    expect(shouldPreventStackedAlbumEditorFocus(image, 'windows')).toBe(false)
+    expect(shouldPreventStackedAlbumEditorFocus(null, 'android')).toBe(false)
   })
 })

@@ -9,7 +9,10 @@ import { platform } from '@tauri-apps/plugin-os'
 import { Menu, MenuItem } from '@tauri-apps/api/menu'
 import type { DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
-import { shouldFocusEditorEnd } from './editor/editorClick'
+import {
+  shouldFocusEditorEnd,
+  shouldPreventStackedAlbumEditorFocus,
+} from './editor/editorClick'
 import {
   addImageToAlbumDocument,
   changeAlbumDisplayMode,
@@ -141,6 +144,7 @@ function handleWrapperClick(e: MouseEvent) {
       return
     }
     if (album?.dataset.displayMode === 'stackedCards') {
+      if (currentPlatform === 'android') editor.value?.commands.blur()
       animateStackedAlbumCycle(
         album,
         () => cycleStackedAlbum(album.dataset.id || ''),
@@ -160,6 +164,12 @@ function handleWrapperClick(e: MouseEvent) {
   ) {
     editor.value?.chain().focus('end').run()
   }
+}
+
+function handleWrapperPointerDown(e: PointerEvent) {
+  if (!shouldPreventStackedAlbumEditorFocus(e.target, currentPlatform)) return
+  e.preventDefault()
+  e.stopPropagation()
 }
 
 function cycleStackedAlbum(albumId: string) {
@@ -513,7 +523,13 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="editorElement" class="tiptap-wrapper" @click="handleWrapperClick" @contextmenu="handleContextMenu">
+  <div
+    ref="editorElement"
+    class="tiptap-wrapper"
+    @pointerdown.capture="handleWrapperPointerDown"
+    @click="handleWrapperClick"
+    @contextmenu="handleContextMenu"
+  >
     <EditorContent :editor="editor" />
     <AlbumImageInsertDialog
       v-model="showAlbumInsertDialog"
@@ -679,17 +695,22 @@ defineExpose({
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
         transition:
           transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
-          opacity 300ms ease;
+          opacity 300ms ease,
+          filter 300ms ease;
       }
 
       img:nth-child(1) {
         z-index: 3;
         transform: translateX(-50%) rotate(0deg);
+        opacity: 1;
+        filter: none;
       }
 
       img:nth-child(2) {
         z-index: 2;
         transform: translateX(-34%) rotate(5deg) scale(0.94);
+        opacity: 0.58;
+        filter: saturate(0.72) brightness(0.82);
       }
 
       img:nth-child(n+3) {
@@ -700,17 +721,23 @@ defineExpose({
         z-index: 1;
         visibility: visible;
         transform: translateX(-66%) rotate(-5deg) scale(0.94);
+        opacity: 0.46;
+        filter: saturate(0.68) brightness(0.78);
       }
 
       &.album-cycling {
         img:nth-child(1) {
           z-index: 4;
           transform: translateX(-66%) rotate(-5deg) scale(0.94);
+          opacity: 0.46;
+          filter: saturate(0.68) brightness(0.78);
         }
 
         img:nth-child(2) {
           z-index: 3;
           transform: translateX(-50%) rotate(0deg) scale(1);
+          opacity: 1;
+          filter: none;
         }
       }
     }
