@@ -48,6 +48,24 @@ describe('config store', () => {
             expect(val).toBe('system')
         })
 
+        it('defaults every attachment type to encrypted', async () => {
+            const store = useConfigStore()
+
+            await expect(store.getNormalConfig('encrypt_image_attachments')).resolves.toBe(true)
+            await expect(store.getNormalConfig('encrypt_audio_attachments')).resolves.toBe(true)
+            await expect(store.getNormalConfig('encrypt_video_attachments')).resolves.toBe(true)
+            await expect(store.getNormalConfig('encrypt_file_attachments')).resolves.toBe(true)
+        })
+
+        it('persists a disabled attachment encryption preference', async () => {
+            const store = useConfigStore()
+
+            await store.saveNormalConfig('encrypt_audio_attachments', false)
+
+            await expect(store.getNormalConfig('encrypt_audio_attachments')).resolves.toBe(false)
+            await expect(store.getNormalConfig('encrypt_video_attachments')).resolves.toBe(true)
+        })
+
         it('saves and retrieves a value', async () => {
             const store = useConfigStore()
             await store.saveNormalConfig('app-theme', 'dark')
