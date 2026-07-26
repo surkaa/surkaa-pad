@@ -84,6 +84,19 @@
               unelevated
           />
 
+          <q-btn
+              v-if="biometricEnabled"
+              type="button"
+              outline
+              color="primary"
+              class="full-width"
+              size="md"
+              icon="fingerprint"
+              label="使用生物识别解锁"
+              :loading="loading"
+              @click="tryBiometricUnlock"
+          />
+
           <div class="q-mt-lg pt-md row justify-center">
             <q-btn flat color="grey-6" size="sm" label="重置配置" @click="confirmReset" :disable="loading"/>
           </div>
@@ -210,6 +223,7 @@ const version = ref('0.0.0');
 const appName = ref('App Name');
 const encryptedMemoryCost = ref(0);
 const isAndroid = platform() === 'android';
+const biometricEnabled = ref(false);
 
 async function saveConfigAndLogin() {
   if (loading.value) return;
@@ -403,7 +417,9 @@ onMounted(async () => {
   if (ec) {
     pipeline.value = 'login';
     encryptedConfig.value = ec;
-    if (isAndroid && await configStore.getNormalConfig('biometric_enabled')) {
+    biometricEnabled.value = isAndroid
+        && await configStore.getNormalConfig('biometric_enabled');
+    if (biometricEnabled.value) {
       await nextTick(); // 等待加载完成再请求生物解锁
       await tryBiometricUnlock();
     }
