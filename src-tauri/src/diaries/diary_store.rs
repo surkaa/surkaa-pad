@@ -41,7 +41,7 @@ pub trait DiaryStore: Send + Sync {
         filename: &str,
         range: Option<(u64, u64)>,
         known_etag: Option<&str>,
-    ) -> Result<(ByteStream, u64), DiaryError>;
+    ) -> Result<ByteStream, DiaryError>;
     /// 将完整附件缓存到本地；已经命中有效缓存时直接成功。
     async fn cache_attachment(
         &self,
@@ -158,10 +158,9 @@ impl DiaryStore for LocalStore {
         filename: &str,
         range: Option<(u64, u64)>,
         _known_etag: Option<&str>,
-    ) -> Result<(ByteStream, u64), DiaryError> {
+    ) -> Result<ByteStream, DiaryError> {
         let key = remote_attachments_key(id, filename);
-        let stream = self.lfc.get_stream(&key, range).await?;
-        Ok((stream, 0))
+        Ok(self.lfc.get_stream(&key, range).await?)
     }
 
     async fn cache_attachment(
@@ -328,24 +327,22 @@ impl DiaryStore for RemoteStore {
         filename: &str,
         range: Option<(u64, u64)>,
         known_etag: Option<&str>,
-    ) -> Result<(ByteStream, u64), DiaryError> {
+    ) -> Result<ByteStream, DiaryError> {
         let key = remote_attachments_key(id, filename);
         if let Some(cached_etag) = self.lfc.get(&key).await? {
             // 已知 etag 匹配，直接使用缓存
             if known_etag.is_some_and(|k| k == cached_etag) {
-                return Ok((self.lfc.get_stream(&key, range).await?, 0));
+                return Ok(self.lfc.get_stream(&key, range).await?);
             }
             let metadata = self.client.get_metadata(&key).await?;
             if metadata.etag.as_deref() == Some(&cached_etag) {
-                return Ok((
-                    self.lfc.get_stream(&key, range).await?,
-                    metadata.content_length.unwrap_or(0),
-                ));
+                return Ok(self.lfc.get_stream(&key, range).await?);
             } else {
                 self.lfc.delete(&key).await;
             }
         }
-        Ok(self.client.download(&key, range).await?)
+        let (stream, _) = self.client.download(&key, range).await?;
+        Ok(stream)
     }
 
     async fn cache_attachment(
@@ -590,7 +587,7 @@ mod tests {
             .unwrap();
         assert!(!etag.is_empty());
 
-        let (stream, _len) = store
+        let stream = store
             .download_attachment("diary1", "photo.jpg", None, None)
             .await
             .unwrap();
@@ -695,7 +692,7 @@ mod tests {
             .await
             .is_err());
         // 新名字存在且数据正确
-        let (stream, _) = store
+        let stream = store
             .download_attachment("diary1", "att-stable", None, None)
             .await
             .unwrap();
@@ -851,7 +848,7 @@ mod tests {
             .download_attachment(diary_id, old_filename, None, None)
             .await
             .is_err());
-        let (stream, _) = store
+        let stream = store
             .download_attachment(diary_id, &attachment_id, None, None)
             .await
             .unwrap();
@@ -1022,7 +1019,7 @@ mod tests {
             .unwrap();
 
         // 请求 range [4, 8]
-        let (stream, _) = store
+        let stream = store
             .download_attachment("diary1", "range-test", Some((4, 8)), None)
             .await
             .unwrap();
@@ -1057,7 +1054,7 @@ mod tests {
         let (manifest, _etag) = local_store.download_manifest("migrate-1").await.unwrap();
         assert_eq!(manifest, b"manifest data");
 
-        let (att_stream, _) = local_store
+        let att_stream = local_store
             .download_attachment("migrate-1", "att.txt", None, None)
             .await
             .unwrap();

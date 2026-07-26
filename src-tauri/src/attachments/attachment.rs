@@ -279,7 +279,7 @@ pub async fn toggle_attachment_encryption(
         let encrypted = !old_meta.encrypted;
 
         // 下载原始数据
-        let (raw_stream, _size) = store
+        let raw_stream = store
             .download_attachment(id, &attachment_id, None, old_meta.etag.as_deref())
             .await?;
         let size = old_meta.size;
@@ -371,7 +371,7 @@ pub async fn rotate_image_attachment(
         }
 
         // 下载并解密原始数据
-        let (raw_stream, _size) = store
+        let raw_stream = store
             .download_attachment(id, &attachment_id, None, old_meta.etag.as_deref())
             .await?;
 
@@ -506,7 +506,7 @@ pub async fn save_decrypt_attachment(
     let event_res_clone = event.clone();
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async move {
-        let (stream, _size) = store
+        let stream = store
             .download_attachment(id, &attachment_id, None, attachment.etag.as_deref())
             .await?;
         let event_clone = event.clone();

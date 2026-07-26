@@ -296,7 +296,7 @@ async fn process_attachment(
         );
     }
 
-    let (stream, _) = store
+    let stream = store
         .download_attachment(&id, &attachment_id, range, attachment.etag.as_deref())
         .await?;
     let start = range.map(|(start, _)| start).unwrap_or(0);
