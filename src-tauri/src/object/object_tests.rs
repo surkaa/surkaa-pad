@@ -259,7 +259,9 @@ mod tests {
     async fn test_migrate_object_is_idempotent_and_rejects_conflicts() {
         let client = OssClient::from_env();
         let (client, _guard) = TestOssGuard::new(client).await;
-        let test_key = "legacy-name.txt";
+        // V3 的对象键包含原始文件名，可能含中文、空格等必须在 CopyObject
+        // 请求头中编码的字符。
+        let test_key = "旧附件 name (1).txt";
         let test_content = b"Hello OSS Renamed Test".to_vec();
 
         client

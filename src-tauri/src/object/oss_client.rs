@@ -235,8 +235,12 @@ impl OssClient {
                 Ok(ObjectMigrationOutcome::AlreadyMigrated)
             }
             (true, false) => {
+                // CopyObject 的源对象通过 HTTP header 传递。V3 使用原始文件名作为
+                // 对象键，中文、空格等字符必须先按 URL 编码，否则 reqwest 在签名
+                // 阶段无法将该 header 转为字符串。
+                let encoded_old_key = urlencoding::encode(&old_key);
                 let copy_status = bucket
-                    .copy_object_internal(&old_key, &new_key)
+                    .copy_object_internal(encoded_old_key.as_ref(), &new_key)
                     .await
                     .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
                 if copy_status >= 300 {
