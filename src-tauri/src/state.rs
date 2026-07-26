@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -19,11 +19,12 @@ pub struct AppState {
     diary_cache: DiaryMemoryCache,
     local_file_cache: LocalFileCache,
     task_pool: TaskPool,
-    chunked_uploads: Arc<DashMap<String, ChunkedUploadState>>,
+    chunked_uploads: Arc<DashMap<String, Arc<Mutex<ChunkedUploadState>>>>,
     filename_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>>,
     attachment_server: AttachmentServerHandle,
     /// 是否启用远程存储
     remote_enabled: Arc<AtomicBool>,
+    storage_mode_gate: Arc<RwLock<()>>,
 }
 
 impl AppState {
@@ -42,6 +43,7 @@ impl AppState {
             filename_allocators: Arc::new(DashMap::new()),
             attachment_server,
             remote_enabled: Arc::new(AtomicBool::new(false)),
+            storage_mode_gate: Arc::new(RwLock::new(())),
         }
     }
 
@@ -65,8 +67,16 @@ impl AppState {
         self.task_pool.clone()
     }
 
-    pub fn chunked_uploads(&self) -> Arc<DashMap<String, ChunkedUploadState>> {
+    pub fn chunked_uploads(&self) -> Arc<DashMap<String, Arc<Mutex<ChunkedUploadState>>>> {
         self.chunked_uploads.clone()
+    }
+
+    pub async fn lock_storage_operation(&self) -> OwnedRwLockReadGuard<()> {
+        self.storage_mode_gate.clone().read_owned().await
+    }
+
+    pub fn try_lock_storage_mode_change(&self) -> Option<OwnedRwLockWriteGuard<()>> {
+        self.storage_mode_gate.clone().try_write_owned().ok()
     }
 
     pub fn filename_allocators(&self) -> Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>> {
@@ -134,6 +144,28 @@ impl AppState {
             filename_allocators: Arc::new(DashMap::new()),
             attachment_server,
             remote_enabled: Arc::new(AtomicBool::new(false)),
+            storage_mode_gate: Arc::new(RwLock::new(())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn storage_mode_change_waits_for_active_storage_operation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let state = AppState::from_parts(
+            Crypto::new(),
+            OssClient::new(),
+            LocalFileCache::new(temp_dir.path().to_path_buf()),
+        );
+
+        let operation_guard = state.lock_storage_operation().await;
+        assert!(state.try_lock_storage_mode_change().is_none());
+
+        drop(operation_guard);
+        assert!(state.try_lock_storage_mode_change().is_some());
     }
 }

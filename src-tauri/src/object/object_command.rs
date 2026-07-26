@@ -50,6 +50,12 @@ pub async fn cmd_enable_remote_storage(
     bucket: String,
     endpoint: String,
 ) -> Result<(), AppError> {
+    let _storage_mode_guard = state
+        .try_lock_storage_mode_change()
+        .ok_or_else(|| AppError {
+            error_type: "storage_busy".into(),
+            message: "有存储操作正在进行，请等待完成后再切换云存储".into(),
+        })?;
     log::info!("[remote] enabling remote storage...");
     let event: Arc<dyn MessageSender<SyncProgressEvent>> = Arc::new(event);
     let direction = SyncDirection::Upload;
@@ -129,6 +135,13 @@ pub async fn cmd_disable_remote_storage(
         log::info!("[remote] remote storage already disabled");
         return Ok(());
     }
+
+    let _storage_mode_guard = state
+        .try_lock_storage_mode_change()
+        .ok_or_else(|| AppError {
+            error_type: "storage_busy".into(),
+            message: "有存储操作正在进行，请等待完成后再切换云存储".into(),
+        })?;
 
     // 1. 同步云端数据到本地
     let summary = match sync_cloud_to_local(
