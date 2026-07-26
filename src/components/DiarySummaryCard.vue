@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import {onBeforeUnmount, onMounted, ref} from "vue";
+import {computed, onBeforeUnmount, onMounted, ref} from "vue";
 import {formatTimestamp, getCurEmoji} from "../utils";
-import {AttachmentMeta, DiarySummary} from "../bindings.ts";
+import {DiarySummary} from "../bindings.ts";
+import {countAttachmentTypes} from "../utils/attachmentTypeCounts.ts";
 
 const {diary} = defineProps<{
   diary: DiarySummary | null;
@@ -38,20 +39,7 @@ onBeforeUnmount(() => {
   observer?.disconnect();
 });
 
-function getAttachmentInfo(attachments?: AttachmentMeta[]) {
-  if (!attachments || attachments.length === 0) return null;
-
-  const totalSize = attachments.reduce((sum, att) => sum + (att.size || 0), 0);
-  const imageCount = attachments.filter(att => att.mimetype.includes('image')).length;
-  const otherCount = attachments.length - imageCount;
-
-  return {
-    count: attachments.length,
-    totalSize,
-    imageCount,
-    otherCount
-  };
-}
+const attachmentCounts = computed(() => countAttachmentTypes(diary?.attachments ?? []));
 </script>
 
 <template>
@@ -95,12 +83,10 @@ function getAttachmentInfo(attachments?: AttachmentMeta[]) {
         </span>
         <div v-else class="skeleton-bar w-80"></div>
 
-        <span class="meta-item" v-if="getAttachmentInfo(diary?.attachments)">
-          <span class="meta-icon">📦</span>
-          <span class="meta-text">
-            {{ getAttachmentInfo(diary?.attachments)!.count }} 个附件
-          </span>
-        </span>
+        <span class="meta-item" v-if="attachmentCounts.image">图片 {{ attachmentCounts.image }}</span>
+        <span class="meta-item" v-if="attachmentCounts.audio">音频 {{ attachmentCounts.audio }}</span>
+        <span class="meta-item" v-if="attachmentCounts.video">视频 {{ attachmentCounts.video }}</span>
+        <span class="meta-item" v-if="attachmentCounts.file">文件 {{ attachmentCounts.file }}</span>
       </div>
       <span class="open-indicator">
         <svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16">
