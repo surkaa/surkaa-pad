@@ -205,8 +205,8 @@ onDeactivated(() => {
       <q-btn @click="$router.push({ name: 'Settings' })">设置</q-btn>
     </Teleport>
     <Teleport v-if="isActivating" defer to="#footer-content">
-      <span>{{ withAttachments }} / {{ diaryIds.length }}</span>
-      <span>Time: {{ timeoutStore.remainingStr }}</span>
+      <span>日记 {{ diaryIds.length }} · 含附件 {{ withAttachments }}</span>
+      <span>自动关闭 {{ timeoutStore.remainingStr }}</span>
     </Teleport>
   </div>
 </template>

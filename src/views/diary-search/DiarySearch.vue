@@ -175,7 +175,10 @@ onUnmounted(() => {
 
     <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">
       <div class="attachment-filter">
-        <div class="attachment-filter-label">附件类型</div>
+        <div class="attachment-filter-heading">
+          <div class="attachment-filter-label">附件类型</div>
+          <div class="attachment-filter-hint">可多选，匹配任一类型</div>
+        </div>
         <div class="attachment-filter-options" role="group" aria-label="按附件类型筛选">
           <q-btn
             v-for="option in attachmentTypeOptions"
@@ -192,7 +195,6 @@ onUnmounted(() => {
             @click="toggleAttachmentFilter(option.value)"
           />
         </div>
-        <div class="attachment-filter-hint">具体类型可多选，满足任一类型即可</div>
       </div>
 
       <DiarySummaryCard
@@ -207,7 +209,7 @@ onUnmounted(() => {
     </section>
 
     <Teleport v-if="isActivating && searchTotal" defer to="#footer-content">
-      <span>共搜索到 {{ diarySummaries.length }} / {{ searchTotal }} 个日记</span>
+      <span>匹配 {{ diarySummaries.length }} · 已检索 {{ searchTotal }}</span>
     </Teleport>
   </div>
 </template>
@@ -234,11 +236,23 @@ onUnmounted(() => {
       border-radius: 8px;
       background-color: var(--pad-bg-color-200);
 
-      .attachment-filter-label {
+      .attachment-filter-heading {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 4px 10px;
         margin-bottom: 8px;
-        color: var(--pad-text-color);
-        font-size: 13px;
-        font-weight: 500;
+
+        .attachment-filter-label {
+          color: var(--pad-text-color);
+          font-size: 13px;
+          font-weight: 500;
+        }
+
+        .attachment-filter-hint {
+          color: var(--pad-text-color-200);
+          font-size: 12px;
+        }
       }
 
       .attachment-filter-options {
@@ -266,11 +280,6 @@ onUnmounted(() => {
         }
       }
 
-      .attachment-filter-hint {
-        margin-top: 6px;
-        color: var(--pad-text-color-200);
-        font-size: 12px;
-      }
     }
   }
 }
