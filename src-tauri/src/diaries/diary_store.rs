@@ -488,7 +488,9 @@ mod tests {
     use crate::caches::DiaryMemoryCache;
     use crate::cryptos::crypto_types::EncryptionAlgorithm::{Ctr, Gcm};
     use crate::cryptos::Crypto;
-    use crate::diaries::diary::{delete_diary, get_diary, save_diary, update_diary_content_only};
+    use crate::diaries::diary::{
+        delete_diary, get_diary, lock_diary_operation, save_diary, update_diary_content_only,
+    };
     use crate::diaries::diary_content::DiaryContentNode;
     use crate::diaries::diary_migration::{legacy_attachment_id, CURRENT_VERSION};
     use crate::stream::create_mock_stream;
@@ -1014,6 +1016,33 @@ mod tests {
 
         // 确认不存在
         assert!(get_diary(&cache, &crypto, &store, &id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn delete_waits_for_an_active_diary_operation() {
+        let cache = DiaryMemoryCache::new();
+        let crypto = make_crypto();
+        let (store, lfc, _td) = make_local_store();
+        let (summary, _) = save_diary(&cache, &crypto, &store, "serialized delete")
+            .await
+            .unwrap();
+        let guard = lock_diary_operation(&summary.id).await;
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let task_cache = cache.clone();
+        let task_id = summary.id.clone();
+        let deletion = tokio::spawn(async move {
+            let _ = started_tx.send(());
+            let task_store = LocalStore::new(lfc);
+            delete_diary(&task_cache, &task_store, &task_id).await
+        });
+
+        started_rx.await.unwrap();
+        tokio::task::yield_now().await;
+        assert!(!deletion.is_finished(), "删除不应越过日记操作锁");
+
+        drop(guard);
+        deletion.await.unwrap().unwrap();
     }
 
     #[tokio::test]

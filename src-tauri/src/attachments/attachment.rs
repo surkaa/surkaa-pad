@@ -5,23 +5,19 @@ use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
 use crate::cryptos::Crypto;
 use crate::diaries::diary_store::DiaryStore;
 use crate::diaries::{
-    delete_diary_attachment, get_diary, update_diary_attachment, update_diary_attachment_filename,
+    delete_diary_attachment_locked, get_diary, get_diary_locked, lock_diary_operation,
+    update_diary_attachment, update_diary_attachment_filename, update_diary_attachment_locked,
 };
 use crate::state::AppState;
 use crate::stream::ByteStream;
 use crate::stream::{collect_data, create_mock_stream, tracker_stream};
 use crate::utils::message_sender::MessageSender;
-use dashmap::DashMap;
 use futures_util::StreamExt;
 use image::ImageFormat;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Cursor, Write};
-use std::sync::{Arc, LazyLock};
-use tokio::sync::Mutex;
-
-// 删除附件的互斥锁
-static DELETE_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
+use std::sync::Arc;
 
 pub fn generate_attachment_id() -> Result<String, AttachmentError> {
     let mut bytes = [0_u8; 16];
@@ -183,15 +179,21 @@ pub(crate) async fn add_attachment_with_result(
         };
 
         // 更新 Manifest（在 pending 释放前完成，防止并发分配重复 ID）
-        let manifest_result =
-            update_diary_attachment(&cache, &crypto, &*store, id, attachment.clone())
-                .await
-                .map_err(|e| AttachmentError::InvalidOperation(e.to_string()));
+        if let Err(error) =
+            update_diary_attachment(&cache, &crypto, &*store, id, attachment.clone()).await
+        {
+            let rollback = store.delete_attachment(id, &attachment.id).await;
+            str_alloc_state.lock().await.remove(&filename);
+            let message = match rollback {
+                Ok(()) => error.to_string(),
+                Err(rollback_error) => {
+                    format!("{error}；附件对象回滚失败：{rollback_error}")
+                }
+            };
+            return Err(AttachmentError::InvalidOperation(message));
+        }
 
-        let mut pending_filenames = str_alloc_state.lock().await;
-        pending_filenames.remove(&filename);
-
-        manifest_result?;
+        str_alloc_state.lock().await.remove(&filename);
 
         let url = state.attachment_url(id, &attachment.id);
 
@@ -241,10 +243,9 @@ pub async fn delete_attachment(
     id: &str,
     attachment_id: String,
 ) -> Result<(), AttachmentError> {
-    let delete_lock = DELETE_LOCKS.entry(id.to_string()).or_default().clone();
-    let _guard = delete_lock.lock().await;
+    let guard = lock_diary_operation(id).await;
 
-    delete_diary_attachment(cache, crypto, store, id, &attachment_id)
+    delete_diary_attachment_locked(cache, crypto, store, id, &attachment_id, &guard)
         .await
         .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
@@ -264,8 +265,9 @@ pub async fn toggle_attachment_encryption(
     let _ = event.send(AttachmentProcessEvent::Started);
 
     let logic = async {
+        let guard = lock_diary_operation(id).await;
         // 获取当前附件信息
-        let diary = get_diary(&cache, &crypto, &*store, id)
+        let diary = get_diary_locked(&cache, &crypto, &*store, id, &guard)
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
         let old_meta = diary
@@ -317,7 +319,7 @@ pub async fn toggle_attachment_encryption(
         new_meta.nonce = new_nonce;
         new_meta.etag = Some(new_etag);
 
-        update_diary_attachment(&cache, &crypto, &*store, id, new_meta.clone())
+        update_diary_attachment_locked(&cache, &crypto, &*store, id, new_meta.clone(), &guard)
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 
@@ -346,6 +348,7 @@ pub async fn rotate_image_attachment(
     let _ = event.send(AttachmentProcessEvent::Started);
 
     let logic = async {
+        let guard = lock_diary_operation(id).await;
         // 检测 rotation 参数是否合法
         if ![90, -90, 180].contains(&rotation) {
             return Err(AttachmentError::InvalidOperation(
@@ -353,7 +356,7 @@ pub async fn rotate_image_attachment(
             ));
         }
         // 获取元数据
-        let diary = get_diary(&cache, &crypto, &*store, id)
+        let diary = get_diary_locked(&cache, &crypto, &*store, id, &guard)
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
         let old_meta = diary
@@ -446,7 +449,7 @@ pub async fn rotate_image_attachment(
         new_meta.encrypted = is_encrypted;
         new_meta.etag = Some(new_etag);
 
-        update_diary_attachment(&cache, &crypto, &*store, id, new_meta.clone())
+        update_diary_attachment_locked(&cache, &crypto, &*store, id, new_meta.clone(), &guard)
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 

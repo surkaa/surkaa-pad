@@ -13,10 +13,24 @@ use chrono::Utc;
 use dashmap::DashMap;
 use serde_json::from_slice;
 use std::sync::{Arc, LazyLock};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
-/// 每个日记的 manifest 更新互斥锁，防止并发 read-modify-write 导致附件丢失
+/// 每篇日记的操作互斥锁，串行化读取迁移、更新和删除，避免删除后又写回 manifest。
 static MANIFEST_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
+
+pub(crate) struct DiaryOperationGuard {
+    _guard: OwnedMutexGuard<()>,
+}
+
+pub(crate) async fn lock_diary_operation(id: &str) -> DiaryOperationGuard {
+    let lock = MANIFEST_LOCKS
+        .entry(id.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+    DiaryOperationGuard {
+        _guard: lock.lock_owned().await,
+    }
+}
 
 pub async fn save_diary<C: Into<DiaryContent>>(
     cache: &DiaryMemoryCache,
@@ -58,6 +72,17 @@ pub async fn get_diary(
     crypto: &Crypto,
     store: &dyn DiaryStore,
     id: &str,
+) -> Result<DiaryManifest, DiaryError> {
+    let guard = lock_diary_operation(id).await;
+    get_diary_locked(cache, crypto, store, id, &guard).await
+}
+
+pub(crate) async fn get_diary_locked(
+    cache: &DiaryMemoryCache,
+    crypto: &Crypto,
+    store: &dyn DiaryStore,
+    id: &str,
+    _guard: &DiaryOperationGuard,
 ) -> Result<DiaryManifest, DiaryError> {
     if id.is_empty() {
         return Err(DiaryError::EmptyId);
@@ -105,6 +130,7 @@ pub async fn delete_diary(
     store: &dyn DiaryStore,
     id: &str,
 ) -> Result<(), DiaryError> {
+    let _guard = lock_diary_operation(id).await;
     store.delete_diary_all(id).await?;
 
     // 删除内存缓存
@@ -143,8 +169,9 @@ pub async fn update_diary_content_only<C: Into<DiaryContent>>(
     id: &str,
     new_content: C,
 ) -> Result<DiarySummary, DiaryError> {
+    let guard = lock_diary_operation(id).await;
     // 先获取现有的 manifest
-    let mut manifest = get_diary(cache, crypto, store, id).await?;
+    let mut manifest = get_diary_locked(cache, crypto, store, id, &guard).await?;
 
     // 更新内容和更新时间
     manifest.content = new_content.into();
@@ -162,14 +189,19 @@ pub async fn update_diary_attachment(
     id: &str,
     new_attachment: AttachmentMeta,
 ) -> Result<(), DiaryError> {
-    // 防止并发 read-modify-write 导致附件丢失
-    let lock = MANIFEST_LOCKS
-        .entry(id.to_string())
-        .or_insert_with(|| Arc::new(Mutex::new(())))
-        .clone();
-    let _guard = lock.lock().await;
+    let guard = lock_diary_operation(id).await;
+    update_diary_attachment_locked(cache, crypto, store, id, new_attachment, &guard).await
+}
 
-    let mut diary = get_diary(cache, crypto, store, id).await?;
+pub(crate) async fn update_diary_attachment_locked(
+    cache: &DiaryMemoryCache,
+    crypto: &Crypto,
+    store: &dyn DiaryStore,
+    id: &str,
+    new_attachment: AttachmentMeta,
+    guard: &DiaryOperationGuard,
+) -> Result<(), DiaryError> {
+    let mut diary = get_diary_locked(cache, crypto, store, id, guard).await?;
     // ID 是附件身份；filename 仅用于展示，可以被重命名。
     if let Some(existing) = diary
         .attachments
@@ -191,16 +223,12 @@ pub async fn update_diary_attachment_filename(
     attachment_id: String,
     new_filename: String,
 ) -> Result<(), DiaryError> {
-    let lock = MANIFEST_LOCKS
-        .entry(id.to_string())
-        .or_insert_with(|| Arc::new(Mutex::new(())))
-        .clone();
-    let _guard = lock.lock().await;
+    let guard = lock_diary_operation(id).await;
 
     let cache = state.diary_cache();
     let crypto = state.crypto();
     let store = state.diary_store();
-    let mut diary = get_diary(&cache, &crypto, &*store, id).await?;
+    let mut diary = get_diary_locked(&cache, &crypto, &*store, id, &guard).await?;
     if let Some(att) = diary
         .attachments
         .iter_mut()
@@ -215,20 +243,15 @@ pub async fn update_diary_attachment_filename(
     }
 }
 
-pub async fn delete_diary_attachment(
+pub(crate) async fn delete_diary_attachment_locked(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
     id: &str,
     attachment_id: &str,
+    guard: &DiaryOperationGuard,
 ) -> Result<(), DiaryError> {
-    let lock = MANIFEST_LOCKS
-        .entry(id.to_string())
-        .or_insert_with(|| Arc::new(Mutex::new(())))
-        .clone();
-    let _guard = lock.lock().await;
-
-    let mut diary = get_diary(cache, crypto, store, id).await?;
+    let mut diary = get_diary_locked(cache, crypto, store, id, guard).await?;
     diary.attachments.retain(|att| att.id != attachment_id);
     diary.content.remove_attachment(attachment_id);
     diary.updated = Utc::now().timestamp_millis();

@@ -8,15 +8,18 @@ mod tests {
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
     use crate::cryptos::Crypto;
     use crate::diaries::diary_store::RemoteStore;
-    use crate::diaries::{get_diary, save_diary};
+    use crate::diaries::{delete_diary, get_diary, save_diary};
     use crate::object::OssClient;
     use crate::state::AppState;
     use crate::storages::remote_attachments_key;
-    use crate::stream::{collect_data, create_mock_stream};
+    use crate::stream::{collect_data, create_mock_stream, ByteStream};
     use crate::test_utils::TestOssGuard;
+    use bytes::Bytes;
     use futures::future::join_all;
+    use futures_util::stream;
     use image::ImageFormat;
     use std::io::Cursor;
+    use std::io::Error;
     use std::sync::Arc;
     use tokio::task::JoinHandle;
 
@@ -24,6 +27,54 @@ mod tests {
         let state = AppState::from_parts(crypto.clone(), client.clone(), lfc.clone());
         state.set_remote_enabled(true);
         state
+    }
+
+    #[tokio::test]
+    async fn standard_upload_rolls_back_when_diary_is_deleted_before_manifest_update() {
+        let crypto = Crypto::from_env();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let state = AppState::from_parts(crypto.clone(), OssClient::new(), lfc.clone());
+        let store = state.diary_store();
+        let (summary, _) = save_diary(&state.diary_cache(), &crypto, &*store, "upload race")
+            .await
+            .unwrap();
+
+        let (stream_polled_tx, stream_polled_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let upload_stream: ByteStream = Box::pin(stream::once(async move {
+            let _ = stream_polled_tx.send(());
+            release_rx.await.expect("release upload stream");
+            Ok::<_, Error>(Bytes::from_static(b"pending attachment"))
+        }));
+        let upload_state = state.clone();
+        let diary_id = summary.id.clone();
+        let upload = tokio::spawn(async move {
+            let (event, _rx) = tokio::sync::mpsc::unbounded_channel();
+            add_attachment_with_result(
+                &upload_state,
+                Arc::new(event),
+                &diary_id,
+                false,
+                18,
+                "text/plain".to_string(),
+                upload_stream,
+                Some("pending.txt".to_string()),
+            )
+            .await
+        });
+
+        stream_polled_rx
+            .await
+            .expect("upload stream was not polled");
+        let store = state.diary_store();
+        delete_diary(&state.diary_cache(), &*store, &summary.id)
+            .await
+            .unwrap();
+        release_tx.send(()).unwrap();
+
+        assert!(upload.await.unwrap().is_err());
+        assert!(lfc.get_all().await.unwrap().is_empty());
     }
 
     #[tokio::test]
