@@ -52,6 +52,15 @@ pub enum DiaryContentNode {
     },
 }
 
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, Type, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DiaryAttachmentCounts {
+    pub image: u32,
+    pub audio: u32,
+    pub video: u32,
+    pub file: u32,
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, Type, PartialEq, Eq, Default)]
 pub struct DiaryContent {
     pub nodes: Vec<DiaryContentNode>,
@@ -110,6 +119,27 @@ impl DiaryContent {
             .find(|line| !line.is_empty())
             .unwrap_or("")
             .to_string()
+    }
+
+    pub fn attachment_counts(&self) -> DiaryAttachmentCounts {
+        let mut counts = DiaryAttachmentCounts::default();
+
+        for node in &self.nodes {
+            match node {
+                DiaryContentNode::Image { .. } => counts.image += 1,
+                DiaryContentNode::Album { attachment_ids, .. } => {
+                    counts.image = counts
+                        .image
+                        .saturating_add(u32::try_from(attachment_ids.len()).unwrap_or(u32::MAX));
+                }
+                DiaryContentNode::Audio { .. } => counts.audio += 1,
+                DiaryContentNode::Video { .. } => counts.video += 1,
+                DiaryContentNode::File { .. } => counts.file += 1,
+                DiaryContentNode::Markdown { .. } => {}
+            }
+        }
+
+        counts
     }
 
     pub fn remove_attachment(&mut self, attachment_id: &str) {
@@ -241,7 +271,48 @@ fn parse_attachment_marker(marker: &str) -> Option<DiaryContentNode> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AlbumDisplayMode, DiaryContent, DiaryContentNode, ImageSize};
+    use super::{
+        AlbumDisplayMode, DiaryAttachmentCounts, DiaryContent, DiaryContentNode, ImageSize,
+    };
+
+    #[test]
+    fn counts_attachment_nodes_and_each_image_in_an_album() {
+        let content = DiaryContent {
+            nodes: vec![
+                DiaryContentNode::Markdown {
+                    text: "正文".to_string(),
+                },
+                DiaryContentNode::Image {
+                    attachment_id: "image-1".to_string(),
+                    size: ImageSize::Normal,
+                },
+                DiaryContentNode::Album {
+                    id: "album-1".to_string(),
+                    attachment_ids: vec!["image-2".to_string(), "image-3".to_string()],
+                    display_mode: AlbumDisplayMode::HorizontalList,
+                },
+                DiaryContentNode::Audio {
+                    attachment_id: "audio-1".to_string(),
+                },
+                DiaryContentNode::Video {
+                    attachment_id: "video-1".to_string(),
+                },
+                DiaryContentNode::File {
+                    attachment_id: "file-1".to_string(),
+                },
+            ],
+        };
+
+        assert_eq!(
+            content.attachment_counts(),
+            DiaryAttachmentCounts {
+                image: 3,
+                audio: 1,
+                video: 1,
+                file: 1,
+            }
+        );
+    }
 
     #[test]
     fn parses_markdown_and_attachment_nodes_in_order() {

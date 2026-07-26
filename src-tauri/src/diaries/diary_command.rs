@@ -6,7 +6,7 @@ use tauri::ipc::Channel;
 
 use crate::diaries::diary::{delete_diary, save_diary, update_diary_content_only};
 use crate::diaries::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
-use crate::diaries::diary_search::search_diaries;
+use crate::diaries::diary_search::{search_diaries, SearchDiaryQuery};
 use crate::diaries::diary_types::{AttachmentTypeFilter, DiarySummary, SearchDiariesEvent};
 use crate::diaries::DiaryContent;
 use crate::state::AppState;
@@ -121,6 +121,7 @@ pub async fn cmd_get_diary_content(
 /// * `keyword` - 搜索关键词，可通过空格分隔多个关键词
 /// * `or` - `true` 表示匹配任意关键词，`false` 表示匹配全部关键词
 /// * `attachment_types` - 需要匹配的附件类型，空列表表示不按附件类型过滤
+/// * `attachment_or` - `true` 表示匹配任一附件类型，`false` 表示匹配全部附件类型
 /// # Returns
 /// * `Result<String, AppError>` - 搜索任务令牌，可用于取消搜索任务
 #[tauri::command]
@@ -131,6 +132,7 @@ pub fn cmd_search_diaries(
     keyword: String,
     or: bool,
     attachment_types: Vec<AttachmentTypeFilter>,
+    attachment_or: bool,
 ) -> Result<String, AppError> {
     let cache = state.diary_cache();
     let crypto = state.crypto();
@@ -142,9 +144,12 @@ pub fn cmd_search_diaries(
             &crypto,
             &*store,
             Arc::new(event),
-            keyword,
-            or,
-            attachment_types,
+            SearchDiaryQuery {
+                keyword,
+                keyword_or: or,
+                attachment_types,
+                attachment_or,
+            },
         )
         .await;
     }))

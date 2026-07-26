@@ -14,6 +14,10 @@ type ConfigMap = {
     "encrypted_oss_config": number[] | null;
     "remote_enabled": boolean;
     "default_image_size_is_small": boolean;
+    "encrypt_image_attachments": boolean;
+    "encrypt_audio_attachments": boolean;
+    "encrypt_video_attachments": boolean;
+    "encrypt_file_attachments": boolean;
     "pinned_diary_ids": string[]
 };
 const DEFAULT_CONFIG = {
@@ -23,6 +27,10 @@ const DEFAULT_CONFIG = {
     "encrypted_oss_config": null,
     "remote_enabled": false,
     "default_image_size_is_small": false,
+    "encrypt_image_attachments": true,
+    "encrypt_audio_attachments": true,
+    "encrypt_video_attachments": true,
+    "encrypt_file_attachments": true,
     "pinned_diary_ids": []
 } satisfies ConfigMap;
 

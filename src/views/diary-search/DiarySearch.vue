@@ -22,6 +22,7 @@ const keyword = ref('');
 
 const diarySummaries = ref<DiarySummary[]>([]);
 const or = ref(false);
+const attachmentOr = ref(true);
 const attachmentFilterSelection = ref<AttachmentFilterSelection[]>([NO_ATTACHMENT_FILTER]);
 const attachmentTypes = computed<AttachmentTypeFilter[]>(() =>
     selectedAttachmentTypes(attachmentFilterSelection.value)
@@ -54,6 +55,16 @@ async function toggleAttachmentFilter(value: AttachmentFilterSelection) {
 async function setKeywordMatchMode(matchAny: boolean) {
   if (or.value === matchAny) return;
   or.value = matchAny;
+  const revision = ++filterRevision;
+  await cancelCurrentSearch();
+  if (revision === filterRevision) {
+    await startSearch();
+  }
+}
+
+async function setAttachmentMatchMode(matchAny: boolean) {
+  if (attachmentOr.value === matchAny) return;
+  attachmentOr.value = matchAny;
   const revision = ++filterRevision;
   await cancelCurrentSearch();
   if (revision === filterRevision) {
@@ -110,6 +121,7 @@ async function startSearch() {
         keyword.value,
         or.value,
         attachmentTypes.value,
+        attachmentOr.value,
     );
     if (currentSearch !== searchSequence) {
       await api.cmdCancelTask(token);
@@ -186,7 +198,7 @@ onUnmounted(() => {
       <div class="attachment-filter">
         <div class="attachment-filter-heading">
           <div class="attachment-filter-label">附件类型</div>
-          <div class="attachment-filter-hint">可多选，匹配任一类型</div>
+          <div class="attachment-filter-hint">可多选</div>
         </div>
         <div class="attachment-filter-options" role="group" aria-label="按附件类型筛选">
           <q-btn
@@ -205,33 +217,69 @@ onUnmounted(() => {
           />
         </div>
 
-        <div class="keyword-filter-heading">
-          <div class="attachment-filter-label">关键词关系</div>
-          <div class="attachment-filter-hint">多个关键词以空格分隔</div>
-        </div>
-        <div class="keyword-filter-row">
-          <div class="keyword-filter-options" role="group" aria-label="多个关键词的匹配关系">
-            <q-btn
-                label="全部"
-                :aria-pressed="!or"
-                :class="{'keyword-filter-option': true, 'is-selected': !or}"
-                no-caps
-                unelevated
-                dense
-                @click="setKeywordMatchMode(false)"
-            />
-            <q-btn
-                label="任一"
-                :aria-pressed="or"
-                :class="{'keyword-filter-option': true, 'is-selected': or}"
-                no-caps
-                unelevated
-                dense
-                @click="setKeywordMatchMode(true)"
-            />
+        <div class="relation-filters">
+          <div class="relation-filter">
+            <div class="keyword-filter-heading">
+              <div class="attachment-filter-label">附件关系</div>
+              <div class="attachment-filter-hint">选择多种类型时生效</div>
+            </div>
+            <div class="keyword-filter-row">
+              <div class="keyword-filter-options" role="group" aria-label="多个附件类型的匹配关系">
+                <q-btn
+                    label="全部"
+                    :aria-pressed="!attachmentOr"
+                    :class="{'keyword-filter-option': true, 'is-selected': !attachmentOr}"
+                    no-caps
+                    unelevated
+                    dense
+                    @click="setAttachmentMatchMode(false)"
+                />
+                <q-btn
+                    label="任一"
+                    :aria-pressed="attachmentOr"
+                    :class="{'keyword-filter-option': true, 'is-selected': attachmentOr}"
+                    no-caps
+                    unelevated
+                    dense
+                    @click="setAttachmentMatchMode(true)"
+                />
+              </div>
+              <div class="keyword-mode-hint">
+                {{ attachmentOr ? '包含任一所选类型即可' : '需同时包含所有所选类型' }}
+              </div>
+            </div>
           </div>
-          <div class="keyword-mode-hint">
-            {{ or ? '包含任一关键词即可' : '需同时包含所有关键词' }}
+
+          <div class="relation-filter">
+            <div class="keyword-filter-heading">
+              <div class="attachment-filter-label">关键词关系</div>
+              <div class="attachment-filter-hint">多个关键词以空格分隔</div>
+            </div>
+            <div class="keyword-filter-row">
+              <div class="keyword-filter-options" role="group" aria-label="多个关键词的匹配关系">
+                <q-btn
+                    label="全部"
+                    :aria-pressed="!or"
+                    :class="{'keyword-filter-option': true, 'is-selected': !or}"
+                    no-caps
+                    unelevated
+                    dense
+                    @click="setKeywordMatchMode(false)"
+                />
+                <q-btn
+                    label="任一"
+                    :aria-pressed="or"
+                    :class="{'keyword-filter-option': true, 'is-selected': or}"
+                    no-caps
+                    unelevated
+                    dense
+                    @click="setKeywordMatchMode(true)"
+                />
+              </div>
+              <div class="keyword-mode-hint">
+                {{ or ? '包含任一关键词即可' : '需同时包含所有关键词' }}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -327,6 +375,12 @@ onUnmounted(() => {
         margin: 12px 0 8px;
       }
 
+      .relation-filters {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0 24px;
+      }
+
       .keyword-filter-row {
         display: flex;
         align-items: center;
@@ -360,6 +414,12 @@ onUnmounted(() => {
         .keyword-mode-hint {
           color: var(--pad-text-color-200);
           font-size: 12px;
+        }
+      }
+
+      @media (min-width: 720px) {
+        .relation-filters {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
 

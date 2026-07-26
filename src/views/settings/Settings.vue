@@ -78,6 +78,60 @@
         </section>
 
         <section class="settings-group">
+        <div class="group-title">附件加密</div>
+        <q-list bordered separator class="pad-card">
+          <q-item tag="label" v-ripple class="settings-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="image"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">图片</q-item-label>
+              <q-item-label caption class="desc-text">控制新上传图片（含拍照）的加密状态</q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-toggle v-model="encryptImageAttachments" color="primary"/>
+            </q-item-section>
+          </q-item>
+          <q-item tag="label" v-ripple class="settings-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="audiotrack"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">音频</q-item-label>
+              <q-item-label caption class="desc-text">控制新上传音频（含录音）的加密状态</q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-toggle v-model="encryptAudioAttachments" color="primary"/>
+            </q-item-section>
+          </q-item>
+          <q-item tag="label" v-ripple class="settings-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="video_library"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">视频</q-item-label>
+              <q-item-label caption class="desc-text">控制新上传视频的加密状态</q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-toggle v-model="encryptVideoAttachments" color="primary"/>
+            </q-item-section>
+          </q-item>
+          <q-item tag="label" v-ripple class="settings-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="attach_file"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">文件</q-item-label>
+              <q-item-label caption class="desc-text">控制其他新上传文件的加密状态</q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-toggle v-model="encryptFileAttachments" color="primary"/>
+            </q-item-section>
+          </q-item>
+        </q-list>
+        </section>
+
+        <section class="settings-group">
         <div class="group-title">云存储</div>
         <q-list bordered separator class="pad-card">
           <q-item class="settings-item">
@@ -254,6 +308,10 @@ const loading = ref(false);
 const theme = configStore.useTauriConfig('app-theme');
 const biometricEnable = configStore.useTauriConfig('biometric_enabled');
 const defaultImageSize = configStore.useTauriConfig('default_image_size_is_small');
+const encryptImageAttachments = configStore.useTauriConfig('encrypt_image_attachments');
+const encryptAudioAttachments = configStore.useTauriConfig('encrypt_audio_attachments');
+const encryptVideoAttachments = configStore.useTauriConfig('encrypt_video_attachments');
+const encryptFileAttachments = configStore.useTauriConfig('encrypt_file_attachments');
 const isAndroid = ref(platform() === 'android');
 
 // 云存储
@@ -407,7 +465,16 @@ function cancelBiometric() {
 
 async function handleReset() {
   if (await confirm('确定要重置应用配置吗？此操作不可撤销。重置后将自动重启应用')) {
-    await configStore.deleteConfig('encrypted_oss_config', 'remote_enabled', 'biometric_dek', 'biometric_enabled');
+    await configStore.deleteConfig(
+        'encrypted_oss_config',
+        'remote_enabled',
+        'biometric_dek',
+        'biometric_enabled',
+        'encrypt_image_attachments',
+        'encrypt_audio_attachments',
+        'encrypt_video_attachments',
+        'encrypt_file_attachments',
+    );
     await api.cmdCleanCacheFile();
     $q.notify('配置已重置, 即将自动重启');
     setTimeout(relaunch, 1000);

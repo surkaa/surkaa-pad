@@ -1,6 +1,6 @@
-use crate::attachments::AttachmentMeta;
 use crate::caches::DiaryMemoryCache;
 use crate::cryptos::Crypto;
+use crate::diaries::diary_content::{DiaryContent, DiaryContentNode};
 use crate::diaries::diary_list::page_diary_ids;
 use crate::diaries::diary_store::DiaryStore;
 use crate::diaries::diary_types::{AttachmentTypeFilter, DiarySummary, SearchDiariesEvent};
@@ -9,17 +9,31 @@ use crate::object::NextToken;
 use crate::utils::message_sender::MessageSender;
 use std::sync::Arc;
 
+pub struct SearchDiaryQuery {
+    pub keyword: String,
+    pub keyword_or: bool,
+    pub attachment_types: Vec<AttachmentTypeFilter>,
+    pub attachment_or: bool,
+}
+
 pub async fn search_diaries(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
     event: Arc<dyn MessageSender<SearchDiariesEvent>>,
-    keyword: String,
-    or: bool,
-    attachment_types: Vec<AttachmentTypeFilter>,
+    query: SearchDiaryQuery,
 ) {
     let ec = event.clone();
-    let keywords = keyword.split_whitespace().collect::<Vec<_>>();
+    let SearchDiaryQuery {
+        keyword,
+        keyword_or,
+        attachment_types,
+        attachment_or,
+    } = query;
+    let keywords = keyword
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
     let logic = async move {
         let mut nt: NextToken = None;
         loop {
@@ -34,21 +48,25 @@ pub async fn search_diaries(
                 async move {
                     let diary = get_diary(cache, crypto, store, &id).await?;
 
-                    let content = diary.content.searchable_text();
+                    let searchable_text = diary.content.searchable_text();
                     // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词
                     let keyword_matches = if kc.is_empty() {
                         true
-                    } else if or {
-                        kc.iter().any(|keyword| content.contains(keyword))
+                    } else if keyword_or {
+                        kc.iter().any(|keyword| searchable_text.contains(keyword))
                     } else {
-                        kc.iter().all(|keyword| content.contains(keyword))
+                        kc.iter().all(|keyword| searchable_text.contains(keyword))
                     };
                     let attachment_matches = attachment_types.is_empty()
-                        || diary.attachments.iter().any(|attachment| {
-                            attachment_types
-                                .iter()
-                                .any(|filter| attachment_matches_filter(attachment, *filter))
-                        });
+                        || if attachment_or {
+                            attachment_types.iter().any(|filter| {
+                                content_matches_attachment_filter(&diary.content, *filter)
+                            })
+                        } else {
+                            attachment_types.iter().all(|filter| {
+                                content_matches_attachment_filter(&diary.content, *filter)
+                            })
+                        };
                     let is_match = keyword_matches && attachment_matches;
 
                     let _ = ecc.send(if is_match {
@@ -80,61 +98,70 @@ pub async fn search_diaries(
     }
 }
 
-fn attachment_matches_filter(attachment: &AttachmentMeta, filter: AttachmentTypeFilter) -> bool {
-    let mime_group = attachment
-        .mimetype
-        .split_once('/')
-        .map_or(attachment.mimetype.as_str(), |(group, _)| group)
-        .to_ascii_lowercase();
-    match filter {
-        AttachmentTypeFilter::Image => mime_group == "image",
-        AttachmentTypeFilter::Audio => mime_group == "audio",
-        AttachmentTypeFilter::Video => mime_group == "video",
-        AttachmentTypeFilter::Other => !matches!(mime_group.as_str(), "image" | "audio" | "video"),
-    }
+fn content_matches_attachment_filter(content: &DiaryContent, filter: AttachmentTypeFilter) -> bool {
+    content.nodes.iter().any(|node| match filter {
+        AttachmentTypeFilter::Image => matches!(
+            node,
+            DiaryContentNode::Image { .. } | DiaryContentNode::Album { .. }
+        ),
+        AttachmentTypeFilter::Audio => matches!(node, DiaryContentNode::Audio { .. }),
+        AttachmentTypeFilter::Video => matches!(node, DiaryContentNode::Video { .. }),
+        AttachmentTypeFilter::Other => matches!(node, DiaryContentNode::File { .. }),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
+    use crate::diaries::diary_content::{AlbumDisplayMode, ImageSize};
 
-    fn attachment(mimetype: &str) -> AttachmentMeta {
-        AttachmentMeta {
-            id: "att-1".to_string(),
-            filename: "1".to_string(),
-            mimetype: mimetype.to_string(),
-            size: 1,
-            encrypted: false,
-            nonce: Vec::new(),
-            algorithm: Gcm,
-            etag: None,
+    #[test]
+    fn attachment_filter_classifies_content_nodes() {
+        let content = DiaryContent {
+            nodes: vec![
+                DiaryContentNode::Image {
+                    attachment_id: "image".to_string(),
+                    size: ImageSize::Normal,
+                },
+                DiaryContentNode::Audio {
+                    attachment_id: "audio".to_string(),
+                },
+                DiaryContentNode::Video {
+                    attachment_id: "video".to_string(),
+                },
+                DiaryContentNode::File {
+                    attachment_id: "file".to_string(),
+                },
+            ],
+        };
+
+        for filter in [
+            AttachmentTypeFilter::Image,
+            AttachmentTypeFilter::Audio,
+            AttachmentTypeFilter::Video,
+            AttachmentTypeFilter::Other,
+        ] {
+            assert!(content_matches_attachment_filter(&content, filter));
         }
     }
 
     #[test]
-    fn attachment_filter_classifies_mime_groups_case_insensitively() {
-        assert!(attachment_matches_filter(
-            &attachment("IMAGE/JPEG"),
+    fn attachment_filter_treats_album_as_image() {
+        let content = DiaryContent {
+            nodes: vec![DiaryContentNode::Album {
+                id: "album".to_string(),
+                attachment_ids: vec!["first".to_string(), "second".to_string()],
+                display_mode: AlbumDisplayMode::StackedCards,
+            }],
+        };
+
+        assert!(content_matches_attachment_filter(
+            &content,
             AttachmentTypeFilter::Image
         ));
-        assert!(attachment_matches_filter(
-            &attachment("audio/mpeg"),
-            AttachmentTypeFilter::Audio
+        assert!(!content_matches_attachment_filter(
+            &content,
+            AttachmentTypeFilter::Other
         ));
-        assert!(attachment_matches_filter(
-            &attachment("video/mp4"),
-            AttachmentTypeFilter::Video
-        ));
-    }
-
-    #[test]
-    fn attachment_filter_treats_files_and_unknown_mime_types_as_other() {
-        for mimetype in ["application/pdf", "text/plain", "", "custom"] {
-            assert!(attachment_matches_filter(
-                &attachment(mimetype),
-                AttachmentTypeFilter::Other
-            ));
-        }
     }
 }

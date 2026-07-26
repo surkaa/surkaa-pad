@@ -1,17 +1,19 @@
 import {Channel} from "@tauri-apps/api/core";
 import {platform} from "@tauri-apps/plugin-os";
 import {AttachmentMeta, AttachmentProcessEvent} from "../bindings.ts";
-import {computed, nextTick, onUnmounted, Ref, ref} from "vue";
+import {computed, onUnmounted, Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {useQuasar} from "quasar";
 import {v4 as uuidv4} from "uuid";
 import {useDataStore} from "../stores/data.ts";
+import {useConfigStore} from "../stores/config.ts";
 import {storeToRefs} from "pinia";
 import TiptapEditor from "../components/TiptapEditor.vue";
 import api from "../utils/api.ts";
 import {formatError} from "../utils/formatError.ts";
 import {promisifyUpload} from "../utils/batchUpload";
 import {
+    attachmentNodeKindFromMimeType,
     applyAttachmentInsertions,
     planAttachmentInsertions,
     type AttachmentNodeKind,
@@ -29,7 +31,7 @@ export interface UploadTask {
 type OnAttachmentProcessSuccess = (meta: AttachmentMeta, url: string) => void;
 
 const PHOTO_TYPES = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
-const AUDIO_TYPES = ['mp3', 'wav', 'ogg', 'flac', 'aac'];
+const AUDIO_TYPES = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
 const VIDEO_TYPES = ['mp4', 'avi', 'mov', 'mkv', 'webm'];
 
 export function useMediaAction(
@@ -40,7 +42,14 @@ export function useMediaAction(
 ) {
     const $q = useQuasar();
     const dataStore = useDataStore();
+    const configStore = useConfigStore();
     const {currentDiaryAttachmentUrlMap, currentDiary} = storeToRefs(dataStore);
+    const attachmentEncryptionByKind: Record<AttachmentNodeKind, Ref<boolean>> = {
+        image: configStore.useTauriConfig('encrypt_image_attachments'),
+        audio: configStore.useTauriConfig('encrypt_audio_attachments'),
+        video: configStore.useTauriConfig('encrypt_video_attachments'),
+        file: configStore.useTauriConfig('encrypt_file_attachments'),
+    };
 
     const cancelTokens = new Set<string>();
     const chunkedUploadTokens = new Set<string>();
@@ -73,6 +82,7 @@ export function useMediaAction(
                     task.status = 'completed';
                     task.progress = 1;
                     const [meta, url] = msg.data;
+                    dataStore.updateAttachment(diaryId.value, meta);
                     onSuccess?.(meta, url);
                     break;
                 case "completedWithoutData":
@@ -151,6 +161,7 @@ export function useMediaAction(
             uploadTaskMap.value[key].progress = 1;
             chunkedUploadTokens.delete(uploadToken);
             uploadToken = null;
+            dataStore.updateAttachment(diaryId.value, finishResult.attachment);
             completedCallback?.(finishResult.attachment, finishResult.url);
         } catch (e) {
             uploadTaskMap.value[key].status = 'error';
@@ -178,20 +189,22 @@ export function useMediaAction(
         }
     }
 
-    async function insertUploadedAttachments(results: (UploadedAttachment | null)[]) {
+    async function insertUploadedAttachments(
+        results: (UploadedAttachment | null)[],
+        atEnd = platform() !== 'android'
+    ) {
         const editor = editorContentRef.value;
-        if (!editor) return;
+        if (!editor) return false;
 
         for (const item of results) {
             if (item && item.nodeKind !== 'file') {
                 currentDiaryAttachmentUrlMap.value[item.attachmentId] = item.url;
             }
         }
-        if (platform() !== 'android') editor.focusEnd();
-        await applyAttachmentInsertions(
+        return applyAttachmentInsertions(
             planAttachmentInsertions(results, uuidv4),
             editor,
-            nextTick,
+            atEnd,
         );
     }
 
@@ -247,8 +260,7 @@ export function useMediaAction(
             .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
         uploadTaskMap.value[key] = {filename: displayFilename, progress: 0, status: 'pending'};
 
-        const event = createUploadChannel(key, (meta, url) => {
-            dataStore.updateAttachment(diaryId.value, meta);
+        const event = createUploadChannel(key, (_meta, url) => {
             if (!editorContentRef.value) {
                 console.error('编辑器内容引用未定义，无法更新媒体链接');
                 $q.notify({type: 'negative', message: '编辑器内容引用未定义，无法更新媒体链接'});
@@ -305,16 +317,27 @@ export function useMediaAction(
 
             const virtualName = `Audio_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
 
-            await uploadMemoryAttachmentChunked(virtualName, data, mimetype, true, (att, url) => {
-                if (!editorContentRef.value) {
-                    console.error('编辑器内容引用未定义，无法插入音频节点');
-                    return;
-                }
-                currentDiaryAttachmentUrlMap.value[att.id] = url;
-                editorContentRef.value.insertAudio(att.id);
-            });
+            await uploadMemoryAttachmentChunked(
+                virtualName,
+                data,
+                mimetype,
+                attachmentEncryptionByKind.audio.value,
+                (att, url) => {
+                    if (!editorContentRef.value) {
+                        console.error('编辑器内容引用未定义，无法插入音频节点');
+                        return;
+                    }
+                    currentDiaryAttachmentUrlMap.value[att.id] = url;
+                    editorContentRef.value.insertAudio(att.id);
+                },
+            );
         },
-        insertPhoto: () => genericBatchUpload(true, PHOTO_TYPES, 'image', "image"),
+        insertPhoto: () => genericBatchUpload(
+            attachmentEncryptionByKind.image.value,
+            PHOTO_TYPES,
+            'image',
+            "image"
+        ),
         takePhoto: async () => {
             if (beforeClick()) return;
             const key = uuidv4();
@@ -328,7 +351,11 @@ export function useMediaAction(
                 editorContentRef.value.insertImage(meta.id);
             });
             try {
-                const res = await api.cmdAddImageAttachmentFromCamera(event, diaryId.value, true);
+                const res = await api.cmdAddImageAttachmentFromCamera(
+                    event,
+                    diaryId.value,
+                    attachmentEncryptionByKind.image.value,
+                );
                 cancelTokens.add(res);
             } catch (e) {
                 uploadTaskMap.value[key].status = 'error';
@@ -339,9 +366,18 @@ export function useMediaAction(
             if (beforeClick({ skipFocus: true })) return;
             showAudioDrawer.value = true;
         },
-        insertAudio: () => genericBatchUpload(false, AUDIO_TYPES, 'audio'),
-        insertVideo: () => genericBatchUpload(false, VIDEO_TYPES, 'video', "video"),
-        insertFile: async () => genericBatchUpload(true),
+        insertAudio: () => genericBatchUpload(
+            attachmentEncryptionByKind.audio.value,
+            AUDIO_TYPES,
+            'audio'
+        ),
+        insertVideo: () => genericBatchUpload(
+            attachmentEncryptionByKind.video.value,
+            VIDEO_TYPES,
+            'video',
+            "video"
+        ),
+        insertFile: async () => genericBatchUpload(attachmentEncryptionByKind.file.value),
         cachingAttachment: async (attachmentIds: string[]) => {
             if (!attachmentIds.length) return;
             showUploadDialog.value = true;
@@ -399,26 +435,25 @@ export function useMediaAction(
             uploadTaskMap.value = {};
 
             const results = await Promise.all(Array.from(files).map(file => {
-                let nodeKind: 'image' | 'audio' | 'video' | 'file';
-                if (file.type.startsWith('image/')) nodeKind = 'image';
-                else if (file.type.startsWith('audio/')) nodeKind = 'audio';
-                else if (file.type.startsWith('video/')) nodeKind = 'video';
-                else nodeKind = 'file';
-
+                const detectedNodeKind = attachmentNodeKindFromMimeType(file.type);
                 return promisifyUpload<UploadedAttachment>(
                     (onSuccess, onError) => {
                         const reader = new FileReader();
                         reader.onload = async () => {
                             const arrayBuffer = reader.result as ArrayBuffer;
                             const uint8Array = new Uint8Array(arrayBuffer);
-                            await uploadMemoryAttachmentChunked(file.name, uint8Array, file.type, false,
+                            await uploadMemoryAttachmentChunked(
+                                file.name,
+                                uint8Array,
+                                file.type,
+                                attachmentEncryptionByKind[detectedNodeKind].value,
                                 (meta, url) => onSuccess({
-                                    nodeKind,
+                                    nodeKind: attachmentNodeKindFromMimeType(meta.mimetype),
                                     attachmentId: meta.id,
                                     filename: meta.filename,
                                     url,
                                 }),
-                                () => onError()
+                                () => onError(),
                             );
                         };
                         reader.onerror = () => {
@@ -431,6 +466,14 @@ export function useMediaAction(
             }));
 
             await insertUploadedAttachments(results);
+        },
+        insertExistingAttachmentsAtEnd(attachments: AttachmentMeta[]) {
+            return insertUploadedAttachments(attachments.map(attachment => ({
+                nodeKind: attachmentNodeKindFromMimeType(attachment.mimetype),
+                attachmentId: attachment.id,
+                filename: attachment.filename,
+                url: currentDiaryAttachmentUrlMap.value[attachment.id] || '',
+            })), true);
         },
     };
 }

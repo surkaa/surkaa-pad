@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  attachmentNodeKindFromMimeType,
+  attachmentInsertionsToEditorContent,
   applyAttachmentInsertions,
   planAttachmentInsertions,
+  type AttachmentInsertion,
   type AttachmentInsertionTarget,
   type UploadedAttachment,
 } from '../attachmentInsertion'
@@ -66,24 +69,51 @@ describe('planAttachmentInsertions', () => {
 })
 
 describe('applyAttachmentInsertions', () => {
-  it('仅负责按计划调用编辑器，并在每次插入后等待刷新', async () => {
-    const calls: string[] = []
+  it('一次性把整个计划交给编辑器，避免连续原子节点互相替换', async () => {
+    const insertAttachments = vi.fn(() => true)
     const target: AttachmentInsertionTarget = {
-      insertImage: filename => calls.push(`image:${filename}`),
-      insertAudio: filename => calls.push(`audio:${filename}`),
-      insertVideo: filename => calls.push(`video:${filename}`),
-      insertFile: (attachmentId, filename) => calls.push(`file:${attachmentId}:${filename}`),
-      insertAlbum: (id, images) => calls.push(`album:${id}:${images.join(',')}`),
+      insertAttachments,
     }
-    const afterEach = vi.fn(async () => { calls.push('tick') })
-
-    await applyAttachmentInsertions([
+    const insertions: AttachmentInsertion[] = [
       { type: 'album', id: 'a1', images: ['1.jpg', '2.jpg'], urls: ['u1', 'u2'] },
       { type: 'video', attachmentId: 'att-video', url: 'uv' },
       { type: 'file', attachmentId: 'att-file', filename: 'f.pdf', url: 'uf' },
-    ], target, afterEach)
+    ]
 
-    expect(calls).toEqual(['album:a1:1.jpg,2.jpg', 'tick', 'video:att-video', 'tick', 'file:att-file:f.pdf', 'tick'])
-    expect(afterEach).toHaveBeenCalledTimes(3)
+    await expect(applyAttachmentInsertions(insertions, target, true)).resolves.toBe(true)
+    expect(insertAttachments).toHaveBeenCalledOnce()
+    expect(insertAttachments).toHaveBeenCalledWith(insertions, true)
+  })
+
+  it('空计划不调用编辑器', async () => {
+    const insertAttachments = vi.fn(() => true)
+    await expect(applyAttachmentInsertions([], {insertAttachments}, true)).resolves.toBe(true)
+    expect(insertAttachments).not.toHaveBeenCalled()
+  })
+})
+
+describe('attachmentNodeKindFromMimeType', () => {
+  it.each([
+    ['image/jpeg', 'image'],
+    ['AUDIO/MP4', 'audio'],
+    ['video/mp4', 'video'],
+    ['application/pdf', 'file'],
+    ['', 'file'],
+  ] as const)('将 %s 识别为 %s 节点', (mimetype, expected) => {
+    expect(attachmentNodeKindFromMimeType(mimetype)).toBe(expected)
+  })
+})
+
+describe('attachmentInsertionsToEditorContent', () => {
+  it('将多个视频保留为同一次插入中的多个独立节点', () => {
+    expect(attachmentInsertionsToEditorContent([
+      {type: 'video', attachmentId: 'video-1', url: 'url://1'},
+      {type: 'video', attachmentId: 'video-2', url: 'url://2'},
+      {type: 'video', attachmentId: 'video-3', url: 'url://3'},
+    ])).toEqual([
+      {type: 'videoNode', attrs: {id: 'video-1', src: 'url://1'}},
+      {type: 'videoNode', attrs: {id: 'video-2', src: 'url://2'}},
+      {type: 'videoNode', attrs: {id: 'video-3', src: 'url://3'}},
+    ])
   })
 })

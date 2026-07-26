@@ -263,12 +263,13 @@ async cmdGetDiaryContent(id: string) : Promise<Result<[DiaryContent, Partial<{ [
  * * `keyword` - 搜索关键词，可通过空格分隔多个关键词
  * * `or` - `true` 表示匹配任意关键词，`false` 表示匹配全部关键词
  * * `attachment_types` - 需要匹配的附件类型，空列表表示不按附件类型过滤
+ * * `attachment_or` - `true` 表示匹配任一附件类型，`false` 表示匹配全部附件类型
  * # Returns
  * * `Result<String, AppError>` - 搜索任务令牌，可用于取消搜索任务
  */
-async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string, or: boolean, attachmentTypes: AttachmentTypeFilter[]) : Promise<Result<string, AppError>> {
+async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string, or: boolean, attachmentTypes: AttachmentTypeFilter[], attachmentOr: boolean) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_search_diaries", { event, keyword, or, attachmentTypes }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_search_diaries", { event, keyword, or, attachmentTypes, attachmentOr }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -578,6 +579,7 @@ export type AttachmentTypeFilter = "image" | "audio" | "video" | "other"
 export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
 export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
 export type ChunkedUploadStartResult = { uploadToken: string; attachmentId: string; filename: string; nonce: number[] | null }
+export type DiaryAttachmentCounts = { image: number; audio: number; video: number; file: number }
 export type DiaryContent = { nodes: DiaryContentNode[] }
 export type DiaryContentNode = { type: "markdown"; text: string } | { type: "image"; attachmentId: string; size: ImageSize } | { type: "video"; attachmentId: string } | { type: "audio"; attachmentId: string } | { type: "file"; attachmentId: string } | { type: "album"; id: string; attachmentIds: string[]; displayMode: AlbumDisplayMode }
 export type DiarySummary = { id: string; created: number; updated: number; 
@@ -588,7 +590,11 @@ title: string;
 /**
  * 附件列表
  */
-attachments: AttachmentMeta[] }
+attachments: AttachmentMeta[]; 
+/**
+ * 正文节点中各类附件的数量，不包含未插入正文的附件
+ */
+attachmentCounts: DiaryAttachmentCounts }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }

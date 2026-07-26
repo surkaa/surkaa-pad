@@ -13,11 +13,48 @@ export type AttachmentInsertion =
   | { type: 'album'; id: string; images: string[]; urls: string[] }
 
 export interface AttachmentInsertionTarget {
-  insertImage(attachmentId: string): void
-  insertAudio(attachmentId: string): void
-  insertVideo(attachmentId: string): void
-  insertFile(attachmentId: string, filename: string): void
-  insertAlbum(id: string, images: string[], urls: string[]): void
+  insertAttachments(insertions: readonly AttachmentInsertion[], atEnd: boolean): boolean
+}
+
+export interface AttachmentEditorNode {
+  type: string
+  attrs: Record<string, unknown>
+}
+
+export function attachmentNodeKindFromMimeType(mimetype: string): AttachmentNodeKind {
+  const normalized = mimetype.toLowerCase()
+  if (normalized.startsWith('image/')) return 'image'
+  if (normalized.startsWith('audio/')) return 'audio'
+  if (normalized.startsWith('video/')) return 'video'
+  return 'file'
+}
+
+export function attachmentInsertionsToEditorContent(
+  insertions: readonly AttachmentInsertion[],
+): AttachmentEditorNode[] {
+  return insertions.map(insertion => {
+    switch (insertion.type) {
+      case 'image':
+        return {type: 'imageNode', attrs: {id: insertion.attachmentId, src: insertion.url}}
+      case 'audio':
+        return {type: 'audioNode', attrs: {id: insertion.attachmentId, src: insertion.url}}
+      case 'video':
+        return {type: 'videoNode', attrs: {id: insertion.attachmentId, src: insertion.url}}
+      case 'file':
+        return {type: 'fileNode', attrs: {id: insertion.attachmentId, filename: insertion.filename}}
+      case 'album':
+        return {
+          type: 'albumNode',
+          attrs: {
+            id: insertion.id,
+            images: insertion.images,
+            urls: insertion.urls,
+            displayMode: 'horizontalList',
+            hasCycled: false,
+          },
+        }
+    }
+  })
 }
 
 /**
@@ -64,16 +101,8 @@ export function planAttachmentInsertions(
 export async function applyAttachmentInsertions(
   insertions: readonly AttachmentInsertion[],
   target: AttachmentInsertionTarget,
-  afterEach: () => Promise<void> = async () => {},
-): Promise<void> {
-  for (const insertion of insertions) {
-    switch (insertion.type) {
-      case 'image': target.insertImage(insertion.attachmentId); break
-      case 'audio': target.insertAudio(insertion.attachmentId); break
-      case 'video': target.insertVideo(insertion.attachmentId); break
-      case 'file': target.insertFile(insertion.attachmentId, insertion.filename); break
-      case 'album': target.insertAlbum(insertion.id, insertion.images, insertion.urls); break
-    }
-    await afterEach()
-  }
+  atEnd = false,
+): Promise<boolean> {
+  if (!insertions.length) return true
+  return target.insertAttachments(insertions, atEnd)
 }

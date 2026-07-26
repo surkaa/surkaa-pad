@@ -2,7 +2,6 @@
 import {computed, onBeforeUnmount, onMounted, ref} from "vue";
 import {formatTimestamp, getCurEmoji} from "../utils";
 import {DiarySummary} from "../bindings.ts";
-import {countAttachmentTypes} from "../utils/attachmentTypeCounts.ts";
 
 const {diary} = defineProps<{
   diary: DiarySummary | null;
@@ -39,7 +38,14 @@ onBeforeUnmount(() => {
   observer?.disconnect();
 });
 
-const attachmentCounts = computed(() => countAttachmentTypes(diary?.attachments ?? []));
+const attachmentCounts = computed(() => diary?.attachmentCounts ?? {
+  image: 0,
+  audio: 0,
+  video: 0,
+  file: 0,
+});
+const attachmentCount = computed(() => Object.values(attachmentCounts.value)
+    .reduce((total, count) => total + count, 0));
 </script>
 
 <template>
@@ -60,10 +66,10 @@ const attachmentCounts = computed(() => countAttachmentTypes(diary?.attachments 
           {{ formatTimestamp(diary.updated) }}
         </span>
       </div>
-      <div class="card-actions" v-if="diary?.attachments.length">
+      <div class="card-actions" v-if="attachmentCount">
         <span class="attachment-badge">
           <span class="badge-icon">📎</span>
-          <span class="badge-count">{{ diary.attachments.length }}</span>
+          <span class="badge-count">{{ attachmentCount }}</span>
         </span>
       </div>
     </div>
