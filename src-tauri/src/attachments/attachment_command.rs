@@ -303,14 +303,12 @@ pub async fn cmd_save_decrypt_attachment(
         })?
         .clone();
 
-    let ext = infer::get_from_mime(&attachment.mimetype)
-        .map(|t| t.extension())
-        .unwrap_or("");
-
     let filepath = app_handle
         .dialog()
         .file()
-        .set_file_name(format!("{}.{}", attachment.filename, ext))
+        // filename 是上传时保留的原始展示文件名，保存时不再根据 MIME
+        // 猜测扩展名，避免重复扩展名以及 text/plain 被误判为 .eot。
+        .set_file_name(&attachment.filename)
         .blocking_save_file()
         .ok_or_else(|| AppError {
             error_type: "user".into(),
