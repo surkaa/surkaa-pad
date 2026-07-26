@@ -15,7 +15,7 @@ import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {useConfigStore} from "../../stores/config.ts";
-import {diaryContentToMarkdown} from "../../components/editor/markdownConverter.ts";
+import {diaryContentToSource} from "../../components/editor/markdownConverter.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -62,7 +62,8 @@ function additionalAction() {
 function showDiarySource() {
   $q.dialog({
     title: '日记内容 - 源码',
-    message: diaryContentToMarkdown(diaryContent.value).replace('\n', '\\n'),
+    message: diaryContentToSource(diaryContent.value),
+    class: 'diary-source-dialog',
     persistent: true,
     ok: {label: '关闭', color: 'primary'},
   });
@@ -351,5 +352,16 @@ onActivated(async () => {
     width: 100%;
     overflow: hidden;
   }
+}
+</style>
+
+<style lang="scss">
+.diary-source-dialog .q-dialog__message {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
 }
 </style>
