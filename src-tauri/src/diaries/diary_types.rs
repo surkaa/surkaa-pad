@@ -3,6 +3,7 @@ use crate::cryptos::crypto_types::EncryptionAlgorithm;
 use crate::diaries::diary_content::{DiaryAttachmentCounts, DiaryContent};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::collections::HashSet;
 
 const fn default_version() -> u32 {
     1
@@ -37,12 +38,23 @@ pub struct DiarySummary {
     pub attachments: Vec<AttachmentMeta>,
     /// 正文节点中各类附件的数量，不包含未插入正文的附件
     pub attachment_counts: DiaryAttachmentCounts,
+    /// 正文节点中各类加密附件的数量
+    pub encrypted_attachment_counts: DiaryAttachmentCounts,
 }
 
 impl DiarySummary {
     pub fn from_manifest(manifest: DiaryManifest) -> Self {
         let title = manifest.content.title();
         let attachment_counts = manifest.content.attachment_counts();
+        let encrypted_attachment_ids = manifest
+            .attachments
+            .iter()
+            .filter(|attachment| attachment.encrypted)
+            .map(|attachment| attachment.id.as_str())
+            .collect::<HashSet<_>>();
+        let encrypted_attachment_counts = manifest
+            .content
+            .attachment_counts_for_ids(&encrypted_attachment_ids);
 
         Self {
             id: manifest.id,
@@ -51,6 +63,7 @@ impl DiarySummary {
             title,
             attachments: manifest.attachments,
             attachment_counts,
+            encrypted_attachment_counts,
         }
     }
 }
@@ -91,27 +104,63 @@ mod tests {
             id: "diary-1".to_string(),
             algorithm: Gcm,
             content: DiaryContent {
-                nodes: vec![DiaryContentNode::Audio {
-                    attachment_id: "audio-1".to_string(),
-                }],
+                nodes: vec![
+                    DiaryContentNode::Audio {
+                        attachment_id: "audio-1".to_string(),
+                    },
+                    DiaryContentNode::File {
+                        attachment_id: "file-1".to_string(),
+                    },
+                ],
             },
             created: 1,
             updated: 2,
-            attachments: vec![AttachmentMeta {
-                id: "unused-image".to_string(),
-                filename: "unused.jpg".to_string(),
-                mimetype: "image/jpeg".to_string(),
-                size: 1,
-                encrypted: true,
-                nonce: Vec::new(),
-                algorithm: Gcm,
-                etag: None,
-            }],
+            attachments: vec![
+                AttachmentMeta {
+                    id: "audio-1".to_string(),
+                    filename: "audio.m4a".to_string(),
+                    mimetype: "video/mp4".to_string(),
+                    size: 1,
+                    encrypted: true,
+                    nonce: Vec::new(),
+                    algorithm: Gcm,
+                    etag: None,
+                },
+                AttachmentMeta {
+                    id: "file-1".to_string(),
+                    filename: "plain.txt".to_string(),
+                    mimetype: "text/plain".to_string(),
+                    size: 1,
+                    encrypted: false,
+                    nonce: Vec::new(),
+                    algorithm: Gcm,
+                    etag: None,
+                },
+                AttachmentMeta {
+                    id: "unused-image".to_string(),
+                    filename: "unused.jpg".to_string(),
+                    mimetype: "image/jpeg".to_string(),
+                    size: 1,
+                    encrypted: true,
+                    nonce: Vec::new(),
+                    algorithm: Gcm,
+                    etag: None,
+                },
+            ],
             version: 4,
         });
 
         assert_eq!(
             summary.attachment_counts,
+            DiaryAttachmentCounts {
+                image: 0,
+                audio: 1,
+                video: 0,
+                file: 1,
+            }
+        );
+        assert_eq!(
+            summary.encrypted_attachment_counts,
             DiaryAttachmentCounts {
                 image: 0,
                 audio: 1,

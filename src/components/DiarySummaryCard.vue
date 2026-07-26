@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import {computed, onBeforeUnmount, onMounted, ref} from "vue";
 import {formatTimestamp, getCurEmoji} from "../utils";
-import {DiarySummary} from "../bindings.ts";
+import type {DiaryAttachmentCounts, DiarySummary} from "../bindings.ts";
+import {attachmentEncryptionFillPercentage} from "../utils/attachmentEncryptionFill.ts";
 
 const {diary} = defineProps<{
   diary: DiarySummary | null;
@@ -44,8 +45,22 @@ const attachmentCounts = computed(() => diary?.attachmentCounts ?? {
   video: 0,
   file: 0,
 });
+const encryptedAttachmentCounts = computed(() => diary?.encryptedAttachmentCounts ?? {
+  image: 0,
+  audio: 0,
+  video: 0,
+  file: 0,
+});
 const attachmentCount = computed(() => Object.values(attachmentCounts.value)
     .reduce((total, count) => total + count, 0));
+
+function attachmentIconStyle(type: keyof DiaryAttachmentCounts): Record<string, string> {
+  const percentage = attachmentEncryptionFillPercentage(
+      encryptedAttachmentCounts.value[type],
+      attachmentCounts.value[type],
+  );
+  return {'--encrypted-fill': `${percentage}%`};
+}
 </script>
 
 <template>
@@ -90,16 +105,28 @@ const attachmentCount = computed(() => Object.values(attachmentCounts.value)
         <div v-else class="skeleton-bar w-80"></div>
 
         <span class="meta-item attachment-count" v-if="attachmentCounts.image" title="图片">
-          <q-icon name="image" aria-hidden="true"/><span>×{{ attachmentCounts.image }}</span>
+          <span class="attachment-encryption-icon" :style="attachmentIconStyle('image')" aria-hidden="true">
+            <q-icon name="image"/>
+            <q-icon name="image" class="encrypted-fill"/>
+          </span><span>×{{ attachmentCounts.image }}</span>
         </span>
         <span class="meta-item attachment-count" v-if="attachmentCounts.audio" title="音频">
-          <q-icon name="mic" aria-hidden="true"/><span>×{{ attachmentCounts.audio }}</span>
+          <span class="attachment-encryption-icon" :style="attachmentIconStyle('audio')" aria-hidden="true">
+            <q-icon name="mic"/>
+            <q-icon name="mic" class="encrypted-fill"/>
+          </span><span>×{{ attachmentCounts.audio }}</span>
         </span>
         <span class="meta-item attachment-count" v-if="attachmentCounts.video" title="视频">
-          <q-icon name="movie" aria-hidden="true"/><span>×{{ attachmentCounts.video }}</span>
+          <span class="attachment-encryption-icon" :style="attachmentIconStyle('video')" aria-hidden="true">
+            <q-icon name="movie"/>
+            <q-icon name="movie" class="encrypted-fill"/>
+          </span><span>×{{ attachmentCounts.video }}</span>
         </span>
         <span class="meta-item attachment-count" v-if="attachmentCounts.file" title="文件">
-          <q-icon name="description" aria-hidden="true"/><span>×{{ attachmentCounts.file }}</span>
+          <span class="attachment-encryption-icon" :style="attachmentIconStyle('file')" aria-hidden="true">
+            <q-icon name="description"/>
+            <q-icon name="description" class="encrypted-fill"/>
+          </span><span>×{{ attachmentCounts.file }}</span>
         </span>
       </div>
       <span class="open-indicator">
@@ -236,8 +263,22 @@ const attachmentCount = computed(() => Object.values(attachmentCounts.value)
         &.attachment-count {
           gap: 2px;
 
-          .q-icon {
-            font-size: 15px;
+          .attachment-encryption-icon {
+            --encrypted-fill: 0%;
+            display: inline-grid;
+            place-items: center;
+
+            .q-icon {
+              grid-area: 1 / 1;
+              font-size: 15px;
+            }
+
+            .encrypted-fill {
+              color: var(--pad-primary-color);
+              -webkit-clip-path: inset(calc(100% - var(--encrypted-fill)) 0 0 0);
+              clip-path: inset(calc(100% - var(--encrypted-fill)) 0 0 0);
+              transition: clip-path var(--pad-transition-fast);
+            }
           }
         }
 

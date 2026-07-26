@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::collections::HashSet;
 
 #[derive(Deserialize, Serialize, Clone, Debug, Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -122,19 +123,51 @@ impl DiaryContent {
     }
 
     pub fn attachment_counts(&self) -> DiaryAttachmentCounts {
+        self.attachment_counts_matching(|_| true)
+    }
+
+    pub(crate) fn attachment_counts_for_ids(
+        &self,
+        attachment_ids: &HashSet<&str>,
+    ) -> DiaryAttachmentCounts {
+        self.attachment_counts_matching(|attachment_id| attachment_ids.contains(attachment_id))
+    }
+
+    fn attachment_counts_matching(
+        &self,
+        mut include: impl FnMut(&str) -> bool,
+    ) -> DiaryAttachmentCounts {
         let mut counts = DiaryAttachmentCounts::default();
 
         for node in &self.nodes {
             match node {
-                DiaryContentNode::Image { .. } => counts.image += 1,
-                DiaryContentNode::Album { attachment_ids, .. } => {
-                    counts.image = counts
-                        .image
-                        .saturating_add(u32::try_from(attachment_ids.len()).unwrap_or(u32::MAX));
+                DiaryContentNode::Image { attachment_id, .. } => {
+                    if include(attachment_id) {
+                        counts.image = counts.image.saturating_add(1);
+                    }
                 }
-                DiaryContentNode::Audio { .. } => counts.audio += 1,
-                DiaryContentNode::Video { .. } => counts.video += 1,
-                DiaryContentNode::File { .. } => counts.file += 1,
+                DiaryContentNode::Album { attachment_ids, .. } => {
+                    for attachment_id in attachment_ids {
+                        if include(attachment_id) {
+                            counts.image = counts.image.saturating_add(1);
+                        }
+                    }
+                }
+                DiaryContentNode::Audio { attachment_id } => {
+                    if include(attachment_id) {
+                        counts.audio = counts.audio.saturating_add(1);
+                    }
+                }
+                DiaryContentNode::Video { attachment_id } => {
+                    if include(attachment_id) {
+                        counts.video = counts.video.saturating_add(1);
+                    }
+                }
+                DiaryContentNode::File { attachment_id } => {
+                    if include(attachment_id) {
+                        counts.file = counts.file.saturating_add(1);
+                    }
+                }
                 DiaryContentNode::Markdown { .. } => {}
             }
         }
@@ -274,6 +307,7 @@ mod tests {
     use super::{
         AlbumDisplayMode, DiaryAttachmentCounts, DiaryContent, DiaryContentNode, ImageSize,
     };
+    use std::collections::HashSet;
 
     #[test]
     fn counts_attachment_nodes_and_each_image_in_an_album() {
@@ -310,6 +344,43 @@ mod tests {
                 audio: 1,
                 video: 1,
                 file: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn counts_only_attachment_ids_in_the_requested_set() {
+        let content = DiaryContent {
+            nodes: vec![
+                DiaryContentNode::Image {
+                    attachment_id: "plain-image".to_string(),
+                    size: ImageSize::Normal,
+                },
+                DiaryContentNode::Album {
+                    id: "album-1".to_string(),
+                    attachment_ids: vec![
+                        "encrypted-image".to_string(),
+                        "plain-album-image".to_string(),
+                    ],
+                    display_mode: AlbumDisplayMode::StackedCards,
+                },
+                DiaryContentNode::Audio {
+                    attachment_id: "encrypted-audio".to_string(),
+                },
+                DiaryContentNode::Video {
+                    attachment_id: "plain-video".to_string(),
+                },
+            ],
+        };
+        let requested = HashSet::from(["encrypted-image", "encrypted-audio", "unused"]);
+
+        assert_eq!(
+            content.attachment_counts_for_ids(&requested),
+            DiaryAttachmentCounts {
+                image: 1,
+                audio: 1,
+                video: 0,
+                file: 0,
             }
         );
     }

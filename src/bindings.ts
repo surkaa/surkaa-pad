@@ -594,7 +594,11 @@ attachments: AttachmentMeta[];
 /**
  * 正文节点中各类附件的数量，不包含未插入正文的附件
  */
-attachmentCounts: DiaryAttachmentCounts }
+attachmentCounts: DiaryAttachmentCounts; 
+/**
+ * 正文节点中各类加密附件的数量
+ */
+encryptedAttachmentCounts: DiaryAttachmentCounts }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
