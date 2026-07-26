@@ -12,6 +12,7 @@ import {
     NEWER_DIARY_VERSION_MESSAGE
 } from "../utils/formatError.ts";
 import type {DiaryContent} from "../bindings.ts";
+import {runDiaryDeletion} from "../utils/diaryDeletion.ts";
 
 export function useDiaryCore() {
     const $q = useQuasar();
@@ -107,15 +108,18 @@ export function useDiaryCore() {
             ok: {label: '删除', color: 'negative', flat: true},
             cancel: {label: '取消', color: 'primary', flat: true}
         }).onOk(async () => {
-            try {
-                await api.cmdDeleteDiary(currentId.value);
-            } catch (e) {
-                $q.notify({type: 'negative', message: `删除日记失败: ${formatError(e)}`});
-            }
-            $q.notify({type: 'positive', message: '日记已删除'});
-            dataStore.deleteSummary(currentId.value);
-            isDelBack.value = true;
-            router.back();
+            await runDiaryDeletion(
+                () => api.cmdDeleteDiary(currentId.value),
+                () => {
+                    $q.notify({type: 'positive', message: '日记已删除'});
+                    dataStore.deleteSummary(currentId.value);
+                    isDelBack.value = true;
+                    router.back();
+                },
+                (error) => {
+                    $q.notify({type: 'negative', message: `删除日记失败: ${formatError(error)}`});
+                },
+            );
         });
     }
 
