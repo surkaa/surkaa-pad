@@ -1,387 +1,277 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest'
+import {describe, expect, it} from 'vitest'
 import {
   diaryContentToHtml,
-  diaryContentToMarkdown,
+  diaryContentToSource,
   htmlToDiaryContent,
   htmlToMarkdown,
-  markdownToDiaryContent,
   markdownToHtml,
 } from '../markdownConverter'
 
-// ==================== htmlToMarkdown ====================
-
 describe('htmlToMarkdown', () => {
-  it('converts plain paragraph', () => {
+  it('converts a plain paragraph', () => {
     expect(htmlToMarkdown('<p>hello world</p>')).toBe('hello world')
   })
 
-  it('handles empty or whitespace-only input', () => {
-    expect(htmlToMarkdown('')).toBe('')
-    expect(htmlToMarkdown('<p></p>')).toBe('')
-    expect(htmlToMarkdown('<p> </p>')).toBe('')
+  it.each([
+    ['bold', '<p><b>bold</b></p>', '**bold**'],
+    ['italic', '<p><i>italic</i></p>', '*italic*'],
+    ['deleted', '<p><del>deleted</del></p>', '~~deleted~~'],
+    ['inline code', '<p><code>fn()</code></p>', '`fn()`'],
+    ['underline', '<p><u>line</u></p>', '<u>line</u>'],
+  ])('converts %s formatting', (_name, html, expected) => {
+    expect(htmlToMarkdown(html)).toBe(expected)
   })
 
-  // --- Inline formatting ---
-
-  it('converts bold (<strong> / <b>)', () => {
-    expect(htmlToMarkdown('<p><strong>bold</strong> text</p>')).toBe('**bold** text')
-    expect(htmlToMarkdown('<p><b>bold</b> text</p>')).toBe('**bold** text')
+  it('converts paragraphs and inline formatting', () => {
+    expect(htmlToMarkdown(
+      '<p><strong>bold</strong> and <em>italic</em></p><p><s>strike</s> <code>code</code></p>',
+    )).toBe('**bold** and *italic*\n\n~~strike~~ `code`')
   })
 
-  it('converts italic (<em> / <i>)', () => {
-    expect(htmlToMarkdown('<p><em>italic</em> text</p>')).toBe('*italic* text')
-    expect(htmlToMarkdown('<p><i>italic</i> text</p>')).toBe('*italic* text')
+  it('converts headings, links and underline', () => {
+    expect(htmlToMarkdown(
+      '<h2>Hello <strong>World</strong></h2><p><a href="https://x.com">link</a> <u>line</u></p>',
+    )).toBe('## Hello **World**\n\n[link](https://x.com) <u>line</u>')
   })
 
-  it('converts strikethrough (<s> / <del>)', () => {
-    expect(htmlToMarkdown('<p><s>strike</s> text</p>')).toBe('~~strike~~ text')
-    expect(htmlToMarkdown('<p><del>strike</del> text</p>')).toBe('~~strike~~ text')
+  it.each([
+    ['h1', '<h1>Title</h1>', '# Title'],
+    ['h2', '<h2>Title</h2>', '## Title'],
+    ['h3', '<h3>Title</h3>', '### Title'],
+  ])('converts %s headings', (_name, html, expected) => {
+    expect(htmlToMarkdown(html)).toBe(expected)
   })
 
-  it('converts inline code', () => {
-    expect(htmlToMarkdown('<p>use <code>fn()</code> here</p>')).toBe('use `fn()` here')
+  it('converts ordered and unordered lists independently', () => {
+    expect(htmlToMarkdown('<ul><li><p>a</p></li><li><p>b</p></li></ul>'))
+      .toBe('- a\n- b')
+    expect(htmlToMarkdown('<ol><li><p>a</p></li><li><p>b</p></li></ol>'))
+      .toBe('1. a\n2. b')
   })
 
-  it('converts underline', () => {
-    expect(htmlToMarkdown('<p><u>underlined</u> text</p>')).toBe('<u>underlined</u> text')
+  it('converts a multiline quote', () => {
+    expect(htmlToMarkdown('<blockquote><p>one<br>two</p></blockquote>'))
+      .toBe('> one\n> two')
   })
 
-  it('converts links', () => {
-    const result = htmlToMarkdown('<p><a href="https://x.com">link</a></p>')
-    expect(result).toBe('[link](https://x.com)')
-  })
-
-  it('converts mixed inline formatting', () => {
-    expect(htmlToMarkdown('<p><strong>bold</strong> and <em>italic</em></p>'))
-      .toBe('**bold** and *italic*')
-  })
-
-  // --- Headings ---
-
-  it('converts headings H1-H3', () => {
-    expect(htmlToMarkdown('<h1>Title</h1>')).toBe('# Title')
-    expect(htmlToMarkdown('<h2>Section</h2>')).toBe('## Section')
-    expect(htmlToMarkdown('<h3>Sub</h3>')).toBe('### Sub')
-  })
-
-  it('converts heading with inline formatting', () => {
-    expect(htmlToMarkdown('<h2>Hello <strong>World</strong></h2>')).toBe('## Hello **World**')
-  })
-
-  // --- Lists ---
-
-  it('converts unordered list', () => {
-    const html = '<ul><li><p>item 1</p></li><li><p>item 2</p></li></ul>'
-    expect(htmlToMarkdown(html)).toBe('- item 1\n- item 2')
-  })
-
-  it('converts ordered list', () => {
-    const html = '<ol><li><p>first</p></li><li><p>second</p></li></ol>'
-    expect(htmlToMarkdown(html)).toBe('1. first\n2. second')
-  })
-
-  // --- Blockquotes ---
-
-  it('converts blockquote', () => {
-    expect(htmlToMarkdown('<blockquote><p>quoted</p></blockquote>')).toBe('> quoted')
-  })
-
-  it('converts multi-line blockquote', () => {
-    const html = '<blockquote><p>line 1<br>line 2</p></blockquote>'
-    expect(htmlToMarkdown(html)).toBe('> line 1\n> line 2')
-  })
-
-  // --- Horizontal rule ---
-
-  it('converts horizontal rule', () => {
+  it('converts a horizontal rule and fenced code independently', () => {
     expect(htmlToMarkdown('<hr>')).toBe('---')
+    expect(htmlToMarkdown('<pre><code>a\nb</code></pre>')).toBe('```\na\nb\n```')
   })
 
-  // --- Code blocks ---
-
-  it('converts fenced code block', () => {
-    const html = '<pre><code>const x = 1;\nfn(x);</code></pre>'
-    expect(htmlToMarkdown(html)).toBe('```\nconst x = 1;\nfn(x);\n```')
+  it('converts lists, quote, rule and code block', () => {
+    expect(htmlToMarkdown(
+      '<ul><li><p>a</p></li><li><p>b</p></li></ul>'
+      + '<ol><li><p>one</p></li><li><p>two</p></li></ol>'
+      + '<blockquote><p>quoted<br>next</p></blockquote>'
+      + '<hr><pre><code>const x = 1;</code></pre>',
+    )).toBe(
+      '- a\n- b\n\n1. one\n2. two\n\n> quoted\n> next\n\n---\n\n```\nconst x = 1;\n```',
+    )
   })
 
-  // --- Attachment markers ---
-
-  it('converts image attachment to [[IMG:...]]', () => {
-    const html = '<img src="blob:abc" data-id="photo.png">'
-    expect(htmlToMarkdown(html)).toBe('[[IMG:photo.png]]')
+  it('ignores attachment elements because they are not Markdown', () => {
+    expect(htmlToMarkdown(
+      '<p>before</p><img data-id="att-image"><video data-id="att-video"></video>'
+      + '<audio data-id="att-audio"></audio>'
+      + '<div class="editor-file-attachment" data-id="att-file"></div><p>after</p>',
+    )).toBe('before\n\nafter')
   })
 
-  it('converts small-size image with config', () => {
-    const html = '<img src="blob:abc" data-id="photo.png" data-size="small">'
-    expect(htmlToMarkdown(html)).toBe('[[IMG:photo.png|size=small]]')
-  })
-
-  it('converts video attachment', () => {
-    const html = '<video controls src="blob:abc" data-id="clip.mp4"></video>'
-    expect(htmlToMarkdown(html)).toBe('[[VID:clip.mp4]]')
-  })
-
-  it('converts audio attachment', () => {
-    const html = '<audio controls src="blob:abc" data-id="recording.webm"></audio>'
-    expect(htmlToMarkdown(html)).toBe('[[AUD:recording.webm]]')
-  })
-
-  it('converts file attachment', () => {
-    const html = '<div data-id="doc.pdf" class="editor-file-attachment" contenteditable="false"></div>'
-    expect(htmlToMarkdown(html)).toBe('[[FILE:doc.pdf]]')
-  })
-
-  // --- Multiple blocks ---
-
-  it('joins blocks with double newlines', () => {
-    const html = '<p>para 1</p><p>para 2</p>'
-    expect(htmlToMarkdown(html)).toBe('para 1\n\npara 2')
-  })
-
-  it('collapses excessive blank lines', () => {
-    const html = '<p>text</p><p></p><p></p><p></p><p>more</p>'
-    expect(htmlToMarkdown(html)).toBe('text\n\nmore')
+  it('handles empty input and collapses empty blocks', () => {
+    expect(htmlToMarkdown('')).toBe('')
+    expect(htmlToMarkdown('<p></p><p>text</p><p></p><p>more</p>')).toBe('text\n\nmore')
   })
 })
 
-// ==================== markdownToHtml ====================
-
 describe('markdownToHtml', () => {
-  const map: Record<string, string> = {
-    'photo.png': 'blob:photo-url',
-    'clip.mp4': 'blob:video-url',
-    'recording.webm': 'blob:audio-url',
-    'doc.pdf': '',
-  }
-
-  it('returns <p></p> for empty input', () => {
-    expect(markdownToHtml('', {})).toBe('<p></p>')
+  it('converts a plain paragraph', () => {
+    expect(markdownToHtml('hello')).toBe('<p>hello</p>')
   })
 
-  it('returns input as-is when it starts with < (already HTML)', () => {
-    expect(markdownToHtml('<p>already html</p>', {})).toBe('<p>already html</p>')
+  it('keeps existing HTML unchanged', () => {
+    expect(markdownToHtml('<p>already html</p>')).toBe('<p>already html</p>')
   })
 
-  // --- Paragraph ---
-
-  it('converts plain text to paragraph', () => {
-    expect(markdownToHtml('hello', {})).toBe('<p>hello</p>')
+  it.each([
+    ['h1', '# Title', '<h1>Title</h1>'],
+    ['h2', '## Title', '<h2>Title</h2>'],
+    ['h3', '### Title', '<h3>Title</h3>'],
+    ['strike', '~~gone~~', '<p><s>gone</s></p>'],
+    ['inline code', '`fn()`', '<p><code>fn()</code></p>'],
+    ['link', '[site](https://x.com)', '<p><a href="https://x.com">site</a></p>'],
+    ['rule', '---', '<hr>'],
+    ['alternative rule', '***', '<hr>'],
+    ['quote', '> quote', '<blockquote><p>quote</p></blockquote>'],
+  ])('converts %s Markdown', (_name, markdown, expected) => {
+    expect(markdownToHtml(markdown)).toBe(expected)
   })
 
-  // --- Headings ---
-
-  it('converts heading markers', () => {
-    expect(markdownToHtml('# Title', {})).toBe('<h1>Title</h1>')
-    expect(markdownToHtml('## Section', {})).toBe('<h2>Section</h2>')
-    expect(markdownToHtml('### Sub', {})).toBe('<h3>Sub</h3>')
+  it('converts common Markdown blocks', () => {
+    const html = markdownToHtml(
+      '# Title\n\n**bold** and *italic*\n\n- a\n- b\n\n> quote\n\n---',
+    )
+    expect(html).toContain('<h1>Title</h1>')
+    expect(html).toContain('<p><strong>bold</strong> and <em>italic</em></p>')
+    expect(html).toContain('<ul><li><p>a</p></li><li><p>b</p></li></ul>')
+    expect(html).toContain('<blockquote><p>quote</p></blockquote>')
+    expect(html).toContain('<hr>')
   })
 
-  // --- Inline formatting ---
-
-  it('converts bold and italic', () => {
-    expect(markdownToHtml('**bold** and *italic*', {}))
-      .toBe('<p><strong>bold</strong> and <em>italic</em></p>')
+  it('converts ordered lists and fenced code', () => {
+    expect(markdownToHtml('1. one\n2. two'))
+      .toBe('<ol><li><p>one</p></li><li><p>two</p></li></ol>')
+    expect(markdownToHtml('```\n<script>\n```'))
+      .toBe('<pre><code>&lt;script&gt;</code></pre>')
   })
 
-  it('converts strikethrough', () => {
-    expect(markdownToHtml('~~strike~~', {})).toBe('<p><s>strike</s></p>')
+  it('treats legacy-looking attachment markers as literal text', () => {
+    expect(markdownToHtml('before [[IMG:att-fake]] after'))
+      .toBe('<p>before [[IMG:att-fake]] after</p>')
+    expect(markdownToHtml('[[ALBUM:a|images=1,2]]'))
+      .toBe('<p>[[ALBUM:a|images=1,2]]</p>')
   })
 
-  it('converts inline code', () => {
-    expect(markdownToHtml('use `fn()`', {})).toBe('<p>use <code>fn()</code></p>')
+  it('returns an empty paragraph for empty Markdown', () => {
+    expect(markdownToHtml('')).toBe('<p></p>')
   })
 
-  it('converts links', () => {
-    expect(markdownToHtml('[text](https://x.com)', {}))
-      .toBe('<p><a href="https://x.com">text</a></p>')
-  })
-
-  // --- Horizontal rule ---
-
-  it('converts --- to hr', () => {
-    expect(markdownToHtml('---', {})).toBe('<hr>')
-  })
-
-  it('converts *** to hr', () => {
-    expect(markdownToHtml('***', {})).toBe('<hr>')
-  })
-
-  // --- Blockquote ---
-
-  it('converts blockquote', () => {
-    expect(markdownToHtml('> quoted text', {}))
-      .toBe('<blockquote><p>quoted text</p></blockquote>')
-  })
-
-  // --- Lists ---
-
-  it('converts unordered list', () => {
-    expect(markdownToHtml('- a\n- b', {}))
-      .toBe('<ul><li><p>a</p></li><li><p>b</p></li></ul>')
-  })
-
-  it('converts ordered list', () => {
-    expect(markdownToHtml('1. first\n2. second', {}))
-      .toBe('<ol><li><p>first</p></li><li><p>second</p></li></ol>')
-  })
-
-  // --- Code blocks ---
-
-  it('converts fenced code block to pre>code', () => {
-    const result = markdownToHtml('```\ncode here\n```', {})
-    expect(result).toContain('<pre><code>')
-    expect(result).toContain('code here')
-    expect(result).toContain('</code></pre>')
-  })
-
-  // --- Attachment markers ---
-
-  it('converts [[IMG:...]] to img element with src from map', () => {
-    const result = markdownToHtml('[[IMG:photo.png]]', map)
-    expect(result).toContain('<img src="blob:photo-url" data-id="photo.png">')
-  })
-
-  it('converts [[IMG:...|size=small]] with data-size attr', () => {
-    const result = markdownToHtml('[[IMG:photo.png|size=small]]', map)
-    expect(result).toContain('data-size="small"')
-  })
-
-  it('converts [[VID:...]] to video element', () => {
-    const result = markdownToHtml('[[VID:clip.mp4]]', map)
-    expect(result).toContain('<video controls src="blob:video-url" data-id="clip.mp4">')
-  })
-
-  it('converts [[AUD:...]] to audio element', () => {
-    const result = markdownToHtml('[[AUD:recording.webm]]', map)
-    expect(result).toContain('<audio controls src="blob:audio-url" data-id="recording.webm">')
-  })
-
-  it('converts [[FILE:...]] to div with class', () => {
-    const result = markdownToHtml('[[FILE:doc.pdf]]', map)
-    expect(result).toContain('data-id="doc.pdf"')
-    expect(result).toContain('data-filename="doc.pdf"')
-    expect(result).toContain('class="editor-file-attachment"')
-  })
-
-  it('uses empty src when attachment not in map', () => {
-    const result = markdownToHtml('[[IMG:unknown.png]]', map)
-    expect(result).toContain('src=""')
-  })
-
-  // --- Mixed content ---
-
-  it('handles paragraph with attachment marker inline', () => {
-    const result = markdownToHtml('before [[IMG:photo.png]] after', map)
-    expect(result).toBe('<p>before <img src="blob:photo-url" data-id="photo.png"> after</p>')
-  })
-
-  it('handles multiple paragraphs with attachments', () => {
-    const md = 'para one\n\n[[IMG:photo.png]]\n\npara two'
-    const result = markdownToHtml(md, map)
-    expect(result).toContain('<p>para one</p>')
-    expect(result).toContain('<img src="blob:photo-url" data-id="photo.png">')
-    expect(result).toContain('<p>para two</p>')
-  })
-
-  // --- Escaping ---
-
-  it('escapes HTML entities in code blocks', () => {
-    const result = markdownToHtml('```\n<script>\nalert(1)\n</script>\n```', {})
-    // Code block content should be HTML-escaped
-    expect(result).toContain('&lt;script&gt;')
-    expect(result).not.toContain('<script>')
-  })
-
-  it('escapes quotes in attachment filenames', () => {
-    const filename = 'file"x.png'
-    const m: Record<string, string> = { [filename]: 'url' }
-    const result = markdownToHtml(`[[IMG:${filename}]]`, m)
-    // " in filename should be escaped within attribute
-    expect(result).toContain('&quot;')
-  })
-
-  // --- Round-trip ---
-
-  it('round-trips plain text through htmlToMarkdown and back', () => {
-    const html = '<p>hello <strong>world</strong></p>'
-    const md = htmlToMarkdown(html)
-    const back = markdownToHtml(md, {})
-    // Should reconstruct a similar structure
-    expect(back).toContain('<strong>world</strong>')
-  })
-
-  it('round-trips attachment markers correctly', () => {
-    const html = '<img src="blob:u" data-id="pic.png">'
-    const md = htmlToMarkdown(html)
-    expect(md).toBe('[[IMG:pic.png]]')
-    const back = markdownToHtml(md, { 'pic.png': 'blob:u' })
-    expect(back).toContain('src="blob:u"')
-    expect(back).toContain('data-id="pic.png"')
+  it('round-trips formatted Markdown text through HTML', () => {
+    const markdown = 'hello **world** and *friend*'
+    expect(htmlToMarkdown(markdownToHtml(markdown))).toBe(markdown)
   })
 })
 
 describe('structured diary content', () => {
-  it('parses attachment markers into ordered nodes', () => {
-    expect(markdownToDiaryContent('before [[IMG:photo.png|size=small]] after')).toEqual({
-      nodes: [
-        { type: 'markdown', text: 'before ' },
-        { type: 'image', attachmentId: 'photo.png', size: 'small' },
-        { type: 'markdown', text: ' after' },
-      ],
-    })
-  })
+  const attachmentMap = {
+    'att-image': 'http://127.0.0.1/image',
+    'att-video': 'http://127.0.0.1/video',
+    'att-audio': 'http://127.0.0.1/audio',
+    'att-1': 'http://127.0.0.1/1',
+    '附件,2': 'http://127.0.0.1/2',
+  }
 
-  it('serializes structured nodes to editor markdown', () => {
-    expect(diaryContentToMarkdown({
-      nodes: [
-        { type: 'markdown', text: 'before\n\n' },
-        { type: 'file', attachmentId: 'att-doc' },
-        { type: 'album', id: 'a1', attachmentIds: ['att-1', 'att-2'], displayMode: 'stackedCards' },
-      ],
-    })).toBe('before\n\n[[FILE:att-doc]][[ALBUM:a1|mode=stackedCards|images=att-1,att-2]]')
-  })
+  it('converts every structured attachment node directly to HTML', () => {
+    const html = diaryContentToHtml({nodes: [
+      {type: 'markdown', text: 'before'},
+      {type: 'image', attachmentId: 'att-image', size: 'small'},
+      {type: 'video', attachmentId: 'att-video'},
+      {type: 'audio', attachmentId: 'att-audio'},
+      {type: 'file', attachmentId: 'att-file'},
+      {
+        type: 'album',
+        id: 'album-1',
+        attachmentIds: ['att-1', '附件,2'],
+        displayMode: 'stackedCards',
+      },
+    ]}, attachmentMap, {'att-file': '报告.pdf'})
 
-  it('round-trips album nodes with encoded filenames', () => {
-    const content = {
-      nodes: [{
-        type: 'album' as const,
-        id: 'a1',
-        attachmentIds: ['att,1', '附件-2'],
-        displayMode: 'horizontalList' as const,
-      }],
-    }
-    const markdown = diaryContentToMarkdown(content)
-
-    expect(markdownToDiaryContent(markdown)).toEqual(content)
-    expect(diaryContentToHtml(content, {
-      'att,1': 'url-1',
-      '附件-2': 'url-2',
-    })).toContain('class="editor-image-album"')
-  })
-
-  it('converts Tiptap HTML and structured content in both directions', () => {
-    const content = htmlToDiaryContent(
-      '<p>hello</p><img src="blob:u" data-id="photo.png" data-size="small">',
-    )
-    expect(content.nodes).toEqual([
-      { type: 'markdown', text: 'hello\n\n' },
-      { type: 'image', attachmentId: 'photo.png', size: 'small' },
-    ])
-    expect(diaryContentToHtml(content, { 'photo.png': 'blob:u' }))
-      .toContain('data-id="photo.png"')
-  })
-
-  it('uses attachment metadata filename only for file display', () => {
-    const html = diaryContentToHtml(
-      { nodes: [{ type: 'file', attachmentId: 'att-file' }] },
-      {},
-      { 'att-file': '报告.pdf' },
-    )
-    expect(html).toContain('data-id="att-file"')
+    expect(html).toContain('<p>before</p>')
+    expect(html).toContain('data-id="att-image" data-size="small"')
+    expect(html).toContain('<video controls')
+    expect(html).toContain('<audio controls')
     expect(html).toContain('data-filename="报告.pdf"')
-    expect(htmlToDiaryContent(html)).toEqual({
-      nodes: [{ type: 'file', attachmentId: 'att-file' }],
-    })
+    expect(html).toContain('class="editor-image-album"')
+    expect(html).toContain('data-display-mode="stackedCards"')
+  })
+
+  it('uses an empty URL for an attachment missing from the map', () => {
+    expect(diaryContentToHtml({nodes: [
+      {type: 'image', attachmentId: 'missing', size: 'normal'},
+    ]}, {})).toContain('src=""')
+  })
+
+  it('escapes special characters in attachment IDs and filenames', () => {
+    const html = diaryContentToHtml({nodes: [
+      {type: 'image', attachmentId: 'att-&quot"', size: 'normal'},
+      {type: 'file', attachmentId: 'file-&',},
+    ]}, {}, {'file-&': '报告 "最终".pdf'})
+    expect(html).toContain('data-id="att-&amp;quot&quot;"')
+    expect(html).toContain('data-filename="报告 &quot;最终&quot;.pdf"')
+  })
+
+  it('reads every Tiptap attachment element directly into ordered nodes', () => {
+    const content = htmlToDiaryContent(
+      '<p>before</p>'
+      + '<img src="image" data-id="att-image" data-size="small">'
+      + '<video src="video" data-id="att-video"></video>'
+      + '<audio src="audio" data-id="att-audio"></audio>'
+      + '<div class="editor-file-attachment" data-id="att-file" data-filename="报告.pdf"></div>'
+      + '<div class="editor-image-album" data-id="album-1" '
+      + 'data-images="[&quot;att-1&quot;,&quot;附件,2&quot;]" data-display-mode="stackedCards"></div>'
+      + '<p>after</p>',
+    )
+
+    expect(content).toEqual({nodes: [
+      {type: 'markdown', text: 'before'},
+      {type: 'image', attachmentId: 'att-image', size: 'small'},
+      {type: 'video', attachmentId: 'att-video'},
+      {type: 'audio', attachmentId: 'att-audio'},
+      {type: 'file', attachmentId: 'att-file'},
+      {
+        type: 'album',
+        id: 'album-1',
+        attachmentIds: ['att-1', '附件,2'],
+        displayMode: 'stackedCards',
+      },
+      {type: 'markdown', text: 'after'},
+    ]})
+  })
+
+  it('does not insert whitespace nodes between adjacent attachments', () => {
+    expect(htmlToDiaryContent(
+      '<img data-id="one"><img data-id="two"><audio data-id="three"></audio>',
+    )).toEqual({nodes: [
+      {type: 'image', attachmentId: 'one', size: 'normal'},
+      {type: 'image', attachmentId: 'two', size: 'normal'},
+      {type: 'audio', attachmentId: 'three'},
+    ]})
+  })
+
+  it('combines contiguous text blocks but separates text around attachments', () => {
+    expect(htmlToDiaryContent(
+      '<p>one</p><p>two</p><video data-id="video"></video><p>three</p>',
+    )).toEqual({nodes: [
+      {type: 'markdown', text: 'one\n\ntwo'},
+      {type: 'video', attachmentId: 'video'},
+      {type: 'markdown', text: 'three'},
+    ]})
+  })
+
+  it('defaults malformed album data to an empty horizontal album', () => {
+    expect(htmlToDiaryContent(
+      '<div class="editor-image-album" data-id="album" data-images="bad" data-display-mode="bad"></div>',
+    )).toEqual({nodes: [{
+      type: 'album',
+      id: 'album',
+      attachmentIds: [],
+      displayMode: 'horizontalList',
+    }]})
+  })
+
+  it('round-trips structured content without a text attachment protocol', () => {
+    const content = {nodes: [
+      {type: 'markdown' as const, text: 'literal [[IMG:not-an-attachment]]'},
+      {type: 'image' as const, attachmentId: 'att-image', size: 'normal' as const},
+      {
+        type: 'album' as const,
+        id: 'album-1',
+        attachmentIds: ['att-1', '附件,2'],
+        displayMode: 'horizontalList' as const,
+      },
+    ]}
+
+    expect(htmlToDiaryContent(diaryContentToHtml(content, attachmentMap))).toEqual(content)
+  })
+
+  it('formats the actual V4 structure for source display', () => {
+    const source = diaryContentToSource({nodes: [
+      {type: 'image', attachmentId: 'att-image', size: 'normal'},
+    ]})
+    expect(source).toBe(JSON.stringify({nodes: [
+      {type: 'image', attachmentId: 'att-image', size: 'normal'},
+    ]}, null, 2))
+    expect(source).not.toContain('[[IMG:')
   })
 })
