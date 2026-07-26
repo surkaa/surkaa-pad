@@ -6,6 +6,7 @@ import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {useQuasar} from "quasar";
 import {v4 as uuidv4} from "uuid";
 import {useDataStore} from "../stores/data.ts";
+import {useConfigStore} from "../stores/config.ts";
 import {storeToRefs} from "pinia";
 import TiptapEditor from "../components/TiptapEditor.vue";
 import api from "../utils/api.ts";
@@ -41,7 +42,14 @@ export function useMediaAction(
 ) {
     const $q = useQuasar();
     const dataStore = useDataStore();
+    const configStore = useConfigStore();
     const {currentDiaryAttachmentUrlMap, currentDiary} = storeToRefs(dataStore);
+    const attachmentEncryptionByKind: Record<AttachmentNodeKind, Ref<boolean>> = {
+        image: configStore.useTauriConfig('encrypt_image_attachments'),
+        audio: configStore.useTauriConfig('encrypt_audio_attachments'),
+        video: configStore.useTauriConfig('encrypt_video_attachments'),
+        file: configStore.useTauriConfig('encrypt_file_attachments'),
+    };
 
     const cancelTokens = new Set<string>();
     const chunkedUploadTokens = new Set<string>();
@@ -309,16 +317,27 @@ export function useMediaAction(
 
             const virtualName = `Audio_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
 
-            await uploadMemoryAttachmentChunked(virtualName, data, mimetype, true, (att, url) => {
-                if (!editorContentRef.value) {
-                    console.error('编辑器内容引用未定义，无法插入音频节点');
-                    return;
-                }
-                currentDiaryAttachmentUrlMap.value[att.id] = url;
-                editorContentRef.value.insertAudio(att.id);
-            });
+            await uploadMemoryAttachmentChunked(
+                virtualName,
+                data,
+                mimetype,
+                attachmentEncryptionByKind.audio.value,
+                (att, url) => {
+                    if (!editorContentRef.value) {
+                        console.error('编辑器内容引用未定义，无法插入音频节点');
+                        return;
+                    }
+                    currentDiaryAttachmentUrlMap.value[att.id] = url;
+                    editorContentRef.value.insertAudio(att.id);
+                },
+            );
         },
-        insertPhoto: () => genericBatchUpload(true, PHOTO_TYPES, 'image', "image"),
+        insertPhoto: () => genericBatchUpload(
+            attachmentEncryptionByKind.image.value,
+            PHOTO_TYPES,
+            'image',
+            "image"
+        ),
         takePhoto: async () => {
             if (beforeClick()) return;
             const key = uuidv4();
@@ -332,7 +351,11 @@ export function useMediaAction(
                 editorContentRef.value.insertImage(meta.id);
             });
             try {
-                const res = await api.cmdAddImageAttachmentFromCamera(event, diaryId.value, true);
+                const res = await api.cmdAddImageAttachmentFromCamera(
+                    event,
+                    diaryId.value,
+                    attachmentEncryptionByKind.image.value,
+                );
                 cancelTokens.add(res);
             } catch (e) {
                 uploadTaskMap.value[key].status = 'error';
@@ -343,9 +366,18 @@ export function useMediaAction(
             if (beforeClick({ skipFocus: true })) return;
             showAudioDrawer.value = true;
         },
-        insertAudio: () => genericBatchUpload(false, AUDIO_TYPES, 'audio'),
-        insertVideo: () => genericBatchUpload(false, VIDEO_TYPES, 'video', "video"),
-        insertFile: async () => genericBatchUpload(true),
+        insertAudio: () => genericBatchUpload(
+            attachmentEncryptionByKind.audio.value,
+            AUDIO_TYPES,
+            'audio'
+        ),
+        insertVideo: () => genericBatchUpload(
+            attachmentEncryptionByKind.video.value,
+            VIDEO_TYPES,
+            'video',
+            "video"
+        ),
+        insertFile: async () => genericBatchUpload(attachmentEncryptionByKind.file.value),
         cachingAttachment: async (attachmentIds: string[]) => {
             if (!attachmentIds.length) return;
             showUploadDialog.value = true;
@@ -402,21 +434,26 @@ export function useMediaAction(
             showUploadDialog.value = true;
             uploadTaskMap.value = {};
 
-            const results = await Promise.all(Array.from(files).map(file =>
-                promisifyUpload<UploadedAttachment>(
+            const results = await Promise.all(Array.from(files).map(file => {
+                const detectedNodeKind = attachmentNodeKindFromMimeType(file.type);
+                return promisifyUpload<UploadedAttachment>(
                     (onSuccess, onError) => {
                         const reader = new FileReader();
                         reader.onload = async () => {
                             const arrayBuffer = reader.result as ArrayBuffer;
                             const uint8Array = new Uint8Array(arrayBuffer);
-                            await uploadMemoryAttachmentChunked(file.name, uint8Array, file.type, false,
+                            await uploadMemoryAttachmentChunked(
+                                file.name,
+                                uint8Array,
+                                file.type,
+                                attachmentEncryptionByKind[detectedNodeKind].value,
                                 (meta, url) => onSuccess({
                                     nodeKind: attachmentNodeKindFromMimeType(meta.mimetype),
                                     attachmentId: meta.id,
                                     filename: meta.filename,
                                     url,
                                 }),
-                                () => onError()
+                                () => onError(),
                             );
                         };
                         reader.onerror = () => {
@@ -425,8 +462,8 @@ export function useMediaAction(
                         };
                         reader.readAsArrayBuffer(file);
                     }
-                )
-            ));
+                );
+            }));
 
             await insertUploadedAttachments(results);
         },
