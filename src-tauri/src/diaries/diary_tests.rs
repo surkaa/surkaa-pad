@@ -225,6 +225,10 @@ mod diary_list_tests {
         // 验证总数和内容
         assert_eq!(all_ids.len(), test_count);
         assert_eq!(page_count, 3, "分页逻辑错误，预期3页但实际{}", page_count);
+        assert!(
+            all_ids.windows(2).all(|pair| pair[0] < pair[1]),
+            "远程日记列表应按反向时间戳 ID 升序排列，即最新日记在前"
+        );
         for id in all_ids.clone() {
             let summary = get_diary_summary(&cache, &crypto, &store, &id)
                 .await

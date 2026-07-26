@@ -129,7 +129,9 @@ impl DiaryStore for LocalStore {
             .into_iter()
             .filter_map(|(key, _)| diary_id_from_manifest_key(&key))
             .collect();
-        ids.sort_by(|a, b| b.cmp(a));
+        // 日记 ID 是反向时间戳：时间越新，ID 的字典序越小。
+        // 因此升序排列才是“最新日记在前”，并与 OSS 的对象键顺序一致。
+        ids.sort();
 
         // 简单分页：next_token 编码为偏移量
         let offset: usize = next_token.and_then(|t| t.parse().ok()).unwrap_or(0);
@@ -469,6 +471,7 @@ mod tests {
     use crate::diaries::diary_content::DiaryContentNode;
     use crate::diaries::diary_migration::{legacy_attachment_id, CURRENT_VERSION};
     use crate::stream::create_mock_stream;
+    use crate::utils::id_generate::generate_descending_id_with_timestamp;
     use std::sync::Mutex;
 
     /// 创建带测试密钥的 Crypto 实例（使用与 .env 相同的测试凭据）
@@ -579,42 +582,38 @@ mod tests {
         assert!(ids.is_empty());
         assert!(next.is_none());
 
-        // 创建几个日记
-        store
-            .upload_manifest("20250101000000000", b"diary1")
-            .await
-            .unwrap();
-        store
-            .upload_manifest("20250102000000000", b"diary2")
-            .await
-            .unwrap();
-        store
-            .upload_manifest("20250103000000000", b"diary3")
-            .await
-            .unwrap();
+        // 使用真实的反向时间戳 ID，并故意打乱写入顺序。
+        let oldest = generate_descending_id_with_timestamp(1_700_000_000_000);
+        let middle = generate_descending_id_with_timestamp(1_700_000_001_000);
+        let newest = generate_descending_id_with_timestamp(1_700_000_002_000);
+        store.upload_manifest(&middle, b"diary2").await.unwrap();
+        store.upload_manifest(&oldest, b"diary1").await.unwrap();
+        store.upload_manifest(&newest, b"diary3").await.unwrap();
 
         let (ids, next) = store.list_diary_ids(None).await.unwrap();
-        assert_eq!(ids.len(), 3);
+        assert_eq!(ids, vec![newest, middle, oldest]);
         assert!(next.is_none());
-        // 应该按降序排列
-        assert_eq!(ids[0], "20250103000000000");
-        assert_eq!(ids[1], "20250102000000000");
-        assert_eq!(ids[2], "20250101000000000");
     }
 
     #[tokio::test]
     async fn test_local_store_list_diary_ids_pagination() {
         let (store, _lfc, _td) = make_local_store();
 
-        // 创建 5 个日记
-        for i in 0..5 {
-            let id = format!("id_{:03}", i);
+        // 跨过 50 条的分页边界，验证每一页拼接后仍保持最新在前。
+        let mut expected = Vec::new();
+        for i in 0..55 {
+            let id = generate_descending_id_with_timestamp(1_700_000_000_000 + i);
             store.upload_manifest(&id, b"data").await.unwrap();
+            expected.push(id);
         }
+        expected.sort();
 
-        // 第一页（page_size = 50，所以全部返回）
-        let (ids, next) = store.list_diary_ids(None).await.unwrap();
-        assert_eq!(ids.len(), 5);
+        let (first_page, next) = store.list_diary_ids(None).await.unwrap();
+        assert_eq!(first_page, expected[..50]);
+        assert_eq!(next.as_deref(), Some("50"));
+
+        let (second_page, next) = store.list_diary_ids(next).await.unwrap();
+        assert_eq!(second_page, expected[50..]);
         assert!(next.is_none());
     }
 
