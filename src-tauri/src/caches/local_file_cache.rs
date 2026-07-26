@@ -85,10 +85,26 @@ impl ChunkedSaveHandle {
         }
         guard.finalized = true;
 
+        if md5.trim().is_empty() {
+            guard.file.take();
+            let _ = tokio::fs::remove_file(&guard.tmp_path).await;
+            return Err(CacheError::InvalidEtag);
+        }
+
         if let Some(file) = guard.file.take() {
-            file.sync_all().await?;
-            tokio::fs::rename(&guard.tmp_path, &guard.data_path).await?;
-            tokio::fs::write(&guard.md5_path, md5).await?;
+            if let Err(error) = file.sync_all().await {
+                let _ = tokio::fs::remove_file(&guard.tmp_path).await;
+                return Err(error.into());
+            }
+            if let Err(error) = tokio::fs::rename(&guard.tmp_path, &guard.data_path).await {
+                let _ = tokio::fs::remove_file(&guard.tmp_path).await;
+                return Err(error.into());
+            }
+            if let Err(error) = tokio::fs::write(&guard.md5_path, md5).await {
+                let _ = tokio::fs::remove_file(&guard.data_path).await;
+                let _ = tokio::fs::remove_file(&guard.md5_path).await;
+                return Err(error.into());
+            }
             Ok(())
         } else {
             Err(CacheError::FileOrContextMissing)

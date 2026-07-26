@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 
 use crate::caches::LocalFileCache;
-use crate::diaries::DiaryError;
+use crate::diaries::attachment_upload::{LocalAttachmentUpload, RemoteAttachmentUpload};
+use crate::diaries::{AttachmentUploadSession, DiaryError};
 use crate::object::{NextToken, ObjectError, ObjectMigrationOutcome, OssClient};
 use crate::storages::{diary_id_from_manifest_key, remote_attachments_key, remote_manifest_key};
 use crate::stream::{tracker_stream, ByteStream};
@@ -34,6 +35,14 @@ pub trait DiaryStore: Send + Sync {
         mimetype: &str,
         stream: ByteStream,
     ) -> Result<String, DiaryError>;
+    /// 创建附件分片写入会话；会话负责当前存储模式下的落盘、远端上传与回滚。
+    async fn begin_attachment_upload(
+        &self,
+        id: &str,
+        filename: &str,
+        size: u64,
+        mimetype: &str,
+    ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError>;
     /// 获取附件流，支持 Range 请求
     async fn download_attachment(
         &self,
@@ -150,6 +159,19 @@ impl DiaryStore for LocalStore {
         self.lfc.save_bytes(&key, &data).await?;
         let etag = format!("{:X}", md5::compute(&data));
         Ok(etag)
+    }
+
+    async fn begin_attachment_upload(
+        &self,
+        id: &str,
+        filename: &str,
+        size: u64,
+        _mimetype: &str,
+    ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        Ok(Box::new(
+            LocalAttachmentUpload::begin(self.lfc.clone(), key, size).await?,
+        ))
     }
 
     async fn download_attachment(
@@ -311,7 +333,15 @@ impl DiaryStore for RemoteStore {
             .await
         {
             Ok(etag) => {
-                let _ = handle.finalize(&etag).await;
+                if let Err(cache_error) = handle.finalize(&etag).await {
+                    let _ = self.lfc.delete(&key).await;
+                    if let Err(rollback_error) = self.client.delete(&key).await {
+                        return Err(DiaryError::Object(ObjectError::OperationFailed(format!(
+                            "本地附件固化失败：{cache_error}；远端回滚失败：{rollback_error}"
+                        ))));
+                    }
+                    return Err(cache_error.into());
+                }
                 Ok(etag)
             }
             Err(e) => {
@@ -319,6 +349,26 @@ impl DiaryStore for RemoteStore {
                 Err(DiaryError::Object(e))
             }
         }
+    }
+
+    async fn begin_attachment_upload(
+        &self,
+        id: &str,
+        filename: &str,
+        size: u64,
+        mimetype: &str,
+    ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        Ok(Box::new(
+            RemoteAttachmentUpload::begin(
+                self.lfc.clone(),
+                self.client.clone(),
+                key,
+                size,
+                mimetype.to_string(),
+            )
+            .await?,
+        ))
     }
 
     async fn download_attachment(

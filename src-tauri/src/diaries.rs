@@ -1,3 +1,4 @@
+mod attachment_upload;
 mod diary;
 pub mod diary_command;
 mod diary_content;
@@ -12,6 +13,7 @@ mod diary_types;
 #[cfg(test)]
 mod diary_tests;
 
+pub use attachment_upload::AttachmentUploadSession;
 pub use diary::*;
 pub use diary_content::DiaryContent;
 pub use diary_error::DiaryError;

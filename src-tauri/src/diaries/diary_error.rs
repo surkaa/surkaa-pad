@@ -14,6 +14,9 @@ pub enum DiaryError {
     #[error("Invalid diary manifest: {0}")]
     InvalidManifest(String),
 
+    #[error("Attachment upload failed: {0}")]
+    AttachmentUpload(String),
+
     #[error("Diary manifest version {found} is newer than the supported version {supported}")]
     UnsupportedVersion { found: u32, supported: u32 },
 

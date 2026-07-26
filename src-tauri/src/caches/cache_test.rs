@@ -186,6 +186,27 @@ mod lfc_tests {
     }
 
     #[tokio::test]
+    async fn test_chunked_save_rejects_empty_etag_and_removes_temp_file() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let handle = cache.begin_chunked_save("file").await.unwrap();
+        handle.write_chunk(b"partial").await.unwrap();
+
+        let result = handle.finalize(" ").await;
+
+        assert!(matches!(
+            result,
+            Err(crate::caches::CacheError::InvalidEtag)
+        ));
+        assert!(cache.get("file").await.unwrap().is_none());
+        let files = std::fs::read_dir(temp_dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        assert!(files.is_empty());
+    }
+
+    #[tokio::test]
     async fn test_set_etag_without_rewriting_data() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
