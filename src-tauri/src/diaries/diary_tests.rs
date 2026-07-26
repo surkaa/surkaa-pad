@@ -358,29 +358,45 @@ mod diary_search_tests {
         let store = LocalStore::new(lfc);
 
         // 创建几个测试日记
-        let (first, _) = save_diary(&cache, &crypto, &store, "这是第一篇日记，包含关键词 rust")
-            .await
-            .unwrap();
-        let (second, _) = save_diary(&cache, &crypto, &store, "这是第二篇日记，不包含关键词")
-            .await
-            .unwrap();
+        let (first, _) = save_diary(
+            &cache,
+            &crypto,
+            &store,
+            "这是第一篇日记，包含关键词 rust[[IMG:att-1]]",
+        )
+        .await
+        .unwrap();
+        let (second, _) = save_diary(
+            &cache,
+            &crypto,
+            &store,
+            "这是第二篇日记，不包含关键词[[AUD:att-1]][[IMG:att-2]]",
+        )
+        .await
+        .unwrap();
         let (third, _) = save_diary(
             &cache,
             &crypto,
             &store,
-            "这是第三篇日记，包含关键词 rust 和 async",
+            "这是第三篇日记，包含关键词 rust 和 async[[AUD:att-1]]",
         )
         .await
         .unwrap();
-        let (fourth, _) = save_diary(&cache, &crypto, &store, "这是第四篇日记，包含关键词 async")
-            .await
-            .unwrap();
+        let (fourth, _) = save_diary(
+            &cache,
+            &crypto,
+            &store,
+            "这是第四篇日记，包含关键词 async[[VID:att-1]]",
+        )
+        .await
+        .unwrap();
 
+        // 元数据中的 MIME 类型故意与正文节点冲突，附件筛选应以正文节点语义为准。
         for (id, mimetype) in [
-            (&first.id, "image/jpeg"),
-            (&second.id, "audio/mpeg"),
-            (&third.id, "audio/ogg"),
-            (&fourth.id, "video/mp4"),
+            (&first.id, "audio/mpeg"),
+            (&second.id, "video/mp4"),
+            (&third.id, "image/jpeg"),
+            (&fourth.id, "application/octet-stream"),
         ] {
             update_diary_attachment(
                 &cache,
@@ -409,7 +425,7 @@ mod diary_search_tests {
             AttachmentMeta {
                 id: "att-2".to_string(),
                 filename: "2".to_string(),
-                mimetype: "image/png".to_string(),
+                mimetype: "text/plain".to_string(),
                 size: 1,
                 encrypted: false,
                 nonce: Vec::new(),
