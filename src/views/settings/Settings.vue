@@ -1,11 +1,22 @@
 <template>
   <div id="settings-page">
-    <div class="settings-content q-pa-md">
-      <div class="q-mb-lg">
-        <div class="group-title q-mb-sm">外观界面</div>
-        <q-card flat bordered class="pad-card rounded-borders">
-          <q-card-section>
-            <div class="text-weight-medium q-mb-md label-text">显示模式</div>
+    <div class="settings-content">
+      <div class="settings-content-inner">
+        <section class="settings-group">
+        <div class="group-title">外观界面</div>
+        <q-card flat bordered class="pad-card">
+          <q-item class="settings-item theme-heading">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="palette"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">显示模式</q-item-label>
+              <q-item-label caption class="desc-text">
+                {{ theme === 'system' ? '自动跟随系统外观' : theme === 'light' ? '始终使用浅色外观' : '始终使用深色外观' }}
+              </q-item-label>
+            </q-item-section>
+          </q-item>
+          <q-card-section class="theme-picker">
             <q-btn-toggle
                 v-model="theme"
                 spread
@@ -22,9 +33,13 @@
           </q-card-section>
           <q-separator/>
           <q-list>
-            <q-item tag="label" v-ripple>
+            <q-item tag="label" v-ripple class="settings-item">
+              <q-item-section avatar class="settings-icon-section">
+                <q-icon name="photo_size_select_small"/>
+              </q-item-section>
               <q-item-section>
                 <q-item-label class="label-text text-weight-medium">默认使用小图</q-item-label>
+                <q-item-label caption class="desc-text">新插入的单张图片以小图显示</q-item-label>
               </q-item-section>
               <q-item-section side>
                 <q-toggle
@@ -35,12 +50,15 @@
             </q-item>
           </q-list>
         </q-card>
-      </div>
+        </section>
 
-      <div class="q-mb-lg">
-        <div class="group-title q-mb-sm">安全隐私</div>
-        <q-list bordered separator class="pad-card rounded-borders">
-          <q-item tag="label" v-ripple :disable="!isAndroid">
+        <section class="settings-group">
+        <div class="group-title">安全隐私</div>
+        <q-list bordered separator class="pad-card">
+          <q-item tag="label" v-ripple :disable="!isAndroid" class="settings-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="fingerprint"/>
+            </q-item-section>
             <q-item-section>
               <q-item-label class="label-text text-weight-medium">生物识别解锁</q-item-label>
               <q-item-label caption class="desc-text">使用指纹或面容快速解锁应用</q-item-label>
@@ -57,12 +75,15 @@
             </q-item-section>
           </q-item>
         </q-list>
-      </div>
+        </section>
 
-      <div class="q-mb-lg">
-        <div class="group-title q-mb-sm">云存储</div>
-        <q-list bordered separator class="pad-card rounded-borders">
-          <q-item>
+        <section class="settings-group">
+        <div class="group-title">云存储</div>
+        <q-list bordered separator class="pad-card">
+          <q-item class="settings-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="cloud_sync"/>
+            </q-item-section>
             <q-item-section>
               <q-item-label class="label-text text-weight-medium">云同步</q-item-label>
               <q-item-label caption class="desc-text">
@@ -79,30 +100,49 @@
             </q-item-section>
           </q-item>
         </q-list>
-      </div>
+        </section>
 
-      <div class="q-mb-lg">
-        <div class="group-title q-mb-sm">数据管理</div>
-        <q-list bordered separator class="pad-card rounded-borders">
-          <q-item clickable v-ripple @click="exportLogFile">
-            <q-item-section class="label-text text-weight-medium">导出日志文件</q-item-section>
+        <section class="settings-group">
+        <div class="group-title">数据管理</div>
+        <q-list bordered separator class="pad-card">
+          <q-item clickable v-ripple @click="exportLogFile" class="settings-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="description"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">导出日志文件</q-item-label>
+              <q-item-label caption class="desc-text">保存诊断日志以便排查问题</q-item-label>
+            </q-item-section>
             <q-item-section side>
               <q-icon name="chevron_right" class="desc-text"/>
             </q-item-section>
           </q-item>
-          <q-item v-if="remoteEnabled" clickable v-ripple @click="cleanUnusedFile">
-            <q-item-section class="label-text text-weight-medium">清除过期缓存</q-item-section>
+          <q-item v-if="remoteEnabled" clickable v-ripple @click="cleanUnusedFile" class="settings-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="cleaning_services"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">清除过期缓存</q-item-label>
+              <q-item-label caption class="desc-text">清理不再使用的本地附件缓存</q-item-label>
+            </q-item-section>
             <q-item-section side>
               <q-icon name="chevron_right" class="desc-text"/>
             </q-item-section>
           </q-item>
-          <q-item clickable v-ripple @click="handleReset">
-            <q-item-section class="text-negative text-weight-medium">重置应用配置</q-item-section>
+          <q-item clickable v-ripple @click="handleReset" class="settings-item danger-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="restart_alt"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="text-negative text-weight-medium">重置应用配置</q-item-label>
+              <q-item-label caption class="desc-text">清除本机配置并重启应用</q-item-label>
+            </q-item-section>
             <q-item-section side>
               <q-icon name="chevron_right" color="negative"/>
             </q-item-section>
           </q-item>
         </q-list>
+        </section>
       </div>
     </div>
 
@@ -396,7 +436,20 @@ defineOptions({name: 'Settings'});
 
   .settings-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    width: 100%;
+  }
+
+  .settings-content-inner {
+    width: 100%;
+    padding: 18px 20px 32px;
+    box-sizing: border-box;
+    text-align: left;
+  }
+
+  .settings-group {
+    margin-bottom: 22px;
   }
 
   .title-text {
@@ -412,15 +465,62 @@ defineOptions({name: 'Settings'});
   }
 
   .group-title {
-    font-size: 0.85rem;
+    margin: 0 0 8px 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
     color: var(--pad-text-color-400);
-    padding-left: 8px;
-    letter-spacing: 1px;
+    letter-spacing: 0.08em;
   }
 
   .pad-card {
     background-color: var(--pad-bg-color-200);
     border-color: var(--pad-border-color-100);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px var(--pad-shadow-color-100);
+  }
+
+  .settings-item {
+    min-height: 66px;
+    padding: 10px 16px;
+
+    :deep(.q-item__section:not(.q-item__section--side)) {
+      align-items: flex-start;
+      text-align: left;
+    }
+
+    :deep(.q-item__section--side) {
+      padding-left: 12px;
+    }
+  }
+
+  .settings-icon-section {
+    min-width: 42px;
+    padding-right: 14px;
+
+    .q-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--pad-primary-color) 16%, transparent);
+      color: var(--pad-primary-dark);
+      font-size: 20px;
+    }
+  }
+
+  .danger-item .settings-icon-section .q-icon {
+    background: color-mix(in srgb, var(--pad-danger-color) 14%, transparent);
+    color: var(--pad-danger-color);
+  }
+
+  .theme-heading {
+    min-height: 60px;
+    padding-bottom: 4px;
+  }
+
+  .theme-picker {
+    padding: 8px 16px 16px 72px;
+    text-align: left;
   }
 
   .pad-modal {
@@ -429,11 +529,45 @@ defineOptions({name: 'Settings'});
   }
 
   .theme-toggle {
+    width: 100%;
     border: 1px solid var(--pad-border-color-100);
     background-color: var(--pad-bg-color-100);
+    border-radius: 10px;
+    overflow: hidden;
 
     :deep(.q-btn) {
       color: var(--pad-text-color-300);
+      min-height: 42px;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .settings-content-inner {
+      padding: 14px 12px 28px;
+    }
+
+    .settings-group {
+      margin-bottom: 18px;
+    }
+
+    .settings-item {
+      padding-right: 12px;
+      padding-left: 12px;
+    }
+
+    .settings-icon-section {
+      min-width: 38px;
+      padding-right: 10px;
+    }
+
+    .theme-picker {
+      padding-right: 12px;
+      padding-left: 60px;
+    }
+
+    .theme-toggle :deep(.q-btn) {
+      padding: 4px;
+      font-size: 12px;
     }
   }
 }

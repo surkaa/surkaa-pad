@@ -11,3 +11,12 @@ export function shouldFocusEditorEnd(
 
   return clientY >= lastNode.getBoundingClientRect().bottom
 }
+
+export function shouldPreventStackedAlbumEditorFocus(
+  target: EventTarget | null,
+  currentPlatform: string,
+): boolean {
+  return currentPlatform === 'android'
+    && target instanceof Element
+    && Boolean(target.closest('.editor-image-album[data-display-mode="stackedCards"]'))
+}
