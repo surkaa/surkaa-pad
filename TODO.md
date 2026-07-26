@@ -4,10 +4,6 @@
 
 ## 高优先级
 
-- [ ] 清理敏感调试日志
-  - 解锁流程不应输出解密后的 OSS 配置，避免 AccessKey Secret 进入 WebView 日志。
-  - Rust OSS 初始化日志不应输出 AccessKey ID 原文，仅保留长度或脱敏信息。
-
 - [ ] 修复并发附件元数据偶发丢失
   - `test_thread_add_and_delete_attachment` 在全量并行测试中偶发只保存 9/10 条元数据，单独运行可以通过。
   - 查清测试间干扰、日记 ID 冲突及 manifest read-modify-write 锁的作用域。

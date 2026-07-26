@@ -293,11 +293,8 @@ async function saveConfigAndLogin() {
 
 async function initOss() {
   try {
-    console.log('[initOss] encryptedConfig length:', encryptedConfig.value?.length);
     const res = await api.cmdDecryptData(encryptedConfig.value);
-    console.log('[initOss] decrypted JSON:', res);
     const ossConfig = JSON.parse(res) as OssConfigType;
-    console.log('[initOss] parsed akid len:', ossConfig.akid?.length, 'bucket:', ossConfig.bucket, 'endpoint:', ossConfig.endpoint);
     await api.cmdInitOssClient(
         ossConfig.akid,
         ossConfig.aks,

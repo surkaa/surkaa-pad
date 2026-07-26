@@ -17,6 +17,16 @@ fn etags_match(left: Option<&str>, right: Option<&str>) -> bool {
     }
 }
 
+fn oss_config_diagnostics(endpoint: &str, akid: &str, sakey: &str, bucket: &str) -> String {
+    format!(
+        "[oss init] config lengths: endpoint={}, bucket={}, akid={}, sakey={}",
+        endpoint.len(),
+        bucket.len(),
+        akid.len(),
+        sakey.len()
+    )
+}
+
 /// 包装 rust-s3 的 HeadObjectResult，保持外部 API 字段名不变
 #[derive(Debug, Clone, Serialize)]
 pub struct HeadObjectOutput {
@@ -107,14 +117,10 @@ impl OssClient {
         sakey: String,
         bucket: String,
     ) -> Result<(), ObjectError> {
-        // 先打日志再 trim，保留原始值用于诊断
         log::info!(
-            "[oss init] raw endpoint(len={}): {:?}",
-            endpoint.len(),
-            endpoint
+            "{}",
+            oss_config_diagnostics(&endpoint, &akid, &sakey, &bucket)
         );
-        log::info!("[oss init] raw bucket(len={}): {:?}", bucket.len(), bucket);
-        log::info!("[oss init] raw akid(len={}): {:?}", akid.len(), akid);
 
         let endpoint = endpoint.trim().to_string();
         let akid = akid.trim().to_string();
@@ -554,5 +560,28 @@ impl OssClient {
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::oss_config_diagnostics;
+
+    #[test]
+    fn oss_config_diagnostics_never_contains_configuration_values() {
+        let endpoint = "secret-endpoint.example";
+        let akid = "sentinel-access-key";
+        let sakey = "sentinel-access-secret";
+        let bucket = "sentinel-bucket";
+
+        let diagnostics = oss_config_diagnostics(endpoint, akid, sakey, bucket);
+
+        for value in [endpoint, akid, sakey, bucket] {
+            assert!(!diagnostics.contains(value));
+        }
+        assert!(diagnostics.contains(&format!("endpoint={}", endpoint.len())));
+        assert!(diagnostics.contains(&format!("bucket={}", bucket.len())));
+        assert!(diagnostics.contains(&format!("akid={}", akid.len())));
+        assert!(diagnostics.contains(&format!("sakey={}", sakey.len())));
     }
 }
