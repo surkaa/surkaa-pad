@@ -443,7 +443,6 @@ defineOptions({name: 'Settings'});
 
   .settings-content-inner {
     width: 100%;
-    max-width: 760px;
     padding: 18px 20px 32px;
     box-sizing: border-box;
     text-align: left;
@@ -544,7 +543,6 @@ defineOptions({name: 'Settings'});
 
   @media (max-width: 600px) {
     .settings-content-inner {
-      max-width: none;
       padding: 14px 12px 28px;
     }
 
