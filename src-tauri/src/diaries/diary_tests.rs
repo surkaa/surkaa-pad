@@ -302,6 +302,7 @@ mod diary_search_tests {
         keyword: String,
         or: bool,
         attachment_types: Vec<AttachmentTypeFilter>,
+        attachment_or: bool,
     ) -> (Vec<DiarySummary>, Vec<String>) {
         // 创建事件监听器
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SearchDiariesEvent>();
@@ -314,6 +315,7 @@ mod diary_search_tests {
             keyword,
             or,
             attachment_types,
+            attachment_or,
         )
         .await;
 
@@ -397,10 +399,36 @@ mod diary_search_tests {
             .await
             .unwrap();
         }
+        update_diary_attachment(
+            &cache,
+            &crypto,
+            &store,
+            &second.id,
+            AttachmentMeta {
+                id: "att-2".to_string(),
+                filename: "2".to_string(),
+                mimetype: "image/png".to_string(),
+                size: 1,
+                encrypted: false,
+                nonce: Vec::new(),
+                algorithm: Gcm,
+                etag: None,
+            },
+        )
+        .await
+        .unwrap();
 
         // 收集结果
-        let (matches, unmatches) =
-            test_search(&cache, &crypto, &store, "rust".to_string(), true, vec![]).await;
+        let (matches, unmatches) = test_search(
+            &cache,
+            &crypto,
+            &store,
+            "rust".to_string(),
+            true,
+            vec![],
+            true,
+        )
+        .await;
         assert_eq!(matches.len(), 2, "使用 OR 搜索 'rust' 应该匹配 2 篇日记");
         assert_eq!(
             unmatches.len(),
@@ -408,8 +436,16 @@ mod diary_search_tests {
             "使用 OR 搜索 'rust' 应该不匹配 2 篇日记"
         );
 
-        let (matches, unmatches) =
-            test_search(&cache, &crypto, &store, "async".to_string(), true, vec![]).await;
+        let (matches, unmatches) = test_search(
+            &cache,
+            &crypto,
+            &store,
+            "async".to_string(),
+            true,
+            vec![],
+            true,
+        )
+        .await;
         assert_eq!(matches.len(), 2, "使用 OR 搜索 'async' 应该匹配 2 篇日记");
         assert_eq!(
             unmatches.len(),
@@ -424,6 +460,7 @@ mod diary_search_tests {
             "rust async".to_string(),
             false,
             vec![],
+            true,
         )
         .await;
         assert_eq!(
@@ -444,6 +481,7 @@ mod diary_search_tests {
             "rust async".to_string(),
             true,
             vec![],
+            true,
         )
         .await;
         assert_eq!(
@@ -463,10 +501,12 @@ mod diary_search_tests {
             String::new(),
             false,
             vec![AttachmentTypeFilter::Image],
+            true,
         )
         .await;
-        assert_eq!(matches.len(), 1, "只选择图片时应匹配 1 篇日记");
-        assert_eq!(matches[0].id, first.id);
+        assert_eq!(matches.len(), 2, "只选择图片时应匹配 2 篇日记");
+        assert!(matches.iter().any(|summary| summary.id == first.id));
+        assert!(matches.iter().any(|summary| summary.id == second.id));
 
         let (matches, _) = test_search(
             &cache,
@@ -475,6 +515,7 @@ mod diary_search_tests {
             String::new(),
             false,
             vec![AttachmentTypeFilter::Image, AttachmentTypeFilter::Audio],
+            true,
         )
         .await;
         assert_eq!(matches.len(), 3, "多个附件类型之间应采用 OR 语义");
@@ -483,9 +524,23 @@ mod diary_search_tests {
             &cache,
             &crypto,
             &store,
+            String::new(),
+            false,
+            vec![AttachmentTypeFilter::Image, AttachmentTypeFilter::Audio],
+            false,
+        )
+        .await;
+        assert_eq!(matches.len(), 1, "AND 模式应要求日记包含每一种附件类型");
+        assert_eq!(matches[0].id, second.id);
+
+        let (matches, _) = test_search(
+            &cache,
+            &crypto,
+            &store,
             "rust".to_string(),
             true,
             vec![AttachmentTypeFilter::Audio],
+            true,
         )
         .await;
         assert_eq!(matches.len(), 1, "关键词和附件类型之间应采用 AND 语义");

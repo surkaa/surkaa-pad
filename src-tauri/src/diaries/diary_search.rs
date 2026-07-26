@@ -17,6 +17,7 @@ pub async fn search_diaries(
     keyword: String,
     or: bool,
     attachment_types: Vec<AttachmentTypeFilter>,
+    attachment_or: bool,
 ) {
     let ec = event.clone();
     let keywords = keyword.split_whitespace().collect::<Vec<_>>();
@@ -44,11 +45,19 @@ pub async fn search_diaries(
                         kc.iter().all(|keyword| content.contains(keyword))
                     };
                     let attachment_matches = attachment_types.is_empty()
-                        || diary.attachments.iter().any(|attachment| {
-                            attachment_types
-                                .iter()
-                                .any(|filter| attachment_matches_filter(attachment, *filter))
-                        });
+                        || if attachment_or {
+                            attachment_types.iter().any(|filter| {
+                                diary.attachments.iter().any(|attachment| {
+                                    attachment_matches_filter(attachment, *filter)
+                                })
+                            })
+                        } else {
+                            attachment_types.iter().all(|filter| {
+                                diary.attachments.iter().any(|attachment| {
+                                    attachment_matches_filter(attachment, *filter)
+                                })
+                            })
+                        };
                     let is_match = keyword_matches && attachment_matches;
 
                     let _ = ecc.send(if is_match {
