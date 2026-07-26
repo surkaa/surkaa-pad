@@ -81,6 +81,13 @@ pub trait DiaryStore: Send + Sync {
         range: Option<(u64, u64)>,
         known_etag: Option<&str>,
     ) -> Result<ByteStream, DiaryError>;
+    /// 获取附件对象的真实字节数。Range/HEAD 响应不能依赖可能有误的历史 Manifest size。
+    async fn get_attachment_size(
+        &self,
+        id: &str,
+        filename: &str,
+        known_etag: Option<&str>,
+    ) -> Result<u64, DiaryError>;
     /// 将完整附件缓存到本地；已经命中有效缓存时直接成功。
     async fn cache_attachment(
         &self,
@@ -207,6 +214,19 @@ impl DiaryStore for LocalStore {
     ) -> Result<ByteStream, DiaryError> {
         let key = remote_attachments_key(id, filename);
         Ok(self.lfc.get_stream(&key, range).await?)
+    }
+
+    async fn get_attachment_size(
+        &self,
+        id: &str,
+        filename: &str,
+        _known_etag: Option<&str>,
+    ) -> Result<u64, DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        self.lfc
+            .get_size(&key)
+            .await?
+            .ok_or_else(|| CacheError::NotFound.into())
     }
 
     async fn cache_attachment(
@@ -416,6 +436,50 @@ impl DiaryStore for RemoteStore {
         }
         let (stream, _) = self.client.download(&key, range).await?;
         Ok(stream)
+    }
+
+    async fn get_attachment_size(
+        &self,
+        id: &str,
+        filename: &str,
+        known_etag: Option<&str>,
+    ) -> Result<u64, DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        if let Some(cached_etag) = self.lfc.get(&key).await? {
+            if known_etag.is_some_and(|etag| etags_match(etag, &cached_etag)) {
+                if let Some(size) = self.lfc.get_size(&key).await? {
+                    return Ok(size);
+                }
+            }
+
+            let metadata = self.client.get_metadata(&key).await?;
+            if metadata
+                .etag
+                .as_deref()
+                .is_some_and(|etag| etags_match(etag, &cached_etag))
+            {
+                if let Some(size) = self.lfc.get_size(&key).await? {
+                    return Ok(size);
+                }
+            } else {
+                let _ = self.lfc.delete(&key).await;
+            }
+            return metadata.content_length.ok_or_else(|| {
+                DiaryError::Object(ObjectError::OperationFailed(format!(
+                    "附件缺少 Content-Length: {key}"
+                )))
+            });
+        }
+
+        self.client
+            .get_metadata(&key)
+            .await?
+            .content_length
+            .ok_or_else(|| {
+                DiaryError::Object(ObjectError::OperationFailed(format!(
+                    "附件缺少 Content-Length: {key}"
+                )))
+            })
     }
 
     async fn cache_attachment(

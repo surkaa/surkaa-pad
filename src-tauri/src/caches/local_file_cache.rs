@@ -231,6 +231,20 @@ impl LocalFileCache {
         }
     }
 
+    /// 获取有效缓存项的数据文件大小。
+    ///
+    /// 数据文件和 ETag 标记必须同时存在；不完整的缓存按未命中处理。
+    pub async fn get_size(&self, key: &str) -> Result<Option<u64>, CacheError> {
+        let (data_path, md5_path) = self.get_path(key);
+        let data_exists = tokio::fs::try_exists(&data_path).await.unwrap_or(false);
+        let md5_exists = tokio::fs::try_exists(&md5_path).await.unwrap_or(false);
+        if data_exists && md5_exists {
+            Ok(Some(tokio::fs::metadata(data_path).await?.len()))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// 根据key直接返回完整的数据流
     pub async fn get_stream(
         &self,

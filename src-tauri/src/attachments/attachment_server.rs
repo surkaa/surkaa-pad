@@ -265,7 +265,6 @@ async fn process_attachment(
         return Err(ServerError::Forbidden("GCM decryption is not supported"));
     }
 
-    let file_size = attachment.size;
     let raw_range = request
         .headers()
         .get(RANGE)
@@ -275,6 +274,15 @@ async fn process_attachment(
                 .map_err(|_| ServerError::BadRequest("Invalid Range header"))
         })
         .transpose()?;
+    // Range 和 HEAD 的响应头必须在读取正文前确定，因此从存储对象获取真实长度。
+    // 普通 GET 继续直接下载，避免图片加载额外增加一次远端 HEAD。
+    let mut file_size = if raw_range.is_some() || request.method() == Method::HEAD {
+        store
+            .get_attachment_size(&id, &attachment_id, attachment.etag.as_deref())
+            .await?
+    } else {
+        attachment.size
+    };
     let range = resolve_range(raw_range, file_size)?;
     let selected_length = range
         .map(|(start, end)| end.saturating_sub(start) + 1)
@@ -308,10 +316,20 @@ async fn process_attachment(
     let capacity = min(selected_length, MAX_CHUNK_SIZE) as usize;
     let data = collect_data_with_capacity(stream, capacity).await?;
     let actual_length = data.len() as u64;
-    if actual_length != selected_length {
+    if range.is_some() && actual_length != selected_length {
         return Err(ServerError::Internal(format!(
             "Attachment length mismatch: expected {selected_length}, got {actual_length}"
         )));
+    }
+    if range.is_none() && actual_length != file_size {
+        log::warn!(
+            "附件 Manifest 长度与对象不一致，使用对象实际长度: diary_id={}, attachment_id={}, manifest_size={}, actual_size={}",
+            id,
+            attachment_id,
+            file_size,
+            actual_length
+        );
+        file_size = actual_length;
     }
     let actual_range = range.map(|(start, _)| {
         let end = start.saturating_add(actual_length.saturating_sub(1));
@@ -400,6 +418,25 @@ mod tests {
         plaintext: &[u8],
         encrypted: bool,
     ) -> TestServer {
+        start_test_server_with_declared_size(
+            id,
+            filename,
+            mimetype,
+            plaintext,
+            encrypted,
+            plaintext.len() as u64,
+        )
+        .await
+    }
+
+    async fn start_test_server_with_declared_size(
+        id: &str,
+        filename: &str,
+        mimetype: &str,
+        plaintext: &[u8],
+        encrypted: bool,
+        declared_size: u64,
+    ) -> TestServer {
         let temp_dir = tempfile::tempdir().unwrap();
         let local_file_cache = LocalFileCache::new(temp_dir.path().to_path_buf());
         let crypto = Crypto::new();
@@ -436,7 +473,7 @@ mod tests {
                     id: filename.to_string(),
                     filename: filename.to_string(),
                     mimetype: mimetype.to_string(),
-                    size: plaintext.len() as u64,
+                    size: declared_size,
                     encrypted,
                     nonce,
                     algorithm: Ctr,
@@ -533,6 +570,53 @@ mod tests {
         );
         let body = response.bytes().await.unwrap();
         assert_eq!(body.as_ref(), &data[start as usize..=expected_end as usize]);
+    }
+
+    #[tokio::test]
+    async fn serves_legacy_attachment_when_manifest_size_is_sixteen_bytes_too_large() {
+        let data = b"legacy encrypted attachment payload";
+        let server = start_test_server_with_declared_size(
+            "legacy-diary",
+            "legacy-audio.webm",
+            "audio/webm",
+            data,
+            true,
+            data.len() as u64 + 16,
+        )
+        .await;
+        let url = server.handle.url("legacy-diary", "legacy-audio.webm");
+        let client = reqwest::Client::new();
+
+        let response = client.get(&url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[CONTENT_LENGTH], data.len().to_string());
+        assert_eq!(response.bytes().await.unwrap().as_ref(), data);
+
+        let response = client.head(&url).send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[CONTENT_LENGTH], data.len().to_string());
+
+        let suffix_length = 7;
+        let response = client
+            .get(&url)
+            .header(RANGE, format!("bytes=-{suffix_length}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            response.headers()[CONTENT_RANGE],
+            format!(
+                "bytes {}-{}/{}",
+                data.len() - suffix_length,
+                data.len() - 1,
+                data.len()
+            )
+        );
+        assert_eq!(
+            response.bytes().await.unwrap().as_ref(),
+            &data[data.len() - suffix_length..]
+        );
     }
 
     #[tokio::test]
