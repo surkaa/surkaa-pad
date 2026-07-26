@@ -64,6 +64,7 @@ pub async fn cmd_enable_remote_storage(
     // 1. 初始化 OSS 客户端
     if let Err(error) = state.oss_client().initialize(endpoint, akid, aks, bucket) {
         let message = error.to_string();
+        log::error!("[remote] OSS initialization failed: {message}");
         let _ = event.send(SyncProgressEvent::Error {
             direction,
             phase: SyncPhase::Preparing,
@@ -87,6 +88,12 @@ pub async fn cmd_enable_remote_storage(
         Ok(summary) => summary,
         Err(error) => {
             let message = error.message.clone();
+            log::error!(
+                "[remote] upload sync failed: phase={:?}, current_file={:?}, error={}",
+                error.phase,
+                error.current_file,
+                message
+            );
             let _ = event.send(error.into_event(direction));
             state.oss_client().reset();
             return Err(AppError {
