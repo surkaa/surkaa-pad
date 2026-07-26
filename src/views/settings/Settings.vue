@@ -1,7 +1,8 @@
 <template>
   <div id="settings-page">
     <div class="settings-content">
-      <section class="settings-group">
+      <div class="settings-content-inner">
+        <section class="settings-group">
         <div class="group-title">外观界面</div>
         <q-card flat bordered class="pad-card">
           <q-item class="settings-item theme-heading">
@@ -49,9 +50,9 @@
             </q-item>
           </q-list>
         </q-card>
-      </section>
+        </section>
 
-      <section class="settings-group">
+        <section class="settings-group">
         <div class="group-title">安全隐私</div>
         <q-list bordered separator class="pad-card">
           <q-item tag="label" v-ripple :disable="!isAndroid" class="settings-item">
@@ -74,9 +75,9 @@
             </q-item-section>
           </q-item>
         </q-list>
-      </section>
+        </section>
 
-      <section class="settings-group">
+        <section class="settings-group">
         <div class="group-title">云存储</div>
         <q-list bordered separator class="pad-card">
           <q-item class="settings-item">
@@ -99,9 +100,9 @@
             </q-item-section>
           </q-item>
         </q-list>
-      </section>
+        </section>
 
-      <section class="settings-group">
+        <section class="settings-group">
         <div class="group-title">数据管理</div>
         <q-list bordered separator class="pad-card">
           <q-item clickable v-ripple @click="exportLogFile" class="settings-item">
@@ -141,7 +142,8 @@
             </q-item-section>
           </q-item>
         </q-list>
-      </section>
+        </section>
+      </div>
     </div>
 
     <!-- OSS 配置对话框 -->
@@ -434,7 +436,12 @@ defineOptions({name: 'Settings'});
 
   .settings-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    width: 100%;
+  }
+
+  .settings-content-inner {
     width: 100%;
     max-width: 760px;
     padding: 18px 20px 32px;
@@ -536,7 +543,7 @@ defineOptions({name: 'Settings'});
   }
 
   @media (max-width: 600px) {
-    .settings-content {
+    .settings-content-inner {
       max-width: none;
       padding: 14px 12px 28px;
     }
