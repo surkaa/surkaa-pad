@@ -26,6 +26,10 @@ import { animateStackedAlbumCycle } from './editor/albumAnimation'
 import { setupEditorImageLoading } from './editor/imageLoading'
 import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode } from './editor/tiptap-extensions'
 import AlbumImageInsertDialog from './AlbumImageInsertDialog.vue'
+import {
+  attachmentInsertionsToEditorContent,
+  type AttachmentInsertion,
+} from '../utils/attachmentInsertion'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -483,6 +487,19 @@ onBeforeUnmount(() => {
   editor.value?.destroy()
 })
 
+function insertAttachments(insertions: readonly AttachmentInsertion[], atEnd: boolean) {
+  const currentEditor = editor.value
+  if (!currentEditor || !insertions.length) return Boolean(currentEditor)
+
+  const chain = currentEditor.chain()
+  if (atEnd) {
+    chain.setTextSelection(currentEditor.state.doc.content.size)
+  } else {
+    chain.focus()
+  }
+  return chain.insertContent(attachmentInsertionsToEditorContent(insertions)).run()
+}
+
 defineExpose({
   editor,
   focusEnd: () => editor.value?.commands.focus('end'),
@@ -498,6 +515,7 @@ defineExpose({
   insertAudio: (id: string) => (editor.value?.chain().focus() as any).insertAudio({ id, src: props.attachmentMap[id] || '' }).run(),
   insertFile: (id: string, filename: string) => (editor.value?.chain().focus() as any)
     .insertFile({ id, filename }).run(),
+  insertAttachments,
   updateSrc(attachmentId: string, newUrl: string) {
     if (!editor.value) return false
     editor.value.commands.command(({ tr }) => {

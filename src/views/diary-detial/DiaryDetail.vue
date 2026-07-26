@@ -3,7 +3,7 @@ import {nextTick, onActivated, onMounted, ref, watch} from "vue";
 import TiptapEditor from "../../components/TiptapEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
-import {onBeforeRouteLeave} from "vue-router";
+import {onBeforeRouteLeave, type NavigationGuardNext} from "vue-router";
 import {Dialog, useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
@@ -16,6 +16,7 @@ import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {useConfigStore} from "../../stores/config.ts";
 import {diaryContentToSource} from "../../components/editor/markdownConverter.ts";
+import type {AttachmentMeta} from "../../bindings.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -44,6 +45,10 @@ const {
 // 媒体操作
 const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, tiptapEditorRef);
 const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaAction;
+const showUnusedAttachmentsDialog = ref(false);
+const unusedAttachmentActionLoading = ref(false);
+const pendingUnusedAttachments = ref<AttachmentMeta[]>([]);
+let pendingNavigation: NavigationGuardNext | null = null;
 
 const {deleteAttachment, updateAttachmentFilename} = useDataStore();
 
@@ -127,6 +132,45 @@ async function unpinnedDiary() {
 
 defineOptions({name: 'DiaryDetail'});
 
+function finishUnusedAttachmentCheck() {
+  showUnusedAttachmentsDialog.value = false;
+  pendingUnusedAttachments.value = [];
+  const next = pendingNavigation;
+  pendingNavigation = null;
+  next?.();
+}
+
+async function appendUnusedAttachments() {
+  unusedAttachmentActionLoading.value = true;
+  try {
+    const inserted = await mediaAction.insertExistingAttachmentsAtEnd(pendingUnusedAttachments.value);
+    if (!inserted) {
+      throw new Error('编辑器未能插入附件');
+    }
+    await nextTick();
+    finishUnusedAttachmentCheck();
+  } catch (error) {
+    $q.notify({type: 'negative', message: `添加附件失败：${formatError(error)}`});
+  } finally {
+    unusedAttachmentActionLoading.value = false;
+  }
+}
+
+async function deleteUnusedAttachments() {
+  unusedAttachmentActionLoading.value = true;
+  const attachments = [...pendingUnusedAttachments.value];
+  try {
+    await Promise.all(attachments.map(att => api.cmdDeleteAttachment(diaryId.value, att.id)));
+    deleteAttachment(diaryId.value, attachments.map(att => att.id));
+    finishUnusedAttachmentCheck();
+  } catch (error) {
+    console.error('删除附件失败:', error);
+    $q.notify({type: 'negative', message: `删除附件失败：${formatError(error)}`});
+  } finally {
+    unusedAttachmentActionLoading.value = false;
+  }
+}
+
 onBeforeRouteLeave((_to, _from, next) => {
   const orphans = unusedAttachments.value;
   if (!orphans.length || isDelBack.value) {
@@ -134,25 +178,9 @@ onBeforeRouteLeave((_to, _from, next) => {
     next();
     return;
   }
-  // 先询问用户是否要删除这些未使用的附件
-  $q.dialog({
-    title: '未使用的附件',
-    message: `有 ${orphans.length} 个未使用的附件，是否删除？`,
-    persistent: true,
-    ok: {label: '删除', color: 'negative'},
-    cancel: {label: '保留', color: 'primary'},
-  }).onOk(() => {
-    Promise
-        .all(orphans.map(att => api.cmdDeleteAttachment(diaryId.value, att.id)))
-        .then(() => {
-          deleteAttachment(diaryId.value, orphans.map(att => att.id));
-          next();
-        })
-        .catch(e => {
-          console.error('删除附件失败:', e);
-          $q.notify({type: 'negative', message: `删除附件失败 ${e.message || e.error || e}`});
-        });
-  }).onCancel(() => next());
+  pendingUnusedAttachments.value = [...orphans];
+  pendingNavigation = next;
+  showUnusedAttachmentsDialog.value = true;
 });
 
 onMounted(async () => {
@@ -338,6 +366,41 @@ onActivated(async () => {
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <q-dialog no-refocus v-model="showUnusedAttachmentsDialog" persistent>
+      <q-card class="unused-attachments-dialog">
+        <q-card-section>
+          <div class="text-h6">未使用的附件</div>
+          <div class="q-mt-sm text-body2">
+            有 {{ pendingUnusedAttachments.length }} 个附件没有出现在正文中，请选择处理方式。
+          </div>
+        </q-card-section>
+
+        <q-card-actions align="right" class="unused-attachment-actions">
+          <q-btn
+              flat
+              label="保留"
+              color="primary"
+              :disable="unusedAttachmentActionLoading"
+              @click="finishUnusedAttachmentCheck"
+          />
+          <q-btn
+              unelevated
+              label="添加到日记末尾"
+              color="primary"
+              :loading="unusedAttachmentActionLoading"
+              @click="appendUnusedAttachments"
+          />
+          <q-btn
+              flat
+              label="删除附件"
+              color="negative"
+              :disable="unusedAttachmentActionLoading"
+              @click="deleteUnusedAttachments"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
@@ -351,6 +414,14 @@ onActivated(async () => {
   .action-sheet-card {
     width: 100%;
     overflow: hidden;
+  }
+
+  .unused-attachments-dialog {
+    width: min(440px, 90vw);
+  }
+
+  .unused-attachment-actions {
+    gap: 4px;
   }
 }
 </style>
