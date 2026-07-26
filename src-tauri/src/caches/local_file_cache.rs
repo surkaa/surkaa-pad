@@ -248,10 +248,16 @@ impl LocalFileCache {
     }
 
     /// 删除指定 key 的缓存文件
-    pub async fn delete(&self, key: &str) {
+    pub async fn delete(&self, key: &str) -> Result<(), CacheError> {
         let (data_path, md5_path) = self.get_path(key);
-        let _ = tokio::fs::remove_file(&data_path).await;
-        let _ = tokio::fs::remove_file(&md5_path).await;
+        for path in [&md5_path, &data_path] {
+            match tokio::fs::remove_file(path).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
     }
 
     /// 直接保存数据文件并计算
@@ -464,8 +470,6 @@ impl LocalFileCache {
 
             while let Some(entry) = read_dir.next_entry().await? {
                 let file_type = entry.file_type().await?;
-                #[cfg(debug_assertions)]
-                println!("{:?}, filetype: {}", entry.path(), file_type.is_file());
                 if file_type.is_dir() {
                     stack.push(entry.path());
                     continue;

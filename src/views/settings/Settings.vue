@@ -90,7 +90,7 @@
               <q-icon name="chevron_right" class="desc-text"/>
             </q-item-section>
           </q-item>
-          <q-item clickable v-ripple @click="cleanUnusedFile">
+          <q-item v-if="remoteEnabled" clickable v-ripple @click="cleanUnusedFile">
             <q-item-section class="label-text text-weight-medium">清除过期缓存</q-item-section>
             <q-item-section side>
               <q-icon name="chevron_right" class="desc-text"/>

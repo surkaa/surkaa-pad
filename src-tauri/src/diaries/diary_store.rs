@@ -104,7 +104,7 @@ impl DiaryStore for LocalStore {
         if let Ok(all) = self.lfc.get_all().await {
             for (key, _) in all {
                 if key.starts_with(&prefix) || key == id {
-                    self.lfc.delete(&key).await;
+                    let _ = self.lfc.delete(&key).await;
                 }
             }
         }
@@ -180,7 +180,7 @@ impl DiaryStore for LocalStore {
 
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
-        self.lfc.delete(&key).await;
+        self.lfc.delete(&key).await?;
         Ok(())
     }
 
@@ -204,7 +204,7 @@ impl DiaryStore for LocalStore {
                 if !etags_match(&old_etag, &new_etag) {
                     return Err(DiaryError::Object(ObjectError::KeyAlreadyExists(new_key)));
                 }
-                self.lfc.delete(&old_key).await;
+                self.lfc.delete(&old_key).await?;
                 Ok(ObjectMigrationOutcome::AlreadyMigrated)
             }
             (Some(old_etag), None) => {
@@ -212,7 +212,7 @@ impl DiaryStore for LocalStore {
                 self.lfc
                     .save_stream_with_etag(&new_key, &old_etag, stream)
                     .await?;
-                self.lfc.delete(&old_key).await;
+                self.lfc.delete(&old_key).await?;
                 Ok(ObjectMigrationOutcome::Migrated)
             }
         }
@@ -274,7 +274,7 @@ impl DiaryStore for RemoteStore {
         if let Ok(all) = self.lfc.get_all().await {
             for (key, _) in all {
                 if key.starts_with(&prefix) || key == id {
-                    self.lfc.delete(&key).await;
+                    let _ = self.lfc.delete(&key).await;
                 }
             }
         }
@@ -338,7 +338,7 @@ impl DiaryStore for RemoteStore {
             if metadata.etag.as_deref() == Some(&cached_etag) {
                 return Ok(self.lfc.get_stream(&key, range).await?);
             } else {
-                self.lfc.delete(&key).await;
+                let _ = self.lfc.delete(&key).await;
             }
         }
         let (stream, _) = self.client.download(&key, range).await?;
@@ -384,7 +384,7 @@ impl DiaryStore for RemoteStore {
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
         self.client.delete(&key).await?;
-        self.lfc.delete(&key).await;
+        let _ = self.lfc.delete(&key).await;
         Ok(())
     }
 
@@ -398,8 +398,8 @@ impl DiaryStore for RemoteStore {
         let new_key = remote_attachments_key(id, attachment_id);
         let outcome = self.client.migrate_object(&old_key, &new_key).await?;
         // OSS 是远程模式下的权威来源；清理两个位置的缓存，避免保留半迁移状态。
-        self.lfc.delete(&old_key).await;
-        self.lfc.delete(&new_key).await;
+        let _ = self.lfc.delete(&old_key).await;
+        let _ = self.lfc.delete(&new_key).await;
         Ok(outcome)
     }
 }

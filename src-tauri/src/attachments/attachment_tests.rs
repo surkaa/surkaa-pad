@@ -395,7 +395,7 @@ mod tests {
         assert_eq!(cached_data, raw_data, "本地缓存内容与上传的原始数据不一致");
 
         // 删除已有缓存后主动缓存，验证远端附件被完整下载并只发送一次完成事件。
-        lfc.delete(&key).await;
+        lfc.delete(&key).await.unwrap();
         assert!(lfc.get(&key).await.unwrap().is_none());
 
         let (cache_tx, mut cache_rx) =

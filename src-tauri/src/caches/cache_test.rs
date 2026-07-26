@@ -31,7 +31,7 @@ mod lfc_tests {
         let collected = collect_data(stream).await.unwrap();
         assert_eq!(collected, data);
 
-        cache.delete(key).await;
+        cache.delete(key).await.unwrap();
         assert!(cache.get(key).await.unwrap().is_none());
         assert!(cache.get_data(key).await.is_err());
     }
@@ -68,7 +68,7 @@ mod lfc_tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         let cache = LocalFileCache::new(path);
-        cache.delete("ghost").await;
+        cache.delete("ghost").await.unwrap();
         assert!(cache.get("ghost").await.unwrap().is_none());
     }
 
