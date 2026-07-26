@@ -267,27 +267,53 @@ impl OssClient {
     pub async fn upload(
         &self,
         key: &str,
-        _len: u64,
+        len: u64,
         stream: ByteStream,
         mimetype: &str,
     ) -> Result<String, ObjectError> {
+        log::info!(
+            "[oss] stream upload started: key={}, size={}, content_type={}",
+            key,
+            len,
+            mimetype
+        );
         let bucket = self.inner()?;
         let key = self.physical_key(key);
         let mut reader = tokio_util::io::StreamReader::new(stream);
-        bucket
+        if let Err(error) = bucket
             .put_object_stream_with_content_type(&mut reader, &key, mimetype)
             .await
-            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        {
+            log::error!(
+                "[oss] stream upload body failed: key={}, size={}, error={}",
+                key,
+                len,
+                error
+            );
+            return Err(ObjectError::OperationFailed(error.to_string()));
+        }
         // PutStreamResponse 不含 etag，通过 HEAD 获取
-        let (result, _) = bucket
-            .head_object(&key)
-            .await
-            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
-        Ok(result
+        let (result, _) = bucket.head_object(&key).await.map_err(|error| {
+            log::error!(
+                "[oss] stream upload HEAD failed: key={}, size={}, error={}",
+                key,
+                len,
+                error
+            );
+            ObjectError::OperationFailed(error.to_string())
+        })?;
+        let etag = result
             .e_tag
             .unwrap_or_default()
             .trim_matches('"')
-            .to_string())
+            .to_string();
+        log::info!(
+            "[oss] stream upload completed: key={}, size={}, etag={}",
+            key,
+            len,
+            etag
+        );
+        Ok(etag)
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/putobject

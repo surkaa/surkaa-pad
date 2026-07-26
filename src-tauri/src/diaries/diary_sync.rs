@@ -174,6 +174,12 @@ pub async fn sync_local_to_cloud(
         local_entries.into_iter().map(local_entry).collect(),
         &remote_entry_map(&remote_entries),
     );
+    log::info!(
+        "[sync] upload plan ready: transfer_files={}, skipped_files={}, total_bytes={}",
+        plan.items.len(),
+        plan.skipped_files,
+        plan.total_bytes
+    );
     send_started(&event, SyncDirection::Upload, &plan);
 
     let total_files = plan.items.len() as u32;
@@ -183,6 +189,14 @@ pub async fn sync_local_to_cloud(
     for item in &plan.items {
         let phase = item.kind.phase();
         let display_name = item.key.clone();
+        log::info!(
+            "[sync] uploading {}/{}: phase={:?}, key={}, size={}",
+            completed_files + 1,
+            total_files,
+            phase,
+            item.key,
+            item.size
+        );
         let stream = lfc
             .get_stream(&item.key, None)
             .await
@@ -260,6 +274,12 @@ pub async fn sync_cloud_to_local(
         remote_entries.iter().map(remote_entry).collect(),
         &local_entry_map(&local_entries),
     );
+    log::info!(
+        "[sync] download plan ready: transfer_files={}, skipped_files={}, total_bytes={}",
+        plan.items.len(),
+        plan.skipped_files,
+        plan.total_bytes
+    );
     send_started(&event, SyncDirection::Download, &plan);
 
     let total_files = plan.items.len() as u32;
@@ -269,6 +289,14 @@ pub async fn sync_cloud_to_local(
     for item in &plan.items {
         let phase = item.kind.phase();
         let display_name = item.key.clone();
+        log::info!(
+            "[sync] downloading {}/{}: phase={:?}, key={}, size={}",
+            completed_files + 1,
+            total_files,
+            phase,
+            item.key,
+            item.size
+        );
         let etag = item.etag.as_deref().ok_or_else(|| {
             SyncFailure::new("云端对象缺少 ETag", phase, Some(display_name.clone()))
         })?;
