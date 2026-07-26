@@ -4,11 +4,12 @@ mod tests {
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
     use crate::diaries::diary_migration::CURRENT_VERSION;
-    use crate::diaries::diary_store::RemoteStore;
+    use crate::diaries::diary_store::{DiaryStore, RemoteStore};
     use crate::diaries::diary_types::DiaryManifest;
     use crate::diaries::{delete_diary, get_diary, save_diary, update_diary_content_only};
     use crate::object::OssClient;
-    use crate::storages::remote_manifest_key;
+    use crate::storages::{remote_attachments_key, remote_manifest_key};
+    use crate::stream::create_mock_stream;
     use crate::test_utils::TestOssGuard;
     use chrono::Utc;
     use serde_json::to_vec;
@@ -66,6 +67,23 @@ mod tests {
             updated_content
         );
 
+        // 删除必须覆盖同一日记前缀下的所有附件，并最后移除 manifest。
+        for (attachment_id, data) in [
+            ("att-one", b"one".as_slice()),
+            ("att-two", b"two".as_slice()),
+        ] {
+            store
+                .upload_attachment(
+                    &id,
+                    attachment_id,
+                    data.len() as u64,
+                    "application/octet-stream",
+                    create_mock_stream(data.to_vec(), data.len()),
+                )
+                .await
+                .expect("上传待删除附件失败");
+        }
+
         // 测试删除
         delete_diary(&cache, &store, &id)
             .await
@@ -74,6 +92,22 @@ mod tests {
         // 验证删除有效性
         let not_found_result = get_diary(&cache, &crypto, &store, &id).await;
         assert!(not_found_result.is_err(), "删除后日记不应被检索");
+        let (remaining_objects, next_token) = client
+            .list(&format!("{id}/"), None)
+            .await
+            .expect("检查删除后的日记对象失败");
+        assert!(remaining_objects.is_empty(), "删除后不应残留日记附件");
+        assert!(next_token.is_none());
+        for key in [
+            remote_manifest_key(&id),
+            remote_attachments_key(&id, "att-one"),
+            remote_attachments_key(&id, "att-two"),
+        ] {
+            assert!(
+                lfc.get(&key).await.unwrap().is_none(),
+                "本地缓存仍残留 {key}"
+            );
+        }
         _guard.cleanup().await;
     }
 

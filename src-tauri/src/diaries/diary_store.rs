@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::caches::LocalFileCache;
+use crate::caches::{CacheError, LocalFileCache};
 use crate::diaries::attachment_upload::{LocalAttachmentUpload, RemoteAttachmentUpload};
 use crate::diaries::{AttachmentUploadSession, DiaryError};
 use crate::object::{NextToken, ObjectError, ObjectMigrationOutcome, OssClient};
@@ -9,6 +9,36 @@ use crate::stream::{tracker_stream, ByteStream};
 use std::sync::Arc;
 
 pub type StoreProgressCallback = Arc<dyn Fn(u8) + Send + Sync>;
+
+fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: &str) -> (Vec<String>, String) {
+    let prefix = format!("{id}/");
+    let manifest_key = remote_manifest_key(id);
+    let mut attachment_keys: Vec<String> = keys
+        .into_iter()
+        .filter(|key| key.starts_with(&prefix) && key != &manifest_key)
+        .collect();
+    attachment_keys.sort();
+    (attachment_keys, manifest_key)
+}
+
+async fn delete_local_diary_files(lfc: &LocalFileCache, id: &str) -> Result<(), DiaryError> {
+    let entries = match lfc.get_all().await {
+        Ok(entries) => entries,
+        // 尚未产生任何本地缓存时，LFC 目录可能还没有创建；删除应保持幂等。
+        Err(CacheError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let keys = entries.into_iter().map(|(key, _)| key);
+    let (attachment_keys, manifest_key) = diary_object_keys(keys, id);
+
+    // manifest 是日记是否存在的提交标志。只有附件全部删除成功后才删除它，
+    // 这样失败时日记仍可见且可以安全重试。
+    for key in attachment_keys {
+        lfc.delete(&key).await?;
+    }
+    lfc.delete(&manifest_key).await?;
+    Ok(())
+}
 
 /// 日记存储抽象，隔离本地与远程的 I/O 差异
 #[async_trait]
@@ -109,15 +139,7 @@ impl DiaryStore for LocalStore {
     }
 
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
-        let prefix = format!("{}/", id);
-        if let Ok(all) = self.lfc.get_all().await {
-            for (key, _) in all {
-                if key.starts_with(&prefix) || key == id {
-                    let _ = self.lfc.delete(&key).await;
-                }
-            }
-        }
-        Ok(())
+        delete_local_diary_files(&self.lfc, id).await
     }
 
     async fn list_diary_ids(
@@ -292,17 +314,16 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
-        self.client.delete_with_prefix(id).await?;
-        // 清理本地缓存
-        let prefix = format!("{}/", id);
-        if let Ok(all) = self.lfc.get_all().await {
-            for (key, _) in all {
-                if key.starts_with(&prefix) || key == id {
-                    let _ = self.lfc.delete(&key).await;
-                }
-            }
-        }
-        Ok(())
+        let prefix = format!("{id}/");
+        let keys = self.client.list_all_keys(&prefix).await?;
+        let (attachment_keys, manifest_key) = diary_object_keys(keys, id);
+
+        self.client.delete_keys(attachment_keys).await?;
+        self.client.delete(&manifest_key).await?;
+
+        // 远端是权威来源；远端完整删除后再清理本地副本。缓存清理失败也要
+        // 返回错误，使用户可以重试，避免切换本地模式后旧日记重新出现。
+        delete_local_diary_files(&self.lfc, id).await
     }
 
     async fn list_diary_ids(
@@ -571,6 +592,50 @@ mod tests {
             .download_attachment("del-test", "att2.txt", None, None)
             .await
             .is_err());
+    }
+
+    #[test]
+    fn diary_delete_plan_scopes_prefix_and_keeps_manifest_separate() {
+        let id = "1234567890123";
+        let manifest = remote_manifest_key(id);
+        let (attachments, manifest_key) = diary_object_keys(
+            vec![
+                manifest.clone(),
+                format!("{id}/att-b"),
+                format!("{id}/att-a"),
+                format!("{id}4/att-unrelated"),
+                "unrelated/manifest.enc".to_string(),
+            ],
+            id,
+        );
+
+        assert_eq!(
+            attachments,
+            vec![format!("{id}/att-a"), format!("{id}/att-b")]
+        );
+        assert_eq!(manifest_key, manifest);
+    }
+
+    #[tokio::test]
+    async fn local_delete_is_idempotent_without_cache_directory() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let lfc = LocalFileCache::new(temp_dir.path().join("missing"));
+        let store = LocalStore::new(lfc);
+
+        store.delete_diary_all("missing-diary").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn local_delete_propagates_cache_scan_errors() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache_file = temp_dir.path().join("not-a-directory");
+        tokio::fs::write(&cache_file, b"file").await.unwrap();
+        let store = LocalStore::new(LocalFileCache::new(cache_file));
+
+        assert!(matches!(
+            store.delete_diary_all("diary").await,
+            Err(DiaryError::Cache(CacheError::Io(_)))
+        ));
     }
 
     #[tokio::test]
