@@ -83,10 +83,18 @@ const attachmentCounts = computed(() => countAttachmentTypes(diary?.attachments 
         </span>
         <div v-else class="skeleton-bar w-80"></div>
 
-        <span class="meta-item" v-if="attachmentCounts.image">图片 {{ attachmentCounts.image }}</span>
-        <span class="meta-item" v-if="attachmentCounts.audio">音频 {{ attachmentCounts.audio }}</span>
-        <span class="meta-item" v-if="attachmentCounts.video">视频 {{ attachmentCounts.video }}</span>
-        <span class="meta-item" v-if="attachmentCounts.file">文件 {{ attachmentCounts.file }}</span>
+        <span class="meta-item attachment-count" v-if="attachmentCounts.image" title="图片">
+          <q-icon name="image" aria-hidden="true"/><span>×{{ attachmentCounts.image }}</span>
+        </span>
+        <span class="meta-item attachment-count" v-if="attachmentCounts.audio" title="音频">
+          <q-icon name="mic" aria-hidden="true"/><span>×{{ attachmentCounts.audio }}</span>
+        </span>
+        <span class="meta-item attachment-count" v-if="attachmentCounts.video" title="视频">
+          <q-icon name="movie" aria-hidden="true"/><span>×{{ attachmentCounts.video }}</span>
+        </span>
+        <span class="meta-item attachment-count" v-if="attachmentCounts.file" title="文件">
+          <q-icon name="description" aria-hidden="true"/><span>×{{ attachmentCounts.file }}</span>
+        </span>
       </div>
       <span class="open-indicator">
         <svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16">
@@ -217,6 +225,14 @@ const attachmentCounts = computed(() => countAttachmentTypes(diary?.attachments 
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+
+        &.attachment-count {
+          gap: 2px;
+
+          .q-icon {
+            font-size: 15px;
+          }
         }
 
         .meta-icon {

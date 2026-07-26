@@ -99,11 +99,16 @@ impl DiaryContent {
     }
 
     pub fn title(&self) -> String {
-        self.searchable_text()
-            .lines()
-            .next()
+        self.nodes
+            .iter()
+            .filter_map(|node| match node {
+                DiaryContentNode::Markdown { text } => Some(text),
+                _ => None,
+            })
+            .flat_map(|text| text.lines())
+            .map(str::trim)
+            .find(|line| !line.is_empty())
             .unwrap_or("")
-            .trim()
             .to_string()
     }
 
@@ -256,6 +261,60 @@ mod tests {
         ));
         assert_eq!(content.searchable_text(), "开头\n\n\n\n\n\n结尾");
         assert_eq!(content.title(), "开头");
+    }
+
+    #[test]
+    fn title_does_not_join_markdown_across_an_album() {
+        let content = DiaryContent {
+            nodes: vec![
+                DiaryContentNode::Markdown {
+                    text: "1231".to_string(),
+                },
+                DiaryContentNode::Album {
+                    id: "migration-v3-album-1".to_string(),
+                    attachment_ids: vec!["a.jpg".to_string(), "b.jpg".to_string()],
+                    display_mode: AlbumDisplayMode::HorizontalList,
+                },
+                DiaryContentNode::Markdown {
+                    text: "test 顺序".to_string(),
+                },
+            ],
+        };
+
+        assert_eq!(content.title(), "1231");
+        assert_eq!(content.searchable_text(), "1231test 顺序");
+    }
+
+    #[test]
+    fn title_uses_the_first_non_empty_markdown_line() {
+        let content = DiaryContent {
+            nodes: vec![
+                DiaryContentNode::Markdown {
+                    text: " \n\t".to_string(),
+                },
+                DiaryContentNode::Image {
+                    attachment_id: "a.jpg".to_string(),
+                    size: ImageSize::Normal,
+                },
+                DiaryContentNode::Markdown {
+                    text: "  标题  \n正文".to_string(),
+                },
+            ],
+        };
+
+        assert_eq!(content.title(), "标题");
+    }
+
+    #[test]
+    fn title_is_empty_when_content_has_no_markdown_text() {
+        let content = DiaryContent {
+            nodes: vec![DiaryContentNode::Image {
+                attachment_id: "a.jpg".to_string(),
+                size: ImageSize::Normal,
+            }],
+        };
+
+        assert_eq!(content.title(), "");
     }
 
     #[test]
