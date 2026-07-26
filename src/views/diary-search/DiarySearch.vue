@@ -51,6 +51,16 @@ async function toggleAttachmentFilter(value: AttachmentFilterSelection) {
   }
 }
 
+async function setKeywordMatchMode(matchAny: boolean) {
+  if (or.value === matchAny) return;
+  or.value = matchAny;
+  const revision = ++filterRevision;
+  await cancelCurrentSearch();
+  if (revision === filterRevision) {
+    await startSearch();
+  }
+}
+
 async function cancelCurrentSearch() {
   searchSequence += 1;
   const token = cancelToken.value;
@@ -168,7 +178,6 @@ onUnmounted(() => {
               :disable="!canSearch && !cancelToken"
               @click="searchHandle"
           />
-          <q-toggle dense v-model="or" size="sm" class="q-ml-xs" :icon="or ? 'alt_route' : 'reorder'"/>
         </template>
       </q-input>
     </Teleport>
@@ -194,6 +203,36 @@ onUnmounted(() => {
             dense
             @click="toggleAttachmentFilter(option.value)"
           />
+        </div>
+
+        <div class="keyword-filter-heading">
+          <div class="attachment-filter-label">关键词关系</div>
+          <div class="attachment-filter-hint">多个关键词以空格分隔</div>
+        </div>
+        <div class="keyword-filter-row">
+          <div class="keyword-filter-options" role="group" aria-label="多个关键词的匹配关系">
+            <q-btn
+                label="全部"
+                :aria-pressed="!or"
+                :class="{'keyword-filter-option': true, 'is-selected': !or}"
+                no-caps
+                unelevated
+                dense
+                @click="setKeywordMatchMode(false)"
+            />
+            <q-btn
+                label="任一"
+                :aria-pressed="or"
+                :class="{'keyword-filter-option': true, 'is-selected': or}"
+                no-caps
+                unelevated
+                dense
+                @click="setKeywordMatchMode(true)"
+            />
+          </div>
+          <div class="keyword-mode-hint">
+            {{ or ? '包含任一关键词即可' : '需同时包含所有关键词' }}
+          </div>
         </div>
       </div>
 
@@ -242,17 +281,17 @@ onUnmounted(() => {
         flex-wrap: wrap;
         gap: 4px 10px;
         margin-bottom: 8px;
+      }
 
-        .attachment-filter-label {
-          color: var(--pad-text-color);
-          font-size: 13px;
-          font-weight: 500;
-        }
+      .attachment-filter-label {
+        color: var(--pad-text-color);
+        font-size: 13px;
+        font-weight: 500;
+      }
 
-        .attachment-filter-hint {
-          color: var(--pad-text-color-200);
-          font-size: 12px;
-        }
+      .attachment-filter-hint {
+        color: var(--pad-text-color-200);
+        font-size: 12px;
       }
 
       .attachment-filter-options {
@@ -277,6 +316,50 @@ onUnmounted(() => {
             background-color: var(--q-primary) !important;
             color: white !important;
           }
+        }
+      }
+
+      .keyword-filter-heading {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        margin: 12px 0 8px;
+      }
+
+      .keyword-filter-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+
+        .keyword-filter-options {
+          display: flex;
+          overflow: hidden;
+          border: 1px solid var(--pad-border-color-100);
+          border-radius: 6px;
+          background-color: var(--pad-bg-color-300);
+
+          .keyword-filter-option {
+            min-height: 32px;
+            padding: 0 10px;
+            background-color: transparent !important;
+            color: var(--pad-text-color-200) !important;
+
+            & + .keyword-filter-option {
+              border-left: 1px solid var(--pad-border-color-100);
+            }
+
+            &.is-selected {
+              background-color: var(--q-primary) !important;
+              color: white !important;
+            }
+          }
+        }
+
+        .keyword-mode-hint {
+          color: var(--pad-text-color-200);
+          font-size: 12px;
         }
       }
 
