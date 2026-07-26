@@ -3,12 +3,18 @@ use crate::state::AppState;
 use std::collections::HashMap;
 use tauri::State;
 
+/// 清空所有本地对象数据
+/// # Returns
+/// * `Result<(), AppError>` - 成功时本地存储目录已清空
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_clean_cache_file(state: State<'_, AppState>) -> Result<(), AppError> {
     Ok(state.local_file_cache().delete_all().await?)
 }
 
+/// 清理本地与 OSS 不一致或云端已不存在的缓存对象
+/// # Returns
+/// * `Result<Vec<String>, AppError>` - 已删除的本地对象 key 列表
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_clean_unused_file(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {

@@ -7,7 +7,7 @@ use tauri::State;
 /// # Arguments
 /// * `master_password` - 主密码
 /// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+/// * `Result<(), AppError>` - 成功时完成解锁，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_unlock(
@@ -21,7 +21,7 @@ pub async fn cmd_unlock(
 /// # Arguments
 /// * `master_password` - 主密码
 /// # Returns
-/// * `Result<String, String>` - 成功时返回数据加密密钥，失败时返回错误信息
+/// * `Result<String, AppError>` - 成功时返回数据加密密钥，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_valid_password(
@@ -37,7 +37,7 @@ pub async fn cmd_valid_password(
 /// # Arguments
 /// * `dek` - 数据加密密钥
 /// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+/// * `Result<(), AppError>` - 成功时完成解锁，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_biometric_unlock(state: State<'_, AppState>, dek: String) -> Result<(), AppError> {
@@ -48,7 +48,7 @@ pub async fn cmd_biometric_unlock(state: State<'_, AppState>, dek: String) -> Re
 /// # Arguments
 /// * `data` - 待加密的数据
 /// # Returns
-/// * `Result<Vec<u8>, String>` - 成功时返回密文（包含nonce在首），失败时返回错误信息
+/// * `Result<Vec<u8>, AppError>` - 成功时返回包含 nonce 的密文，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_encrypt_data(
@@ -62,7 +62,7 @@ pub async fn cmd_encrypt_data(
 /// # Arguments
 /// * `encrypted` - 密文
 /// # Returns
-/// * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
+/// * `Result<String, AppError>` - 成功时返回 UTF-8 明文，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_decrypt_data(
@@ -78,6 +78,8 @@ pub async fn cmd_decrypt_data(
 }
 
 /// 获取加密配置
+/// # Returns
+/// * `Result<u32, AppError>` - Argon2 内存成本（KiB）
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_encrypt_info() -> Result<u32, AppError> {

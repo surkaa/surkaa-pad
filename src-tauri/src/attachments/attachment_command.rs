@@ -30,11 +30,13 @@ use tauri_plugin_log::log;
 
 /// 给日记添加附件
 /// # Arguments
+/// * `event` - 接收上传进度与结果事件的通道
 /// * `id` - 日记 ID
-/// * `access_str` - 文件访问路径。
+/// * `access_str` - Tauri 文件系统可访问的文件路径
 /// * `encrypted` - 是否需要加密
+/// * `original_filename` - 附件展示文件名，未提供时使用默认名称
 /// # Returns
-/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+/// * `Result<String, AppError>` - 后台上传任务令牌，可用于取消任务
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_add_attachment(
@@ -78,12 +80,13 @@ pub fn cmd_add_attachment(
 
 /// 直接传字节数据给日记添加附件
 /// # Arguments
+/// * `event` - 接收上传进度与结果事件的通道
 /// * `id` - 日记 ID
 /// * `data` - 文件字节数据
 /// * `mimetype` - 附件 MIME 类型
 /// * `encrypted` - 是否需要加密
 /// # Returns
-/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+/// * `Result<String, AppError>` - 后台上传任务令牌，可用于取消任务
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_add_attachment_memory(
@@ -124,9 +127,9 @@ pub fn cmd_add_attachment_memory(
 /// 删除日记的附件
 /// # Arguments
 /// * `id` - 日记 ID
-/// * `filename` - 附件 ID
+/// * `attachment_id` - 附件 ID
 /// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+/// * `Result<(), AppError>` - 成功时已删除附件引用和存储对象
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_delete_attachment(
@@ -147,10 +150,11 @@ pub async fn cmd_delete_attachment(
 
 /// 拍摄图片来添加
 /// # Arguments
+/// * `event` - 接收上传进度与结果事件的通道
 /// * `id` - 日记 ID
 /// * `encrypted` - 是否需要加密
 /// # Returns
-/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+/// * `Result<String, AppError>` - Android 上返回后台上传任务令牌，其他平台返回不支持错误
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_add_image_attachment_from_camera(
@@ -207,10 +211,11 @@ pub async fn cmd_add_image_attachment_from_camera(
 
 /// 将加密的附件转成未加密的、将未加密的附件转成加密的
 /// # Arguments
+/// * `event` - 接收处理进度与结果事件的通道
 /// * `id` - 日记 ID
-/// * `filename` - 附件 ID
+/// * `attachment_id` - 附件 ID
 /// # Returns
-/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+/// * `Result<String, AppError>` - 后台处理任务令牌，可用于取消任务
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_toggle_attachment_encryption(
@@ -228,11 +233,12 @@ pub fn cmd_toggle_attachment_encryption(
 
 /// 旋转图片附件 顺时针90度、逆时针90度和180度
 /// # Arguments
+/// * `event` - 接收处理进度与结果事件的通道
 /// * `id` - 日记 ID
-/// * `filename` - 附件 ID
+/// * `attachment_id` - 附件 ID
 /// * `rotation` - 旋转角度，单位为度，支持90、-90和180
 /// # Returns
-/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+/// * `Result<String, AppError>` - 后台处理任务令牌，可用于取消任务
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_rotate_image_attachment(
@@ -251,10 +257,11 @@ pub fn cmd_rotate_image_attachment(
 
 /// 主动缓存云端附件到本地
 /// # Arguments
+/// * `event` - 接收缓存进度与结果事件的通道
 /// * `id` - 日记 ID
-/// * `filename` - 附件 ID
+/// * `attachment_id` - 附件 ID
 /// # Returns
-/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+/// * `Result<String, AppError>` - 后台缓存任务令牌，可用于取消任务
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_caching_attachment(
@@ -269,12 +276,13 @@ pub fn cmd_caching_attachment(
     }))
 }
 
-/// 让用户选择一个位置保存附近明文
+/// 让用户选择一个位置保存附件明文
 /// # Arguments
+/// * `event` - 接收保存进度与结果事件的通道
 /// * `id` - 日记 ID
-/// * `filename` - 附件 ID
+/// * `attachment_id` - 附件 ID
 /// # Returns
-/// * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+/// * `Result<String, AppError>` - 选定保存位置后返回后台保存任务令牌
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_save_decrypt_attachment(
@@ -338,10 +346,10 @@ pub async fn cmd_save_decrypt_attachment(
 /// 重命名附件
 /// # Arguments
 /// * `id` - 日记 ID
-/// * `old_filename` - 旧附件 ID
-/// * `new_filename` - 新附件 ID
+/// * `attachment_id` - 附件 ID
+/// * `new_filename` - 新的展示文件名
 /// # Returns
-/// * `Result<(), String>` - 成功时返回null，失败时返回错误信息
+/// * `Result<(), AppError>` - 成功时已更新 Manifest 中的展示文件名
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_update_attachment_filename(
@@ -354,6 +362,14 @@ pub async fn cmd_update_attachment_filename(
 }
 
 /// 初始化分片上传
+/// # Arguments
+/// * `id` - 日记 ID
+/// * `filename` - 附件展示文件名
+/// * `mimetype` - MIME 类型，空字符串时根据文件名推断
+/// * `encrypted` - 是否在写入前流式加密
+/// * `total_size` - 附件总字节数
+/// # Returns
+/// * `Result<ChunkedUploadStartResult, AppError>` - 上传会话令牌、附件 ID、去重后的文件名和加密 nonce
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_start_chunked_upload(
@@ -485,6 +501,12 @@ pub async fn cmd_start_chunked_upload(
 }
 
 /// 上传单个分片
+/// # Arguments
+/// * `upload_token` - 初始化分片上传时返回的会话令牌
+/// * `chunk_index` - 从 0 开始的分片索引，必须按顺序上传
+/// * `data` - 当前分片的原始字节
+/// # Returns
+/// * `Result<ChunkedUploadChunkResult, AppError>` - 分片编号、ETag 以及已上传/总字节数
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_upload_chunk(
@@ -576,6 +598,10 @@ pub async fn cmd_upload_chunk(
 }
 
 /// 完成分片上传
+/// # Arguments
+/// * `upload_token` - 分片上传会话令牌
+/// # Returns
+/// * `Result<ChunkedUploadFinishResult, AppError>` - 已保存的附件元数据和本地 HTTP URL
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_finish_chunked_upload(
@@ -662,6 +688,10 @@ pub async fn cmd_finish_chunked_upload(
 }
 
 /// 取消分片上传
+/// # Arguments
+/// * `upload_token` - 分片上传会话令牌
+/// # Returns
+/// * `Result<(), AppError>` - 成功时已取消远程 multipart 并删除本地临时文件
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_abort_chunked_upload(

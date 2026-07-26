@@ -16,7 +16,7 @@ use tauri::State;
 /// # Arguments
 /// * `content` - 日记内容
 /// # Returns
-/// * `Result<(DiarySummary, String), String>` - 成功时返回日记 Summary 和日记 ID，失败时返回错误信息
+/// * `Result<(DiarySummary, DiaryContent), AppError>` - 成功时返回日记摘要和已保存的结构化内容
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_save_diary(
@@ -31,7 +31,7 @@ pub async fn cmd_save_diary(
 /// # Arguments
 /// * `id` - 日记ID
 /// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+/// * `Result<(), AppError>` - 成功时已删除日记及其全部附件
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), AppError> {
@@ -44,7 +44,7 @@ pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<()
 /// * `id` - 日记ID
 /// * `new_content` - 新的日记内容
 /// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+/// * `Result<DiarySummary, AppError>` - 成功时返回更新后的日记摘要
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_update_diary_content_only(
@@ -63,12 +63,11 @@ pub async fn cmd_update_diary_content_only(
     .await?)
 }
 
-/// 分页列出diary主键列表
+/// 分页列出日记 ID
 /// # Arguments
-/// * `count` - 每页的数量
-/// * `next_token` - 分页的token
+/// * `next_token` - 上一页返回的分页令牌，首页传入 `None`
 /// # Returns
-/// * `Vec<String>` - diary主键列表
+/// * `Result<(Vec<String>, NextToken), AppError>` - 日记 ID 列表和下一页令牌
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_page_diary_ids(
@@ -79,11 +78,11 @@ pub async fn cmd_page_diary_ids(
     Ok(page_diary_ids(&*store, next_token).await?)
 }
 
-/// 获取日记Summary
+/// 获取日记摘要
 /// # Arguments
 /// * `id` - 日记ID
 /// # Returns
-/// * `Result<DiarySummary, String>` - 成功时返回日记 Summary，失败时返回错误信息
+/// * `Result<DiarySummary, AppError>` - 成功时返回日记摘要
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_get_diary_summary(
@@ -98,7 +97,7 @@ pub async fn cmd_get_diary_summary(
 /// # Arguments
 /// * `id` - 日记ID
 /// # Returns
-/// * `Result<(String, HashMap<String, String>), String>` - 成功时返回日记内容和附件filename->src Map，失败时返回错误信息
+/// * `Result<(DiaryContent, HashMap<String, String>), AppError>` - 结构化日记内容和附件 ID 到本地 HTTP URL 的映射
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_get_diary_content(
@@ -118,9 +117,12 @@ pub async fn cmd_get_diary_content(
 
 /// 搜索日记
 /// # Arguments
+/// * `event` - 接收搜索结果与错误事件的通道
 /// * `keyword` - 搜索关键词，可通过空格分隔多个关键词
+/// * `or` - `true` 表示匹配任意关键词，`false` 表示匹配全部关键词
+/// * `attachment_types` - 需要匹配的附件类型，空列表表示不按附件类型过滤
 /// # Returns
-/// * `Result<String, String>` - 成功时返回搜索任务token，可用于取消搜索任务，失败时返回错误信息
+/// * `Result<String, AppError>` - 搜索任务令牌，可用于取消搜索任务
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_search_diaries(

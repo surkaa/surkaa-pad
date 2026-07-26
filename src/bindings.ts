@@ -12,7 +12,7 @@ export const commands = {
  * # Arguments
  * * `master_password` - 主密码
  * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ * * `Result<(), AppError>` - 成功时完成解锁，失败时返回错误信息
  */
 async cmdUnlock(masterPassword: string) : Promise<Result<null, AppError>> {
     try {
@@ -27,7 +27,7 @@ async cmdUnlock(masterPassword: string) : Promise<Result<null, AppError>> {
  * # Arguments
  * * `data` - 待加密的数据
  * # Returns
- * * `Result<Vec<u8>, String>` - 成功时返回密文（包含nonce在首），失败时返回错误信息
+ * * `Result<Vec<u8>, AppError>` - 成功时返回包含 nonce 的密文，失败时返回错误信息
  */
 async cmdEncryptData(data: string) : Promise<Result<number[], AppError>> {
     try {
@@ -42,7 +42,7 @@ async cmdEncryptData(data: string) : Promise<Result<number[], AppError>> {
  * # Arguments
  * * `encrypted` - 密文
  * # Returns
- * * `Result<Vec<u8>, String>` - 成功时返回明文，失败时返回错误信息
+ * * `Result<String, AppError>` - 成功时返回 UTF-8 明文，失败时返回错误信息
  */
 async cmdDecryptData(encrypted: number[]) : Promise<Result<string, AppError>> {
     try {
@@ -57,7 +57,7 @@ async cmdDecryptData(encrypted: number[]) : Promise<Result<string, AppError>> {
  * # Arguments
  * * `master_password` - 主密码
  * # Returns
- * * `Result<String, String>` - 成功时返回数据加密密钥，失败时返回错误信息
+ * * `Result<String, AppError>` - 成功时返回数据加密密钥，失败时返回错误信息
  */
 async cmdValidPassword(masterPassword: string) : Promise<Result<string, AppError>> {
     try {
@@ -72,7 +72,7 @@ async cmdValidPassword(masterPassword: string) : Promise<Result<string, AppError
  * # Arguments
  * * `dek` - 数据加密密钥
  * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ * * `Result<(), AppError>` - 成功时完成解锁，失败时返回错误信息
  */
 async cmdBiometricUnlock(dek: string) : Promise<Result<null, AppError>> {
     try {
@@ -84,6 +84,8 @@ async cmdBiometricUnlock(dek: string) : Promise<Result<null, AppError>> {
 },
 /**
  * 获取加密配置
+ * # Returns
+ * * `Result<u32, AppError>` - Argon2 内存成本（KiB）
  */
 async cmdEncryptInfo() : Promise<Result<number, AppError>> {
     try {
@@ -101,7 +103,7 @@ async cmdEncryptInfo() : Promise<Result<number, AppError>> {
  * * `bucket` - 存储桶名称
  * * `endpoint` - OSS 端点
  * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ * * `Result<(), AppError>` - 成功时完成 OSS 客户端初始化，失败时返回错误信息
  */
 async cmdInitOssClient(akid: string, aks: string, bucket: string, endpoint: string) : Promise<Result<null, AppError>> {
     try {
@@ -113,6 +115,14 @@ async cmdInitOssClient(akid: string, aks: string, bucket: string, endpoint: stri
 },
 /**
  * 启用远程存储：初始化 OSS 客户端 → 同步本地数据到云端 → 设置 remote_enabled
+ * # Arguments
+ * * `event` - 接收同步进度与错误事件的通道
+ * * `akid` - 访问密钥 ID
+ * * `aks` - 访问密钥 Secret
+ * * `bucket` - 存储桶名称
+ * * `endpoint` - OSS 端点
+ * # Returns
+ * * `Result<(), AppError>` - 成功时已完成数据上传并切换为远程存储
  */
 async cmdEnableRemoteStorage(event: TAURI_CHANNEL<SyncProgressEvent>, akid: string, aks: string, bucket: string, endpoint: string) : Promise<Result<null, AppError>> {
     try {
@@ -124,6 +134,10 @@ async cmdEnableRemoteStorage(event: TAURI_CHANNEL<SyncProgressEvent>, akid: stri
 },
 /**
  * 禁用远程存储：同步云端数据到本地 → 设置 remote_enabled = false → 重置 OSS 客户端
+ * # Arguments
+ * * `event` - 接收同步进度与错误事件的通道
+ * # Returns
+ * * `Result<(), AppError>` - 成功时已完成数据下载并切换为本地存储
  */
 async cmdDisableRemoteStorage(event: TAURI_CHANNEL<SyncProgressEvent>) : Promise<Result<null, AppError>> {
     try {
@@ -135,12 +149,18 @@ async cmdDisableRemoteStorage(event: TAURI_CHANNEL<SyncProgressEvent>) : Promise
 },
 /**
  * 获取当前存储模式
+ * # Returns
+ * * `bool` - `true` 表示已启用远程存储，`false` 表示本地存储
  */
 async cmdGetStorageMode() : Promise<boolean> {
     return await TAURI_INVOKE("cmd_get_storage_mode");
 },
 /**
  * 设置远程存储启用状态（解锁时从前端配置恢复）
+ * # Arguments
+ * * `enabled` - 是否启用远程存储
+ * # Returns
+ * * `()` - 无返回数据
  */
 async cmdSetRemoteEnabled(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("cmd_set_remote_enabled", { enabled });
@@ -150,7 +170,7 @@ async cmdSetRemoteEnabled(enabled: boolean) : Promise<void> {
  * # Arguments
  * * `content` - 日记内容
  * # Returns
- * * `Result<(DiarySummary, String), String>` - 成功时返回日记 Summary 和日记 ID，失败时返回错误信息
+ * * `Result<(DiarySummary, DiaryContent), AppError>` - 成功时返回日记摘要和已保存的结构化内容
  */
 async cmdSaveDiary(content: DiaryContent) : Promise<Result<[DiarySummary, DiaryContent], AppError>> {
     try {
@@ -166,7 +186,7 @@ async cmdSaveDiary(content: DiaryContent) : Promise<Result<[DiarySummary, DiaryC
  * * `id` - 日记ID
  * * `new_content` - 新的日记内容
  * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ * * `Result<DiarySummary, AppError>` - 成功时返回更新后的日记摘要
  */
 async cmdUpdateDiaryContentOnly(id: string, newContent: DiaryContent) : Promise<Result<DiarySummary, AppError>> {
     try {
@@ -181,7 +201,7 @@ async cmdUpdateDiaryContentOnly(id: string, newContent: DiaryContent) : Promise<
  * # Arguments
  * * `id` - 日记ID
  * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ * * `Result<(), AppError>` - 成功时已删除日记及其全部附件
  */
 async cmdDeleteDiary(id: string) : Promise<Result<null, AppError>> {
     try {
@@ -192,12 +212,11 @@ async cmdDeleteDiary(id: string) : Promise<Result<null, AppError>> {
 }
 },
 /**
- * 分页列出diary主键列表
+ * 分页列出日记 ID
  * # Arguments
- * * `count` - 每页的数量
- * * `next_token` - 分页的token
+ * * `next_token` - 上一页返回的分页令牌，首页传入 `None`
  * # Returns
- * * `Vec<String>` - diary主键列表
+ * * `Result<(Vec<String>, NextToken), AppError>` - 日记 ID 列表和下一页令牌
  */
 async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], string | null], AppError>> {
     try {
@@ -208,11 +227,11 @@ async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], stri
 }
 },
 /**
- * 获取日记Summary
+ * 获取日记摘要
  * # Arguments
  * * `id` - 日记ID
  * # Returns
- * * `Result<DiarySummary, String>` - 成功时返回日记 Summary，失败时返回错误信息
+ * * `Result<DiarySummary, AppError>` - 成功时返回日记摘要
  */
 async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, AppError>> {
     try {
@@ -227,7 +246,7 @@ async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, AppError>> {
  * # Arguments
  * * `id` - 日记ID
  * # Returns
- * * `Result<(String, HashMap<String, String>), String>` - 成功时返回日记内容和附件filename->src Map，失败时返回错误信息
+ * * `Result<(DiaryContent, HashMap<String, String>), AppError>` - 结构化日记内容和附件 ID 到本地 HTTP URL 的映射
  */
 async cmdGetDiaryContent(id: string) : Promise<Result<[DiaryContent, Partial<{ [key in string]: string }>], AppError>> {
     try {
@@ -240,9 +259,12 @@ async cmdGetDiaryContent(id: string) : Promise<Result<[DiaryContent, Partial<{ [
 /**
  * 搜索日记
  * # Arguments
+ * * `event` - 接收搜索结果与错误事件的通道
  * * `keyword` - 搜索关键词，可通过空格分隔多个关键词
+ * * `or` - `true` 表示匹配任意关键词，`false` 表示匹配全部关键词
+ * * `attachment_types` - 需要匹配的附件类型，空列表表示不按附件类型过滤
  * # Returns
- * * `Result<String, String>` - 成功时返回搜索任务token，可用于取消搜索任务，失败时返回错误信息
+ * * `Result<String, AppError>` - 搜索任务令牌，可用于取消搜索任务
  */
 async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string, or: boolean, attachmentTypes: AttachmentTypeFilter[]) : Promise<Result<string, AppError>> {
     try {
@@ -255,11 +277,13 @@ async cmdSearchDiaries(event: TAURI_CHANNEL<SearchDiariesEvent>, keyword: string
 /**
  * 给日记添加附件
  * # Arguments
+ * * `event` - 接收上传进度与结果事件的通道
  * * `id` - 日记 ID
- * * `access_str` - 文件访问路径。
+ * * `access_str` - Tauri 文件系统可访问的文件路径
  * * `encrypted` - 是否需要加密
+ * * `original_filename` - 附件展示文件名，未提供时使用默认名称
  * # Returns
- * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ * * `Result<String, AppError>` - 后台上传任务令牌，可用于取消任务
  */
 async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, accessStr: string, encrypted: boolean, originalFilename: string | null) : Promise<Result<string, AppError>> {
     try {
@@ -272,12 +296,13 @@ async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string,
 /**
  * 直接传字节数据给日记添加附件
  * # Arguments
+ * * `event` - 接收上传进度与结果事件的通道
  * * `id` - 日记 ID
  * * `data` - 文件字节数据
  * * `mimetype` - 附件 MIME 类型
  * * `encrypted` - 是否需要加密
  * # Returns
- * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ * * `Result<String, AppError>` - 后台上传任务令牌，可用于取消任务
  */
 async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, data: number[], mimetype: string, encrypted: boolean) : Promise<Result<string, AppError>> {
     try {
@@ -291,9 +316,9 @@ async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: s
  * 删除日记的附件
  * # Arguments
  * * `id` - 日记 ID
- * * `filename` - 附件 ID
+ * * `attachment_id` - 附件 ID
  * # Returns
- * * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+ * * `Result<(), AppError>` - 成功时已删除附件引用和存储对象
  */
 async cmdDeleteAttachment(id: string, attachmentId: string) : Promise<Result<null, AppError>> {
     try {
@@ -306,10 +331,11 @@ async cmdDeleteAttachment(id: string, attachmentId: string) : Promise<Result<nul
 /**
  * 拍摄图片来添加
  * # Arguments
+ * * `event` - 接收上传进度与结果事件的通道
  * * `id` - 日记 ID
  * * `encrypted` - 是否需要加密
  * # Returns
- * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ * * `Result<String, AppError>` - Android 上返回后台上传任务令牌，其他平台返回不支持错误
  */
 async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, encrypted: boolean) : Promise<Result<string, AppError>> {
     try {
@@ -322,10 +348,11 @@ async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEven
 /**
  * 将加密的附件转成未加密的、将未加密的附件转成加密的
  * # Arguments
+ * * `event` - 接收处理进度与结果事件的通道
  * * `id` - 日记 ID
- * * `filename` - 附件 ID
+ * * `attachment_id` - 附件 ID
  * # Returns
- * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ * * `Result<String, AppError>` - 后台处理任务令牌，可用于取消任务
  */
 async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
     try {
@@ -338,11 +365,12 @@ async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>
 /**
  * 旋转图片附件 顺时针90度、逆时针90度和180度
  * # Arguments
+ * * `event` - 接收处理进度与结果事件的通道
  * * `id` - 日记 ID
- * * `filename` - 附件 ID
+ * * `attachment_id` - 附件 ID
  * * `rotation` - 旋转角度，单位为度，支持90、-90和180
  * # Returns
- * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ * * `Result<String, AppError>` - 后台处理任务令牌，可用于取消任务
  */
 async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string, rotation: number) : Promise<Result<string, AppError>> {
     try {
@@ -355,10 +383,11 @@ async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
 /**
  * 主动缓存云端附件到本地
  * # Arguments
+ * * `event` - 接收缓存进度与结果事件的通道
  * * `id` - 日记 ID
- * * `filename` - 附件 ID
+ * * `attachment_id` - 附件 ID
  * # Returns
- * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ * * `Result<String, AppError>` - 后台缓存任务令牌，可用于取消任务
  */
 async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
     try {
@@ -369,12 +398,13 @@ async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: str
 }
 },
 /**
- * 让用户选择一个位置保存附近明文
+ * 让用户选择一个位置保存附件明文
  * # Arguments
+ * * `event` - 接收保存进度与结果事件的通道
  * * `id` - 日记 ID
- * * `filename` - 附件 ID
+ * * `attachment_id` - 附件 ID
  * # Returns
- * * `Result<String, String>` - 成功时返回取消Token，失败时返回错误信息
+ * * `Result<String, AppError>` - 选定保存位置后返回后台保存任务令牌
  */
 async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
     try {
@@ -388,10 +418,10 @@ async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
  * 重命名附件
  * # Arguments
  * * `id` - 日记 ID
- * * `old_filename` - 旧附件 ID
- * * `new_filename` - 新附件 ID
+ * * `attachment_id` - 附件 ID
+ * * `new_filename` - 新的展示文件名
  * # Returns
- * * `Result<(), String>` - 成功时返回null，失败时返回错误信息
+ * * `Result<(), AppError>` - 成功时已更新 Manifest 中的展示文件名
  */
 async cmdUpdateAttachmentFilename(id: string, attachmentId: string, newFilename: string) : Promise<Result<null, AppError>> {
     try {
@@ -403,6 +433,14 @@ async cmdUpdateAttachmentFilename(id: string, attachmentId: string, newFilename:
 },
 /**
  * 初始化分片上传
+ * # Arguments
+ * * `id` - 日记 ID
+ * * `filename` - 附件展示文件名
+ * * `mimetype` - MIME 类型，空字符串时根据文件名推断
+ * * `encrypted` - 是否在写入前流式加密
+ * * `total_size` - 附件总字节数
+ * # Returns
+ * * `Result<ChunkedUploadStartResult, AppError>` - 上传会话令牌、附件 ID、去重后的文件名和加密 nonce
  */
 async cmdStartChunkedUpload(id: string, filename: string, mimetype: string, encrypted: boolean, totalSize: number) : Promise<Result<ChunkedUploadStartResult, AppError>> {
     try {
@@ -414,6 +452,12 @@ async cmdStartChunkedUpload(id: string, filename: string, mimetype: string, encr
 },
 /**
  * 上传单个分片
+ * # Arguments
+ * * `upload_token` - 初始化分片上传时返回的会话令牌
+ * * `chunk_index` - 从 0 开始的分片索引，必须按顺序上传
+ * * `data` - 当前分片的原始字节
+ * # Returns
+ * * `Result<ChunkedUploadChunkResult, AppError>` - 分片编号、ETag 以及已上传/总字节数
  */
 async cmdUploadChunk(uploadToken: string, chunkIndex: number, data: number[]) : Promise<Result<ChunkedUploadChunkResult, AppError>> {
     try {
@@ -425,6 +469,10 @@ async cmdUploadChunk(uploadToken: string, chunkIndex: number, data: number[]) : 
 },
 /**
  * 完成分片上传
+ * # Arguments
+ * * `upload_token` - 分片上传会话令牌
+ * # Returns
+ * * `Result<ChunkedUploadFinishResult, AppError>` - 已保存的附件元数据和本地 HTTP URL
  */
 async cmdFinishChunkedUpload(uploadToken: string) : Promise<Result<ChunkedUploadFinishResult, AppError>> {
     try {
@@ -436,6 +484,10 @@ async cmdFinishChunkedUpload(uploadToken: string) : Promise<Result<ChunkedUpload
 },
 /**
  * 取消分片上传
+ * # Arguments
+ * * `upload_token` - 分片上传会话令牌
+ * # Returns
+ * * `Result<(), AppError>` - 成功时已取消远程 multipart 并删除本地临时文件
  */
 async cmdAbortChunkedUpload(uploadToken: string) : Promise<Result<null, AppError>> {
     try {
@@ -447,6 +499,10 @@ async cmdAbortChunkedUpload(uploadToken: string) : Promise<Result<null, AppError
 },
 /**
  * 取消任务
+ * # Arguments
+ * * `cancel_token` - 创建后台任务时返回的取消令牌
+ * # Returns
+ * * `Result<bool, AppError>` - `true` 表示找到并取消了任务，`false` 表示任务已不存在
  */
 async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
     try {
@@ -456,6 +512,11 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * 清空所有本地对象数据
+ * # Returns
+ * * `Result<(), AppError>` - 成功时本地存储目录已清空
+ */
 async cmdCleanCacheFile() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_clean_cache_file") };
@@ -464,6 +525,11 @@ async cmdCleanCacheFile() : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * 清理本地与 OSS 不一致或云端已不存在的缓存对象
+ * # Returns
+ * * `Result<Vec<String>, AppError>` - 已删除的本地对象 key 列表
+ */
 async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_clean_unused_file") };

@@ -16,7 +16,7 @@ use tauri_plugin_log::log;
 /// * `bucket` - 存储桶名称
 /// * `endpoint` - OSS 端点
 /// # Returns
-/// * `Result<(), String>` - 成功时返回 Ok，失败时返回错误信息
+/// * `Result<(), AppError>` - 成功时完成 OSS 客户端初始化，失败时返回错误信息
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_init_oss_client(
@@ -26,13 +26,20 @@ pub async fn cmd_init_oss_client(
     bucket: String,
     endpoint: String,
 ) -> Result<(), AppError> {
-    log::info!("[oss cmd] akid(len={}): {:?}", akid.len(), akid);
     log::info!("[oss cmd] bucket(len={}): {:?}", bucket.len(), bucket);
     log::info!("[oss cmd] endpoint(len={}): {:?}", endpoint.len(), endpoint);
     Ok(state.oss_client().initialize(endpoint, akid, aks, bucket)?)
 }
 
 /// 启用远程存储：初始化 OSS 客户端 → 同步本地数据到云端 → 设置 remote_enabled
+/// # Arguments
+/// * `event` - 接收同步进度与错误事件的通道
+/// * `akid` - 访问密钥 ID
+/// * `aks` - 访问密钥 Secret
+/// * `bucket` - 存储桶名称
+/// * `endpoint` - OSS 端点
+/// # Returns
+/// * `Result<(), AppError>` - 成功时已完成数据上传并切换为远程存储
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_enable_remote_storage(
@@ -96,6 +103,10 @@ pub async fn cmd_enable_remote_storage(
 }
 
 /// 禁用远程存储：同步云端数据到本地 → 设置 remote_enabled = false → 重置 OSS 客户端
+/// # Arguments
+/// * `event` - 接收同步进度与错误事件的通道
+/// # Returns
+/// * `Result<(), AppError>` - 成功时已完成数据下载并切换为本地存储
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_disable_remote_storage(
@@ -154,6 +165,8 @@ pub async fn cmd_disable_remote_storage(
 }
 
 /// 获取当前存储模式
+/// # Returns
+/// * `bool` - `true` 表示已启用远程存储，`false` 表示本地存储
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_get_storage_mode(state: State<'_, AppState>) -> bool {
@@ -161,6 +174,10 @@ pub fn cmd_get_storage_mode(state: State<'_, AppState>) -> bool {
 }
 
 /// 设置远程存储启用状态（解锁时从前端配置恢复）
+/// # Arguments
+/// * `enabled` - 是否启用远程存储
+/// # Returns
+/// * `()` - 无返回数据
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_set_remote_enabled(state: State<'_, AppState>, enabled: bool) {
