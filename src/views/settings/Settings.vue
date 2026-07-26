@@ -86,7 +86,7 @@
             </q-item-section>
             <q-item-section>
               <q-item-label class="label-text text-weight-medium">图片</q-item-label>
-              <q-item-label caption class="desc-text">包括选择图片和拍照</q-item-label>
+              <q-item-label caption class="desc-text">控制新上传图片（含拍照）的加密状态</q-item-label>
             </q-item-section>
             <q-item-section side>
               <q-toggle v-model="encryptImageAttachments" color="primary"/>
@@ -98,7 +98,7 @@
             </q-item-section>
             <q-item-section>
               <q-item-label class="label-text text-weight-medium">音频</q-item-label>
-              <q-item-label caption class="desc-text">包括选择音频和录音</q-item-label>
+              <q-item-label caption class="desc-text">控制新上传音频（含录音）的加密状态</q-item-label>
             </q-item-section>
             <q-item-section side>
               <q-toggle v-model="encryptAudioAttachments" color="primary"/>
