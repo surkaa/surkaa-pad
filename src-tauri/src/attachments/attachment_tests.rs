@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::attachments::attachment::{
-        add_attachment, caching_attachment, delete_attachment, rotate_image_attachment,
-        toggle_attachment_encryption, update_attachment_filename,
+        add_attachment, add_attachment_with_result, caching_attachment, delete_attachment,
+        rotate_image_attachment, toggle_attachment_encryption, update_attachment_filename,
     };
     use crate::attachments::attachment_types::AttachmentProcessEvent;
     use crate::caches::{DiaryMemoryCache, LocalFileCache};
@@ -52,7 +52,7 @@ mod tests {
         for i in 0..concurrency_level {
             let state = state.clone();
             let id_clone = diary_id.clone();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
 
             // 构造 Mock 数据流 (需替换为项目实际的 ByteStream 构造方式)
             let dummy_content = format!("attachment_data_{}", i).into_bytes();
@@ -60,7 +60,7 @@ mod tests {
             let stream = create_mock_stream(dummy_content, 1024);
 
             add_tasks.push(tokio::spawn(async move {
-                add_attachment(
+                let result = add_attachment_with_result(
                     &state,
                     Arc::new(tx),
                     &id_clone,
@@ -70,12 +70,18 @@ mod tests {
                     stream,
                     None,
                 )
-                .await
+                .await;
+                drop(rx);
+                result
             }));
         }
 
         // 等待所有并发写入完成
-        let _ = join_all(add_tasks).await;
+        for result in join_all(add_tasks).await {
+            result
+                .expect("附件上传任务 panic")
+                .expect("附件上传或 Manifest 更新失败");
+        }
 
         // 3. 断言: 验证写一致性与防覆盖
         let store = RemoteStore::new(lfc.clone(), client.clone());
@@ -135,7 +141,11 @@ mod tests {
             }));
         }
 
-        let _ = join_all(del_tasks).await;
+        for result in join_all(del_tasks).await {
+            result
+                .expect("附件删除任务 panic")
+                .expect("附件删除或 Manifest 更新失败");
+        }
 
         // 5. 断言: 验证并发删一致性
         let store = RemoteStore::new(lfc.clone(), client.clone());

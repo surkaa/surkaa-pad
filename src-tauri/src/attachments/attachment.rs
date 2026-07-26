@@ -99,7 +99,7 @@ pub fn deduplicate_filename(desired: &str, existing: &HashSet<String>) -> String
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn add_attachment(
+pub(crate) async fn add_attachment_with_result(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
@@ -108,9 +108,8 @@ pub async fn add_attachment(
     mimetype: String,
     stream: ByteStream,
     original_filename: Option<String>,
-) {
+) -> Result<(AttachmentMeta, String), AttachmentError> {
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
-    let _ = event.send(AttachmentProcessEvent::Started);
     // 包装流 用来更新进度
     let ec = event.clone();
     let stream = tracker_stream(size, stream, move |progress| {
@@ -199,7 +198,33 @@ pub async fn add_attachment(
         Ok::<(AttachmentMeta, String), AttachmentError>((attachment, url))
     };
 
-    match logic.await {
+    logic.await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn add_attachment(
+    state: &AppState,
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
+    id: &str,
+    encrypted: bool,
+    size: u64,
+    mimetype: String,
+    stream: ByteStream,
+    original_filename: Option<String>,
+) {
+    let _ = event.send(AttachmentProcessEvent::Started);
+    match add_attachment_with_result(
+        state,
+        event.clone(),
+        id,
+        encrypted,
+        size,
+        mimetype,
+        stream,
+        original_filename,
+    )
+    .await
+    {
         Err(e) => {
             let _ = event.send(AttachmentProcessEvent::Error(e.to_string()));
         }

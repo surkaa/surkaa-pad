@@ -1,22 +1,43 @@
 #[cfg(test)]
 mod id_generate_tests {
-    use crate::utils::id_generate::generate_descending_id;
+    use crate::utils::id_generate::{
+        generate_descending_id, generate_descending_id_with_timestamp,
+    };
+    use std::collections::HashSet;
 
     #[test]
-    fn test() {
-        let mut ids = Vec::with_capacity(5);
-        for i in 0..5 {
-            ids.push((i, generate_descending_id()));
-            // 强制等待 1 秒钟，确保下一个时间戳不同
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
-        // 根据字典序升序排序
-        ids.sort_by(|a, b| a.1.cmp(&b.1));
-        // 验证排序后 ID 的顺序应该是按照时间倒序的
-        for (index, (original_index, id)) in ids.iter().enumerate() {
-            println!("原始索引: {}, ID: {}", original_index, id);
-            // 期望 ID 的顺序应该是 4, 3, 2, 1, 0
-            assert_eq!(*original_index, 4 - index);
-        }
+    fn preserves_existing_fixed_width_descending_format() {
+        assert_eq!(generate_descending_id_with_timestamp(0), "9999999999999");
+        assert_eq!(generate_descending_id_with_timestamp(1), "9999999999998");
+        assert_eq!(
+            generate_descending_id_with_timestamp(1_750_000_000_000).len(),
+            13
+        );
+    }
+
+    #[test]
+    fn generated_ids_are_unique_and_monotonically_descending() {
+        let ids: Vec<_> = (0..10_000).map(|_| generate_descending_id()).collect();
+        assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
+        assert!(ids.windows(2).all(|pair| pair[0] > pair[1]));
+    }
+
+    #[test]
+    fn generated_ids_are_unique_across_threads() {
+        let handles: Vec<_> = (0..16)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    (0..1_000)
+                        .map(|_| generate_descending_id())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        let ids: Vec<_> = handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("ID generation thread panicked"))
+            .collect();
+
+        assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
     }
 }

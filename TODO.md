@@ -2,12 +2,6 @@
 
 项目级待办与架构债务集中记录在这里。完成后删除对应条目，并在提交信息中说明。
 
-## 高优先级
-
-- [ ] 修复并发附件元数据偶发丢失
-  - `test_thread_add_and_delete_attachment` 在全量并行测试中偶发只保存 9/10 条元数据，单独运行可以通过。
-  - 查清测试间干扰、日记 ID 冲突及 manifest read-modify-write 锁的作用域。
-
 ## 存储与附件
 
 - [ ] 明确 `LocalFileCache` 的职责和命名
