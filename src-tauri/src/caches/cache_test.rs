@@ -22,6 +22,7 @@ mod lfc_tests {
 
         let md5 = cache.get(key).await.unwrap().unwrap();
         assert_eq!(md5, md5_hex(data));
+        assert_eq!(cache.get_size(key).await.unwrap(), Some(data.len() as u64));
 
         let retrieved = cache.get_data(key).await.unwrap();
         assert_eq!(retrieved, data);
@@ -33,6 +34,7 @@ mod lfc_tests {
 
         cache.delete(key).await.unwrap();
         assert!(cache.get(key).await.unwrap().is_none());
+        assert!(cache.get_size(key).await.unwrap().is_none());
         assert!(cache.get_data(key).await.is_err());
     }
 
