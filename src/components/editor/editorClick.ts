@@ -12,11 +12,18 @@ export function shouldFocusEditorEnd(
   return clientY >= lastNode.getBoundingClientRect().bottom
 }
 
-export function shouldPreventStackedAlbumEditorFocus(
+export function isMobileEditorPlatform(currentPlatform: string): boolean {
+  return currentPlatform === 'android' || currentPlatform === 'ios'
+}
+
+export function shouldPreventEditorFocus(
   target: EventTarget | null,
   currentPlatform: string,
+  albumSelectionActive = false,
 ): boolean {
-  return currentPlatform === 'android'
-    && target instanceof Element
-    && Boolean(target.closest('.editor-image-album[data-display-mode="stackedCards"]'))
+  if (!isMobileEditorPlatform(currentPlatform) || !(target instanceof Element)) return false
+
+  if (albumSelectionActive && target.closest('.ProseMirror')) return true
+
+  return Boolean(target.closest('.editor-image-album[data-display-mode="stackedCards"]'))
 }

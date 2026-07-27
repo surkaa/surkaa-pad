@@ -10,8 +10,9 @@ import { Menu, MenuItem } from '@tauri-apps/api/menu'
 import type { AttachmentMeta, DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import {
+  isMobileEditorPlatform,
   shouldFocusEditorEnd,
-  shouldPreventStackedAlbumEditorFocus,
+  shouldPreventEditorFocus,
 } from './editor/editorClick'
 import {
   addImageToAlbumDocument,
@@ -182,6 +183,7 @@ function handleWrapperClick(e: MouseEvent) {
     if (url) emit('showImage', url)
     return
   }
+  if (albumAnchor.value) return
   // 点击编辑器空白区域（如底部）时聚焦到末尾
   const proseMirror = editorElement.value?.querySelector('.ProseMirror') as HTMLElement | null
   if (
@@ -194,7 +196,7 @@ function handleWrapperClick(e: MouseEvent) {
 }
 
 function handleWrapperPointerDown(e: PointerEvent) {
-  if (!shouldPreventStackedAlbumEditorFocus(e.target, currentPlatform)) return
+  if (!shouldPreventEditorFocus(e.target, currentPlatform, Boolean(albumAnchor.value))) return
   e.preventDefault()
   e.stopPropagation()
 }
@@ -234,6 +236,10 @@ function changeAlbumMode(
 function startAlbumSelection(filename: string) {
   albumAnchor.value = filename
   albumSelection.value = [filename]
+  if (isMobileEditorPlatform(currentPlatform)) {
+    editor.value?.commands.blur()
+    nextTick(() => editor.value?.commands.blur())
+  }
   updateAlbumSelectionClasses()
 }
 

@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
-import { shouldFocusEditorEnd, shouldPreventStackedAlbumEditorFocus } from '../editorClick'
+import {
+  isMobileEditorPlatform,
+  shouldFocusEditorEnd,
+  shouldPreventEditorFocus,
+} from '../editorClick'
 
 describe('shouldFocusEditorEnd', () => {
   it('focuses the end when clicking below the final document node', () => {
@@ -40,7 +44,7 @@ describe('shouldFocusEditorEnd', () => {
   })
 })
 
-describe('shouldPreventStackedAlbumEditorFocus', () => {
+describe('shouldPreventEditorFocus', () => {
   it('prevents Android interactions inside a stacked album from focusing the editor', () => {
     const album = document.createElement('div')
     album.className = 'editor-image-album'
@@ -48,8 +52,8 @@ describe('shouldPreventStackedAlbumEditorFocus', () => {
     const image = document.createElement('img')
     album.append(image)
 
-    expect(shouldPreventStackedAlbumEditorFocus(image, 'android')).toBe(true)
-    expect(shouldPreventStackedAlbumEditorFocus(album, 'android')).toBe(true)
+    expect(shouldPreventEditorFocus(image, 'android')).toBe(true)
+    expect(shouldPreventEditorFocus(album, 'android')).toBe(true)
   })
 
   it('keeps desktop and horizontal album interactions unchanged', () => {
@@ -59,9 +63,35 @@ describe('shouldPreventStackedAlbumEditorFocus', () => {
     const image = document.createElement('img')
     album.append(image)
 
-    expect(shouldPreventStackedAlbumEditorFocus(image, 'android')).toBe(false)
+    expect(shouldPreventEditorFocus(image, 'android')).toBe(false)
     album.dataset.displayMode = 'stackedCards'
-    expect(shouldPreventStackedAlbumEditorFocus(image, 'windows')).toBe(false)
-    expect(shouldPreventStackedAlbumEditorFocus(null, 'android')).toBe(false)
+    expect(shouldPreventEditorFocus(image, 'windows')).toBe(false)
+    expect(shouldPreventEditorFocus(null, 'android')).toBe(false)
+  })
+
+  it('prevents editor focus throughout mobile album image selection', () => {
+    const proseMirror = document.createElement('div')
+    proseMirror.className = 'ProseMirror'
+    const image = document.createElement('img')
+    proseMirror.append(image)
+
+    expect(shouldPreventEditorFocus(image, 'android', true)).toBe(true)
+    expect(shouldPreventEditorFocus(proseMirror, 'ios', true)).toBe(true)
+    expect(shouldPreventEditorFocus(image, 'windows', true)).toBe(false)
+    expect(shouldPreventEditorFocus(image, 'android', false)).toBe(false)
+  })
+
+  it('does not block controls outside the editor during album selection', () => {
+    const button = document.createElement('button')
+
+    expect(shouldPreventEditorFocus(button, 'android', true)).toBe(false)
+  })
+})
+
+describe('isMobileEditorPlatform', () => {
+  it('recognizes mobile editor platforms', () => {
+    expect(isMobileEditorPlatform('android')).toBe(true)
+    expect(isMobileEditorPlatform('ios')).toBe(true)
+    expect(isMobileEditorPlatform('windows')).toBe(false)
   })
 })
