@@ -6,9 +6,7 @@ import {useDiaryCore} from "../../composables/useDiaryCore.ts";
 import {onBeforeRouteLeave, type NavigationGuardNext, useRoute} from "vue-router";
 import {Dialog, useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
-import {type UploadTask, useMediaAction} from "../../composables/useMediaAction.ts";
-import {formatTimestamp} from "../../utils";
-import AttachmentCard from "../../components/AttachmentCard.vue";
+import {useMediaAction} from "../../composables/useMediaAction.ts";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
 import {useDataStore} from "../../stores/data.ts";
 import ImagePreview from "../../components/ImagePreview.vue";
@@ -19,12 +17,14 @@ import type {AttachmentMeta} from "../../bindings.ts";
 import {normalizeSearchTerms} from "../../utils/searchHighlight.ts";
 import {platform} from "@tauri-apps/plugin-os";
 import {useEventListener} from "@vueuse/core";
-import {attachmentGroupIcon, groupAttachmentsByMimeType} from "../../utils/attachmentGrouping.ts";
-import {copyTextToClipboard} from "../../utils/clipboard.ts";
 import {
   findEditorShortcutAction,
   type EditorShortcutAction,
 } from "../../utils/editorShortcuts.ts";
+import DiaryInfoDialog from './DiaryInfoDialog.vue';
+import DiarySourceDialog from './DiarySourceDialog.vue';
+import UploadTasksDialog from './UploadTasksDialog.vue';
+import UnusedAttachmentsDialog from './UnusedAttachmentsDialog.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -37,8 +37,6 @@ const tiptapEditorRef = ref<InstanceType<typeof TiptapEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
 const showSourceDialog = ref(false);
-const diaryManifestSource = ref('');
-const diarySourceLoading = ref(false);
 const showRenameDialog = ref(false);
 const renameAttachmentId = ref('');
 const oldFilename = ref('');
@@ -52,8 +50,6 @@ const {
   diaryId, diary, attachments, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
   loadDiaryInfo, deleteDiary
 } = useDiaryCore();
-const attachmentGroups = computed(() => groupAttachmentsByMimeType(attachments.value));
-const expandedAttachmentGroups = ref<Record<string, boolean>>({});
 
 // UI交互
 const {
@@ -81,14 +77,6 @@ function openDiaryDetail() {
 
 function additionalAction() {
   showToolbarPanel.value = !showToolbarPanel.value;
-}
-
-function uploadTaskStatusText(task: UploadTask) {
-  if (task.status === 'completed') return '已完成';
-  if (task.status === 'error') return '上传失败';
-  if (task.phase === 'finalizing') return '正在完成：提交附件并保存日记';
-  if (task.status === 'pending') return '准备中';
-  return `上传中 ${Math.round(task.progress * 100)}%`;
 }
 
 function isEditableFieldOutsideDiaryEditor(target: EventTarget | null) {
@@ -145,30 +133,9 @@ if (isWindows) {
   useEventListener(window, 'keydown', handleEditorShortcut, {capture: true});
 }
 
-async function showDiarySource() {
+function showDiarySource() {
   showMenu.value = false;
   showSourceDialog.value = true;
-  diarySourceLoading.value = true;
-  diaryManifestSource.value = '';
-  try {
-    const manifest = await api.cmdGetDiaryManifest(diaryId.value);
-    diaryManifestSource.value = JSON.stringify(manifest, null, 2);
-  } catch (error) {
-    showSourceDialog.value = false;
-    $q.notify({type: 'negative', message: `加载完整 Manifest 失败：${formatError(error)}`});
-  } finally {
-    diarySourceLoading.value = false;
-  }
-}
-
-async function copyDiaryManifest() {
-  if (!diaryManifestSource.value) return;
-  try {
-    await copyTextToClipboard(diaryManifestSource.value);
-    $q.notify({type: 'positive', message: '完整 Manifest 已复制'});
-  } catch (error) {
-    $q.notify({type: 'negative', message: `复制 Manifest 失败：${formatError(error)}`});
-  }
 }
 
 function showImage(src: string) {
@@ -375,133 +342,20 @@ onActivated(async () => {
       </q-card>
     </q-dialog>
 
-    <q-dialog no-refocus v-model="showDetailDialog">
-      <q-card class="diary-detail-dialog">
-        <q-card-section class="row items-center q-pb-none">
-          <div class="text-h6">{{ diary?.title }} - 详情</div>
-          <q-space/>
-          <q-btn icon="close" flat round dense v-close-popup/>
-        </q-card-section>
+    <DiaryInfoDialog
+        v-model="showDetailDialog"
+        :diary="diary"
+        :diary-id="diaryId"
+        :attachments="attachments"
+    />
 
-        <q-card-section class="q-pa-md diary-detail-dialog-content">
-          <div class="text-subtitle2 q-mb-xs">基本信息</div>
-          <div class="text-caption diary-id-row">
-            <span>ID：</span>
-            <code class="diary-id-value">{{ diaryId }}</code>
-          </div>
-          <div class="text-caption">创建时间：{{ formatTimestamp(diary?.created) }}</div>
-          <div class="text-caption">更新时间：{{ formatTimestamp(diary?.updated) }}</div>
+    <DiarySourceDialog v-model="showSourceDialog" :diary-id="diaryId"/>
 
-          <q-separator class="q-my-md"/>
-
-          <div class="text-subtitle2 q-mb-sm">附件列表 ({{ attachments.length }})</div>
-          <q-list bordered v-if="attachments.length" class="attachment-groups-list">
-            <q-expansion-item
-                v-for="group in attachmentGroups"
-                :key="group.type"
-                v-model="expandedAttachmentGroups[group.type]"
-                :icon="attachmentGroupIcon(group.type)"
-                :label="`${group.type} (${group.attachments.length})`"
-                header-class="attachment-group-header"
-            >
-              <q-list separator v-if="expandedAttachmentGroups[group.type]">
-                <AttachmentCard
-                    v-for="att in group.attachments"
-                    :key="att.id"
-                    :att="att"
-                />
-              </q-list>
-            </q-expansion-item>
-          </q-list>
-          <div v-else class="text-center q-pa-sm">暂无附件</div>
-        </q-card-section>
-
-        <q-card-actions align="right">
-          <q-btn flat label="关闭" color="primary" v-close-popup/>
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <q-dialog no-refocus v-model="showSourceDialog" persistent>
-      <q-card class="diary-source-dialog-card">
-        <q-card-section class="row items-center q-pb-sm">
-          <div class="text-h6">完整 Manifest</div>
-          <q-space/>
-          <q-btn icon="close" flat round dense v-close-popup aria-label="关闭源码弹窗"/>
-        </q-card-section>
-
-        <q-separator/>
-
-        <q-card-section class="diary-source-content">
-          <div v-if="diarySourceLoading" class="column items-center justify-center full-height q-gutter-sm">
-            <q-spinner color="primary" size="32px"/>
-            <div class="text-caption diary-source-loading-text">正在读取完整 Manifest...</div>
-          </div>
-          <pre v-else class="diary-manifest-source">{{ diaryManifestSource }}</pre>
-        </q-card-section>
-
-        <q-separator/>
-
-        <q-card-actions align="right">
-          <q-btn
-              flat
-              icon="content_copy"
-              label="复制完整 Manifest"
-              color="primary"
-              :disable="diarySourceLoading || !diaryManifestSource"
-              @click="copyDiaryManifest"
-          />
-          <q-btn flat label="关闭" color="primary" v-close-popup/>
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
-    <!-- 上传操作不允许关闭，在完成之前 -->
-    <q-dialog no-refocus v-model="showUploadDialog" persistent>
-      <q-card style="min-width: 300px; max-width: 500px">
-        <q-card-section class="row items-center q-pb-none">
-          <div class="text-h6">文件处理中</div>
-        </q-card-section>
-
-        <q-card-section class="q-pt-md">
-          <q-list dense>
-            <q-item v-for="task in uploadTasks" :key="task.filename" class="q-px-none">
-              <q-item-section>
-                <q-item-label class="text-caption ellipsis upload-task-filename">
-                  {{ task.filename }}
-                </q-item-label>
-                <q-item-label caption class="upload-task-status">
-                  {{ uploadTaskStatusText(task) }}
-                </q-item-label>
-                <q-linear-progress
-                    :value="task.progress"
-                    :indeterminate="task.phase === 'finalizing' && task.status === 'uploading'"
-                    :color="task.status === 'error' ? 'negative' : 'primary'"
-                    class="q-mt-sm"
-                    :animation-speed="200"
-                />
-              </q-item-section>
-              <q-item-section side>
-                <q-icon
-                    :name="task.status === 'completed' ? 'check_circle' : (task.status === 'error' ? 'error' : 'cloud_upload')"
-                    :color="task.status === 'completed' ? 'positive' : (task.status === 'error' ? 'negative' : 'grey')"
-                />
-              </q-item-section>
-            </q-item>
-          </q-list>
-        </q-card-section>
-
-        <q-card-actions align="right">
-          <q-btn
-              flat
-              label="完成"
-              color="primary"
-              v-close-popup
-              :disable="!isUploading"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <UploadTasksDialog
+        v-model="showUploadDialog"
+        :tasks="uploadTasks"
+        :completed="isUploading"
+    />
 
     <q-dialog no-refocus v-model="showRenameDialog" persistent>
       <q-card style="min-width: 300px; max-width: 500px">
@@ -521,40 +375,14 @@ onActivated(async () => {
       </q-card>
     </q-dialog>
 
-    <q-dialog no-refocus v-model="showUnusedAttachmentsDialog" persistent>
-      <q-card class="unused-attachments-dialog">
-        <q-card-section>
-          <div class="text-h6">未使用的附件</div>
-          <div class="q-mt-sm text-body2">
-            有 {{ pendingUnusedAttachments.length }} 个附件没有出现在正文中，请选择处理方式。
-          </div>
-        </q-card-section>
-
-        <q-card-actions align="right" class="unused-attachment-actions">
-          <q-btn
-              flat
-              label="保留"
-              color="primary"
-              :disable="unusedAttachmentActionLoading"
-              @click="finishUnusedAttachmentCheck"
-          />
-          <q-btn
-              unelevated
-              label="添加到日记末尾"
-              color="primary"
-              :loading="unusedAttachmentActionLoading"
-              @click="appendUnusedAttachments"
-          />
-          <q-btn
-              flat
-              label="删除附件"
-              color="negative"
-              :disable="unusedAttachmentActionLoading"
-              @click="deleteUnusedAttachments"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <UnusedAttachmentsDialog
+        v-model="showUnusedAttachmentsDialog"
+        :count="pendingUnusedAttachments.length"
+        :loading="unusedAttachmentActionLoading"
+        @keep="finishUnusedAttachmentCheck"
+        @append="appendUnusedAttachments"
+        @delete="deleteUnusedAttachments"
+    />
   </div>
 </template>
 
@@ -570,84 +398,5 @@ onActivated(async () => {
     overflow: hidden;
   }
 
-  .unused-attachments-dialog {
-    width: min(440px, 90vw);
-  }
-
-  .unused-attachment-actions {
-    gap: 4px;
-  }
-
-}
-
-// q-dialog 会被 Teleport 到 #diary-detail 外，相关样式不能嵌套在上面的选择器中。
-.upload-task-filename {
-  color: var(--pad-text-color-200) !important;
-}
-
-.upload-task-status {
-  color: var(--pad-text-color-300) !important;
-}
-</style>
-
-<style lang="scss">
-.diary-detail-dialog {
-  width: min(640px, 92vw);
-  max-height: 90vh;
-}
-
-.diary-detail-dialog-content {
-  max-height: calc(90vh - 112px);
-  overflow-y: auto;
-}
-
-.diary-id-row {
-  display: flex;
-  align-items: baseline;
-}
-
-.diary-id-value {
-  color: var(--pad-text-color-200);
-  overflow-wrap: anywhere;
-  user-select: all;
-}
-
-.attachment-groups-list {
-  border-color: var(--pad-border-color) !important;
-}
-
-.attachment-group-header {
-  color: var(--pad-text-color-200);
-}
-
-.diary-source-dialog-card {
-  display: flex;
-  flex-direction: column;
-  width: min(900px, 94vw);
-  height: min(720px, 86vh);
-}
-
-.diary-source-content {
-  flex: 1;
-  min-height: 0;
-  padding: 0;
-}
-
-.diary-source-loading-text {
-  color: var(--pad-text-color-300);
-}
-
-.diary-manifest-source {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 16px;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: var(--pad-bg-color-100);
-  color: var(--pad-text-color-200);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
 }
 </style>
