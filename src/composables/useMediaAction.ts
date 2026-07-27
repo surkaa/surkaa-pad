@@ -11,7 +11,7 @@ import {storeToRefs} from "pinia";
 import TiptapEditor from "../components/TiptapEditor.vue";
 import api from "../utils/api.ts";
 import {formatError} from "../utils/formatError.ts";
-import {promisifyUpload} from "../utils/batchUpload";
+import {batchUploadAll, promisifyUpload} from "../utils/batchUpload";
 import {
     attachmentNodeKindFromMimeType,
     applyAttachmentInsertions,
@@ -26,6 +26,7 @@ export interface UploadTask {
     filename: string;
     progress: number;
     status: 'pending' | 'uploading' | 'completed' | 'error';
+    phase: 'preparing' | 'transferring' | 'finalizing';
 }
 
 type OnAttachmentProcessSuccess = (meta: AttachmentMeta, url: string) => void;
@@ -74,9 +75,14 @@ export function useMediaAction(
             switch (msg.event) {
                 case "started":
                     task.status = 'uploading';
+                    task.phase = 'transferring';
                     break;
                 case "progress":
                     task.progress = msg.data / 100;
+                    break;
+                case "finalizing":
+                    task.phase = 'finalizing';
+                    task.progress = Math.max(task.progress, 0.99);
                     break;
                 case "completed":
                     task.status = 'completed';
@@ -107,7 +113,12 @@ export function useMediaAction(
     ) {
         const rawName = accessStr.split(/[\\/]/).pop() || "未知文件";
         const key = uuidv4();
-        uploadTaskMap.value[key] = {filename: rawName, progress: 0, status: 'pending'};
+        uploadTaskMap.value[key] = {
+            filename: rawName,
+            progress: 0,
+            status: 'pending',
+            phase: 'preparing',
+        };
 
         const event = createUploadChannel(key, completedCallback, errorCallback);
 
@@ -121,41 +132,56 @@ export function useMediaAction(
         }
     }
 
-    async function uploadMemoryAttachmentChunked(
+    async function uploadAttachmentChunked(
         filename: string,
-        bytes: Uint8Array,
+        totalSize: number,
         mimetype: string,
         encrypted: boolean,
+        readChunk: (start: number, end: number) => Promise<Uint8Array>,
         completedCallback?: (meta: AttachmentMeta, url: string) => void,
         errorCallback?: (errorMsg: string) => void
     ) {
         const key = uuidv4();
-        uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
+        uploadTaskMap.value[key] = {
+            filename,
+            progress: 0,
+            status: 'pending',
+            phase: 'preparing',
+        };
         showUploadDialog.value = true;
 
         let uploadToken: string | null = null;
         try {
             uploadTaskMap.value[key].status = 'uploading';
+            uploadTaskMap.value[key].phase = 'transferring';
 
             // 初始化分片上传
             const startResult = await api.cmdStartChunkedUpload(
-                diaryId.value, filename, mimetype, encrypted, bytes.length
+                diaryId.value, filename, mimetype, encrypted, totalSize
             );
             uploadToken = startResult.uploadToken;
             chunkedUploadTokens.add(uploadToken);
 
             // 逐片上传
-            const totalChunks = Math.ceil(bytes.length / CHUNK_SIZE);
+            const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
             for (let i = 0; i < totalChunks; i++) {
                 const start = i * CHUNK_SIZE;
-                const end = Math.min(start + CHUNK_SIZE, bytes.length);
-                const chunk = Array.from(bytes.slice(start, end));
+                const end = Math.min(start + CHUNK_SIZE, totalSize);
+                const bytes = await readChunk(start, end);
+                if (bytes.length !== end - start) {
+                    throw new Error(`读取分片大小不匹配：expected=${end - start}, actual=${bytes.length}`);
+                }
+                const chunk = Array.from(bytes);
 
                 const chunkResult = await api.cmdUploadChunk(uploadToken, i, chunk);
-                uploadTaskMap.value[key].progress = chunkResult.uploadedBytes / chunkResult.totalBytes;
+                uploadTaskMap.value[key].progress = Math.min(
+                    chunkResult.uploadedBytes / chunkResult.totalBytes,
+                    0.99,
+                );
             }
 
             // 完成上传
+            uploadTaskMap.value[key].phase = 'finalizing';
             const finishResult = await api.cmdFinishChunkedUpload(uploadToken);
             uploadTaskMap.value[key].status = 'completed';
             uploadTaskMap.value[key].progress = 1;
@@ -173,6 +199,25 @@ export function useMediaAction(
                 api.cmdAbortChunkedUpload(uploadToken).catch(() => {});
             }
         }
+    }
+
+    function uploadMemoryAttachmentChunked(
+        filename: string,
+        bytes: Uint8Array,
+        mimetype: string,
+        encrypted: boolean,
+        completedCallback?: (meta: AttachmentMeta, url: string) => void,
+        errorCallback?: (errorMsg: string) => void
+    ) {
+        return uploadAttachmentChunked(
+            filename,
+            bytes.length,
+            mimetype,
+            encrypted,
+            async (start, end) => bytes.slice(start, end),
+            completedCallback,
+            errorCallback,
+        );
     }
 
     function beforeClick(opts?: { skipFocus?: boolean }) {
@@ -225,7 +270,7 @@ export function useMediaAction(
 
         showUploadDialog.value = true;
 
-        const results = await Promise.all(accessStrArr.map(accessStr =>
+        const results = await batchUploadAll(accessStrArr, accessStr =>
             promisifyUpload<UploadedAttachment>((onSuccess, onError) => {
                 uploadAttachment(accessStr, encrypted,
                     (meta, url) => onSuccess({
@@ -237,7 +282,7 @@ export function useMediaAction(
                     onError
                 );
             })
-        ));
+        );
         await insertUploadedAttachments(results);
     }
 
@@ -258,7 +303,12 @@ export function useMediaAction(
         const key = uuidv4();
         const displayFilename = currentDiary.value?.attachments
             .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
-        uploadTaskMap.value[key] = {filename: displayFilename, progress: 0, status: 'pending'};
+        uploadTaskMap.value[key] = {
+            filename: displayFilename,
+            progress: 0,
+            status: 'pending',
+            phase: 'preparing',
+        };
 
         const event = createUploadChannel(key, (_meta, url) => {
             if (!editorContentRef.value) {
@@ -341,7 +391,12 @@ export function useMediaAction(
         takePhoto: async () => {
             if (beforeClick()) return;
             const key = uuidv4();
-            uploadTaskMap.value[key] = {filename: 'take photo', progress: 0, status: 'pending'};
+            uploadTaskMap.value[key] = {
+                filename: 'take photo',
+                progress: 0,
+                status: 'pending',
+                phase: 'preparing',
+            };
             const event = createUploadChannel(key, (meta, url) => {
                 if (!editorContentRef.value) {
                     console.error('编辑器内容引用未定义，无法插入图片节点');
@@ -385,7 +440,12 @@ export function useMediaAction(
                 const key = uuidv4();
                 const filename = currentDiary.value?.attachments
                     .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
-                uploadTaskMap.value[key] = {filename, progress: 0, status: 'pending'};
+                uploadTaskMap.value[key] = {
+                    filename,
+                    progress: 0,
+                    status: 'pending',
+                    phase: 'preparing',
+                };
                 const event = createUploadChannel(key);
                 try {
                     const cancelToken = await api.cmdCachingAttachment(event, diaryId.value, attachmentId);
@@ -434,36 +494,29 @@ export function useMediaAction(
             showUploadDialog.value = true;
             uploadTaskMap.value = {};
 
-            const results = await Promise.all(Array.from(files).map(file => {
+            const results = await batchUploadAll(Array.from(files), file => {
                 const detectedNodeKind = attachmentNodeKindFromMimeType(file.type);
                 return promisifyUpload<UploadedAttachment>(
                     (onSuccess, onError) => {
-                        const reader = new FileReader();
-                        reader.onload = async () => {
-                            const arrayBuffer = reader.result as ArrayBuffer;
-                            const uint8Array = new Uint8Array(arrayBuffer);
-                            await uploadMemoryAttachmentChunked(
-                                file.name,
-                                uint8Array,
-                                file.type,
-                                attachmentEncryptionByKind[detectedNodeKind].value,
-                                (meta, url) => onSuccess({
-                                    nodeKind: attachmentNodeKindFromMimeType(meta.mimetype),
-                                    attachmentId: meta.id,
-                                    filename: meta.filename,
-                                    url,
-                                }),
-                                () => onError(),
-                            );
-                        };
-                        reader.onerror = () => {
-                            $q.notify({type: 'negative', message: `${file.name} 读取失败`});
-                            onError();
-                        };
-                        reader.readAsArrayBuffer(file);
+                        void uploadAttachmentChunked(
+                            file.name,
+                            file.size,
+                            file.type,
+                            attachmentEncryptionByKind[detectedNodeKind].value,
+                            async (start, end) => new Uint8Array(
+                                await file.slice(start, end).arrayBuffer()
+                            ),
+                            (meta, url) => onSuccess({
+                                nodeKind: attachmentNodeKindFromMimeType(meta.mimetype),
+                                attachmentId: meta.id,
+                                filename: meta.filename,
+                                url,
+                            }),
+                            () => onError(),
+                        );
                     }
                 );
-            }));
+            });
 
             await insertUploadedAttachments(results);
         },

@@ -568,6 +568,10 @@ export type AttachmentProcessEvent = { event: "started" } |
  */
 { event: "progress"; data: number } | 
 /**
+ * 数据已传输完毕，正在提交存储事务并更新日记。
+ */
+{ event: "finalizing" } | 
+/**
  * 返回附件的元数据和访问URL
  */
 { event: "completed"; data: [AttachmentMeta, string] } | 

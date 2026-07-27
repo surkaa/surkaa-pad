@@ -6,7 +6,7 @@ import {useDiaryCore} from "../../composables/useDiaryCore.ts";
 import {onBeforeRouteLeave, type NavigationGuardNext, useRoute} from "vue-router";
 import {Dialog, useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
-import {useMediaAction} from "../../composables/useMediaAction.ts";
+import {type UploadTask, useMediaAction} from "../../composables/useMediaAction.ts";
 import {formatTimestamp} from "../../utils";
 import AttachmentCard from "../../components/AttachmentCard.vue";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
@@ -75,6 +75,14 @@ function openDiaryDetail() {
 
 function additionalAction() {
   showToolbarPanel.value = !showToolbarPanel.value;
+}
+
+function uploadTaskStatusText(task: UploadTask) {
+  if (task.status === 'completed') return '已完成';
+  if (task.status === 'error') return '上传失败';
+  if (task.phase === 'finalizing') return '正在完成：提交附件并保存日记';
+  if (task.status === 'pending') return '准备中';
+  return `上传中 ${Math.round(task.progress * 100)}%`;
 }
 
 function isEditableFieldOutsideDiaryEditor(target: EventTarget | null) {
@@ -388,8 +396,12 @@ onActivated(async () => {
             <q-item v-for="task in uploadTasks" :key="task.filename" class="q-px-none">
               <q-item-section>
                 <q-item-label class="text-caption ellipsis">{{ task.filename }}</q-item-label>
+                <q-item-label caption class="upload-task-status">
+                  {{ uploadTaskStatusText(task) }}
+                </q-item-label>
                 <q-linear-progress
                     :value="task.progress"
+                    :indeterminate="task.phase === 'finalizing' && task.status === 'uploading'"
                     :color="task.status === 'error' ? 'negative' : 'primary'"
                     class="q-mt-sm"
                     :animation-speed="200"
@@ -490,6 +502,10 @@ onActivated(async () => {
 
   .unused-attachment-actions {
     gap: 4px;
+  }
+
+  .upload-task-status {
+    color: var(--pad-text-color-300) !important;
   }
 }
 </style>

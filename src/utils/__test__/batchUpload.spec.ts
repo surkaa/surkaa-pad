@@ -63,6 +63,26 @@ describe('batchUploadAll', () => {
         expect(results).toEqual([]);
     });
 
+    it('限制同时执行的上传数量', async () => {
+        let active = 0;
+        let maxActive = 0;
+        const results = await batchUploadAll([1, 2, 3, 4, 5], async item => {
+            active += 1;
+            maxActive = Math.max(maxActive, active);
+            await new Promise(resolve => setTimeout(resolve, 5));
+            active -= 1;
+            return item * 2;
+        }, 2);
+
+        expect(maxActive).toBe(2);
+        expect(results).toEqual([2, 4, 6, 8, 10]);
+    });
+
+    it('拒绝无效的并发数量', async () => {
+        await expect(batchUploadAll([1], async item => item, 0))
+            .rejects.toThrow('concurrency must be a positive integer');
+    });
+
     it('配合 promisifyUpload 使用——按序完成', async () => {
         const items = [
             { id: 1, name: 'first' },
