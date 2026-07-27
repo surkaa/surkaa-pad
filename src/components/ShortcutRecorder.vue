@@ -45,8 +45,11 @@ function handleKeydown(event: KeyboardEvent) {
 
 <template>
   <q-input
-    :model-value="recording ? '请按下快捷键…' : formatEditorShortcut(props.modelValue)"
-    :label="label"
+    :model-value="recording ? '正在录制：请按组合键' : formatEditorShortcut(props.modelValue)"
+    :label="recording ? '正在录制' : label"
+    :color="recording ? 'primary' : undefined"
+    :class="{ 'is-recording': recording }"
+    :aria-label="recording ? `${label}快捷键正在录制` : `${label}快捷键`"
     outlined
     dense
     readonly
@@ -56,7 +59,11 @@ function handleKeydown(event: KeyboardEvent) {
     @keydown="handleKeydown"
   >
     <template #prepend>
-      <q-icon name="keyboard"/>
+      <q-icon
+        :name="recording ? 'radio_button_checked' : 'keyboard'"
+        :color="recording ? 'primary' : undefined"
+        :class="{ 'recording-indicator': recording }"
+      />
     </template>
     <template #append>
       <q-btn
@@ -77,5 +84,24 @@ function handleKeydown(event: KeyboardEvent) {
 <style scoped>
 .shortcut-recorder {
   width: min(260px, 42vw);
+}
+
+.shortcut-recorder :deep(.q-field__native) {
+  cursor: pointer;
+}
+
+.shortcut-recorder.is-recording :deep(.q-field__control) {
+  box-shadow: 0 0 0 2px var(--q-primary);
+}
+
+.recording-indicator {
+  animation: recording-pulse 1s ease-in-out infinite;
+}
+
+@keyframes recording-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
 }
 </style>
