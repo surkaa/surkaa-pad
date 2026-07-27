@@ -257,6 +257,21 @@ async cmdGetDiaryDetail(id: string) : Promise<Result<DiaryDetail, AppError>> {
 }
 },
 /**
+ * 获取解密后的完整日记 Manifest
+ * # Arguments
+ * * `id` - 日记ID
+ * # Returns
+ * * `Result<DiaryManifest, AppError>` - 包含版本、算法、正文和附件元数据的完整 Manifest
+ */
+async cmdGetDiaryManifest(id: string) : Promise<Result<DiaryManifest, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_manifest", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 搜索日记
  * # Arguments
  * * `event` - 接收搜索结果与错误事件的通道
@@ -590,6 +605,7 @@ export type DiaryContentNode = { type: "markdown"; text: string } | { type: "ima
  * 仅在进入日记编辑页后加载的完整详情。
  */
 export type DiaryDetail = { summary: DiarySummary; content: DiaryContent; attachments: AttachmentMeta[]; attachmentUrls: Partial<{ [key in string]: string }> }
+export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: DiaryContent; created: number; updated: number; attachments: AttachmentMeta[]; version?: number }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行

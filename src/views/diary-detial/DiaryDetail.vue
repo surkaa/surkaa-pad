@@ -15,12 +15,12 @@ import ImagePreview from "../../components/ImagePreview.vue";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {useConfigStore} from "../../stores/config.ts";
-import {diaryContentToSource} from "../../components/editor/markdownConverter.ts";
 import type {AttachmentMeta} from "../../bindings.ts";
 import {normalizeSearchTerms} from "../../utils/searchHighlight.ts";
 import {platform} from "@tauri-apps/plugin-os";
 import {useEventListener} from "@vueuse/core";
 import {attachmentGroupIcon, groupAttachmentsByMimeType} from "../../utils/attachmentGrouping.ts";
+import {copyTextToClipboard} from "../../utils/clipboard.ts";
 import {
   findEditorShortcutAction,
   type EditorShortcutAction,
@@ -36,6 +36,9 @@ const searchTerms = computed(() => normalizeSearchTerms(
 const tiptapEditorRef = ref<InstanceType<typeof TiptapEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
+const showSourceDialog = ref(false);
+const diaryManifestSource = ref('');
+const diarySourceLoading = ref(false);
 const showRenameDialog = ref(false);
 const renameAttachmentId = ref('');
 const oldFilename = ref('');
@@ -123,6 +126,7 @@ function handleEditorShortcut(event: KeyboardEvent) {
     || isEditableFieldOutsideDiaryEditor(event.target)
     || showMenu.value
     || showDetailDialog.value
+    || showSourceDialog.value
     || showRenameDialog.value
     || showUnusedAttachmentsDialog.value
     || showUploadDialog.value
@@ -141,15 +145,30 @@ if (isWindows) {
   useEventListener(window, 'keydown', handleEditorShortcut, {capture: true});
 }
 
-function showDiarySource() {
-  $q.dialog({
-    title: '日记内容 - 源码',
-    message: diaryContentToSource(diaryContent.value),
-    class: 'diary-source-dialog',
-    persistent: true,
-    ok: {label: '关闭', color: 'primary'},
-  });
+async function showDiarySource() {
   showMenu.value = false;
+  showSourceDialog.value = true;
+  diarySourceLoading.value = true;
+  diaryManifestSource.value = '';
+  try {
+    const manifest = await api.cmdGetDiaryManifest(diaryId.value);
+    diaryManifestSource.value = JSON.stringify(manifest, null, 2);
+  } catch (error) {
+    showSourceDialog.value = false;
+    $q.notify({type: 'negative', message: `加载完整 Manifest 失败：${formatError(error)}`});
+  } finally {
+    diarySourceLoading.value = false;
+  }
+}
+
+async function copyDiaryManifest() {
+  if (!diaryManifestSource.value) return;
+  try {
+    await copyTextToClipboard(diaryManifestSource.value);
+    $q.notify({type: 'positive', message: '完整 Manifest 已复制'});
+  } catch (error) {
+    $q.notify({type: 'negative', message: `复制 Manifest 失败：${formatError(error)}`});
+  }
 }
 
 function showImage(src: string) {
@@ -365,7 +384,11 @@ onActivated(async () => {
         </q-card-section>
 
         <q-card-section class="q-pa-md diary-detail-dialog-content">
-          <div class="text-subtitle2 q-mb-xs">时间信息</div>
+          <div class="text-subtitle2 q-mb-xs">基本信息</div>
+          <div class="text-caption diary-id-row">
+            <span>ID：</span>
+            <code class="diary-id-value">{{ diaryId }}</code>
+          </div>
           <div class="text-caption">创建时间：{{ formatTimestamp(diary?.created) }}</div>
           <div class="text-caption">更新时间：{{ formatTimestamp(diary?.updated) }}</div>
 
@@ -394,6 +417,40 @@ onActivated(async () => {
         </q-card-section>
 
         <q-card-actions align="right">
+          <q-btn flat label="关闭" color="primary" v-close-popup/>
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog no-refocus v-model="showSourceDialog" persistent>
+      <q-card class="diary-source-dialog-card">
+        <q-card-section class="row items-center q-pb-sm">
+          <div class="text-h6">完整 Manifest</div>
+          <q-space/>
+          <q-btn icon="close" flat round dense v-close-popup aria-label="关闭源码弹窗"/>
+        </q-card-section>
+
+        <q-separator/>
+
+        <q-card-section class="diary-source-content">
+          <div v-if="diarySourceLoading" class="column items-center justify-center full-height q-gutter-sm">
+            <q-spinner color="primary" size="32px"/>
+            <div class="text-caption diary-source-loading-text">正在读取完整 Manifest...</div>
+          </div>
+          <pre v-else class="diary-manifest-source">{{ diaryManifestSource }}</pre>
+        </q-card-section>
+
+        <q-separator/>
+
+        <q-card-actions align="right">
+          <q-btn
+              flat
+              icon="content_copy"
+              label="复制完整 Manifest"
+              color="primary"
+              :disable="diarySourceLoading || !diaryManifestSource"
+              @click="copyDiaryManifest"
+          />
           <q-btn flat label="关闭" color="primary" v-close-popup/>
         </q-card-actions>
       </q-card>
@@ -544,6 +601,17 @@ onActivated(async () => {
   overflow-y: auto;
 }
 
+.diary-id-row {
+  display: flex;
+  align-items: baseline;
+}
+
+.diary-id-value {
+  color: var(--pad-text-color-200);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .attachment-groups-list {
   border-color: var(--pad-border-color) !important;
 }
@@ -552,11 +620,33 @@ onActivated(async () => {
   color: var(--pad-text-color-200);
 }
 
-.diary-source-dialog .q-dialog__message {
-  max-height: 60vh;
+.diary-source-dialog-card {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 94vw);
+  height: min(720px, 86vh);
+}
+
+.diary-source-content {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+
+.diary-source-loading-text {
+  color: var(--pad-text-color-300);
+}
+
+.diary-manifest-source {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 16px;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  background: var(--pad-bg-color-100);
+  color: var(--pad-text-color-200);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 12px;
 }

@@ -9,7 +9,7 @@ use crate::diaries::diary_search::{search_diaries, SearchDiaryQuery};
 use crate::diaries::diary_types::{
     AttachmentTypeFilter, DiaryDetail, DiarySummary, SearchDiariesEvent,
 };
-use crate::diaries::DiaryContent;
+use crate::diaries::{get_diary, DiaryContent, DiaryManifest};
 use crate::state::AppState;
 use tauri::State;
 
@@ -114,6 +114,21 @@ pub async fn cmd_get_diary_detail(
         id,
     )
     .await?)
+}
+
+/// 获取解密后的完整日记 Manifest
+/// # Arguments
+/// * `id` - 日记ID
+/// # Returns
+/// * `Result<DiaryManifest, AppError>` - 包含版本、算法、正文和附件元数据的完整 Manifest
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_get_diary_manifest(
+    state: State<'_, AppState>,
+    id: &str,
+) -> Result<DiaryManifest, AppError> {
+    let store = state.diary_store();
+    Ok(get_diary(&state.diary_cache(), &state.crypto(), &*store, id).await?)
 }
 
 /// 搜索日记

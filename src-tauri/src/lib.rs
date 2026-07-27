@@ -27,8 +27,8 @@ use crate::cryptos::crypto_command::{
     cmd_valid_password,
 };
 use crate::diaries::diary_command::{
-    cmd_delete_diary, cmd_get_diary_detail, cmd_get_diary_summary, cmd_page_diary_ids,
-    cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
+    cmd_delete_diary, cmd_get_diary_detail, cmd_get_diary_manifest, cmd_get_diary_summary,
+    cmd_page_diary_ids, cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
 };
 use crate::object::object_command::{
     cmd_disable_remote_storage, cmd_enable_remote_storage, cmd_get_storage_mode,
@@ -84,6 +84,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_page_diary_ids,
             cmd_get_diary_summary,
             cmd_get_diary_detail,
+            cmd_get_diary_manifest,
             cmd_search_diaries,
             // 附件相关操作
             cmd_add_attachment,

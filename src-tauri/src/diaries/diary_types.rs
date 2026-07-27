@@ -167,6 +167,16 @@ mod tests {
         assert_eq!(serialized["attachmentCount"], 3);
         assert!(serialized.get("attachments").is_none());
 
+        let full_manifest = serde_json::to_value(&manifest).expect("serialize manifest");
+        assert_eq!(full_manifest["id"], "diary-1");
+        assert_eq!(full_manifest["version"], 4);
+        assert_eq!(full_manifest["algorithm"], "AES256-GCM_v1");
+        assert_eq!(
+            full_manifest["content"]["nodes"].as_array().unwrap().len(),
+            2
+        );
+        assert_eq!(full_manifest["attachments"].as_array().unwrap().len(), 3);
+
         assert_eq!(
             summary.attachment_counts,
             DiaryAttachmentCounts {
