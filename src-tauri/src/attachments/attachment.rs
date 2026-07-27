@@ -3,7 +3,9 @@ use crate::attachments::{AttachmentError, AttachmentMeta};
 use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
 use crate::cryptos::Crypto;
-use crate::diaries::diary_store::DiaryStore;
+use crate::diaries::diary_store::{
+    AttachmentUploadProgress, AttachmentUploadProgressCallback, DiaryStore,
+};
 use crate::diaries::{
     delete_diary_attachment_locked, get_diary, get_diary_locked, lock_diary_operation,
     update_diary_attachment, update_diary_attachment_filename, update_diary_attachment_locked,
@@ -18,6 +20,20 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use std::sync::Arc;
+
+fn attachment_upload_progress(
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
+) -> AttachmentUploadProgressCallback {
+    Arc::new(move |progress| {
+        let message = match progress {
+            AttachmentUploadProgress::Transferring(percent) => {
+                AttachmentProcessEvent::Progress(percent)
+            }
+            AttachmentUploadProgress::Finalizing => AttachmentProcessEvent::Finalizing,
+        };
+        let _ = event.send(message);
+    })
+}
 
 pub fn generate_attachment_id() -> Result<String, AttachmentError> {
     let mut bytes = [0_u8; 16];
@@ -105,12 +121,10 @@ pub(crate) async fn add_attachment_with_result(
     stream: ByteStream,
     original_filename: Option<String>,
 ) -> Result<(AttachmentMeta, String), AttachmentError> {
+    // 上传期间固定存储模式，避免启用/关闭云存储与附件事务交错。
+    let _storage_mode_guard = state.lock_storage_operation().await;
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
-    // 包装流 用来更新进度
-    let ec = event.clone();
-    let stream = tracker_stream(size, stream, move |progress| {
-        let _ = ec.send(AttachmentProcessEvent::Progress(progress));
-    });
+    let upload_progress = attachment_upload_progress(event.clone());
 
     let logic = async move {
         let str_alloc_state = state
@@ -150,7 +164,14 @@ pub(crate) async fn add_attachment_with_result(
 
             // 通过 store 上传附件（LocalStore 写入 LFC，RemoteStore 写入 OSS + LFC 写透）
             match store
-                .upload_attachment(id, &attachment_id, size, &mimetype, final_stream)
+                .upload_attachment_with_progress(
+                    id,
+                    &attachment_id,
+                    size,
+                    &mimetype,
+                    final_stream,
+                    upload_progress,
+                )
                 .await
             {
                 Ok(etag) => Ok(AttachmentMeta {
@@ -301,15 +322,16 @@ pub async fn toggle_attachment_encryption(
             ));
         };
 
-        // 包装进度追踪
-        let ec = event.clone();
-        let tracked_stream = tracker_stream(size, processed_stream, move |p| {
-            let _ = ec.send(AttachmentProcessEvent::Progress(p));
-        });
-
         // 通过 store 上传
         let new_etag = store
-            .upload_attachment(id, &attachment_id, size, &old_meta.mimetype, tracked_stream)
+            .upload_attachment_with_progress(
+                id,
+                &attachment_id,
+                size,
+                &old_meta.mimetype,
+                processed_stream,
+                attachment_upload_progress(event.clone()),
+            )
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
 

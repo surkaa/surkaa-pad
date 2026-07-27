@@ -292,8 +292,13 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diaries::diary_store::AttachmentUploadProgress;
     use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
+    use crate::stream::ByteStream;
     use crate::test_utils::TestOssGuard;
+    use bytes::Bytes;
+    use std::io;
+    use std::sync::{Arc, Mutex};
 
     #[tokio::test]
     async fn local_session_writes_chunks_and_commits_real_etag() {
@@ -376,6 +381,62 @@ mod tests {
 
         assert!(session.write_chunk(b"123".to_vec()).await.is_err());
         assert!(session.abort().await.is_ok());
+        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn local_store_uploads_large_stream_with_confirmed_progress() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(lfc.clone());
+        let data = vec![7_u8; 8 * 1024 * 1024 + 123];
+        let progress_values = Arc::new(Mutex::new(Vec::new()));
+        let captured_progress = progress_values.clone();
+
+        let etag = store
+            .upload_attachment_with_progress(
+                "diary",
+                "attachment",
+                data.len() as u64,
+                "application/octet-stream",
+                crate::stream::create_mock_stream(data.clone(), 64 * 1024),
+                Arc::new(move |progress| captured_progress.lock().unwrap().push(progress)),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(etag, format!("{:X}", md5::compute(&data)));
+        assert_eq!(lfc.get_data("diary/attachment").await.unwrap(), data);
+        let progress = progress_values.lock().unwrap();
+        assert!(matches!(
+            progress.last(),
+            Some(AttachmentUploadProgress::Finalizing)
+        ));
+        assert!(progress
+            .iter()
+            .any(|value| matches!(value, AttachmentUploadProgress::Transferring(99))));
+    }
+
+    #[tokio::test]
+    async fn local_store_aborts_partial_file_when_source_stream_fails() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(lfc.clone());
+        let stream: ByteStream = Box::pin(futures_util::stream::iter(vec![
+            Ok(Bytes::from_static(b"partial")),
+            Err(io::Error::other("simulated source failure")),
+        ]));
+
+        assert!(store
+            .upload_attachment(
+                "diary",
+                "attachment",
+                10,
+                "application/octet-stream",
+                stream,
+            )
+            .await
+            .is_err());
         assert!(lfc.get("diary/attachment").await.unwrap().is_none());
     }
 

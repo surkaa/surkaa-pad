@@ -7,8 +7,64 @@ use crate::object::{NextToken, ObjectError, ObjectMigrationOutcome, OssClient};
 use crate::storages::{diary_id_from_manifest_key, remote_attachments_key, remote_manifest_key};
 use crate::stream::{tracker_stream, ByteStream};
 use std::sync::Arc;
+use tokio::io::AsyncReadExt;
+use tokio_util::io::StreamReader;
 
 pub type StoreProgressCallback = Arc<dyn Fn(u8) + Send + Sync>;
+pub type AttachmentUploadProgressCallback = Arc<dyn Fn(AttachmentUploadProgress) + Send + Sync>;
+
+const ATTACHMENT_UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttachmentUploadProgress {
+    Transferring(u8),
+    Finalizing,
+}
+
+async fn upload_stream_to_session(
+    mut session: Box<dyn AttachmentUploadSession>,
+    expected_size: u64,
+    stream: ByteStream,
+    progress: AttachmentUploadProgressCallback,
+) -> Result<String, DiaryError> {
+    let mut reader = StreamReader::new(stream);
+    let mut transferred = 0u64;
+
+    loop {
+        let mut chunk = Vec::with_capacity(ATTACHMENT_UPLOAD_CHUNK_SIZE);
+        while chunk.len() < ATTACHMENT_UPLOAD_CHUNK_SIZE {
+            match reader.read_buf(&mut chunk).await {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(error) => {
+                    let _ = session.abort().await;
+                    return Err(DiaryError::AttachmentUpload(error.to_string()));
+                }
+            }
+        }
+        if chunk.is_empty() {
+            break;
+        }
+
+        let chunk_size = chunk.len() as u64;
+        if let Err(error) = session.write_chunk(chunk).await {
+            let _ = session.abort().await;
+            return Err(error);
+        }
+        transferred = transferred.saturating_add(chunk_size);
+        // 100% 只留给整个附件事务完成；传输结束后还要提交 multipart、
+        // 固化本地缓存并更新日记 manifest。
+        let percent = if expected_size == 0 {
+            99
+        } else {
+            ((transferred as u128 * 99 / expected_size as u128).min(99)) as u8
+        };
+        progress(AttachmentUploadProgress::Transferring(percent));
+    }
+
+    progress(AttachmentUploadProgress::Finalizing);
+    session.finish().await
+}
 
 fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: &str) -> (Vec<String>, String) {
     let prefix = format!("{id}/");
@@ -56,7 +112,7 @@ pub trait DiaryStore: Send + Sync {
         &self,
         next_token: NextToken,
     ) -> Result<(Vec<String>, NextToken), DiaryError>;
-    /// 上传附件（流式），返回 etag
+    /// 上传附件（有界流式），返回 etag
     async fn upload_attachment(
         &self,
         id: &str,
@@ -64,7 +120,25 @@ pub trait DiaryStore: Send + Sync {
         size: u64,
         mimetype: &str,
         stream: ByteStream,
-    ) -> Result<String, DiaryError>;
+    ) -> Result<String, DiaryError> {
+        self.upload_attachment_with_progress(id, filename, size, mimetype, stream, Arc::new(|_| {}))
+            .await
+    }
+    /// 上传附件并在存储确认分片后报告进度。
+    async fn upload_attachment_with_progress(
+        &self,
+        id: &str,
+        filename: &str,
+        size: u64,
+        mimetype: &str,
+        stream: ByteStream,
+        progress: AttachmentUploadProgressCallback,
+    ) -> Result<String, DiaryError> {
+        let session = self
+            .begin_attachment_upload(id, filename, size, mimetype)
+            .await?;
+        upload_stream_to_session(session, size, stream, progress).await
+    }
     /// 创建附件分片写入会话；会话负责当前存储模式下的落盘、远端上传与回滚。
     async fn begin_attachment_upload(
         &self,
@@ -173,23 +247,6 @@ impl DiaryStore for LocalStore {
             None
         };
         Ok((page, next))
-    }
-
-    async fn upload_attachment(
-        &self,
-        id: &str,
-        filename: &str,
-        _size: u64,
-        _mimetype: &str,
-        stream: ByteStream,
-    ) -> Result<String, DiaryError> {
-        let key = remote_attachments_key(id, filename);
-        let data = crate::stream::collect_data(stream).await.map_err(|e| {
-            DiaryError::Object(crate::object::ObjectError::OperationFailed(e.to_string()))
-        })?;
-        self.lfc.save_bytes(&key, &data).await?;
-        let etag = format!("{:X}", md5::compute(&data));
-        Ok(etag)
     }
 
     async fn begin_attachment_upload(
@@ -356,42 +413,6 @@ impl DiaryStore for RemoteStore {
             .filter_map(|obj| diary_id_from_manifest_key(&obj.key))
             .collect();
         Ok((ids, nt))
-    }
-
-    async fn upload_attachment(
-        &self,
-        id: &str,
-        filename: &str,
-        size: u64,
-        mimetype: &str,
-        stream: ByteStream,
-    ) -> Result<String, DiaryError> {
-        let key = remote_attachments_key(id, filename);
-        // 包装流用于本地文件缓存
-        let (wrapped_stream, handle) = self.lfc.save(&key, stream).await?;
-        // 上传到 OSS
-        match self
-            .client
-            .upload(&key, size, wrapped_stream, mimetype)
-            .await
-        {
-            Ok(etag) => {
-                if let Err(cache_error) = handle.finalize(&etag).await {
-                    let _ = self.lfc.delete(&key).await;
-                    if let Err(rollback_error) = self.client.delete(&key).await {
-                        return Err(DiaryError::Object(ObjectError::OperationFailed(format!(
-                            "本地附件固化失败：{cache_error}；远端回滚失败：{rollback_error}"
-                        ))));
-                    }
-                    return Err(cache_error.into());
-                }
-                Ok(etag)
-            }
-            Err(e) => {
-                handle.abort().await;
-                Err(DiaryError::Object(e))
-            }
-        }
     }
 
     async fn begin_attachment_upload(

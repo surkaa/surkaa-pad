@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod lfc_tests {
     use crate::caches::LocalFileCache;
-    use crate::stream::{collect_data, create_mock_stream, ByteStream};
+    use crate::stream::{collect_data, create_mock_stream};
     use bytes::Bytes;
     use std::io;
 
@@ -39,33 +39,6 @@ mod lfc_tests {
     }
 
     #[tokio::test]
-    async fn test_save_stream_error_abort() {
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let path = temp_dir.path().to_path_buf();
-        let cache = LocalFileCache::new(path);
-        let key = "abort-key";
-        // 创建一个会出错的流：第一个块正常，第二个块返回错误
-        let stream = futures_util::stream::iter(vec![
-            Ok(Bytes::from("good data")),
-            Err(io::Error::other("simulated error")),
-        ]);
-        // 转换为 ByteStream
-        let stream = Box::pin(stream) as ByteStream;
-
-        let (wrapped_stream, handle) = cache.save(key, stream).await.unwrap();
-
-        // 消费流，遇到错误后循环退出
-        let result = collect_data(wrapped_stream).await;
-        assert!(result.is_err());
-
-        // 放弃缓存
-        handle.abort().await;
-
-        // 验证没有生成缓存文件
-        assert!(cache.get(key).await.unwrap().is_none());
-    }
-
-    #[tokio::test]
     async fn test_delete_nonexistent_key() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
@@ -100,23 +73,6 @@ mod lfc_tests {
 
         assert!(cache.get(key1).await.unwrap().is_some());
         assert!(cache.get(key2).await.unwrap().is_some());
-    }
-
-    #[tokio::test]
-    async fn test_save_stream_parent_dir_creation() {
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let path = temp_dir.path().to_path_buf();
-        let cache = LocalFileCache::new(path);
-        let key = "nested/dir/structure/file";
-        let data = b"nested data";
-        let md5 = format!("{:X}", md5::compute(data));
-        let stream = create_mock_stream(data.to_vec(), 1024);
-
-        let (wrapped_stream, handle) = cache.save(key, stream).await.unwrap();
-        collect_data(wrapped_stream).await.unwrap();
-        handle.finalize(&md5).await.unwrap();
-
-        assert!(cache.get(key).await.unwrap().is_some());
     }
 
     #[tokio::test]

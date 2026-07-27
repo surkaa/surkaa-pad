@@ -354,6 +354,7 @@ mod tests {
             match event {
                 AttachmentProcessEvent::Started => {}
                 AttachmentProcessEvent::Progress(_) => {}
+                AttachmentProcessEvent::Finalizing => {}
                 AttachmentProcessEvent::Completed(meta, _url) => {
                     assert_eq!(meta.id, attachment_id);
                     assert!(meta.encrypted, "旋转后应保持加密状态");
@@ -462,6 +463,9 @@ mod tests {
                 AttachmentProcessEvent::Progress(progress) => {
                     reached_100_percent |= progress == 100;
                 }
+                AttachmentProcessEvent::Finalizing => {
+                    panic!("主动缓存不应进入附件上传完成阶段")
+                }
                 AttachmentProcessEvent::CompletedWithoutData => completed_count += 1,
                 AttachmentProcessEvent::Error(error) => {
                     panic!("主动缓存附件失败: {error}")
@@ -541,6 +545,7 @@ mod tests {
             match event {
                 AttachmentProcessEvent::Started => {}
                 AttachmentProcessEvent::Progress(_) => {}
+                AttachmentProcessEvent::Finalizing => {}
                 AttachmentProcessEvent::Completed(m, _) => attachment = Some(m),
                 AttachmentProcessEvent::CompletedWithoutData => {}
                 AttachmentProcessEvent::Error(e) => panic!("添加附件失败: {}", e),
