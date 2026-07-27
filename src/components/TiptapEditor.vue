@@ -4,27 +4,16 @@ import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useScroll, useStorage } from '@vueuse/core'
-import { useQuasar } from 'quasar'
 import { platform } from '@tauri-apps/plugin-os'
-import { Menu, MenuItem } from '@tauri-apps/api/menu'
 import type { AttachmentMeta, DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import {
-  isMobileEditorPlatform,
   shouldFocusEditorEnd,
   shouldPreventEditorFocus,
 } from './editor/editorClick'
-import {
-  addImageToAlbumDocument,
-  changeAlbumDisplayMode,
-  createAlbumDocument,
-  listAlbums,
-  splitAlbumDocument,
-  type AlbumSplitOperation,
-  type AlbumSummary,
-} from './editor/albumEditor'
 import { animateStackedAlbumCycle } from './editor/albumAnimation'
 import { setupEditorImageLoading } from './editor/imageLoading'
+import { findAttachmentNode } from './editor/attachmentNode'
 import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode } from './editor/tiptap-extensions'
 import AlbumImageInsertDialog from './AlbumImageInsertDialog.vue'
 import {
@@ -33,6 +22,8 @@ import {
 } from '../utils/attachmentInsertion'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { findSearchHighlightRanges } from '../utils/searchHighlight'
+import { useEditorAlbumActions } from '../composables/useEditorAlbumActions'
+import { useAttachmentContextMenu } from '../composables/useAttachmentContextMenu'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -53,14 +44,8 @@ const emit = defineEmits<{
   (e: 'editorFocused'): void
 }>()
 
-const $q = useQuasar()
 const editorElement = ref<HTMLDivElement>()
 const currentPlatform = platform()
-const albumSelection = ref<string[]>([])
-const albumAnchor = ref('')
-const showAlbumInsertDialog = ref(false)
-const albumInsertSource = ref('')
-const albumInsertTargets = ref<AlbumSummary[]>([])
 
 const storageY = useStorage(`scroll-y-${props.diarySummary?.id}`, 0, sessionStorage)
 const { y } = useScroll(editorElement, {
@@ -131,6 +116,40 @@ const editor = useEditor({
   },
 })
 
+const albumActions = useEditorAlbumActions({
+  editor,
+  editorElement,
+  currentPlatform,
+  attachmentMap: () => props.attachmentMap,
+})
+const {
+  albumSelection,
+  albumAnchor,
+  showAlbumInsertDialog,
+  albumInsertTargets,
+  cycleStackedAlbum,
+  toggleAlbumImage,
+  cancelAlbumSelection,
+  confirmAlbum,
+  insertImageIntoAlbum,
+} = albumActions
+
+const { handleContextMenu } = useAttachmentContextMenu({
+  editor,
+  editorElement,
+  currentPlatform,
+  getAttachment: getAttachmentMeta,
+  attachmentUrl: attachmentId => props.attachmentMap[attachmentId],
+  albumActions,
+  toggleEncryption: attachmentId => emit('toggleAttachmentEncryption', attachmentId),
+  rotate: (attachmentId, rotation) => emit('rotateAttachment', attachmentId, rotation),
+  rename: (attachmentId, filename, callback) => {
+    emit('renameAttachment', attachmentId, filename, callback)
+  },
+  saveDecrypted: attachmentId => emit('saveDecryptAttachment', attachmentId),
+  showImage: url => emit('showImage', url),
+})
+
 watch(() => props.modelValue, (newVal) => {
   if (!editor.value || newVal === undefined) return
   const currentContent = htmlToDiaryContent(editor.value.getHTML())
@@ -147,23 +166,9 @@ watch(() => props.searchTerms, () => {
 
 // --- Click handler (image preview) ---
 
-function findAttachmentNode(el: HTMLElement | null): { type: string; attachmentId: string; el: HTMLElement } | null {
-  while (el && el !== editorElement.value) {
-    const tag = el.tagName.toUpperCase()
-    if (tag === 'IMG' && el.dataset.id) return { type: 'image', attachmentId: el.dataset.id, el }
-    if (tag === 'VIDEO' && el.dataset.id) return { type: 'video', attachmentId: el.dataset.id, el }
-    if (tag === 'AUDIO' && el.dataset.id) return { type: 'audio', attachmentId: el.dataset.id, el }
-    if (el.classList.contains('editor-file-attachment') && (el as HTMLElement).dataset.id) {
-      return { type: 'file', attachmentId: (el as HTMLElement).dataset.id!, el }
-    }
-    el = el.parentElement
-  }
-  return null
-}
-
 function handleWrapperClick(e: MouseEvent) {
   // 点击附件节点时处理图片预览
-  const found = findAttachmentNode(e.target as HTMLElement)
+  const found = findAttachmentNode(e.target as HTMLElement, editorElement.value)
   if (found?.type === 'image') {
     const album = found.el.closest('.editor-image-album') as HTMLElement | null
     if (albumAnchor.value) {
@@ -199,302 +204,6 @@ function handleWrapperPointerDown(e: PointerEvent) {
   if (!shouldPreventEditorFocus(e.target, currentPlatform, Boolean(albumAnchor.value))) return
   e.preventDefault()
   e.stopPropagation()
-}
-
-function cycleStackedAlbum(albumId: string) {
-  if (!editor.value || !albumId) return
-  editor.value.commands.command(({ tr }) => {
-    tr.doc.descendants((node, pos) => {
-      if (node.type.name !== 'albumNode' || node.attrs.id !== albumId) return
-      const images = [...node.attrs.images]
-      const urls = [...node.attrs.urls]
-      if (images.length > 1) {
-        images.push(images.shift()!)
-        urls.push(urls.shift()!)
-        tr.setNodeMarkup(pos, undefined, {
-          ...node.attrs,
-          images,
-          urls,
-          hasCycled: true,
-        })
-      }
-    })
-    return true
-  })
-}
-
-function changeAlbumMode(
-  albumId: string,
-  displayMode: 'horizontalList' | 'stackedCards',
-) {
-  if (!editor.value || !albumId) return
-  editor.value.commands.setContent(
-    changeAlbumDisplayMode(editor.value.getJSON(), albumId, displayMode),
-  )
-}
-
-function startAlbumSelection(filename: string) {
-  albumAnchor.value = filename
-  albumSelection.value = [filename]
-  if (isMobileEditorPlatform(currentPlatform)) {
-    editor.value?.commands.blur()
-    nextTick(() => editor.value?.commands.blur())
-  }
-  updateAlbumSelectionClasses()
-}
-
-function toggleAlbumImage(filename: string) {
-  if (filename === albumAnchor.value) return
-  albumSelection.value = albumSelection.value.includes(filename)
-    ? albumSelection.value.filter(image => image !== filename)
-    : [...albumSelection.value, filename]
-  updateAlbumSelectionClasses()
-}
-
-function updateAlbumSelectionClasses() {
-  nextTick(() => {
-    const selected = new Set(albumSelection.value)
-    editorElement.value
-      ?.querySelectorAll('.ProseMirror > img[data-id]')
-      .forEach(image => {
-        const element = image as HTMLElement
-        element.classList.toggle('album-image-selected', selected.has(element.dataset.id || ''))
-      })
-  })
-}
-
-function cancelAlbumSelection() {
-  albumAnchor.value = ''
-  albumSelection.value = []
-  updateAlbumSelectionClasses()
-}
-
-function confirmAlbum(displayMode: 'horizontalList' | 'stackedCards') {
-  if (!editor.value || albumSelection.value.length < 2) return
-  const nextDocument = createAlbumDocument(
-    editor.value.getJSON(),
-    albumSelection.value,
-    albumAnchor.value,
-    crypto.randomUUID(),
-    displayMode,
-    props.attachmentMap,
-  )
-  cancelAlbumSelection()
-  editor.value.commands.setContent(nextDocument)
-}
-
-function openAlbumInsertDialog(filename: string) {
-  if (!editor.value) return
-  const albums = listAlbums(editor.value.getJSON())
-  if (albums.length === 0) {
-    $q.notify({ type: 'info', message: '当前日记中没有可加入的图集' })
-    return
-  }
-  albumInsertSource.value = filename
-  albumInsertTargets.value = albums
-  showAlbumInsertDialog.value = true
-}
-
-function insertImageIntoAlbum(albumId: string, insertionIndex: number) {
-  if (!editor.value || !albumInsertSource.value) return
-  editor.value.commands.setContent(addImageToAlbumDocument(
-    editor.value.getJSON(),
-    albumInsertSource.value,
-    albumId,
-    insertionIndex,
-    props.attachmentMap,
-  ))
-  albumInsertSource.value = ''
-  albumInsertTargets.value = []
-}
-
-function applyAlbumSplit(
-  albumId: string,
-  filename: string,
-  operation: AlbumSplitOperation,
-) {
-  if (!editor.value) return
-  editor.value.commands.setContent(splitAlbumDocument(
-    editor.value.getJSON(),
-    albumId,
-    filename,
-    operation,
-  ))
-}
-
-function requestSingleImageSplit(albumId: string, filename: string) {
-  $q.dialog({
-    title: '拆分当前图片',
-    message: '请选择当前图片相对于剩余图集的位置',
-    options: {
-      type: 'radio',
-      model: 'before',
-      items: [
-        { label: '放在剩余图集前面', value: 'before' },
-        { label: '放在剩余图集后面', value: 'after' },
-      ],
-    },
-    cancel: true,
-  }).onOk((position: 'before' | 'after') => {
-    applyAlbumSplit(albumId, filename, { type: 'single', position })
-  })
-}
-
-function requestRangeSplit(albumId: string, filename: string) {
-  $q.dialog({
-    title: '拆分连续图片',
-    message: '请选择要从图集中拆分的范围',
-    options: {
-      type: 'radio',
-      model: 'before',
-      items: [
-        { label: '当前图片及其前面的所有图片', value: 'before' },
-        { label: '当前图片及其后面的所有图片', value: 'after' },
-      ],
-    },
-    cancel: true,
-  }).onOk((direction: 'before' | 'after') => {
-    applyAlbumSplit(albumId, filename, { type: 'range', direction })
-  })
-}
-
-// --- Context menu ---
-
-async function handleContextMenu(e: MouseEvent) {
-  const found = findAttachmentNode(e.target as HTMLElement)
-  if (!found) return
-  e.preventDefault()
-
-  const att = getAttachmentMeta(found.attachmentId)
-  if (!att) return
-
-  interface MenuAction {
-    label: string
-    action: () => void
-  }
-
-  const buttons: MenuAction[] = [
-    {
-      label: `转成${att.encrypted ? '普通' : '加密'}附件`,
-      action: () => emit('toggleAttachmentEncryption', found.attachmentId),
-    },
-    {
-      label: '保存到本地',
-      action: () => emit('saveDecryptAttachment', found.attachmentId),
-    },
-  ]
-
-  if (found.type === 'image') {
-    const album = found.el.closest('.editor-image-album') as HTMLElement | null
-    const isAlbumImage = Boolean(album)
-    const isSmall = found.el.getAttribute('data-size') === 'small'
-    if (!isAlbumImage) {
-      buttons.push({
-        label: isSmall ? '大图模式' : '小图模式',
-        action: () => {
-          editor.value?.commands.command(({ tr }) => {
-            tr.doc.descendants((node, pos) => {
-              if (node.attrs.id === found.attachmentId) {
-                tr.setNodeMarkup(pos, undefined, {
-                  ...node.attrs,
-                  size: isSmall ? null : 'small',
-                })
-              }
-            })
-            return true
-          })
-        },
-      })
-    }
-    buttons.push(
-      { label: '顺时针旋转90°', action: () => emit('rotateAttachment', found.attachmentId, 90) },
-      { label: '逆时针旋转90°', action: () => emit('rotateAttachment', found.attachmentId, -90) },
-      { label: '旋转180°', action: () => emit('rotateAttachment', found.attachmentId, 180) },
-    )
-    if (!isAlbumImage) {
-      buttons.push({
-        label: '创建图集',
-        action: () => startAlbumSelection(found.attachmentId),
-      })
-      if (editor.value && listAlbums(editor.value.getJSON()).length > 0) {
-        buttons.push({
-          label: '加入已有图集',
-          action: () => openAlbumInsertDialog(found.attachmentId),
-        })
-      }
-    } else {
-      const albumId = album?.dataset.id || ''
-      const currentMode = album?.dataset.displayMode
-      if (currentMode === 'stackedCards') {
-        buttons.push({
-          label: '预览图片',
-          action: () => {
-            const url = props.attachmentMap[found.attachmentId]
-            if (url) emit('showImage', url)
-          },
-        })
-      }
-      buttons.push({
-        label: currentMode === 'stackedCards' ? '切换为横向图集' : '切换为堆叠图集',
-        action: () => changeAlbumMode(
-          albumId,
-          currentMode === 'stackedCards' ? 'horizontalList' : 'stackedCards',
-        ),
-      })
-      buttons.push(
-        {
-          label: '拆分整个图集',
-          action: () => applyAlbumSplit(albumId, found.attachmentId, { type: 'all' }),
-        },
-        {
-          label: '仅拆分当前图片',
-          action: () => requestSingleImageSplit(albumId, found.attachmentId),
-        },
-        {
-          label: '拆分当前及前后图片',
-          action: () => requestRangeSplit(albumId, found.attachmentId),
-        },
-      )
-    }
-  }
-
-  if (found.type === 'file') {
-    buttons.push({
-      label: '重命名附件',
-      action: () => emit('renameAttachment', found.attachmentId, att.filename, (newFilename: string) => {
-        if (!editor.value) return
-        editor.value.commands.command(({ tr }) => {
-          tr.doc.descendants((node, pos) => {
-            if (node.attrs.id === found.attachmentId) {
-              tr.setNodeMarkup(pos, undefined, { ...node.attrs, filename: newFilename })
-            }
-          })
-          return true
-        })
-      }),
-    })
-  }
-
-  if (currentPlatform === 'android') {
-    let selectedAction: MenuAction | undefined
-    $q.bottomSheet({
-      actions: buttons.map(b => ({ label: b.label, id: b.label })),
-    }).onOk((action: { id: string }) => {
-      selectedAction = buttons.find(b => b.label === action.id)
-    }).onDismiss(() => {
-      selectedAction?.action()
-    })
-  } else {
-    try {
-      const items = await Promise.all(
-        buttons.map(b => MenuItem.new({ text: b.label, action: b.action })),
-      )
-      const menu = await Menu.new({ items })
-      await menu.popup()
-    } catch (err) {
-      console.error('上下文菜单失败:', err)
-    }
-  }
 }
 
 // --- Lifecycle ---
