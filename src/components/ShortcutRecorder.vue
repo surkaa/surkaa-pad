@@ -13,13 +13,24 @@ const emit = defineEmits<{
 }>()
 
 const recording = ref(false)
+const inputRef = ref<{ focus: () => void; blur: () => void } | null>(null)
+
+function startRecording() {
+  recording.value = true
+  inputRef.value?.focus()
+}
+
+function stopRecording() {
+  recording.value = false
+  inputRef.value?.blur()
+}
 
 function handleKeydown(event: KeyboardEvent) {
   event.preventDefault()
   event.stopPropagation()
 
   if (event.code === 'Escape') {
-    (event.currentTarget as HTMLElement | null)?.blur()
+    stopRecording()
     return
   }
   if (
@@ -38,13 +49,13 @@ function handleKeydown(event: KeyboardEvent) {
     return
   }
   emit('update:modelValue', shortcut)
-  const target = event.currentTarget as HTMLElement | null
-  target?.blur()
+  stopRecording()
 }
 </script>
 
 <template>
   <q-input
+    ref="inputRef"
     :model-value="recording ? '正在录制：请按组合键' : formatEditorShortcut(props.modelValue)"
     :label="recording ? '正在录制' : label"
     :color="recording ? 'primary' : undefined"
@@ -54,8 +65,9 @@ function handleKeydown(event: KeyboardEvent) {
     dense
     readonly
     class="shortcut-recorder"
-    @focus="recording = true"
-    @blur="recording = false"
+    @click="startRecording"
+    @focusin="recording = true"
+    @focusout="recording = false"
     @keydown="handleKeydown"
   >
     <template #prepend>
