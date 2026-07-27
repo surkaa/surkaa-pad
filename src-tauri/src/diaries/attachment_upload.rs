@@ -175,6 +175,15 @@ impl RemoteAttachmentUpload {
         Ok(())
     }
 
+    async fn abort_with_error(&mut self, primary: DiaryError) -> DiaryError {
+        match self.abort_inner().await {
+            Ok(()) => primary,
+            Err(abort_error) => {
+                invalid_upload(format!("{primary}；取消远端 multipart 失败：{abort_error}"))
+            }
+        }
+    }
+
     fn checked_written_size(&self, chunk_size: usize) -> Result<u64, DiaryError> {
         let written_size = self
             .written_size
@@ -196,8 +205,7 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
         let written_size = match self.checked_written_size(data.len()) {
             Ok(size) => size,
             Err(error) => {
-                let _ = self.abort_inner().await;
-                return Err(error);
+                return Err(self.abort_with_error(error).await);
             }
         };
         let handle = self
@@ -205,8 +213,7 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
             .as_ref()
             .ok_or_else(|| invalid_upload("附件上传会话已经结束"))?;
         if let Err(error) = handle.write_chunk(&data).await {
-            let _ = self.abort_inner().await;
-            return Err(error.into());
+            return Err(self.abort_with_error(error.into()).await);
         }
 
         let part_number = self.next_part_number;
@@ -223,16 +230,15 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
         {
             Ok(result) => result,
             Err(error) => {
-                let _ = self.abort_inner().await;
-                return Err(error.into());
+                return Err(self.abort_with_error(error.into()).await);
             }
         };
 
         if returned_part_number != part_number {
-            let _ = self.abort_inner().await;
-            return Err(invalid_upload(format!(
+            let error = invalid_upload(format!(
                 "对象存储返回了错误的分片编号：expected={part_number}, actual={returned_part_number}"
-            )));
+            ));
+            return Err(self.abort_with_error(error).await);
         }
 
         self.parts.push((etag.clone(), part_number));
@@ -243,11 +249,11 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
 
     async fn finish(mut self: Box<Self>) -> Result<String, DiaryError> {
         if self.written_size != self.expected_size {
-            let _ = self.abort_inner().await;
-            return Err(invalid_upload(format!(
+            let error = invalid_upload(format!(
                 "附件分片大小不完整：expected={}, actual={}",
                 self.expected_size, self.written_size
-            )));
+            ));
+            return Err(self.abort_with_error(error).await);
         }
 
         let parts = std::mem::take(&mut self.parts);
@@ -261,8 +267,7 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
                 etag
             }
             Err(error) => {
-                let _ = self.abort_inner().await;
-                return Err(error.into());
+                return Err(self.abort_with_error(error.into()).await);
             }
         };
 
