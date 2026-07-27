@@ -256,6 +256,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_large_stream_upload() {
+        let client = OssClient::from_env();
+        let (client, guard) = TestOssGuard::new(client).await;
+        let test_key = "large_stream_upload.bin";
+        let test_content = vec![0x5a_u8; 8 * 1024 * 1024 + 123];
+
+        let etag = client
+            .upload(
+                test_key,
+                test_content.len() as u64,
+                create_mock_stream(test_content.clone(), 64 * 1024),
+                STREAM_MIME_TYPE,
+            )
+            .await
+            .expect("大对象流式上传失败");
+
+        assert!(!etag.is_empty());
+        let metadata = client.get_metadata(test_key).await.unwrap();
+        assert_eq!(metadata.content_length, Some(test_content.len() as u64));
+        let (download, _) = client.download(test_key, None).await.unwrap();
+        assert_eq!(collect_data(download).await.unwrap(), test_content);
+        guard.cleanup().await;
+    }
+
+    #[tokio::test]
     async fn test_migrate_object_is_idempotent_and_rejects_conflicts() {
         let client = OssClient::from_env();
         let (client, _guard) = TestOssGuard::new(client).await;

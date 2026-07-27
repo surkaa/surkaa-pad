@@ -7,6 +7,10 @@ use s3::Bucket;
 use serde::Serialize;
 use std::sync::{Arc, RwLock};
 use tauri_plugin_log::log;
+use tokio::io::AsyncReadExt;
+use tokio_util::io::StreamReader;
+
+const STREAM_UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
 fn etags_match(left: Option<&str>, right: Option<&str>) -> bool {
     match (left, right) {
@@ -277,43 +281,128 @@ impl OssClient {
             len,
             mimetype
         );
-        let bucket = self.inner()?;
-        let key = self.physical_key(key);
-        let mut reader = tokio_util::io::StreamReader::new(stream);
-        if let Err(error) = bucket
-            .put_object_stream_with_content_type(&mut reader, &key, mimetype)
-            .await
-        {
-            log::error!(
-                "[oss] stream upload body failed: key={}, size={}, error={}",
-                key,
+        let mut reader = StreamReader::new(stream);
+
+        // 小对象仍使用普通 PutObject，内存上限不超过一个分片。
+        if len <= STREAM_UPLOAD_CHUNK_SIZE as u64 {
+            let mut data = Vec::with_capacity(len as usize);
+            reader.read_to_end(&mut data).await.map_err(|error| {
+                ObjectError::OperationFailed(format!("读取上传流失败：{error}"))
+            })?;
+            if data.len() as u64 != len {
+                return Err(ObjectError::OperationFailed(format!(
+                    "上传流大小不匹配：expected={len}, actual={}",
+                    data.len()
+                )));
+            }
+            let etag = self.upload_bytes(key, &data).await?;
+            log::info!(
+                "[oss] stream upload completed: key={}, size={}, etag={}",
+                self.physical_key(key),
                 len,
-                error
+                etag
             );
-            return Err(ObjectError::OperationFailed(error.to_string()));
+            return Ok(etag);
         }
-        // PutStreamResponse 不含 etag，通过 HEAD 获取
-        let (result, _) = bucket.head_object(&key).await.map_err(|error| {
-            log::error!(
-                "[oss] stream upload HEAD failed: key={}, size={}, error={}",
-                key,
-                len,
-                error
-            );
-            ObjectError::OperationFailed(error.to_string())
-        })?;
-        let etag = result
-            .e_tag
-            .unwrap_or_default()
-            .trim_matches('"')
-            .to_string();
+
+        // 大对象显式串行 multipart。rust-s3 的流接口会根据可用内存同时保留
+        // 最多 100 个 8MB 分片，并在请求构建时再次复制每个分片。
+        let upload_id = self.initiate_multipart_upload(key, mimetype).await?;
+        let mut parts = Vec::new();
+        let mut transferred = 0u64;
+        let mut part_number = 1u32;
+
+        loop {
+            let mut chunk = Vec::with_capacity(STREAM_UPLOAD_CHUNK_SIZE);
+            while chunk.len() < STREAM_UPLOAD_CHUNK_SIZE {
+                match reader.read_buf(&mut chunk).await {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(error) => {
+                        let primary =
+                            ObjectError::OperationFailed(format!("读取上传流失败：{error}"));
+                        return Err(self
+                            .abort_upload_after_error(key, &upload_id, primary)
+                            .await);
+                    }
+                }
+            }
+            if chunk.is_empty() {
+                break;
+            }
+
+            transferred = transferred.saturating_add(chunk.len() as u64);
+            if transferred > len {
+                let primary = ObjectError::OperationFailed(format!(
+                    "上传流超过声明大小：expected={len}, actual>{len}"
+                ));
+                return Err(self
+                    .abort_upload_after_error(key, &upload_id, primary)
+                    .await);
+            }
+
+            match self
+                .upload_part(key, part_number, &upload_id, chunk, mimetype)
+                .await
+            {
+                Ok((etag, returned_part_number)) if returned_part_number == part_number => {
+                    parts.push((etag, part_number));
+                }
+                Ok((_, returned_part_number)) => {
+                    let primary = ObjectError::OperationFailed(format!(
+                        "对象存储返回了错误的分片编号：expected={part_number}, actual={returned_part_number}"
+                    ));
+                    return Err(self
+                        .abort_upload_after_error(key, &upload_id, primary)
+                        .await);
+                }
+                Err(primary) => {
+                    return Err(self
+                        .abort_upload_after_error(key, &upload_id, primary)
+                        .await);
+                }
+            }
+            part_number += 1;
+        }
+
+        if transferred != len {
+            let primary = ObjectError::OperationFailed(format!(
+                "上传流大小不匹配：expected={len}, actual={transferred}"
+            ));
+            return Err(self
+                .abort_upload_after_error(key, &upload_id, primary)
+                .await);
+        }
+
+        let etag = match self.complete_multipart_upload(key, &upload_id, parts).await {
+            Ok(etag) => etag,
+            Err(primary) => {
+                return Err(self
+                    .abort_upload_after_error(key, &upload_id, primary)
+                    .await);
+            }
+        };
         log::info!(
             "[oss] stream upload completed: key={}, size={}, etag={}",
-            key,
+            self.physical_key(key),
             len,
             etag
         );
         Ok(etag)
+    }
+
+    async fn abort_upload_after_error(
+        &self,
+        key: &str,
+        upload_id: &str,
+        primary: ObjectError,
+    ) -> ObjectError {
+        match self.abort_multipart_upload(key, upload_id).await {
+            Ok(()) => primary,
+            Err(abort_error) => ObjectError::OperationFailed(format!(
+                "{primary}；取消 multipart 失败：{abort_error}"
+            )),
+        }
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/putobject
