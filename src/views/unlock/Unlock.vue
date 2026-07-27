@@ -21,194 +21,35 @@
           <div class="text-grey-7 q-mt-md text-subtitle1">正在加载配置...</div>
         </div>
 
-        <q-form
+        <FirstTimeUnlockForm
             v-else-if="pipeline === 'first-time'"
-            @submit.prevent="startLocalOnly"
-            class="q-gutter-y-lg q-pa-sm"
-        >
-          <div class="text-h6 text-weight-bold q-mb-sm" style="color: var(--pad-text-color)">开始使用</div>
+            v-model:master-password="masterPassword"
+            v-model:confirm-password="confirmMasterPassword"
+            :loading="loading"
+            @submit="startLocalOnly"
+            @configure-remote="pipeline = 'config'"
+        />
 
-          <q-input
-              v-model="masterPassword"
-              type="password"
-              label="设置主密码"
-              outlined
-              autofocus
-              color="primary"
-              :disable="loading"
-              :rules="[val => !!val || '主密码不能为空']"
-              lazy-rules
-          />
-
-          <q-input
-              v-model="confirmMasterPassword"
-              type="password"
-              label="确认主密码"
-              outlined
-              color="primary"
-              :disable="loading"
-              :rules="[confirmMasterPasswordRule]"
-              lazy-rules
-          />
-
-          <q-btn
-              type="submit"
-              color="primary"
-              class="full-width primary-gradient-btn"
-              size="lg"
-              :loading="loading"
-              label="开始使用（本地存储）"
-              unelevated
-          />
-
-          <div class="q-mt-md row justify-center">
-            <q-btn flat color="primary" size="sm" label="配置云存储" @click="pipeline = 'config'" :disable="loading"/>
-          </div>
-        </q-form>
-
-        <q-form
+        <PasswordLoginForm
             v-else-if="pipeline === 'login'"
-            @submit.prevent="unlock"
-            class="q-gutter-y-lg q-pa-sm"
-        >
-          <div class="text-h6 text-weight-bold q-mb-sm" style="color: var(--pad-text-color)">欢迎回来</div>
+            v-model:master-password="masterPassword"
+            :loading="loading"
+            :biometric-enabled="biometricEnabled"
+            :biometric-unlock-allowed="biometricUnlockAllowed"
+            @submit="unlock"
+            @biometric-unlock="tryBiometricUnlock"
+            @reset="confirmReset"
+        />
 
-          <q-input
-              v-model="masterPassword"
-              type="password"
-              label="输入主密码"
-              outlined
-              autofocus
-              color="primary"
-              :disable="loading"
-              :rules="[val => !!val || '请输入主密码']"
-              lazy-rules
-          />
-
-          <q-btn
-              type="submit"
-              color="primary"
-              class="full-width primary-gradient-btn"
-              size="lg"
-              :loading="loading"
-              label="解锁"
-              unelevated
-          />
-
-          <q-btn
-              v-if="biometricUnlockAllowed"
-              type="button"
-              outline
-              color="primary"
-              class="full-width"
-              size="md"
-              icon="fingerprint"
-              label="使用生物识别解锁"
-              :loading="loading"
-              @click="tryBiometricUnlock"
-          />
-
-          <div
-              v-if="biometricEnabled && !biometricUnlockAllowed"
-              class="row items-center justify-center q-gutter-x-xs text-caption password-required-hint"
-          >
-            <q-icon name="schedule" size="16px"/>
-            <span>生物识别已暂停，请输入一次主密码；之后 7 天内可继续使用</span>
-          </div>
-
-          <div class="q-mt-lg pt-md row justify-center">
-            <q-btn flat color="grey-6" size="sm" label="重置配置" @click="confirmReset" :disable="loading"/>
-          </div>
-        </q-form>
-
-        <q-form
+        <RemoteSetupForm
             v-else-if="pipeline === 'config'"
-            @submit.prevent="saveConfigAndLogin"
-            class="q-gutter-y-md"
-        >
-          <div class="text-h6 text-weight-bold text-grey-9 q-mb-sm">首次配置</div>
-
-          <q-input
-              v-model="masterPassword"
-              type="password"
-              label="设置主密码"
-              outlined
-              color="primary"
-              :disable="loading"
-              :rules="[val => !!val || '主密码不能为空']"
-              lazy-rules
-          >
-            <template v-slot:prepend>
-              <q-icon name="vpn_key"/>
-            </template>
-          </q-input>
-
-          <q-input
-              v-model="confirmMasterPassword"
-              type="password"
-              label="确认主密码"
-              outlined
-              color="primary"
-              :disable="loading"
-              :rules="[confirmMasterPasswordRule]"
-              lazy-rules
-          >
-            <template v-slot:prepend>
-              <q-icon name="verified_user"/>
-            </template>
-          </q-input>
-
-          <div class="row justify-center q-pb-sm">
-            <q-btn
-                flat
-                rounded
-                color="primary"
-                :icon="showQuickInput ? 'list' : 'bolt'"
-                :label="showQuickInput ? '使用常规配置' : '使用快速配置'"
-                @click="showQuickInput = !showQuickInput"
-                class="bg-grey-2"
-                size="sm"
-            />
-          </div>
-
-          <template v-if="!showQuickInput">
-            <q-input v-model="ossConfig.akid" label="AccessKey ID" outlined dense color="primary" :disable="loading"
-                     :rules="[val => !!val || '必填']" hide-bottom-space/>
-            <q-input v-model="ossConfig.aks" type="password" label="AccessKey Secret" outlined dense color="primary"
-                     :disable="loading" :rules="[val => !!val || '必填']" hide-bottom-space/>
-            <q-input v-model="ossConfig.bucket" label="Bucket 名称" outlined dense color="primary" :disable="loading"
-                     :rules="[val => !!val || '必填']" hide-bottom-space/>
-            <q-input v-model="ossConfig.endpoint" label="Endpoint" outlined dense color="primary" :disable="loading"
-                     :rules="[val => !!val || '必填']" hide-bottom-space/>
-          </template>
-
-          <template v-else>
-            <q-input
-                v-model="quickConfig"
-                type="textarea"
-                label="快速配置内容"
-                outlined
-                color="primary"
-                :disable="loading"
-                rows="5"
-                class="quick-config-input"
-                placeholder="ALIYUN_KEY=xxx&#10;ALIYUN_SECRET=xxx&#10;ALIYUN_BUCKET_NAME=xxx&#10;ALIYUN_ENDPOINT=xxx"
-                :rules="[val => !!val || '配置内容不能为空']"
-                hide-bottom-space
-            />
-          </template>
-
-          <q-btn
-              type="submit"
-              color="primary"
-              class="full-width primary-gradient-btn q-mt-lg"
-              size="lg"
-              :loading="loading"
-              label="保存并登录"
-              icon="save"
-              unelevated
-          />
-        </q-form>
+            v-model:master-password="masterPassword"
+            v-model:confirm-password="confirmMasterPassword"
+            v-model:oss-config="ossConfig"
+            v-model:quick-config="quickConfig"
+            :loading="loading"
+            @submit="saveConfigAndLogin"
+        />
 
         <div v-else class="column items-center justify-center q-py-xl text-negative">
           <q-icon name="warning_amber" size="4em"/>
@@ -237,6 +78,9 @@ import {platform} from "@tauri-apps/plugin-os";
 import {formatKiB} from "../../utils";
 import {canUseBiometricUnlock} from "../../utils/biometricUnlockPolicy.ts";
 import {masterPasswordConfirmationError} from "../../utils/masterPasswordSetup.ts";
+import FirstTimeUnlockForm from './FirstTimeUnlockForm.vue';
+import PasswordLoginForm from './PasswordLoginForm.vue';
+import RemoteSetupForm from './RemoteSetupForm.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -251,7 +95,6 @@ const ossConfig = ref<OssConfigType>({
   bucket: '',
   endpoint: '',
 });
-const showQuickInput = ref<boolean>(false);
 const quickConfig = ref('');
 const masterPassword = ref<string>('');
 const confirmMasterPassword = ref<string>('');
@@ -262,10 +105,6 @@ const encryptedMemoryCost = ref(0);
 const isAndroid = platform() === 'android';
 const biometricEnabled = ref(false);
 const biometricUnlockAllowed = ref(false);
-
-function confirmMasterPasswordRule(value: string) {
-  return masterPasswordConfirmationError(masterPassword.value, value) || true;
-}
 
 function validateInitialPasswordSetup(): boolean {
   const error = masterPasswordConfirmationError(
@@ -552,30 +391,6 @@ onMounted(async () => {
   .version-text {
     opacity: 0.8;
   }
-}
-
-.primary-gradient-btn {
-  background: var(--pad-primary-gradient) !important;
-  border-radius: var(--pad-radius-lg);
-  transition: all var(--pad-transition-base);
-
-  &:hover:not(.disabled) {
-    transform: translateY(-2px);
-    box-shadow: var(--pad-shadow-md);
-  }
-
-  &:active:not(.disabled) {
-    transform: translateY(0);
-  }
-}
-
-.password-required-hint {
-  color: var(--pad-text-color-400);
-  line-height: 1.5;
-}
-
-.quick-config-input :deep(textarea) {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
 @keyframes container-enter {
