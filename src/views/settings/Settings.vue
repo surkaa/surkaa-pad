@@ -77,88 +77,9 @@
         </q-list>
         </section>
 
-        <section class="settings-group">
-        <div class="group-title">附件加密</div>
-        <q-list bordered separator class="pad-card">
-          <q-item tag="label" v-ripple class="settings-item">
-            <q-item-section avatar class="settings-icon-section">
-              <q-icon name="image"/>
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="label-text text-weight-medium">图片</q-item-label>
-              <q-item-label caption class="desc-text">控制新上传图片（含拍照）的加密状态</q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <q-toggle v-model="encryptImageAttachments" color="primary"/>
-            </q-item-section>
-          </q-item>
-          <q-item tag="label" v-ripple class="settings-item">
-            <q-item-section avatar class="settings-icon-section">
-              <q-icon name="audiotrack"/>
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="label-text text-weight-medium">音频</q-item-label>
-              <q-item-label caption class="desc-text">控制新上传音频（含录音）的加密状态</q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <q-toggle v-model="encryptAudioAttachments" color="primary"/>
-            </q-item-section>
-          </q-item>
-          <q-item tag="label" v-ripple class="settings-item">
-            <q-item-section avatar class="settings-icon-section">
-              <q-icon name="video_library"/>
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="label-text text-weight-medium">视频</q-item-label>
-              <q-item-label caption class="desc-text">控制新上传视频的加密状态</q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <q-toggle v-model="encryptVideoAttachments" color="primary"/>
-            </q-item-section>
-          </q-item>
-          <q-item tag="label" v-ripple class="settings-item">
-            <q-item-section avatar class="settings-icon-section">
-              <q-icon name="attach_file"/>
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="label-text text-weight-medium">文件</q-item-label>
-              <q-item-label caption class="desc-text">控制其他新上传文件的加密状态</q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <q-toggle v-model="encryptFileAttachments" color="primary"/>
-            </q-item-section>
-          </q-item>
-        </q-list>
-        </section>
+        <AttachmentEncryptionSettings/>
 
-        <section v-if="isWindows" class="settings-group">
-        <div class="group-title">编辑器快捷键</div>
-        <q-list bordered separator class="pad-card">
-          <q-item
-              v-for="action in EDITOR_SHORTCUT_ACTIONS"
-              :key="action"
-              class="settings-item shortcut-settings-item"
-          >
-            <q-item-section avatar class="settings-icon-section">
-              <q-icon :name="editorShortcutIcons[action]"/>
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="label-text text-weight-medium">
-                {{ EDITOR_SHORTCUT_LABELS[action] }}
-              </q-item-label>
-              <q-item-label caption class="desc-text">仅在日记编辑页面生效</q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <ShortcutRecorder
-                  :model-value="editorShortcuts[action]"
-                  :label="EDITOR_SHORTCUT_LABELS[action]"
-                  @update:model-value="shortcut => updateEditorShortcut(action, shortcut)"
-                  @invalid="notifyInvalidShortcut"
-              />
-            </q-item-section>
-          </q-item>
-        </q-list>
-        </section>
+        <EditorShortcutSettings v-if="isWindows"/>
 
         <section class="settings-group">
         <div class="group-title">云存储</div>
@@ -248,7 +169,7 @@
         </q-card-section>
         <q-card-actions align="right" class="q-pb-md q-pr-md">
           <q-btn flat label="取消" color="grey-7" v-close-popup :disable="remoteStorageBusy"/>
-          <q-btn unelevated label="启用云同步" color="primary" :loading="remoteStorageBusy" @click="doEnableRemote"/>
+          <q-btn unelevated label="启用云同步" color="primary" :loading="remoteStorageBusy" @click="enableRemote"/>
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -308,7 +229,7 @@
 </template>
 
 <script setup lang="ts">
-import {onMounted, ref} from 'vue';
+import {ref} from 'vue';
 import {platform} from "@tauri-apps/plugin-os";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {exportLogFile} from "../../utils";
@@ -318,28 +239,13 @@ import {useConfigStore} from "../../stores/config.ts";
 import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
-import {OssConfigType} from "../../types.ts";
-import {Channel} from "@tauri-apps/api/core";
-import {SyncProgressEvent} from "../../bindings.ts";
-import {
-  initialSyncProgressDisplay,
-  reduceSyncProgressDisplay,
-  type SyncProgressDisplay,
-} from "../../utils/syncProgress.ts";
-import {remoteStorageToggleAction} from "../../utils/remoteStorageToggle.ts";
 import {biometricToggleAction} from "../../utils/biometricToggle.ts";
-import {useDataStore} from "../../stores/data.ts";
-import ShortcutRecorder from "../../components/ShortcutRecorder.vue";
-import {
-  EDITOR_SHORTCUT_ACTIONS,
-  EDITOR_SHORTCUT_LABELS,
-  findEditorShortcutConflict,
-  type EditorShortcutAction,
-} from "../../utils/editorShortcuts.ts";
+import {useRemoteStorageSettings} from '../../composables/useRemoteStorageSettings';
+import AttachmentEncryptionSettings from './AttachmentEncryptionSettings.vue';
+import EditorShortcutSettings from './EditorShortcutSettings.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
-const dataStore = useDataStore();
 
 const showPasswordVerify = ref(false);
 const verifyPassword = ref('');
@@ -347,153 +253,24 @@ const loading = ref(false);
 const theme = configStore.useTauriConfig('app-theme');
 const biometricEnable = configStore.useTauriConfig('biometric_enabled');
 const defaultImageSize = configStore.useTauriConfig('default_image_size_is_small');
-const encryptImageAttachments = configStore.useTauriConfig('encrypt_image_attachments');
-const encryptAudioAttachments = configStore.useTauriConfig('encrypt_audio_attachments');
-const encryptVideoAttachments = configStore.useTauriConfig('encrypt_video_attachments');
-const encryptFileAttachments = configStore.useTauriConfig('encrypt_file_attachments');
-const editorShortcuts = configStore.useTauriConfig('windows_editor_shortcuts');
 const currentPlatform = platform();
 const isAndroid = ref(currentPlatform === 'android');
 const isWindows = currentPlatform === 'windows';
-const editorShortcutIcons: Record<EditorShortcutAction, string> = {
-  insertPhoto: 'image',
-  insertAudio: 'audiotrack',
-  audioRecording: 'mic',
-  insertVideo: 'video_library',
-  insertFile: 'attach_file',
-};
 
-function updateEditorShortcut(action: EditorShortcutAction, shortcut: string) {
-  const conflict = findEditorShortcutConflict(editorShortcuts.value, action, shortcut);
-  if (conflict) {
-    $q.notify({
-      type: 'warning',
-      message: `该快捷键已用于“${EDITOR_SHORTCUT_LABELS[conflict]}”`,
-    });
-    return;
-  }
-  editorShortcuts.value = {...editorShortcuts.value, [action]: shortcut};
-}
-
-function notifyInvalidShortcut() {
-  $q.notify({type: 'warning', message: '快捷键必须包含 Ctrl 或 Alt'});
-}
-
-// 云存储
-const remoteEnabled = ref(false);
-const remoteStorageBusy = ref(false);
-const showOssConfigDialog = ref(false);
-const showSyncProgress = ref(false);
-const syncProgress = ref(0);
-const syncTotal = ref(0);
-const syncStatusText = ref('');
-const syncCurrentFile = ref('');
-const syncFileDetail = ref('');
-const ossConfig = ref<OssConfigType>({akid: '', aks: '', bucket: '', endpoint: ''});
-
-onMounted(async () => {
-  remoteEnabled.value = await api.cmdGetStorageMode();
-});
-
-function resetSyncProgress(status: string) {
-  applySyncProgressDisplay(initialSyncProgressDisplay(status));
-}
-
-function handleSyncProgressEvent(msg: SyncProgressEvent) {
-  applySyncProgressDisplay(reduceSyncProgressDisplay({
-    progress: syncProgress.value,
-    total: syncTotal.value,
-    statusText: syncStatusText.value,
-    currentFile: syncCurrentFile.value,
-    fileDetail: syncFileDetail.value,
-  }, msg));
-}
-
-function applySyncProgressDisplay(display: SyncProgressDisplay) {
-  syncProgress.value = display.progress;
-  syncTotal.value = display.total;
-  syncStatusText.value = display.statusText;
-  syncCurrentFile.value = display.currentFile;
-  syncFileDetail.value = display.fileDetail;
-}
-
-async function handleRemoteToggle(newValue: boolean) {
-  const action = remoteStorageToggleAction(
-      remoteEnabled.value,
-      newValue,
-      remoteStorageBusy.value,
-  );
-  if (action === 'enable') {
-    // 开启：弹出 OSS 配置对话框
-    showOssConfigDialog.value = true;
-  } else if (action === 'disable') {
-    // 关闭
-    remoteStorageBusy.value = true;
-    try {
-      if (await confirm('关闭云同步后，云端数据将下载到本地。确定继续？')) {
-        await doDisableRemote();
-      }
-    } finally {
-      remoteStorageBusy.value = false;
-    }
-  }
-}
-
-async function doEnableRemote() {
-  const {akid, aks, bucket, endpoint} = ossConfig.value;
-  if (!akid || !aks || !bucket || !endpoint) {
-    $q.notify({type: 'warning', message: '请填写完整的 OSS 配置'});
-    return;
-  }
-  remoteStorageBusy.value = true;
-  showOssConfigDialog.value = false;
-  showSyncProgress.value = true;
-  resetSyncProgress('正在同步数据到云端...');
-
-  try {
-    const encryptedConfig = await api.cmdEncryptData(JSON.stringify(ossConfig.value));
-    // 先明确记录尚未启用，避免只有加密配置时触发旧版本兼容逻辑。
-    await configStore.saveNormalConfig('remote_enabled', false);
-    await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig);
-
-    const event = new Channel<SyncProgressEvent>();
-    event.onmessage = handleSyncProgressEvent;
-
-    await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
-    await configStore.saveNormalConfig('remote_enabled', true);
-    remoteEnabled.value = true;
-    dataStore.invalidateDiaryList();
-    $q.notify({type: 'positive', message: '云同步已启用'});
-  } catch (e) {
-    $q.notify({type: 'negative', message: `启用云同步失败: ${formatError(e)}`});
-    // 同步可能只是暂时的网络错误。保留已加密配置与当前表单，直接回到
-    // 配置对话框即可重试；后端仍保持本地模式。
-    showOssConfigDialog.value = true;
-  } finally {
-    showSyncProgress.value = false;
-    remoteStorageBusy.value = false;
-  }
-}
-
-async function doDisableRemote() {
-  showSyncProgress.value = true;
-  resetSyncProgress('正在从云端下载数据...');
-
-  try {
-    const event = new Channel<SyncProgressEvent>();
-    event.onmessage = handleSyncProgressEvent;
-
-    await api.cmdDisableRemoteStorage(event);
-    await configStore.saveNormalConfig('remote_enabled', false);
-    remoteEnabled.value = false;
-    dataStore.invalidateDiaryList();
-    $q.notify({type: 'positive', message: '云同步已关闭，数据已下载到本地'});
-  } catch (e) {
-    $q.notify({type: 'negative', message: `关闭云同步失败: ${formatError(e)}`});
-  } finally {
-    showSyncProgress.value = false;
-  }
-}
+const {
+  remoteEnabled,
+  remoteStorageBusy,
+  showOssConfigDialog,
+  showSyncProgress,
+  syncProgress,
+  syncTotal,
+  syncStatusText,
+  syncCurrentFile,
+  syncFileDetail,
+  ossConfig,
+  handleRemoteToggle,
+  enableRemote,
+} = useRemoteStorageSettings();
 
 // 接收 Quasar v-model 抛出的 boolean
 async function handleBiometricToggle(newValue: boolean) {
