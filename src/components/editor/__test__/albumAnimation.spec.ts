@@ -20,7 +20,9 @@ describe('animateStackedAlbumCycle', () => {
     const nextImage = document.createElement('img')
     nextImage.dataset.id = '2.jpg'
     album.append(currentImage, nextImage)
-    const onCycle = vi.fn()
+    const onCycle = vi.fn(() => {
+      expect(album.classList.contains('album-cycling')).toBe(false)
+    })
 
     expect(animateStackedAlbumCycle(album, onCycle, 300)).toBe(true)
     expect(album.classList.contains('album-cycling')).toBe(true)
