@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import {computed, onActivated, onDeactivated, onUnmounted, ref} from "vue";
+import {computed, nextTick, onActivated, onDeactivated, onUnmounted, ref} from "vue";
+import {useScroll} from "@vueuse/core";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import {AttachmentTypeFilter, DiarySummary, SearchDiariesEvent} from "../../bindings.ts";
 import {Channel} from "@tauri-apps/api/core";
@@ -31,9 +32,8 @@ const attachmentTypes = computed<AttachmentTypeFilter[]>(() =>
 );
 const canSearch = computed(() => hasDiarySearchCriteria(keyword.value, attachmentTypes.value));
 
-// 用于记录滚动位置，保持在列表页和详情页切换时的滚动状态
-const savedScrollTop = ref(0);
 const scrollContainer = ref<HTMLElement | null>(null);
+const {y} = useScroll(scrollContainer, {behavior: 'smooth'});
 const cancelToken = ref<string>();
 const searchTotal = ref(0);
 let searchSequence = 0;
@@ -148,26 +148,18 @@ async function searchHandle() {
   await startSearch();
 }
 
-function handleScroll(e: Event) {
-  const target = e.target as HTMLElement;
-  savedScrollTop.value = target.scrollTop;
-}
-
-onActivated(() => {
+onActivated(async () => {
   isActivating.value = true;
-  // 激活时恢复滚动位置
+  // 等待 KeepAlive 中的页面重新显示并完成布局后再恢复滚动位置。
+  await nextTick();
   if (scrollContainer.value) {
-    scrollContainer.value.scrollTop = savedScrollTop.value;
+    scrollContainer.value.scrollTop = y.value;
   }
 });
 
 onDeactivated(() => {
   isActivating.value = false;
   shouldAutoFocus.value = false;
-  // 离开时保存滚动位置
-  if (scrollContainer.value) {
-    savedScrollTop.value = scrollContainer.value.scrollTop;
-  }
 });
 
 onUnmounted(() => {
@@ -199,7 +191,7 @@ onUnmounted(() => {
       </q-input>
     </Teleport>
 
-    <section id="list" class="scroll-container" ref="scrollContainer" @scroll="handleScroll">
+    <section id="list" class="scroll-container" ref="scrollContainer">
       <div class="attachment-filter">
         <div class="attachment-filter-heading">
           <div class="attachment-filter-label">附件类型</div>
