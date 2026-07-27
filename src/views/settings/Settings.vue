@@ -299,9 +299,11 @@ import {
 } from "../../utils/syncProgress.ts";
 import {remoteStorageToggleAction} from "../../utils/remoteStorageToggle.ts";
 import {biometricToggleAction} from "../../utils/biometricToggle.ts";
+import {useDataStore} from "../../stores/data.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
+const dataStore = useDataStore();
 
 const showPasswordVerify = ref(false);
 const verifyPassword = ref('');
@@ -398,6 +400,7 @@ async function doEnableRemote() {
     await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
     await configStore.saveNormalConfig('remote_enabled', true);
     remoteEnabled.value = true;
+    dataStore.invalidateDiaryList();
     $q.notify({type: 'positive', message: '云同步已启用'});
   } catch (e) {
     $q.notify({type: 'negative', message: `启用云同步失败: ${formatError(e)}`});
@@ -421,6 +424,7 @@ async function doDisableRemote() {
     await api.cmdDisableRemoteStorage(event);
     await configStore.saveNormalConfig('remote_enabled', false);
     remoteEnabled.value = false;
+    dataStore.invalidateDiaryList();
     $q.notify({type: 'positive', message: '云同步已关闭，数据已下载到本地'});
   } catch (e) {
     $q.notify({type: 'negative', message: `关闭云同步失败: ${formatError(e)}`});

@@ -22,6 +22,7 @@ const dataStore = useDataStore();
 const {
   diaryIds,
   diarySummaries,
+  diaryListRevision,
   withAttachments
 } = storeToRefs(dataStore);
 const {openDiary} = useOpenDiaryDetail();
@@ -31,6 +32,12 @@ const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
 const isLoading = ref(false);
+const loadedDiaryListRevision = ref(diaryListRevision.value);
+interface InfiniteScrollHandle {
+  reset: () => void;
+  resume: () => void;
+}
+const infiniteScrollRef = ref<InfiniteScrollHandle | null>(null);
 
 const scrollContainer = ref<HTMLElement | null>(null);
 const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
@@ -144,6 +151,15 @@ defineOptions({name: 'DiaryList'});
 
 onActivated(async () => {
   isActivating.value = true;
+  if (loadedDiaryListRevision.value !== diaryListRevision.value) {
+    loadedDiaryListRevision.value = diaryListRevision.value;
+    nextToken.value = null;
+    isFirstLoadFinished.value = false;
+    isLoading.value = false;
+    await nextTick();
+    infiniteScrollRef.value?.reset();
+    infiniteScrollRef.value?.resume();
+  }
   // 等待 DOM 渲染完毕
   await nextTick();
   if (scrollContainer.value) {
@@ -161,6 +177,7 @@ onDeactivated(() => {
     <div class="main-content">
       <section id="list" class="scroll-container" ref="scrollContainer">
         <q-infinite-scroll
+            ref="infiniteScrollRef"
             scroll-target="#list"
             v-show="diaryIds.length > 0 || !isFirstLoadFinished"
             @load="onLoad"

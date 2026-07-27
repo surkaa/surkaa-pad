@@ -40,6 +40,17 @@
               lazy-rules
           />
 
+          <q-input
+              v-model="confirmMasterPassword"
+              type="password"
+              label="确认主密码"
+              outlined
+              color="primary"
+              :disable="loading"
+              :rules="[confirmMasterPasswordRule]"
+              lazy-rules
+          />
+
           <q-btn
               type="submit"
               color="primary"
@@ -132,6 +143,21 @@
             </template>
           </q-input>
 
+          <q-input
+              v-model="confirmMasterPassword"
+              type="password"
+              label="确认主密码"
+              outlined
+              color="primary"
+              :disable="loading"
+              :rules="[confirmMasterPasswordRule]"
+              lazy-rules
+          >
+            <template v-slot:prepend>
+              <q-icon name="verified_user"/>
+            </template>
+          </q-input>
+
           <div class="row justify-center q-pb-sm">
             <q-btn
                 flat
@@ -210,6 +236,7 @@ import {formatError} from "../../utils/formatError.ts";
 import {platform} from "@tauri-apps/plugin-os";
 import {formatKiB} from "../../utils";
 import {canUseBiometricUnlock} from "../../utils/biometricUnlockPolicy.ts";
+import {masterPasswordConfirmationError} from "../../utils/masterPasswordSetup.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -227,6 +254,7 @@ const ossConfig = ref<OssConfigType>({
 const showQuickInput = ref<boolean>(false);
 const quickConfig = ref('');
 const masterPassword = ref<string>('');
+const confirmMasterPassword = ref<string>('');
 const loading = ref<boolean>(false);
 const version = ref('0.0.0');
 const appName = ref('App Name');
@@ -234,6 +262,20 @@ const encryptedMemoryCost = ref(0);
 const isAndroid = platform() === 'android';
 const biometricEnabled = ref(false);
 const biometricUnlockAllowed = ref(false);
+
+function confirmMasterPasswordRule(value: string) {
+  return masterPasswordConfirmationError(masterPassword.value, value) || true;
+}
+
+function validateInitialPasswordSetup(): boolean {
+  const error = masterPasswordConfirmationError(
+      masterPassword.value,
+      confirmMasterPassword.value,
+  );
+  if (!error) return true;
+  $q.notify({type: 'warning', message: error});
+  return false;
+}
 
 async function recordPasswordUnlock() {
   try {
@@ -255,6 +297,7 @@ async function refreshBiometricUnlockAllowed() {
 
 async function saveConfigAndLogin() {
   if (loading.value) return;
+  if (!validateInitialPasswordSetup()) return;
   loading.value = true;
 
   // 如果快速配置不为空 则解析快速配置
@@ -264,7 +307,6 @@ async function saveConfigAndLogin() {
       loading.value = false;
       return;
     }
-    console.log('使用快速配置：', quickConfig.value);
     // 去掉所有 \r，然后按字段名 = 定位提取值，不依赖换行符
     const raw = quickConfig.value.replace(/\r/g, '');
     const KEYS = ['ALIYUN_KEY', 'ALIYUN_SECRET', 'ALIYUN_BUCKET_NAME', 'ALIYUN_ENDPOINT'] as const;
@@ -381,6 +423,7 @@ async function unlock() {
 
 async function startLocalOnly() {
   if (loading.value) return;
+  if (!validateInitialPasswordSetup()) return;
   loading.value = true;
 
   try {
@@ -410,6 +453,7 @@ async function confirmReset() {
     );
     pipeline.value = 'first-time';
     masterPassword.value = '';
+    confirmMasterPassword.value = '';
   }
 }
 

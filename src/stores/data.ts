@@ -6,6 +6,7 @@ import {useConfigStore} from "./config.ts";
 export const useDataStore = defineStore('data', () => {
     const diaryIds = ref<string[]>([]);
     const diarySummaries = ref<Record<string, DiarySummary | null>>({});
+    const diaryListRevision = ref(0);
     const pinnedDiaryIds = useConfigStore().useTauriConfig('pinned_diary_ids');
 
     // 当前正在编辑的日记ID，空字符串表示新建
@@ -69,9 +70,18 @@ export const useDataStore = defineStore('data', () => {
         }
     }
 
+    function invalidateDiaryList() {
+        diaryIds.value = [];
+        diarySummaries.value = {};
+        currentId.value = '';
+        currentDiaryAttachmentUrlMap.value = {};
+        diaryListRevision.value += 1;
+    }
+
     return {
         diaryIds,
         diarySummaries,
+        diaryListRevision,
         currentId,
         currentDiary,
         withAttachments,
@@ -81,5 +91,6 @@ export const useDataStore = defineStore('data', () => {
         updateAttachment,
         updateAttachmentFilename,
         deleteAttachment,
+        invalidateDiaryList,
     }
 });
