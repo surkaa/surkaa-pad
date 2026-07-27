@@ -237,6 +237,18 @@ mod lfc_tests {
     }
 
     #[tokio::test]
+    async fn test_get_all_entries_treats_missing_root_as_empty() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let missing_path = temp_dir.path().join("not-created");
+        let cache = LocalFileCache::new(missing_path.clone());
+
+        assert!(!missing_path.exists());
+        assert!(cache.get_all_entries().await.unwrap().is_empty());
+        assert!(cache.get_all().await.unwrap().is_empty());
+        assert!(!missing_path.exists());
+    }
+
+    #[tokio::test]
     async fn test_delete_all() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();

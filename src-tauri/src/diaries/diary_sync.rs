@@ -597,6 +597,20 @@ mod tests {
     }
 
     #[test]
+    fn empty_local_source_does_not_touch_existing_remote_objects() {
+        let remote = HashMap::from([
+            ("123/manifest.enc".to_string(), Some("MANIFEST".to_string())),
+            ("123/photo.jpg".to_string(), Some("PHOTO".to_string())),
+        ]);
+
+        let plan = build_plan(Vec::new(), &remote);
+
+        assert!(plan.items.is_empty());
+        assert_eq!(plan.total_bytes, 0);
+        assert_eq!(plan.skipped_files, 0);
+    }
+
+    #[test]
     fn plan_orders_attachments_before_manifests() {
         let source = vec![
             entry("200/manifest.enc", Some("1"), 1),

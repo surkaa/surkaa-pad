@@ -498,7 +498,17 @@ impl LocalFileCache {
         let mut stack = vec![self.cache_dir.as_ref().to_path_buf()];
 
         while let Some(dir) = stack.pop() {
-            let mut read_dir = tokio::fs::read_dir(&dir).await?;
+            let mut read_dir = match tokio::fs::read_dir(&dir).await {
+                Ok(read_dir) => read_dir,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound
+                        && dir.as_path() == self.cache_dir.as_path() =>
+                {
+                    // 尚未产生任何本地对象，或缓存目录被系统清理时，按空存储处理。
+                    return Ok(results);
+                }
+                Err(error) => return Err(error.into()),
+            };
 
             while let Some(entry) = read_dir.next_entry().await? {
                 let file_type = entry.file_type().await?;
