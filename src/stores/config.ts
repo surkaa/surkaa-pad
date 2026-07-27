@@ -2,6 +2,10 @@ import {defineStore} from "pinia";
 import {customRef, onScopeDispose, Ref} from "vue";
 import {DEFAULT_THEME, ThemeType} from "../types.ts";
 import {Store} from "@tauri-apps/plugin-store";
+import {
+    DEFAULT_WINDOWS_EDITOR_SHORTCUTS,
+    type EditorShortcutConfig,
+} from "../utils/editorShortcuts.ts";
 
 const STORAGE_PREFIX = 'config:';
 const MIGRATION_KEY = 'config:migrated';
@@ -20,6 +24,7 @@ type ConfigMap = {
     "encrypt_video_attachments": boolean;
     "encrypt_file_attachments": boolean;
     "pinned_diary_ids": string[]
+    "windows_editor_shortcuts": EditorShortcutConfig;
 };
 const DEFAULT_CONFIG = {
     "app-theme": DEFAULT_THEME,
@@ -33,7 +38,8 @@ const DEFAULT_CONFIG = {
     "encrypt_audio_attachments": true,
     "encrypt_video_attachments": true,
     "encrypt_file_attachments": true,
-    "pinned_diary_ids": []
+    "pinned_diary_ids": [],
+    "windows_editor_shortcuts": {...DEFAULT_WINDOWS_EDITOR_SHORTCUTS},
 } satisfies ConfigMap;
 
 type ConfigKey = keyof ConfigMap;
