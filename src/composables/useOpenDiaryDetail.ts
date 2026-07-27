@@ -7,7 +7,7 @@ export function useOpenDiaryDetail() {
     const {currentDiaryAttachmentUrlMap, currentId} = storeToRefs(useDataStore());
 
     // 绑定到列表项点击
-    async function openDiary(id?: string) {
+    async function openDiary(id?: string, highlightKeyword = '') {
         currentDiaryAttachmentUrlMap.value = {};
         if (!id) {
             // 新建日记
@@ -17,7 +17,10 @@ export function useOpenDiaryDetail() {
         }
         // 打开已有日记
         currentId.value = id;
-        await router.push({name: 'DiaryDetail'});
+        await router.push({
+            name: 'DiaryDetail',
+            query: highlightKeyword ? {highlight: highlightKeyword} : undefined,
+        });
     }
 
     return {openDiary}

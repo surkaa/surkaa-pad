@@ -19,6 +19,8 @@ import {
 const $q = useQuasar();
 const {openDiary} = useOpenDiaryDetail();
 const keyword = ref('');
+const activeKeyword = ref('');
+const shouldAutoFocus = ref(true);
 
 const diarySummaries = ref<DiarySummary[]>([]);
 const or = ref(false);
@@ -83,6 +85,8 @@ async function cancelCurrentSearch() {
 
 async function startSearch() {
   const currentSearch = ++searchSequence;
+  const searchKeyword = keyword.value;
+  activeKeyword.value = searchKeyword;
   // 清空
   diarySummaries.value = [];
   searchTotal.value = 0;
@@ -118,7 +122,7 @@ async function startSearch() {
   try {
     const token = await api.cmdSearchDiaries(
         event,
-        keyword.value,
+        searchKeyword,
         or.value,
         attachmentTypes.value,
         attachmentOr.value,
@@ -159,6 +163,7 @@ onActivated(() => {
 
 onDeactivated(() => {
   isActivating.value = false;
+  shouldAutoFocus.value = false;
   // 离开时保存滚动位置
   if (scrollContainer.value) {
     savedScrollTop.value = scrollContainer.value.scrollTop;
@@ -175,7 +180,7 @@ onUnmounted(() => {
 <template>
   <div id="diary-search">
     <Teleport v-if="isActivating" defer to="#header-actions">
-      <q-input dense autofocus v-model="keyword" placeholder="输入关键词搜索" @keyup.enter="searchHandle" class="full-width">
+      <q-input dense :autofocus="shouldAutoFocus" v-model="keyword" placeholder="输入关键词搜索" @keyup.enter="searchHandle" class="full-width">
         <template #prepend v-if="keyword.indexOf(' ') != -1">
           <q-badge transparent :label="or ? 'OR' : 'AND'"/>
         </template>
@@ -288,7 +293,7 @@ onUnmounted(() => {
           v-for="d in diarySummaries"
           :key="d.id"
           :diary="d"
-          @click="openDiary(d.id)"
+          @click="openDiary(d.id, activeKeyword)"
       />
       <div v-if="!diarySummaries.length">
         <p class="text-center text-gray-500">无日记</p>

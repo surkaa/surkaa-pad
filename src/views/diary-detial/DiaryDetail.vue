@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import {nextTick, onActivated, onMounted, ref, watch} from "vue";
+import {computed, nextTick, onActivated, onMounted, ref, watch} from "vue";
 import TiptapEditor from "../../components/TiptapEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
-import {onBeforeRouteLeave, type NavigationGuardNext} from "vue-router";
+import {onBeforeRouteLeave, type NavigationGuardNext, useRoute} from "vue-router";
 import {Dialog, useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
@@ -17,9 +17,14 @@ import {formatError} from "../../utils/formatError.ts";
 import {useConfigStore} from "../../stores/config.ts";
 import {diaryContentToSource} from "../../components/editor/markdownConverter.ts";
 import type {AttachmentMeta} from "../../bindings.ts";
+import {normalizeSearchTerms} from "../../utils/searchHighlight.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
+const route = useRoute();
+const searchTerms = computed(() => normalizeSearchTerms(
+    typeof route.query.highlight === 'string' ? route.query.highlight : '',
+));
 
 const tiptapEditorRef = ref<InstanceType<typeof TiptapEditor>>();
 const editorDomRef = ref<HTMLElement>();
@@ -217,6 +222,7 @@ onActivated(async () => {
         v-model="diaryContent"
         :diarySummary="diary"
         :attachmentMap="attachmentMap"
+        :searchTerms="searchTerms"
         @editorFocused="showToolbarAfterEditorFocus"
         @pasteAttachments="mediaAction.pasteAttachments"
         @showImage="showImage"

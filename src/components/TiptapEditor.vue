@@ -30,11 +30,14 @@ import {
   attachmentInsertionsToEditorContent,
   type AttachmentInsertion,
 } from '../utils/attachmentInsertion'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { findSearchHighlightRanges } from '../utils/searchHighlight'
 
 const props = defineProps<{
   modelValue: DiaryContent
   diarySummary?: DiarySummary
   attachmentMap: Record<string, string>
+  searchTerms?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -92,6 +95,21 @@ const editor = useEditor({
     attributes: {
       class: 'tiptap-editor',
     },
+    decorations: state => {
+      if (!props.searchTerms?.length) return DecorationSet.empty
+      const decorations: Decoration[] = []
+      state.doc.descendants((node, pos) => {
+        if (!node.isText || !node.text) return
+        for (const range of findSearchHighlightRanges(node.text, props.searchTerms!)) {
+          decorations.push(Decoration.inline(
+            pos + range.from,
+            pos + range.to,
+            { class: 'search-highlight' },
+          ))
+        }
+      })
+      return DecorationSet.create(state.doc, decorations)
+    },
     handlePaste: (_view, event) => {
       const files = event.clipboardData?.files
       if (files && files.length > 0) {
@@ -120,6 +138,10 @@ watch(() => props.modelValue, (newVal) => {
     )
   }
 })
+
+watch(() => props.searchTerms, () => {
+  if (editor.value) editor.value.view.dispatch(editor.value.state.tr)
+}, { deep: true })
 
 // --- Click handler (image preview) ---
 
@@ -617,6 +639,12 @@ defineExpose({
     float: left;
     height: 0;
     pointer-events: none;
+  }
+
+  .search-highlight {
+    border-radius: 2px;
+    background-color: rgba(255, 193, 7, 0.45);
+    box-shadow: 0 0 0 1px rgba(255, 193, 7, 0.22);
   }
 }
 </style>
