@@ -15,6 +15,10 @@
   <img src="https://img.shields.io/badge/tauri-2.0-ffb74d" alt="Tauri 2">
 </p>
 
+<p align="center">
+  如果 SurKaa Pad 对你有帮助，欢迎点一个 ⭐ Star，你的支持是我继续改进它的动力。
+</p>
+
 ---
 
 ## 简介
