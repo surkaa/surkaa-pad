@@ -11,7 +11,7 @@ defineProps<{
   <q-item>
     <q-item-section>
       <q-item-label class="text-weight-medium">{{ att.filename }}</q-item-label>
-      <q-item-label caption>
+      <q-item-label caption class="attachment-meta">
         {{ att.mimetype }} · {{ formatBytes(att.size) }}
       </q-item-label>
     </q-item-section>
@@ -29,5 +29,7 @@ defineProps<{
 </template>
 
 <style scoped lang="scss">
-
+.attachment-meta {
+  color: var(--pad-text-color-300) !important;
+}
 </style>
