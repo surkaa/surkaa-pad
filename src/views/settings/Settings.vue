@@ -65,10 +65,10 @@
             </q-item-section>
             <q-item-section side>
               <q-toggle
-                  v-model="biometricEnable"
+                  :model-value="biometricEnable"
                   @update:model-value="handleBiometricToggle"
                   color="primary"
-                  :disable="!isAndroid"
+                  :disable="!isAndroid || loading"
               />
               <q-badge v-if="!isAndroid" color="grey-6" floating transparent style="top: 8px; right: 0;">系统不支持
               </q-badge>
@@ -298,6 +298,7 @@ import {
   type SyncProgressDisplay,
 } from "../../utils/syncProgress.ts";
 import {remoteStorageToggleAction} from "../../utils/remoteStorageToggle.ts";
+import {biometricToggleAction} from "../../utils/biometricToggle.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -430,10 +431,11 @@ async function doDisableRemote() {
 
 // 接收 Quasar v-model 抛出的 boolean
 async function handleBiometricToggle(newValue: boolean) {
-  if (newValue) {
+  const action = biometricToggleAction(biometricEnable.value, newValue, loading.value);
+  if (action === 'enable') {
     showPasswordVerify.value = true;
     verifyPassword.value = '';
-  } else {
+  } else if (action === 'disable') {
     if (await confirm('确定要关闭生物识别解锁吗？')) {
       await configStore.deleteConfig('biometric_enabled', 'biometric_dek');
       $q.notify('生物识别已禁用');
@@ -446,13 +448,20 @@ async function confirmEnableBiometric() {
   loading.value = true;
   try {
     const dataToEncrypt = await api.cmdValidPassword(verifyPassword.value);
-    await configStore.saveNormalConfig('last_password_unlock_at', Date.now());
     const response = await biometricCipher('请验证生物识别以启用快速解锁', {dataToEncrypt});
-    await configStore.saveNormalConfig('biometric_enabled', true);
     await configStore.saveNormalConfig('biometric_dek', response.data);
+    await configStore.saveNormalConfig('last_password_unlock_at', Date.now());
+    // 必须最后写入启用标记，避免密码验证或生物凭据配置未完成时开关已开启。
+    await configStore.saveNormalConfig('biometric_enabled', true);
     $q.notify('生物识别已成功开启');
     showPasswordVerify.value = false;
+    verifyPassword.value = '';
   } catch (err: any) {
+    try {
+      await configStore.deleteConfig('biometric_enabled', 'biometric_dek');
+    } catch (cleanupError) {
+      console.error('清理未完成的生物识别配置失败:', cleanupError);
+    }
     $q.notify({type: 'negative', message: formatError(err)});
   } finally {
     loading.value = false;
