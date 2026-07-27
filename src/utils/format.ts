@@ -80,7 +80,8 @@ export function formatBytes(bytes?: number): string {
         size /= 1024;
         index++;
     }
-    return `${size.toFixed(0)} ${units[index]}`;
+    const formattedSize = Number(size.toFixed(2));
+    return `${formattedSize} ${units[index]}`;
 }
 
 export function formatKiB(kibibytes?: number): string {
