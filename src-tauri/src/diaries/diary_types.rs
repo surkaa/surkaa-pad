@@ -3,7 +3,7 @@ use crate::cryptos::crypto_types::EncryptionAlgorithm;
 use crate::diaries::diary_content::{DiaryAttachmentCounts, DiaryContent};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 const fn default_version() -> u32 {
     1
@@ -34,8 +34,9 @@ pub struct DiarySummary {
     pub updated: i64,
     /// 日记标题，取自正文的第一行
     pub title: String,
-    /// 附件列表
-    pub attachments: Vec<AttachmentMeta>,
+    /// Manifest 中的附件总数，包含未插入正文的附件
+    #[specta(type = f64)]
+    pub attachment_count: usize,
     /// 正文节点中各类附件的数量，不包含未插入正文的附件
     pub attachment_counts: DiaryAttachmentCounts,
     /// 正文节点中各类加密附件的数量
@@ -43,7 +44,7 @@ pub struct DiarySummary {
 }
 
 impl DiarySummary {
-    pub fn from_manifest(manifest: DiaryManifest) -> Self {
+    pub fn from_manifest(manifest: &DiaryManifest) -> Self {
         let title = manifest.content.title();
         let attachment_counts = manifest.content.attachment_counts();
         let encrypted_attachment_ids = manifest
@@ -57,15 +58,25 @@ impl DiarySummary {
             .attachment_counts_for_ids(&encrypted_attachment_ids);
 
         Self {
-            id: manifest.id,
+            id: manifest.id.clone(),
             created: manifest.created,
             updated: manifest.updated,
             title,
-            attachments: manifest.attachments,
+            attachment_count: manifest.attachments.len(),
             attachment_counts,
             encrypted_attachment_counts,
         }
     }
+}
+
+/// 仅在进入日记编辑页后加载的完整详情。
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DiaryDetail {
+    pub summary: DiarySummary,
+    pub content: DiaryContent,
+    pub attachments: Vec<AttachmentMeta>,
+    pub attachment_urls: HashMap<String, String>,
 }
 
 #[derive(Clone, Serialize, Type)]
@@ -100,7 +111,7 @@ mod tests {
 
     #[test]
     fn summary_counts_content_nodes_instead_of_attachment_metadata() {
-        let summary = DiarySummary::from_manifest(DiaryManifest {
+        let manifest = DiaryManifest {
             id: "diary-1".to_string(),
             algorithm: Gcm,
             content: DiaryContent {
@@ -148,7 +159,13 @@ mod tests {
                 },
             ],
             version: 4,
-        });
+        };
+        let summary = DiarySummary::from_manifest(&manifest);
+
+        assert_eq!(summary.attachment_count, 3);
+        let serialized = serde_json::to_value(&summary).expect("serialize summary");
+        assert_eq!(serialized["attachmentCount"], 3);
+        assert!(serialized.get("attachments").is_none());
 
         assert_eq!(
             summary.attachment_counts,

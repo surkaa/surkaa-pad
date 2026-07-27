@@ -209,7 +209,7 @@ mod diary_list_tests {
     use crate::cryptos::Crypto;
     use crate::diaries::diary::save_diary;
     use crate::diaries::diary_store::RemoteStore;
-    use crate::diaries::{get_diary_content, get_diary_summary, page_diary_ids};
+    use crate::diaries::{get_diary_detail, get_diary_summary, page_diary_ids};
     use crate::object::OssClient;
     use crate::test_utils::TestOssGuard;
 
@@ -268,7 +268,7 @@ mod diary_list_tests {
                 .await
                 .expect("无法获取日记摘要");
             assert_eq!(summary.title, title);
-            let content = get_diary_content(
+            let detail = get_diary_detail(
                 &cache,
                 &crypto,
                 &store,
@@ -277,7 +277,13 @@ mod diary_list_tests {
             )
             .await
             .expect("无法获取日记内容");
-            assert_eq!(content, content);
+            assert_eq!(
+                detail.content,
+                format!("{}\n{}", title, content).as_str().into()
+            );
+            assert_eq!(detail.summary.id, id);
+            assert!(detail.attachments.is_empty());
+            assert!(detail.attachment_urls.is_empty());
         }
         _guard.cleanup().await;
     }

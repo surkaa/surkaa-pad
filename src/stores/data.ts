@@ -11,12 +11,13 @@ export const useDataStore = defineStore('data', () => {
 
     // 当前正在编辑的日记ID，空字符串表示新建
     const currentId = ref<string>("");
+    const currentDiaryAttachments = ref<AttachmentMeta[]>([]);
     const currentDiaryAttachmentUrlMap = ref<Record<string, string>>({});
 
     const currentDiary = computed(() => diarySummaries.value[currentId.value] || undefined);
     const withAttachments = computed(() => {
         return diarySummaries.value
-            ? Object.values(diarySummaries.value).filter(s => s && s.attachments.length).length
+            ? Object.values(diarySummaries.value).filter(s => s && s.attachmentCount > 0).length
             : 0;
     });
 
@@ -42,31 +43,36 @@ export const useDataStore = defineStore('data', () => {
     }
 
     function updateAttachment(diaryId: string, newMeta: AttachmentMeta) {
-        const summary = diarySummaries.value[diaryId];
-        if (summary) {
-            const attachmentIndex = summary.attachments.findIndex(att => att.id === newMeta.id);
+        if (diaryId === currentId.value) {
+            const attachmentIndex = currentDiaryAttachments.value.findIndex(att => att.id === newMeta.id);
             if (attachmentIndex !== -1) {
-                summary.attachments[attachmentIndex] = newMeta;
+                currentDiaryAttachments.value[attachmentIndex] = newMeta;
             } else {
-                summary.attachments.push(newMeta);
+                currentDiaryAttachments.value.push(newMeta);
+                const summary = diarySummaries.value[diaryId];
+                if (summary) summary.attachmentCount += 1;
             }
         }
     }
 
     function updateAttachmentFilename(diaryId: string, attachmentId: string, newFilename: string) {
-        const summary = diarySummaries.value[diaryId];
-        if (summary) {
-            const attachmentIndex = summary.attachments.findIndex(att => att.id === attachmentId);
+        if (diaryId === currentId.value) {
+            const attachmentIndex = currentDiaryAttachments.value.findIndex(att => att.id === attachmentId);
             if (attachmentIndex !== -1) {
-                summary.attachments[attachmentIndex].filename = newFilename;
+                currentDiaryAttachments.value[attachmentIndex].filename = newFilename;
             }
         }
     }
 
     function deleteAttachment(diaryId: string, attachmentIds: string[]) {
-        const summary = diarySummaries.value[diaryId];
-        if (summary) {
-            summary.attachments = summary.attachments.filter(att => !attachmentIds.includes(att.id));
+        if (diaryId === currentId.value) {
+            const previousCount = currentDiaryAttachments.value.length;
+            currentDiaryAttachments.value = currentDiaryAttachments.value.filter(
+                att => !attachmentIds.includes(att.id)
+            );
+            const deletedCount = previousCount - currentDiaryAttachments.value.length;
+            const summary = diarySummaries.value[diaryId];
+            if (summary) summary.attachmentCount = Math.max(0, summary.attachmentCount - deletedCount);
         }
     }
 
@@ -74,6 +80,7 @@ export const useDataStore = defineStore('data', () => {
         diaryIds.value = [];
         diarySummaries.value = {};
         currentId.value = '';
+        currentDiaryAttachments.value = [];
         currentDiaryAttachmentUrlMap.value = {};
         diaryListRevision.value += 1;
     }
@@ -85,6 +92,7 @@ export const useDataStore = defineStore('data', () => {
         currentId,
         currentDiary,
         withAttachments,
+        currentDiaryAttachments,
         currentDiaryAttachmentUrlMap,
         insertNewDiary,
         deleteSummary,

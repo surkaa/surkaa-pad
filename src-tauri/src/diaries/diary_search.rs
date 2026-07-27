@@ -70,7 +70,7 @@ pub async fn search_diaries(
                     let is_match = keyword_matches && attachment_matches;
 
                     let _ = ecc.send(if is_match {
-                        SearchDiariesEvent::Match(DiarySummary::from_manifest(diary))
+                        SearchDiariesEvent::Match(DiarySummary::from_manifest(&diary))
                     } else {
                         SearchDiariesEvent::Unmatch(diary.id)
                     });

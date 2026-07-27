@@ -4,11 +4,12 @@ import {storeToRefs} from "pinia";
 
 export function useOpenDiaryDetail() {
     const router = useRouter();
-    const {currentDiaryAttachmentUrlMap, currentId} = storeToRefs(useDataStore());
+    const {currentDiaryAttachments, currentDiaryAttachmentUrlMap, currentId} = storeToRefs(useDataStore());
 
     // 绑定到列表项点击
     async function openDiary(id?: string, highlightKeyword = '') {
         currentDiaryAttachmentUrlMap.value = {};
+        currentDiaryAttachments.value = [];
         if (!id) {
             // 新建日记
             currentId.value = "";

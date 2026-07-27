@@ -242,15 +242,15 @@ async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, AppError>> {
 }
 },
 /**
- * 获取日记内容
+ * 获取日记完整详情
  * # Arguments
  * * `id` - 日记ID
  * # Returns
- * * `Result<(DiaryContent, HashMap<String, String>), AppError>` - 结构化日记内容和附件 ID 到本地 HTTP URL 的映射
+ * * `Result<DiaryDetail, AppError>` - 日记摘要、正文、附件元数据和附件 ID 到本地 HTTP URL 的映射
  */
-async cmdGetDiaryContent(id: string) : Promise<Result<[DiaryContent, Partial<{ [key in string]: string }>], AppError>> {
+async cmdGetDiaryDetail(id: string) : Promise<Result<DiaryDetail, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_content", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_detail", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -586,15 +586,19 @@ export type ChunkedUploadStartResult = { uploadToken: string; attachmentId: stri
 export type DiaryAttachmentCounts = { image: number; audio: number; video: number; file: number }
 export type DiaryContent = { nodes: DiaryContentNode[] }
 export type DiaryContentNode = { type: "markdown"; text: string } | { type: "image"; attachmentId: string; size: ImageSize } | { type: "video"; attachmentId: string } | { type: "audio"; attachmentId: string } | { type: "file"; attachmentId: string } | { type: "album"; id: string; attachmentIds: string[]; displayMode: AlbumDisplayMode }
+/**
+ * 仅在进入日记编辑页后加载的完整详情。
+ */
+export type DiaryDetail = { summary: DiarySummary; content: DiaryContent; attachments: AttachmentMeta[]; attachmentUrls: Partial<{ [key in string]: string }> }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行
  */
 title: string; 
 /**
- * 附件列表
+ * Manifest 中的附件总数，包含未插入正文的附件
  */
-attachments: AttachmentMeta[]; 
+attachmentCount: number; 
 /**
  * 正文节点中各类附件的数量，不包含未插入正文的附件
  */

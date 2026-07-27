@@ -20,6 +20,7 @@ import type {AttachmentMeta} from "../../bindings.ts";
 import {normalizeSearchTerms} from "../../utils/searchHighlight.ts";
 import {platform} from "@tauri-apps/plugin-os";
 import {useEventListener} from "@vueuse/core";
+import {attachmentGroupIcon, groupAttachmentsByMimeType} from "../../utils/attachmentGrouping.ts";
 import {
   findEditorShortcutAction,
   type EditorShortcutAction,
@@ -45,9 +46,11 @@ const isWindows = platform() === 'windows';
 let renameCb: ((newFilename: string) => void) | null = null;
 
 const {
-  diaryId, diary, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
+  diaryId, diary, attachments, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
   loadDiaryInfo, deleteDiary
 } = useDiaryCore();
+const attachmentGroups = computed(() => groupAttachmentsByMimeType(attachments.value));
+const expandedAttachmentGroups = ref<Record<string, boolean>>({});
 
 // UI交互
 const {
@@ -290,6 +293,7 @@ onActivated(async () => {
         v-if="isInitialLoaded"
         v-model="diaryContent"
         :diarySummary="diary"
+        :attachments="attachments"
         :attachmentMap="attachmentMap"
         :searchTerms="searchTerms"
         @editorFocused="showToolbarAfterEditorFocus"
@@ -342,7 +346,7 @@ onActivated(async () => {
             <q-item-section>删除</q-item-section>
           </q-item>
           <q-item :disable="diary == undefined" clickable v-ripple
-                  @click="() => {mediaAction.cachingAttachment(diary!.attachments.map(att => att.id)); showMenu = false}">
+                  @click="() => {mediaAction.cachingAttachment(attachments.map(att => att.id)); showMenu = false}">
             <q-item-section>缓存所有附件到本地</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="showMenu = false">
@@ -353,27 +357,38 @@ onActivated(async () => {
     </q-dialog>
 
     <q-dialog no-refocus v-model="showDetailDialog">
-      <q-card style="min-width: 350px; max-width: 90vw;">
+      <q-card class="diary-detail-dialog">
         <q-card-section class="row items-center q-pb-none">
           <div class="text-h6">{{ diary?.title }} - 详情</div>
           <q-space/>
           <q-btn icon="close" flat round dense v-close-popup/>
         </q-card-section>
 
-        <q-card-section class="q-pa-md">
+        <q-card-section class="q-pa-md diary-detail-dialog-content">
           <div class="text-subtitle2 q-mb-xs">时间信息</div>
           <div class="text-caption">创建时间：{{ formatTimestamp(diary?.created) }}</div>
           <div class="text-caption">更新时间：{{ formatTimestamp(diary?.updated) }}</div>
 
           <q-separator class="q-my-md"/>
 
-          <div class="text-subtitle2 q-mb-sm">附件列表 ({{ diary?.attachments.length || 0 }})</div>
-          <q-list bordered separator v-if="diary?.attachments.length">
-            <AttachmentCard
-                v-for="att in diary.attachments"
-                :key="att.id"
-                :att="att"
-            />
+          <div class="text-subtitle2 q-mb-sm">附件列表 ({{ attachments.length }})</div>
+          <q-list bordered v-if="attachments.length" class="attachment-groups-list">
+            <q-expansion-item
+                v-for="group in attachmentGroups"
+                :key="group.type"
+                v-model="expandedAttachmentGroups[group.type]"
+                :icon="attachmentGroupIcon(group.type)"
+                :label="`${group.type} (${group.attachments.length})`"
+                header-class="attachment-group-header"
+            >
+              <q-list separator v-if="expandedAttachmentGroups[group.type]">
+                <AttachmentCard
+                    v-for="att in group.attachments"
+                    :key="att.id"
+                    :att="att"
+                />
+              </q-list>
+            </q-expansion-item>
           </q-list>
           <div v-else class="text-center q-pa-sm">暂无附件</div>
         </q-card-section>
@@ -519,6 +534,24 @@ onActivated(async () => {
 </style>
 
 <style lang="scss">
+.diary-detail-dialog {
+  width: min(640px, 92vw);
+  max-height: 90vh;
+}
+
+.diary-detail-dialog-content {
+  max-height: calc(90vh - 112px);
+  overflow-y: auto;
+}
+
+.attachment-groups-list {
+  border-color: var(--pad-border-color) !important;
+}
+
+.attachment-group-header {
+  color: var(--pad-text-color-200);
+}
+
 .diary-source-dialog .q-dialog__message {
   max-height: 60vh;
   overflow: auto;

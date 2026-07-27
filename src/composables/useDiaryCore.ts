@@ -19,7 +19,13 @@ export function useDiaryCore() {
     const router = useRouter();
     const appWindow = getCurrentWindow();
     const dataStore = useDataStore();
-    const {currentId, currentDiary, diarySummaries, currentDiaryAttachmentUrlMap} = storeToRefs(dataStore);
+    const {
+        currentId,
+        currentDiary,
+        currentDiaryAttachments,
+        diarySummaries,
+        currentDiaryAttachmentUrlMap,
+    } = storeToRefs(dataStore);
 
     const diaryContent = ref<DiaryContent>({nodes: []});
 
@@ -45,22 +51,18 @@ export function useDiaryCore() {
             }
         }
 
-        return currentDiary.value.attachments.filter(
+        return currentDiaryAttachments.value.filter(
             attachment => !referencedIds.has(attachment.id)
         );
     });
 
     async function loadDiaryInfo() {
         try {
-            const [summaryRes, contentRes] = await Promise.all([
-                api.cmdGetDiarySummary(currentId.value),
-                api.cmdGetDiaryContent(currentId.value)
-            ]);
-
-            diarySummaries.value[currentId.value] = summaryRes;
-            const [content, map] = contentRes;
-            diaryContent.value = content;
-            currentDiaryAttachmentUrlMap.value = map as Record<string, string>;
+            const detail = await api.cmdGetDiaryDetail(currentId.value);
+            diarySummaries.value[currentId.value] = detail.summary;
+            diaryContent.value = detail.content;
+            currentDiaryAttachments.value = detail.attachments;
+            currentDiaryAttachmentUrlMap.value = detail.attachmentUrls as Record<string, string>;
             // 延迟标记加载完成，避免触发首次 watch
             await nextTick();
             isInitialLoaded.value = true;
@@ -188,6 +190,7 @@ export function useDiaryCore() {
     return {
         diaryId: currentId,
         diary: currentDiary,
+        attachments: currentDiaryAttachments,
         diaryContent,
         attachmentMap: currentDiaryAttachmentUrlMap,
         isInitialLoaded,

@@ -1,13 +1,14 @@
 use crate::error::AppError;
 use crate::object::NextToken;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 
 use crate::diaries::diary::{delete_diary, save_diary, update_diary_content_only};
-use crate::diaries::diary_list::{get_diary_content, get_diary_summary, page_diary_ids};
+use crate::diaries::diary_list::{get_diary_detail, get_diary_summary, page_diary_ids};
 use crate::diaries::diary_search::{search_diaries, SearchDiaryQuery};
-use crate::diaries::diary_types::{AttachmentTypeFilter, DiarySummary, SearchDiariesEvent};
+use crate::diaries::diary_types::{
+    AttachmentTypeFilter, DiaryDetail, DiarySummary, SearchDiariesEvent,
+};
 use crate::diaries::DiaryContent;
 use crate::state::AppState;
 use tauri::State;
@@ -93,19 +94,19 @@ pub async fn cmd_get_diary_summary(
     Ok(get_diary_summary(&state.diary_cache(), &state.crypto(), &*store, id).await?)
 }
 
-/// 获取日记内容
+/// 获取日记完整详情
 /// # Arguments
 /// * `id` - 日记ID
 /// # Returns
-/// * `Result<(DiaryContent, HashMap<String, String>), AppError>` - 结构化日记内容和附件 ID 到本地 HTTP URL 的映射
+/// * `Result<DiaryDetail, AppError>` - 日记摘要、正文、附件元数据和附件 ID 到本地 HTTP URL 的映射
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_get_diary_content(
+pub async fn cmd_get_diary_detail(
     state: State<'_, AppState>,
     id: &str,
-) -> Result<(DiaryContent, HashMap<String, String>), AppError> {
+) -> Result<DiaryDetail, AppError> {
     let store = state.diary_store();
-    Ok(get_diary_content(
+    Ok(get_diary_detail(
         &state.diary_cache(),
         &state.crypto(),
         &*store,

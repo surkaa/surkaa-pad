@@ -7,7 +7,7 @@ import { useScroll, useStorage } from '@vueuse/core'
 import { useQuasar } from 'quasar'
 import { platform } from '@tauri-apps/plugin-os'
 import { Menu, MenuItem } from '@tauri-apps/api/menu'
-import type { DiaryContent, DiarySummary } from '../bindings'
+import type { AttachmentMeta, DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import {
   shouldFocusEditorEnd,
@@ -36,6 +36,7 @@ import { findSearchHighlightRanges } from '../utils/searchHighlight'
 const props = defineProps<{
   modelValue: DiaryContent
   diarySummary?: DiarySummary
+  attachments: AttachmentMeta[]
   attachmentMap: Record<string, string>
   searchTerms?: string[]
 }>()
@@ -69,11 +70,11 @@ const { y } = useScroll(editorElement, {
 })
 
 function getAttachmentMeta(attachmentId: string) {
-  return props.diarySummary?.attachments.find(attachment => attachment.id === attachmentId) || null
+  return props.attachments.find(attachment => attachment.id === attachmentId) || null
 }
 
 const attachmentFilenames = computed<Record<string, string>>(() => Object.fromEntries(
-  (props.diarySummary?.attachments || []).map(attachment => [attachment.id, attachment.filename]),
+  props.attachments.map(attachment => [attachment.id, attachment.filename]),
 ))
 
 const editor = useEditor({

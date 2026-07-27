@@ -44,7 +44,7 @@ export function useMediaAction(
     const $q = useQuasar();
     const dataStore = useDataStore();
     const configStore = useConfigStore();
-    const {currentDiaryAttachmentUrlMap, currentDiary} = storeToRefs(dataStore);
+    const {currentDiaryAttachments, currentDiaryAttachmentUrlMap} = storeToRefs(dataStore);
     const attachmentEncryptionByKind: Record<AttachmentNodeKind, Ref<boolean>> = {
         image: configStore.useTauriConfig('encrypt_image_attachments'),
         audio: configStore.useTauriConfig('encrypt_audio_attachments'),
@@ -301,7 +301,7 @@ export function useMediaAction(
         editorDomRef.value?.focus();
 
         const key = uuidv4();
-        const displayFilename = currentDiary.value?.attachments
+        const displayFilename = currentDiaryAttachments.value
             .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
         uploadTaskMap.value[key] = {
             filename: displayFilename,
@@ -438,7 +438,7 @@ export function useMediaAction(
             showUploadDialog.value = true;
             for (const attachmentId of attachmentIds) {
                 const key = uuidv4();
-                const filename = currentDiary.value?.attachments
+                const filename = currentDiaryAttachments.value
                     .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
                 uploadTaskMap.value[key] = {
                     filename,

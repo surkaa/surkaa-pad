@@ -63,7 +63,7 @@ pub async fn save_diary<C: Into<DiaryContent>>(
     // 保存到内存缓存中
     cache.insert(&id, manifest.clone(), etag);
 
-    Ok((DiarySummary::from_manifest(manifest), content))
+    Ok((DiarySummary::from_manifest(&manifest), content))
 }
 
 /// 获取并解密指定 ID 的日记 manifest 自动处理缓存问题
@@ -179,7 +179,7 @@ pub async fn update_diary_content_only<C: Into<DiaryContent>>(
 
     update_diary(cache, crypto, store, &manifest).await?;
 
-    Ok(DiarySummary::from_manifest(manifest))
+    Ok(DiarySummary::from_manifest(&manifest))
 }
 
 pub async fn update_diary_attachment(

@@ -27,7 +27,7 @@ use crate::cryptos::crypto_command::{
     cmd_valid_password,
 };
 use crate::diaries::diary_command::{
-    cmd_delete_diary, cmd_get_diary_content, cmd_get_diary_summary, cmd_page_diary_ids,
+    cmd_delete_diary, cmd_get_diary_detail, cmd_get_diary_summary, cmd_page_diary_ids,
     cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
 };
 use crate::object::object_command::{
@@ -83,7 +83,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             // 日记列表操作
             cmd_page_diary_ids,
             cmd_get_diary_summary,
-            cmd_get_diary_content,
+            cmd_get_diary_detail,
             cmd_search_diaries,
             // 附件相关操作
             cmd_add_attachment,
