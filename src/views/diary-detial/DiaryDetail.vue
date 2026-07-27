@@ -18,6 +18,12 @@ import {useConfigStore} from "../../stores/config.ts";
 import {diaryContentToSource} from "../../components/editor/markdownConverter.ts";
 import type {AttachmentMeta} from "../../bindings.ts";
 import {normalizeSearchTerms} from "../../utils/searchHighlight.ts";
+import {platform} from "@tauri-apps/plugin-os";
+import {useEventListener} from "@vueuse/core";
+import {
+  findEditorShortcutAction,
+  type EditorShortcutAction,
+} from "../../utils/editorShortcuts.ts";
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -34,6 +40,8 @@ const renameAttachmentId = ref('');
 const oldFilename = ref('');
 const newFilename = ref('');
 const pinnedDiaryIds = configStore.useTauriConfig('pinned_diary_ids');
+const editorShortcuts = configStore.useTauriConfig('windows_editor_shortcuts');
+const isWindows = platform() === 'windows';
 let renameCb: ((newFilename: string) => void) | null = null;
 
 const {
@@ -67,6 +75,59 @@ function openDiaryDetail() {
 
 function additionalAction() {
   showToolbarPanel.value = !showToolbarPanel.value;
+}
+
+function isEditableFieldOutsideDiaryEditor(target: EventTarget | null) {
+  const element = target instanceof Element ? target : null;
+  if (!element || element.closest('.ProseMirror')) return false;
+  return Boolean(element.closest('input, textarea, select, [contenteditable="true"]'));
+}
+
+function runEditorShortcut(action: EditorShortcutAction) {
+  showToolbarPanel.value = false;
+  switch (action) {
+    case 'insertPhoto':
+      void mediaAction.insertPhoto();
+      break;
+    case 'insertAudio':
+      void mediaAction.insertAudio();
+      break;
+    case 'audioRecording':
+      mediaAction.audioRecording();
+      break;
+    case 'insertVideo':
+      void mediaAction.insertVideo();
+      break;
+    case 'insertFile':
+      void mediaAction.insertFile();
+      break;
+  }
+}
+
+function handleEditorShortcut(event: KeyboardEvent) {
+  if (
+    event.repeat
+    || event.isComposing
+    || route.name !== 'DiaryDetail'
+    || isEditableFieldOutsideDiaryEditor(event.target)
+    || showMenu.value
+    || showDetailDialog.value
+    || showRenameDialog.value
+    || showUnusedAttachmentsDialog.value
+    || showUploadDialog.value
+    || showAudioDrawer.value
+  ) return;
+
+  const action = findEditorShortcutAction(event, editorShortcuts.value);
+  if (!action) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  runEditorShortcut(action);
+}
+
+if (isWindows) {
+  useEventListener(window, 'keydown', handleEditorShortcut, {capture: true});
 }
 
 function showDiarySource() {
@@ -237,6 +298,7 @@ onActivated(async () => {
         :view="showToolbar || showToolbarPanel"
         :panelOpen="showToolbarPanel"
         :editor="tiptapEditorRef?.editor ?? null"
+        :shortcuts="editorShortcuts"
         v-click-outside="() => showToolbarPanel = false"
         @undo="tiptapEditorRef?.undo"
         @redo="tiptapEditorRef?.redo"

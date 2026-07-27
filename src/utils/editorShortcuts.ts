@@ -60,6 +60,15 @@ export function keyboardEventMatchesShortcut(
   return Boolean(shortcut) && shortcutFromKeyboardEvent(event) === shortcut
 }
 
+export function findEditorShortcutAction(
+  event: ShortcutKeyboardEvent,
+  config: EditorShortcutConfig,
+): EditorShortcutAction | null {
+  return EDITOR_SHORTCUT_ACTIONS.find(action =>
+    keyboardEventMatchesShortcut(event, config[action])
+  ) ?? null
+}
+
 export function formatEditorShortcut(shortcut: string): string {
   if (!shortcut) return '未设置'
   return shortcut

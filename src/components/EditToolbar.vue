@@ -2,18 +2,33 @@
 
 import type { Editor } from '@tiptap/vue-3'
 import { platform } from "@tauri-apps/plugin-os";
+import {
+  formatEditorShortcut,
+  type EditorShortcutAction,
+  type EditorShortcutConfig,
+} from "../utils/editorShortcuts.ts";
 
 const {
   view,
   panelOpen,
   editor,
+  shortcuts,
 } = defineProps<{
   view: boolean,
   panelOpen: boolean,
   editor?: Editor | null,
+  shortcuts?: EditorShortcutConfig,
 }>();
 
-const isAndroid = platform() === 'android';
+const currentPlatform = platform();
+const isAndroid = currentPlatform === 'android';
+const isWindows = currentPlatform === 'windows';
+
+function attachmentActionTitle(label: string, action: EditorShortcutAction) {
+  const shortcut = shortcuts?.[action];
+  if (!isWindows || !shortcut) return label;
+  return `${label}（${formatEditorShortcut(shortcut)}）`;
+}
 
 const emit = defineEmits([
   'undo', 'redo',
@@ -57,7 +72,8 @@ const emit = defineEmits([
       <transition name="panel-expand">
         <div v-show="panelOpen" class="more-panel">
           <div>
-            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertPhoto')">
+            <q-btn flat stack color="grey-8" class="panel-item-btn"
+                   :title="attachmentActionTitle('照片', 'insertPhoto')" @click="emit('insertPhoto')">
               <q-icon name="image" size="28px" class="q-mb-xs"/>
               <span class="text-caption">照片</span>
             </q-btn>
@@ -65,19 +81,23 @@ const emit = defineEmits([
               <q-icon name="camera" size="28px" class="q-mb-xs"/>
               <span class="text-caption">拍摄</span>
             </q-btn>
-            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertAudio')">
+            <q-btn flat stack color="grey-8" class="panel-item-btn"
+                   :title="attachmentActionTitle('音频', 'insertAudio')" @click="emit('insertAudio')">
               <q-icon name="audiotrack" size="28px" class="q-mb-xs"/>
               <span class="text-caption">音频</span>
             </q-btn>
-            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('audioRecording')">
+            <q-btn flat stack color="grey-8" class="panel-item-btn"
+                   :title="attachmentActionTitle('录音', 'audioRecording')" @click="emit('audioRecording')">
               <q-icon name="mic" size="28px" class="q-mb-xs"/>
               <span class="text-caption">录音</span>
             </q-btn>
-            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertVideo')">
+            <q-btn flat stack color="grey-8" class="panel-item-btn"
+                   :title="attachmentActionTitle('视频', 'insertVideo')" @click="emit('insertVideo')">
               <q-icon name="video_library" size="28px" class="q-mb-xs"/>
               <span class="text-caption">视频</span>
             </q-btn>
-            <q-btn flat stack color="grey-8" class="panel-item-btn" @click="emit('insertFile')">
+            <q-btn flat stack color="grey-8" class="panel-item-btn"
+                   :title="attachmentActionTitle('文件', 'insertFile')" @click="emit('insertFile')">
               <q-icon name="attach_file" size="28px" class="q-mb-xs"/>
               <span class="text-caption">文件</span>
             </q-btn>

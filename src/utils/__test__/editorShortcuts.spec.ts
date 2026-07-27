@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_WINDOWS_EDITOR_SHORTCUTS,
+  findEditorShortcutAction,
   findEditorShortcutConflict,
   formatEditorShortcut,
   keyboardEventMatchesShortcut,
@@ -36,6 +37,20 @@ describe('editor shortcuts', () => {
     const event = keyEvent({ctrlKey: true, altKey: true})
     expect(keyboardEventMatchesShortcut(event, 'Ctrl+Alt+KeyP')).toBe(true)
     expect(formatEditorShortcut('Ctrl+Alt+KeyP')).toBe('Ctrl+Alt+P')
+    expect(findEditorShortcutAction(event, DEFAULT_WINDOWS_EDITOR_SHORTCUTS))
+      .toBe('insertPhoto')
+  })
+
+  it('does not resolve cleared or unmatched shortcuts', () => {
+    const shortcuts = {...DEFAULT_WINDOWS_EDITOR_SHORTCUTS, insertPhoto: ''}
+    expect(findEditorShortcutAction(
+      keyEvent({ctrlKey: true, altKey: true}),
+      shortcuts,
+    )).toBeNull()
+    expect(findEditorShortcutAction(
+      keyEvent({ctrlKey: true, altKey: true, code: 'KeyZ'}),
+      DEFAULT_WINDOWS_EDITOR_SHORTCUTS,
+    )).toBeNull()
   })
 
   it('detects duplicate assignments but permits clearing', () => {

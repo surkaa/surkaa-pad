@@ -16,8 +16,13 @@ if (p === 'windows') {
       return;
     }
 
-    // 阻止 Ctrl+R (Windows/Linux) 或 Command+R (Mac)
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r') {
+    // 阻止普通的 Ctrl+R 刷新，带 Alt/Shift 的组合保留给编辑器快捷键
+    if (
+      (event.ctrlKey || event.metaKey)
+      && !event.altKey
+      && !event.shiftKey
+      && event.key.toLowerCase() === 'r'
+    ) {
       console.log('刷新已被禁用');
       event.preventDefault();
       return;
