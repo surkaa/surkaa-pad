@@ -395,7 +395,9 @@ onActivated(async () => {
           <q-list dense>
             <q-item v-for="task in uploadTasks" :key="task.filename" class="q-px-none">
               <q-item-section>
-                <q-item-label class="text-caption ellipsis">{{ task.filename }}</q-item-label>
+                <q-item-label class="text-caption ellipsis upload-task-filename">
+                  {{ task.filename }}
+                </q-item-label>
                 <q-item-label caption class="upload-task-status">
                   {{ uploadTaskStatusText(task) }}
                 </q-item-label>
@@ -504,9 +506,15 @@ onActivated(async () => {
     gap: 4px;
   }
 
-  .upload-task-status {
-    color: var(--pad-text-color-300) !important;
-  }
+}
+
+// q-dialog 会被 Teleport 到 #diary-detail 外，相关样式不能嵌套在上面的选择器中。
+.upload-task-filename {
+  color: var(--pad-text-color-200) !important;
+}
+
+.upload-task-status {
+  color: var(--pad-text-color-300) !important;
 }
 </style>
 
