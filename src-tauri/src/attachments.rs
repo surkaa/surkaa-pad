@@ -4,6 +4,7 @@ mod attachment_error;
 mod attachment_server;
 mod attachment_types;
 pub mod chunked_upload;
+pub mod chunked_upload_command;
 
 #[cfg(test)]
 mod attachment_tests;
