@@ -300,6 +300,7 @@ mod tests {
     use crate::diaries::diary_store::{AttachmentUploadOptions, AttachmentUploadProgress};
     use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
     use crate::stream::ByteStream;
+    use crate::tasks::TaskPool;
     use crate::test_utils::{wait_for_multipart_upload_count, TestOssGuard};
     use bytes::Bytes;
     use futures_util::StreamExt;
@@ -586,15 +587,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remote_store_task_cancellation_aborts_visible_multipart_upload() {
+    async fn remote_task_pool_cancellation_aborts_visible_multipart_upload() {
         let client = OssClient::from_env();
         let (client, guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().unwrap();
         let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
         let store = RemoteStore::new(lfc.clone(), client.clone());
-        let cancellation = CancellationToken::new();
-        let cancellation_in_task = cancellation.clone();
+        let task_pool = TaskPool::new();
         let (first_part_tx, first_part_rx) = oneshot::channel();
+        let (result_tx, result_rx) = oneshot::channel();
         let first_part_tx = Arc::new(Mutex::new(Some(first_part_tx)));
         let first_part_tx_on_progress = first_part_tx.clone();
         let first_chunk = futures_util::stream::once(async {
@@ -603,8 +604,8 @@ mod tests {
         let pending_tail = futures_util::stream::pending();
         let stream: ByteStream = Box::pin(first_chunk.chain(pending_tail));
 
-        let upload = tokio::spawn(async move {
-            store
+        let task_token = task_pool.spawn_cancelable(move |cancellation| async move {
+            let result = store
                 .upload_attachment_with_progress(
                     "diary",
                     "attachment",
@@ -621,10 +622,11 @@ mod tests {
                                 }
                             }
                         }),
-                        Some(cancellation_in_task),
+                        Some(cancellation),
                     ),
                 )
-                .await
+                .await;
+            let _ = result_tx.send(result);
         });
 
         timeout(Duration::from_secs(30), first_part_rx)
@@ -634,11 +636,11 @@ mod tests {
         let uploads = wait_for_multipart_upload_count(&client, 1).await;
         assert_eq!(uploads[0].0, "diary/attachment");
 
-        cancellation.cancel();
-        let result = timeout(Duration::from_secs(30), upload)
+        assert!(task_pool.cancel(&task_token).await);
+        let result = timeout(Duration::from_secs(30), result_rx)
             .await
             .expect("取消远端上传超时")
-            .expect("远端上传任务 panic");
+            .expect("远端上传任务未返回结果");
         assert!(matches!(
             result,
             Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
