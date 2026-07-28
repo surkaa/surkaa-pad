@@ -4,7 +4,7 @@ use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Ctr;
 use crate::cryptos::Crypto;
 use crate::diaries::diary_store::{
-    AttachmentUploadProgress, AttachmentUploadProgressCallback, DiaryStore,
+    AttachmentUploadOptions, AttachmentUploadProgress, AttachmentUploadProgressCallback, DiaryStore,
 };
 use crate::diaries::{
     delete_diary_attachment_locked, get_diary, get_diary_locked, lock_diary_operation,
@@ -20,6 +20,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 fn attachment_upload_progress(
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
@@ -111,6 +112,7 @@ pub fn deduplicate_filename(desired: &str, existing: &HashSet<String>) -> String
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) async fn add_attachment_with_result(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
@@ -120,6 +122,33 @@ pub(crate) async fn add_attachment_with_result(
     mimetype: String,
     stream: ByteStream,
     original_filename: Option<String>,
+) -> Result<(AttachmentMeta, String), AttachmentError> {
+    let cancellation = CancellationToken::new();
+    add_attachment_with_result_cancelable(
+        state,
+        event,
+        id,
+        encrypted,
+        size,
+        mimetype,
+        stream,
+        original_filename,
+        &cancellation,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn add_attachment_with_result_cancelable(
+    state: &AppState,
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
+    id: &str,
+    encrypted: bool,
+    size: u64,
+    mimetype: String,
+    stream: ByteStream,
+    original_filename: Option<String>,
+    cancellation: &CancellationToken,
 ) -> Result<(AttachmentMeta, String), AttachmentError> {
     // 上传期间固定存储模式，避免启用/关闭云存储与附件事务交错。
     let _storage_mode_guard = state.lock_storage_operation().await;
@@ -170,7 +199,7 @@ pub(crate) async fn add_attachment_with_result(
                     size,
                     &mimetype,
                     final_stream,
-                    upload_progress,
+                    AttachmentUploadOptions::new(upload_progress, Some(cancellation.clone())),
                 )
                 .await
             {
@@ -225,6 +254,7 @@ pub(crate) async fn add_attachment_with_result(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub async fn add_attachment(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
@@ -235,8 +265,35 @@ pub async fn add_attachment(
     stream: ByteStream,
     original_filename: Option<String>,
 ) {
+    let cancellation = CancellationToken::new();
+    add_attachment_cancelable(
+        state,
+        event,
+        id,
+        encrypted,
+        size,
+        mimetype,
+        stream,
+        original_filename,
+        &cancellation,
+    )
+    .await;
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn add_attachment_cancelable(
+    state: &AppState,
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
+    id: &str,
+    encrypted: bool,
+    size: u64,
+    mimetype: String,
+    stream: ByteStream,
+    original_filename: Option<String>,
+    cancellation: &CancellationToken,
+) {
     let _ = event.send(AttachmentProcessEvent::Started);
-    match add_attachment_with_result(
+    match add_attachment_with_result_cancelable(
         state,
         event.clone(),
         id,
@@ -245,6 +302,7 @@ pub async fn add_attachment(
         mimetype,
         stream,
         original_filename,
+        cancellation,
     )
     .await
     {
@@ -276,11 +334,23 @@ pub async fn delete_attachment(
     Ok(())
 }
 
+#[cfg(test)]
 pub async fn toggle_attachment_encryption(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     attachment_id: String,
+) {
+    let cancellation = CancellationToken::new();
+    toggle_attachment_encryption_cancelable(state, event, id, attachment_id, &cancellation).await;
+}
+
+pub async fn toggle_attachment_encryption_cancelable(
+    state: &AppState,
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
+    id: &str,
+    attachment_id: String,
+    cancellation: &CancellationToken,
 ) {
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
     let _ = event.send(AttachmentProcessEvent::Started);
@@ -330,7 +400,10 @@ pub async fn toggle_attachment_encryption(
                 size,
                 &old_meta.mimetype,
                 processed_stream,
-                attachment_upload_progress(event.clone()),
+                AttachmentUploadOptions::new(
+                    attachment_upload_progress(event.clone()),
+                    Some(cancellation.clone()),
+                ),
             )
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
@@ -359,12 +432,26 @@ pub async fn toggle_attachment_encryption(
     }
 }
 
+#[cfg(test)]
 pub async fn rotate_image_attachment(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
     id: &str,
     attachment_id: String,
     rotation: i32,
+) {
+    let cancellation = CancellationToken::new();
+    rotate_image_attachment_cancelable(state, event, id, attachment_id, rotation, &cancellation)
+        .await;
+}
+
+pub async fn rotate_image_attachment_cancelable(
+    state: &AppState,
+    event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
+    id: &str,
+    attachment_id: String,
+    rotation: i32,
+    cancellation: &CancellationToken,
 ) {
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
     let _ = event.send(AttachmentProcessEvent::Started);
@@ -454,12 +541,13 @@ pub async fn rotate_image_attachment(
 
         // 通过 store 上传
         let new_etag = store
-            .upload_attachment(
+            .upload_attachment_with_progress(
                 id,
                 &attachment_id,
                 new_size,
                 &old_meta.mimetype,
                 upload_stream,
+                AttachmentUploadOptions::new(Arc::new(|_| {}), Some(cancellation.clone())),
             )
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;

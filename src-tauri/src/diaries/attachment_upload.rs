@@ -297,13 +297,17 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diaries::diary_store::AttachmentUploadProgress;
+    use crate::diaries::diary_store::{AttachmentUploadOptions, AttachmentUploadProgress};
     use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
     use crate::stream::ByteStream;
-    use crate::test_utils::TestOssGuard;
+    use crate::test_utils::{wait_for_multipart_upload_count, TestOssGuard};
     use bytes::Bytes;
+    use futures_util::StreamExt;
     use std::io;
     use std::sync::{Arc, Mutex};
+    use tokio::sync::oneshot;
+    use tokio::time::{timeout, Duration};
+    use tokio_util::sync::CancellationToken;
 
     #[tokio::test]
     async fn local_session_writes_chunks_and_commits_real_etag() {
@@ -405,7 +409,10 @@ mod tests {
                 data.len() as u64,
                 "application/octet-stream",
                 crate::stream::create_mock_stream(data.clone(), 64 * 1024),
-                Arc::new(move |progress| captured_progress.lock().unwrap().push(progress)),
+                AttachmentUploadOptions::new(
+                    Arc::new(move |progress| captured_progress.lock().unwrap().push(progress)),
+                    None,
+                ),
             )
             .await
             .unwrap();
@@ -442,6 +449,77 @@ mod tests {
             )
             .await
             .is_err());
+        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn local_store_cancellation_aborts_partial_file_after_confirmed_chunk() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(lfc.clone());
+        let data = vec![7_u8; 8 * 1024 * 1024 + 123];
+        let cancellation = CancellationToken::new();
+        let cancellation_on_progress = cancellation.clone();
+
+        let result = store
+            .upload_attachment_with_progress(
+                "diary",
+                "attachment",
+                data.len() as u64,
+                "application/octet-stream",
+                crate::stream::create_mock_stream(data, 64 * 1024),
+                AttachmentUploadOptions::new(
+                    Arc::new(move |progress| {
+                        if matches!(progress, AttachmentUploadProgress::Transferring(_)) {
+                            cancellation_on_progress.cancel();
+                        }
+                    }),
+                    Some(cancellation.clone()),
+                ),
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
+        ));
+        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        assert!(std::fs::read_dir(temp_dir.path().join("diary"))
+            .unwrap()
+            .next()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn local_store_cancellation_before_finalize_does_not_commit_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(lfc.clone());
+        let cancellation = CancellationToken::new();
+        let cancellation_on_progress = cancellation.clone();
+
+        let result = store
+            .upload_attachment_with_progress(
+                "diary",
+                "attachment",
+                3,
+                "application/octet-stream",
+                crate::stream::create_mock_stream(b"123".to_vec(), 3),
+                AttachmentUploadOptions::new(
+                    Arc::new(move |progress| {
+                        if progress == AttachmentUploadProgress::Finalizing {
+                            cancellation_on_progress.cancel();
+                        }
+                    }),
+                    Some(cancellation.clone()),
+                ),
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
+        ));
         assert!(lfc.get("diary/attachment").await.unwrap().is_none());
     }
 
@@ -495,9 +573,77 @@ mod tests {
             .await
             .unwrap();
         session.write_chunk(b"123".to_vec()).await.unwrap();
+        let uploads = wait_for_multipart_upload_count(&client, 1).await;
+        assert_eq!(uploads[0].0, "diary/attachment");
 
         session.abort().await.unwrap();
 
+        wait_for_multipart_upload_count(&client, 0).await;
+        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        let (objects, _) = client.list("", None).await.unwrap();
+        assert!(objects.is_empty());
+        guard.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn remote_store_task_cancellation_aborts_visible_multipart_upload() {
+        let client = OssClient::from_env();
+        let (client, guard) = TestOssGuard::new(client).await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let cancellation = CancellationToken::new();
+        let cancellation_in_task = cancellation.clone();
+        let (first_part_tx, first_part_rx) = oneshot::channel();
+        let first_part_tx = Arc::new(Mutex::new(Some(first_part_tx)));
+        let first_part_tx_on_progress = first_part_tx.clone();
+        let first_chunk = futures_util::stream::once(async {
+            Ok::<Bytes, io::Error>(Bytes::from(vec![7_u8; 8 * 1024 * 1024]))
+        });
+        let pending_tail = futures_util::stream::pending();
+        let stream: ByteStream = Box::pin(first_chunk.chain(pending_tail));
+
+        let upload = tokio::spawn(async move {
+            store
+                .upload_attachment_with_progress(
+                    "diary",
+                    "attachment",
+                    8 * 1024 * 1024 + 1,
+                    "application/octet-stream",
+                    stream,
+                    AttachmentUploadOptions::new(
+                        Arc::new(move |progress| {
+                            if matches!(progress, AttachmentUploadProgress::Transferring(_)) {
+                                if let Some(sender) =
+                                    first_part_tx_on_progress.lock().unwrap().take()
+                                {
+                                    let _ = sender.send(());
+                                }
+                            }
+                        }),
+                        Some(cancellation_in_task),
+                    ),
+                )
+                .await
+        });
+
+        timeout(Duration::from_secs(30), first_part_rx)
+            .await
+            .expect("首个远端分片上传超时")
+            .expect("上传任务未报告首个远端分片");
+        let uploads = wait_for_multipart_upload_count(&client, 1).await;
+        assert_eq!(uploads[0].0, "diary/attachment");
+
+        cancellation.cancel();
+        let result = timeout(Duration::from_secs(30), upload)
+            .await
+            .expect("取消远端上传超时")
+            .expect("远端上传任务 panic");
+        assert!(matches!(
+            result,
+            Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
+        ));
+        wait_for_multipart_upload_count(&client, 0).await;
         assert!(lfc.get("diary/attachment").await.unwrap().is_none());
         let (objects, _) = client.list("", None).await.unwrap();
         assert!(objects.is_empty());

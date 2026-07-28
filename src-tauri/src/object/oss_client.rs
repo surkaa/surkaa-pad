@@ -700,6 +700,25 @@ impl OssClient {
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
         Ok(())
     }
+
+    /// 测试中直接查询当前唯一前缀下尚未完成的 multipart 会话。
+    #[cfg(test)]
+    pub async fn list_multipart_uploads(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<(String, String)>, ObjectError> {
+        let bucket = self.inner()?;
+        let prefix = self.physical_key(prefix);
+        let pages = bucket
+            .list_multiparts_uploads(Some(&prefix), None)
+            .await
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        Ok(pages
+            .into_iter()
+            .flat_map(|page| page.uploads)
+            .map(|upload| (self.logical_key(upload.key), upload.id))
+            .collect())
+    }
 }
 
 #[cfg(test)]

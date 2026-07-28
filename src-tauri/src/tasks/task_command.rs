@@ -9,6 +9,9 @@ use tauri::State;
 /// * `Result<bool, AppError>` - `true` 表示找到并取消了任务，`false` 表示任务已不存在
 #[tauri::command]
 #[specta::specta]
-pub fn cmd_cancel_task(state: State<'_, AppState>, cancel_token: &str) -> Result<bool, AppError> {
-    Ok(state.task_pool().cancel(cancel_token))
+pub async fn cmd_cancel_task(
+    state: State<'_, AppState>,
+    cancel_token: &str,
+) -> Result<bool, AppError> {
+    Ok(state.task_pool().cancel(cancel_token).await)
 }

@@ -8,12 +8,18 @@ use std::sync::Arc;
 use tauri::async_runtime::JoinHandle;
 use tauri_plugin_log::log;
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 static TASK_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 pub struct TaskPool {
-    tasks: Arc<DashMap<String, JoinHandle<()>>>,
+    tasks: Arc<DashMap<String, TaskEntry>>,
+}
+
+struct TaskEntry {
+    handle: JoinHandle<()>,
+    cancellation: Option<CancellationToken>,
 }
 
 impl TaskPool {
@@ -25,6 +31,23 @@ impl TaskPool {
 
     /// 接收一个异步任务并直接执行
     pub fn spawn<F>(&self, task: F) -> String
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.spawn_inner(task, None)
+    }
+
+    /// 执行支持协作取消的任务。取消时只触发令牌，由任务完成资源回滚后自行退出。
+    pub fn spawn_cancelable<F, Fut>(&self, task: F) -> String
+    where
+        F: FnOnce(CancellationToken) -> Fut,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let cancellation = CancellationToken::new();
+        self.spawn_inner(task(cancellation.clone()), Some(cancellation))
+    }
+
+    fn spawn_inner<F>(&self, task: F, cancellation: Option<CancellationToken>) -> String
     where
         F: Future<Output = ()> + Send + 'static,
     {
@@ -57,15 +80,26 @@ impl TaskPool {
         };
 
         let handle = tauri::async_runtime::spawn(wrapped_task);
-        self.tasks.insert(cancel_token.clone(), handle);
+        self.tasks.insert(
+            cancel_token.clone(),
+            TaskEntry {
+                handle,
+                cancellation,
+            },
+        );
         let _ = registered_tx.send(());
         cancel_token
     }
 
     /// 取消任务
-    pub fn cancel(&self, cancel_token: &str) -> bool {
-        if let Some((_, handle)) = self.tasks.remove(cancel_token) {
-            handle.abort();
+    pub async fn cancel(&self, cancel_token: &str) -> bool {
+        if let Some((_, entry)) = self.tasks.remove(cancel_token) {
+            if let Some(cancellation) = entry.cancellation {
+                cancellation.cancel();
+            } else {
+                entry.handle.abort();
+            }
+            let _ = entry.handle.await;
             true
         } else {
             false
@@ -119,9 +153,24 @@ mod tests {
         let second = pool.spawn(std::future::pending());
 
         assert_ne!(first, second);
-        assert!(pool.cancel(&first));
-        assert!(!pool.cancel(&first));
-        assert!(pool.cancel(&second));
+        assert!(pool.cancel(&first).await);
+        assert!(!pool.cancel(&first).await);
+        assert!(pool.cancel(&second).await);
         assert_eq!(pool.task_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn cooperative_cancellation_runs_task_cleanup_before_removal() {
+        let pool = TaskPool::new();
+        let cleaned = Arc::new(AtomicBool::new(false));
+        let cleaned_in_task = cleaned.clone();
+        let token = pool.spawn_cancelable(move |cancellation| async move {
+            cancellation.cancelled().await;
+            cleaned_in_task.store(true, Ordering::Relaxed);
+        });
+
+        assert!(pool.cancel(&token).await);
+        wait_until_empty(&pool).await;
+        assert!(cleaned.load(Ordering::Relaxed));
     }
 }

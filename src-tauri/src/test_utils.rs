@@ -1,6 +1,7 @@
 use crate::object::OssClient;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::time::{sleep, Duration, Instant};
 
 static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -68,6 +69,28 @@ fn unique_test_prefix() -> String {
         "rust-tests/{safe_name}/{}-{timestamp}-{sequence}",
         std::process::id()
     )
+}
+
+/// 轮询 List Multipart Uploads，而不是依赖可能延迟更新的 Bucket 统计页面。
+pub async fn wait_for_multipart_upload_count(
+    client: &OssClient,
+    expected: usize,
+) -> Vec<(String, String)> {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let uploads = client
+            .list_multipart_uploads("")
+            .await
+            .expect("查询未完成 Multipart Upload 失败");
+        if uploads.len() == expected {
+            return uploads;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "等待 Multipart Upload 数量变为 {expected} 超时，当前为 {uploads:?}"
+        );
+        sleep(Duration::from_millis(200)).await;
+    }
 }
 
 #[cfg(test)]

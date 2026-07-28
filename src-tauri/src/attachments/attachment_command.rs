@@ -1,6 +1,7 @@
 use crate::attachments::attachment::{
-    add_attachment, caching_attachment, delete_attachment, rotate_image_attachment,
-    save_decrypt_attachment, toggle_attachment_encryption, update_attachment_filename,
+    add_attachment_cancelable, caching_attachment, delete_attachment,
+    rotate_image_attachment_cancelable, save_decrypt_attachment,
+    toggle_attachment_encryption_cancelable, update_attachment_filename,
 };
 use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::diaries::get_diary;
@@ -53,8 +54,8 @@ pub fn cmd_add_attachment(
     let stream = file_to_stream(file);
     let task_pool = state.task_pool();
     let state = state.inner().clone();
-    Ok(task_pool.spawn(async move {
-        add_attachment(
+    Ok(task_pool.spawn_cancelable(move |cancellation| async move {
+        add_attachment_cancelable(
             &state,
             Arc::new(event),
             &id,
@@ -63,6 +64,7 @@ pub fn cmd_add_attachment(
             mimetype,
             stream,
             original_filename,
+            &cancellation,
         )
         .await;
     }))
@@ -99,8 +101,8 @@ pub fn cmd_add_attachment_memory(
     let stream = create_mock_stream(data, len);
     let task_pool = state.task_pool();
     let state = state.inner().clone();
-    Ok(task_pool.spawn(async move {
-        add_attachment(
+    Ok(task_pool.spawn_cancelable(move |cancellation| async move {
+        add_attachment_cancelable(
             &state,
             Arc::new(event),
             &id,
@@ -109,6 +111,7 @@ pub fn cmd_add_attachment_memory(
             mimetype,
             stream,
             None,
+            &cancellation,
         )
         .await;
     }))
@@ -174,8 +177,8 @@ pub async fn cmd_add_image_attachment_from_camera(
         let stream = create_mock_stream(binary_data, len);
         let task_pool = state.task_pool();
         let state = state.inner().clone();
-        Ok(task_pool.spawn(async move {
-            add_attachment(
+        Ok(task_pool.spawn_cancelable(move |cancellation| async move {
+            add_attachment_cancelable(
                 &state,
                 Arc::new(event),
                 &id,
@@ -184,6 +187,7 @@ pub async fn cmd_add_image_attachment_from_camera(
                 MIMETYPE.to_string(),
                 stream,
                 Some(format!("Photo_{}.jpg", generate_descending_id())),
+                &cancellation,
             )
             .await;
         }))
@@ -216,8 +220,15 @@ pub fn cmd_toggle_attachment_encryption(
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
     let state = state.inner().clone();
-    Ok(task_pool.spawn(async move {
-        toggle_attachment_encryption(&state, Arc::new(event), &id, attachment_id).await;
+    Ok(task_pool.spawn_cancelable(move |cancellation| async move {
+        toggle_attachment_encryption_cancelable(
+            &state,
+            Arc::new(event),
+            &id,
+            attachment_id,
+            &cancellation,
+        )
+        .await;
     }))
 }
 
@@ -240,8 +251,16 @@ pub fn cmd_rotate_image_attachment(
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
     let state = state.inner().clone();
-    Ok(task_pool.spawn(async move {
-        rotate_image_attachment(&state, Arc::new(event), &id, attachment_id, rotation).await;
+    Ok(task_pool.spawn_cancelable(move |cancellation| async move {
+        rotate_image_attachment_cancelable(
+            &state,
+            Arc::new(event),
+            &id,
+            attachment_id,
+            rotation,
+            &cancellation,
+        )
+        .await;
     }))
 }
 

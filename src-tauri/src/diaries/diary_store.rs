@@ -9,6 +9,7 @@ use crate::stream::{tracker_stream, ByteStream};
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio_util::io::StreamReader;
+use tokio_util::sync::CancellationToken;
 
 pub type StoreProgressCallback = Arc<dyn Fn(u8) + Send + Sync>;
 pub type AttachmentUploadProgressCallback = Arc<dyn Fn(AttachmentUploadProgress) + Send + Sync>;
@@ -21,23 +22,103 @@ pub enum AttachmentUploadProgress {
     Finalizing,
 }
 
+pub struct AttachmentUploadOptions {
+    progress: AttachmentUploadProgressCallback,
+    cancellation: Option<CancellationToken>,
+}
+
+impl AttachmentUploadOptions {
+    pub fn new(
+        progress: AttachmentUploadProgressCallback,
+        cancellation: Option<CancellationToken>,
+    ) -> Self {
+        Self {
+            progress,
+            cancellation,
+        }
+    }
+}
+
+struct AttachmentUploadGuard {
+    session: Option<Box<dyn AttachmentUploadSession>>,
+}
+
+impl AttachmentUploadGuard {
+    fn new(session: Box<dyn AttachmentUploadSession>) -> Self {
+        Self {
+            session: Some(session),
+        }
+    }
+
+    fn session_mut(&mut self) -> &mut Box<dyn AttachmentUploadSession> {
+        self.session.as_mut().expect("附件上传会话已经结束")
+    }
+
+    fn take(&mut self) -> Box<dyn AttachmentUploadSession> {
+        self.session.take().expect("附件上传会话已经结束")
+    }
+}
+
+impl Drop for AttachmentUploadGuard {
+    fn drop(&mut self) {
+        let Some(session) = self.session.take() else {
+            return;
+        };
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = session.abort().await {
+                tauri_plugin_log::log::error!("附件上传 Future 被中止后的会话清理失败: {error}");
+            }
+        });
+    }
+}
+
+fn upload_canceled(cancellation: Option<&CancellationToken>) -> bool {
+    cancellation.is_some_and(CancellationToken::is_cancelled)
+}
+
+async fn abort_canceled_upload(mut session: AttachmentUploadGuard) -> DiaryError {
+    let cleanup = session.take().abort().await;
+    match cleanup {
+        Ok(()) => DiaryError::AttachmentUpload("附件上传已取消".into()),
+        Err(error) => {
+            DiaryError::AttachmentUpload(format!("附件上传已取消；清理上传会话失败：{error}"))
+        }
+    }
+}
+
 async fn upload_stream_to_session(
-    mut session: Box<dyn AttachmentUploadSession>,
+    session: Box<dyn AttachmentUploadSession>,
     expected_size: u64,
     stream: ByteStream,
     progress: AttachmentUploadProgressCallback,
+    cancellation: Option<&CancellationToken>,
 ) -> Result<String, DiaryError> {
+    let mut session = AttachmentUploadGuard::new(session);
     let mut reader = StreamReader::new(stream);
     let mut transferred = 0u64;
 
     loop {
+        if upload_canceled(cancellation) {
+            return Err(abort_canceled_upload(session).await);
+        }
         let mut chunk = Vec::with_capacity(ATTACHMENT_UPLOAD_CHUNK_SIZE);
         while chunk.len() < ATTACHMENT_UPLOAD_CHUNK_SIZE {
-            match reader.read_buf(&mut chunk).await {
+            let read_result = if let Some(cancellation) = cancellation {
+                tokio::select! {
+                    result = reader.read_buf(&mut chunk) => Some(result),
+                    _ = cancellation.cancelled() => None,
+                }
+            } else {
+                Some(reader.read_buf(&mut chunk).await)
+            };
+            let Some(read_result) = read_result else {
+                return Err(abort_canceled_upload(session).await);
+            };
+            match read_result {
                 Ok(0) => break,
                 Ok(_) => {}
                 Err(error) => {
-                    let _ = session.abort().await;
+                    let _ = session.take().abort().await;
                     return Err(DiaryError::AttachmentUpload(error.to_string()));
                 }
             }
@@ -45,11 +126,17 @@ async fn upload_stream_to_session(
         if chunk.is_empty() {
             break;
         }
+        if upload_canceled(cancellation) {
+            return Err(abort_canceled_upload(session).await);
+        }
 
         let chunk_size = chunk.len() as u64;
-        if let Err(error) = session.write_chunk(chunk).await {
-            let _ = session.abort().await;
+        if let Err(error) = session.session_mut().write_chunk(chunk).await {
+            let _ = session.take().abort().await;
             return Err(error);
+        }
+        if upload_canceled(cancellation) {
+            return Err(abort_canceled_upload(session).await);
         }
         transferred = transferred.saturating_add(chunk_size);
         // 100% 只留给整个附件事务完成；传输结束后还要提交 multipart、
@@ -62,8 +149,14 @@ async fn upload_stream_to_session(
         progress(AttachmentUploadProgress::Transferring(percent));
     }
 
+    if upload_canceled(cancellation) {
+        return Err(abort_canceled_upload(session).await);
+    }
     progress(AttachmentUploadProgress::Finalizing);
-    session.finish().await
+    if upload_canceled(cancellation) {
+        return Err(abort_canceled_upload(session).await);
+    }
+    session.take().finish().await
 }
 
 fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: &str) -> (Vec<String>, String) {
@@ -113,6 +206,7 @@ pub trait DiaryStore: Send + Sync {
         next_token: NextToken,
     ) -> Result<(Vec<String>, NextToken), DiaryError>;
     /// 上传附件（有界流式），返回 etag
+    #[cfg(test)]
     async fn upload_attachment(
         &self,
         id: &str,
@@ -121,8 +215,15 @@ pub trait DiaryStore: Send + Sync {
         mimetype: &str,
         stream: ByteStream,
     ) -> Result<String, DiaryError> {
-        self.upload_attachment_with_progress(id, filename, size, mimetype, stream, Arc::new(|_| {}))
-            .await
+        self.upload_attachment_with_progress(
+            id,
+            filename,
+            size,
+            mimetype,
+            stream,
+            AttachmentUploadOptions::new(Arc::new(|_| {}), None),
+        )
+        .await
     }
     /// 上传附件并在存储确认分片后报告进度。
     async fn upload_attachment_with_progress(
@@ -132,12 +233,19 @@ pub trait DiaryStore: Send + Sync {
         size: u64,
         mimetype: &str,
         stream: ByteStream,
-        progress: AttachmentUploadProgressCallback,
+        options: AttachmentUploadOptions,
     ) -> Result<String, DiaryError> {
         let session = self
             .begin_attachment_upload(id, filename, size, mimetype)
             .await?;
-        upload_stream_to_session(session, size, stream, progress).await
+        upload_stream_to_session(
+            session,
+            size,
+            stream,
+            options.progress,
+            options.cancellation.as_ref(),
+        )
+        .await
     }
     /// 创建附件分片写入会话；会话负责当前存储模式下的落盘、远端上传与回滚。
     async fn begin_attachment_upload(
@@ -580,7 +688,37 @@ mod tests {
     use crate::diaries::diary_migration::{legacy_attachment_id, CURRENT_VERSION};
     use crate::stream::create_mock_stream;
     use crate::utils::id_generate::generate_descending_id_with_timestamp;
+    use async_trait::async_trait;
+    use bytes::Bytes;
+    use futures_util::StreamExt;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
+    use tokio::sync::oneshot;
+    use tokio::time::{timeout, Duration};
+
+    struct RecordingUploadSession {
+        aborted: Arc<AtomicUsize>,
+        first_write: Option<oneshot::Sender<()>>,
+    }
+
+    #[async_trait]
+    impl AttachmentUploadSession for RecordingUploadSession {
+        async fn write_chunk(&mut self, _data: Vec<u8>) -> Result<(u32, String), DiaryError> {
+            if let Some(first_write) = self.first_write.take() {
+                let _ = first_write.send(());
+            }
+            Ok((1, String::new()))
+        }
+
+        async fn finish(self: Box<Self>) -> Result<String, DiaryError> {
+            Ok(String::new())
+        }
+
+        async fn abort(self: Box<Self>) -> Result<(), DiaryError> {
+            self.aborted.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
 
     /// 创建带测试密钥的 Crypto 实例（使用与 .env 相同的测试凭据）
     fn make_crypto() -> Crypto {
@@ -601,6 +739,40 @@ mod tests {
     fn make_local_store() -> (LocalStore, LocalFileCache, tempfile::TempDir) {
         let (lfc, td) = make_lfc();
         (LocalStore::new(lfc.clone()), lfc, td)
+    }
+
+    #[tokio::test]
+    async fn dropping_upload_future_still_aborts_its_session() {
+        let aborted = Arc::new(AtomicUsize::new(0));
+        let (first_write_tx, first_write_rx) = oneshot::channel();
+        let session = RecordingUploadSession {
+            aborted: aborted.clone(),
+            first_write: Some(first_write_tx),
+        };
+        let first_chunk = futures_util::stream::once(async {
+            Ok(Bytes::from(vec![0_u8; ATTACHMENT_UPLOAD_CHUNK_SIZE]))
+        });
+        let pending_tail = futures_util::stream::pending();
+        let stream: ByteStream = Box::pin(first_chunk.chain(pending_tail));
+        let upload = tokio::spawn(upload_stream_to_session(
+            Box::new(session),
+            ATTACHMENT_UPLOAD_CHUNK_SIZE as u64 + 1,
+            stream,
+            Arc::new(|_| {}),
+            None,
+        ));
+
+        first_write_rx.await.expect("首个分片未写入");
+        upload.abort();
+        let _ = upload.await;
+
+        timeout(Duration::from_secs(1), async {
+            while aborted.load(Ordering::Relaxed) != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("Future 丢弃后未执行上传会话清理");
     }
 
     // ==================== LocalStore 基础 CRUD ====================
