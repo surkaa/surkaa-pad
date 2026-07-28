@@ -13,6 +13,7 @@ import {
 } from "../utils/formatError.ts";
 import type {DiaryContent} from "../bindings.ts";
 import {runDiaryDeletion} from "../utils/diaryDeletion.ts";
+import {findUnusedAttachments} from '../utils/diaryAttachments';
 
 export function useDiaryCore() {
     const $q = useQuasar();
@@ -41,19 +42,7 @@ export function useDiaryCore() {
 
     const unusedAttachments = computed(() => {
         if (!currentDiary.value) return [];
-
-        const referencedIds = new Set<string>();
-        for (const node of diaryContent.value.nodes) {
-            if (node.type === 'album') {
-                node.attachmentIds.forEach(attachmentId => referencedIds.add(attachmentId));
-            } else if (node.type !== 'markdown') {
-                referencedIds.add(node.attachmentId);
-            }
-        }
-
-        return currentDiaryAttachments.value.filter(
-            attachment => !referencedIds.has(attachment.id)
-        );
+        return findUnusedAttachments(diaryContent.value, currentDiaryAttachments.value);
     });
 
     async function loadDiaryInfo() {
