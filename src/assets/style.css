@@ -193,6 +193,20 @@ body {
     touch-action: pan-x pan-y;
 }
 
+/* QSelect 弹出层会 Teleport 到组件作用域外，需要使用全局主题样式。 */
+.pad-upload-concurrency-menu {
+    background-color: var(--pad-bg-color-200) !important;
+    color: var(--pad-text-color-200) !important;
+}
+
+.pad-upload-concurrency-menu .q-item {
+    color: var(--pad-text-color-200) !important;
+}
+
+.pad-upload-concurrency-menu .q-item--active {
+    color: var(--pad-primary-dark) !important;
+}
+
 /* 滚动条样式 */
 ::-webkit-scrollbar {
     width: 8px;
