@@ -15,8 +15,11 @@ import {
   isNewerDiaryVersionError,
   NEWER_DIARY_VERSION_MESSAGE
 } from "../../utils/formatError.ts";
+import {useRouter} from 'vue-router';
+import {useDiaryListShortcuts} from '../../composables/useDiaryListShortcuts';
 
 const $q = useQuasar();
+const router = useRouter();
 const timeoutStore = useTimeoutStore();
 const dataStore = useDataStore();
 const {
@@ -44,6 +47,19 @@ const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
 
 // 激活状态
 const isActivating = ref(true);
+
+function openSearch() {
+  void router.push({name: 'DiarySearch'});
+}
+
+function openSettings() {
+  void router.push({name: 'Settings'});
+}
+
+useDiaryListShortcuts({
+  search: openSearch,
+  settings: openSettings,
+});
 
 const sortedDiaryIds = computed(() => {
   const pinned: string[] = [];
@@ -218,8 +234,12 @@ onDeactivated(() => {
     </q-page-sticky>
 
     <Teleport v-if="isActivating" defer to="#header-actions">
-      <q-btn @click="$router.push({ name: 'DiarySearch' })">搜索</q-btn>
-      <q-btn @click="$router.push({ name: 'Settings' })">设置</q-btn>
+      <q-btn flat round dense icon="search" aria-label="搜索日记" @click="openSearch">
+        <q-tooltip>搜索（Ctrl+F）</q-tooltip>
+      </q-btn>
+      <q-btn flat round dense icon="settings" aria-label="设置" @click="openSettings">
+        <q-tooltip>设置（Ctrl+,）</q-tooltip>
+      </q-btn>
     </Teleport>
     <Teleport v-if="isActivating" defer to="#footer-content">
       <span>日记 {{ diaryIds.length }} · 含附件 {{ withAttachments }}</span>
