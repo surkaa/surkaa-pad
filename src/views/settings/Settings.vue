@@ -331,6 +331,7 @@ async function handleReset() {
         'encrypt_file_attachments',
         'attachment_upload_concurrency',
         'windows_editor_shortcuts',
+        'windows_diary_list_shortcuts',
     );
     await api.cmdCleanCacheFile();
     $q.notify('配置已重置, 即将自动重启');

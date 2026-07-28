@@ -17,6 +17,7 @@ import {
 } from "../../utils/formatError.ts";
 import {useRouter} from 'vue-router';
 import {useDiaryListShortcuts} from '../../composables/useDiaryListShortcuts';
+import {formatEditorShortcut} from '../../utils/editorShortcuts';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -31,6 +32,7 @@ const {
 const {openDiary} = useOpenDiaryDetail();
 const configStore = useConfigStore();
 const pinnedDiaryIds = configStore.useTauriConfig('pinned_diary_ids');
+const diaryListShortcuts = configStore.useTauriConfig('windows_diary_list_shortcuts');
 const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
@@ -56,7 +58,7 @@ function openSettings() {
   void router.push({name: 'Settings'});
 }
 
-useDiaryListShortcuts({
+useDiaryListShortcuts(diaryListShortcuts, {
   search: openSearch,
   settings: openSettings,
 });
@@ -235,10 +237,10 @@ onDeactivated(() => {
 
     <Teleport v-if="isActivating" defer to="#header-actions">
       <q-btn flat round dense icon="search" aria-label="搜索日记" @click="openSearch">
-        <q-tooltip>搜索（Ctrl+F）</q-tooltip>
+        <q-tooltip>搜索（{{ formatEditorShortcut(diaryListShortcuts.search) }}）</q-tooltip>
       </q-btn>
       <q-btn flat round dense icon="settings" aria-label="设置" @click="openSettings">
-        <q-tooltip>设置（Ctrl+,）</q-tooltip>
+        <q-tooltip>设置（{{ formatEditorShortcut(diaryListShortcuts.settings) }}）</q-tooltip>
       </q-btn>
     </Teleport>
     <Teleport v-if="isActivating" defer to="#footer-content">

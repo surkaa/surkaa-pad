@@ -10,6 +10,10 @@ import {
     DEFAULT_UPLOAD_CONCURRENCY,
     normalizeUploadConcurrency,
 } from '../utils/uploadConcurrency';
+import {
+    DEFAULT_WINDOWS_DIARY_LIST_SHORTCUTS,
+    type DiaryListShortcutConfig,
+} from '../utils/diaryListShortcuts';
 
 const STORAGE_PREFIX = 'config:';
 const MIGRATION_KEY = 'config:migrated';
@@ -30,6 +34,7 @@ type ConfigMap = {
     "attachment_upload_concurrency": number;
     "pinned_diary_ids": string[]
     "windows_editor_shortcuts": EditorShortcutConfig;
+    "windows_diary_list_shortcuts": DiaryListShortcutConfig;
 };
 const DEFAULT_CONFIG = {
     "app-theme": DEFAULT_THEME,
@@ -46,6 +51,7 @@ const DEFAULT_CONFIG = {
     "attachment_upload_concurrency": DEFAULT_UPLOAD_CONCURRENCY,
     "pinned_diary_ids": [],
     "windows_editor_shortcuts": {...DEFAULT_WINDOWS_EDITOR_SHORTCUTS},
+    "windows_diary_list_shortcuts": {...DEFAULT_WINDOWS_DIARY_LIST_SHORTCUTS},
 } satisfies ConfigMap;
 
 type ConfigKey = keyof ConfigMap;

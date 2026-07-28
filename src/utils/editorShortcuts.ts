@@ -75,6 +75,7 @@ export function formatEditorShortcut(shortcut: string): string {
     .replace(/Key([A-Z])/g, '$1')
     .replace(/Digit([0-9])/g, '$1')
     .replace(/Arrow/g, '')
+    .replace(/Comma/g, ',')
 }
 
 export function findEditorShortcutConflict(

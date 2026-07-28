@@ -37,6 +37,7 @@ describe('editor shortcuts', () => {
     const event = keyEvent({ctrlKey: true, altKey: true})
     expect(keyboardEventMatchesShortcut(event, 'Ctrl+Alt+KeyP')).toBe(true)
     expect(formatEditorShortcut('Ctrl+Alt+KeyP')).toBe('Ctrl+Alt+P')
+    expect(formatEditorShortcut('Ctrl+Comma')).toBe('Ctrl+,')
     expect(findEditorShortcutAction(event, DEFAULT_WINDOWS_EDITOR_SHORTCUTS))
       .toBe('insertPhoto')
   })

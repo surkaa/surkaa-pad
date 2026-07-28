@@ -63,6 +63,15 @@ describe('config store', () => {
             await expect(store.getNormalConfig('attachment_upload_concurrency')).resolves.toBe(5)
         })
 
+        it('defaults diary list navigation shortcuts', async () => {
+            const store = useConfigStore()
+
+            await expect(store.getNormalConfig('windows_diary_list_shortcuts')).resolves.toEqual({
+                search: 'Ctrl+KeyF',
+                settings: 'Ctrl+Comma',
+            })
+        })
+
         it('normalizes attachment upload concurrency to the supported range', async () => {
             const store = useConfigStore()
 

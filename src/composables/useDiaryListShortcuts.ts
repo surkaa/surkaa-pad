@@ -1,15 +1,20 @@
 import {platform} from '@tauri-apps/plugin-os';
 import {useEventListener} from '@vueuse/core';
 import {useRoute} from 'vue-router';
+import type {Ref} from 'vue';
 import {
   findDiaryListShortcutAction,
   isEditableShortcutTarget,
   type DiaryListShortcutAction,
+  type DiaryListShortcutConfig,
 } from '../utils/diaryListShortcuts';
 
 type DiaryListShortcutHandlers = Record<DiaryListShortcutAction, () => void>;
 
-export function useDiaryListShortcuts(handlers: DiaryListShortcutHandlers) {
+export function useDiaryListShortcuts(
+  shortcuts: Ref<DiaryListShortcutConfig>,
+  handlers: DiaryListShortcutHandlers,
+) {
   if (platform() !== 'windows') return;
 
   const route = useRoute();
@@ -21,7 +26,7 @@ export function useDiaryListShortcuts(handlers: DiaryListShortcutHandlers) {
       || isEditableShortcutTarget(event.target)
     ) return;
 
-    const action = findDiaryListShortcutAction(event);
+    const action = findDiaryListShortcutAction(event, shortcuts.value);
     if (!action) return;
 
     event.preventDefault();
