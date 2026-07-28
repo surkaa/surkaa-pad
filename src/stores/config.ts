@@ -6,6 +6,10 @@ import {
     DEFAULT_WINDOWS_EDITOR_SHORTCUTS,
     type EditorShortcutConfig,
 } from "../utils/editorShortcuts.ts";
+import {
+    DEFAULT_UPLOAD_CONCURRENCY,
+    normalizeUploadConcurrency,
+} from '../utils/uploadConcurrency';
 
 const STORAGE_PREFIX = 'config:';
 const MIGRATION_KEY = 'config:migrated';
@@ -23,6 +27,7 @@ type ConfigMap = {
     "encrypt_audio_attachments": boolean;
     "encrypt_video_attachments": boolean;
     "encrypt_file_attachments": boolean;
+    "attachment_upload_concurrency": number;
     "pinned_diary_ids": string[]
     "windows_editor_shortcuts": EditorShortcutConfig;
 };
@@ -38,6 +43,7 @@ const DEFAULT_CONFIG = {
     "encrypt_audio_attachments": true,
     "encrypt_video_attachments": true,
     "encrypt_file_attachments": true,
+    "attachment_upload_concurrency": DEFAULT_UPLOAD_CONCURRENCY,
     "pinned_diary_ids": [],
     "windows_editor_shortcuts": {...DEFAULT_WINDOWS_EDITOR_SHORTCUTS},
 } satisfies ConfigMap;
@@ -47,6 +53,13 @@ const CONFIG_KEYS = Object.keys(DEFAULT_CONFIG) as ConfigKey[];
 
 function storageKey(key: ConfigKey): string {
     return `${STORAGE_PREFIX}${key}`;
+}
+
+function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): ConfigMap[K] {
+    if (key === 'attachment_upload_concurrency') {
+        return normalizeUploadConcurrency(value) as ConfigMap[K];
+    }
+    return value as ConfigMap[K];
 }
 
 function readFromStorage<K extends ConfigKey>(key: K): ConfigMap[K] {
@@ -60,7 +73,7 @@ function readFromStorage<K extends ConfigKey>(key: K): ConfigMap[K] {
         return DEFAULT_CONFIG[key];
     }
     try {
-        return JSON.parse(raw) as ConfigMap[K];
+        return normalizeConfigValue(key, JSON.parse(raw));
     } catch {
         return DEFAULT_CONFIG[key];
     }
@@ -76,7 +89,7 @@ interface ConfigChangeDetail {
 
 function writeToStorage(key: ConfigKey, value: unknown) {
     const sk = storageKey(key);
-    const json = JSON.stringify(value);
+    const json = JSON.stringify(normalizeConfigValue(key, value));
     localStorage.setItem(sk, json);
     window.dispatchEvent(new CustomEvent<ConfigChangeDetail>(SAME_WINDOW_EVENT, {
         detail: { key: sk, newValue: json }
@@ -109,7 +122,10 @@ async function migrateFromStore(): Promise<void> {
         for (const key of CONFIG_KEYS) {
             const val = await s.get<ConfigMap[typeof key]>(key);
             if (val !== null && val !== undefined) {
-                localStorage.setItem(storageKey(key), JSON.stringify(val));
+                localStorage.setItem(
+                    storageKey(key),
+                    JSON.stringify(normalizeConfigValue(key, val)),
+                );
             }
         }
         localStorage.setItem(MIGRATION_KEY, 'true');
@@ -169,7 +185,7 @@ export const useConfigStore = defineStore('config', () => {
                 val = DEFAULT_CONFIG[key];
             } else {
                 try {
-                    val = JSON.parse(newValue) as ConfigMap[K];
+                    val = normalizeConfigValue(key, JSON.parse(newValue));
                 } catch {
                     val = DEFAULT_CONFIG[key];
                 }

@@ -43,6 +43,7 @@ export function useMediaAction(
         video: configStore.useTauriConfig('encrypt_video_attachments'),
         file: configStore.useTauriConfig('encrypt_file_attachments'),
     };
+    const uploadConcurrency = configStore.useTauriConfig('attachment_upload_concurrency');
 
     const showAudioDrawer = ref(false);
     const {
@@ -132,7 +133,8 @@ export function useMediaAction(
                     onError,
                     taskId,
                 );
-            })
+            }),
+            uploadConcurrency.value,
         );
         await insertUploadedAttachments(results);
     }
@@ -347,7 +349,7 @@ export function useMediaAction(
                         );
                     }
                 );
-            });
+            }, uploadConcurrency.value);
 
             await insertUploadedAttachments(results);
         },

@@ -57,6 +57,25 @@ describe('config store', () => {
             await expect(store.getNormalConfig('encrypt_file_attachments')).resolves.toBe(true)
         })
 
+        it('defaults attachment upload concurrency to five', async () => {
+            const store = useConfigStore()
+
+            await expect(store.getNormalConfig('attachment_upload_concurrency')).resolves.toBe(5)
+        })
+
+        it('normalizes attachment upload concurrency to the supported range', async () => {
+            const store = useConfigStore()
+
+            await store.saveNormalConfig('attachment_upload_concurrency', 99)
+            await expect(store.getNormalConfig('attachment_upload_concurrency')).resolves.toBe(20)
+
+            localStorage.setItem(
+                `${STORAGE_PREFIX}attachment_upload_concurrency`,
+                JSON.stringify('invalid'),
+            )
+            await expect(store.getNormalConfig('attachment_upload_concurrency')).resolves.toBe(5)
+        })
+
         it('persists a disabled attachment encryption preference', async () => {
             const store = useConfigStore()
 

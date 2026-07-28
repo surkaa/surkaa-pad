@@ -75,6 +75,8 @@
         </q-list>
         </section>
 
+        <AttachmentUploadSettings/>
+
         <AttachmentEncryptionSettings/>
 
         <EditorShortcutSettings v-if="isWindows"/>
@@ -240,6 +242,7 @@ import {formatError} from "../../utils/formatError.ts";
 import {biometricToggleAction} from "../../utils/biometricToggle.ts";
 import {useRemoteStorageSettings} from '../../composables/useRemoteStorageSettings';
 import AttachmentEncryptionSettings from './AttachmentEncryptionSettings.vue';
+import AttachmentUploadSettings from './AttachmentUploadSettings.vue';
 import EditorShortcutSettings from './EditorShortcutSettings.vue';
 
 const $q = useQuasar();
@@ -326,6 +329,7 @@ async function handleReset() {
         'encrypt_audio_attachments',
         'encrypt_video_attachments',
         'encrypt_file_attachments',
+        'attachment_upload_concurrency',
         'windows_editor_shortcuts',
     );
     await api.cmdCleanCacheFile();
