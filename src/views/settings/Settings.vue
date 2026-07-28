@@ -52,10 +52,10 @@
         </q-card>
         </section>
 
-        <section class="settings-group">
+        <section v-if="isAndroid" class="settings-group">
         <div class="group-title">安全隐私</div>
         <q-list bordered separator class="pad-card">
-          <q-item tag="label" v-ripple :disable="!isAndroid" class="settings-item">
+          <q-item tag="label" v-ripple class="settings-item">
             <q-item-section avatar class="settings-icon-section">
               <q-icon name="fingerprint"/>
             </q-item-section>
@@ -68,10 +68,8 @@
                   :model-value="biometricEnable"
                   @update:model-value="handleBiometricToggle"
                   color="primary"
-                  :disable="!isAndroid || loading"
+                  :disable="loading"
               />
-              <q-badge v-if="!isAndroid" color="grey-6" floating transparent style="top: 8px; right: 0;">系统不支持
-              </q-badge>
             </q-item-section>
           </q-item>
         </q-list>

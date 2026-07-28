@@ -10,7 +10,7 @@ defineProps<{
 <template>
   <q-item>
     <q-item-section>
-      <q-item-label class="text-weight-medium">{{ att.filename }}</q-item-label>
+      <q-item-label class="text-weight-medium attachment-filename">{{ att.filename }}</q-item-label>
       <q-item-label caption class="attachment-meta">
         {{ att.mimetype }} · {{ formatBytes(att.size) }}
       </q-item-label>
@@ -29,6 +29,18 @@ defineProps<{
 </template>
 
 <style scoped lang="scss">
+.q-item,
+:deep(.q-item__section--main) {
+  min-width: 0;
+}
+
+.attachment-filename,
+.attachment-meta {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .attachment-meta {
   color: var(--pad-text-color-300) !important;
 }

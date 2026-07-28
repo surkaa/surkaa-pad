@@ -1,8 +1,8 @@
 <template>
   <q-dialog no-refocus :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)">
     <q-card class="diary-detail-dialog">
-      <q-card-section class="row items-center q-pb-none">
-        <div class="text-h6">{{ diary?.title }} - 详情</div>
+      <q-card-section class="row items-center q-pb-none diary-detail-dialog-header">
+        <div class="text-h6 diary-detail-dialog-title">{{ diary?.title }} - 详情</div>
         <q-space/>
         <q-btn icon="close" flat round dense v-close-popup/>
       </q-card-section>
@@ -40,7 +40,7 @@
         <div v-else class="text-center q-pa-sm">暂无附件</div>
       </q-card-section>
 
-      <q-card-actions align="right">
+      <q-card-actions align="right" class="diary-detail-dialog-actions">
         <q-btn flat label="关闭" color="primary" v-close-popup/>
       </q-card-actions>
     </q-card>
@@ -67,12 +67,35 @@ const expandedAttachmentGroups = ref<Record<string, boolean>>({});
 
 <style scoped lang="scss">
 .diary-detail-dialog {
+  display: flex;
+  flex-direction: column;
   width: min(640px, 92vw);
   max-height: 90vh;
+  overflow: hidden;
+}
+
+.diary-detail-dialog-header,
+.diary-detail-dialog-actions {
+  flex: 0 0 auto;
+}
+
+.diary-detail-dialog-header {
+  min-width: 0;
+}
+
+.diary-detail-dialog-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .diary-detail-dialog-content {
-  max-height: calc(90vh - 112px);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -88,10 +111,17 @@ const expandedAttachmentGroups = ref<Record<string, boolean>>({});
 }
 
 .attachment-groups-list {
+  max-width: 100%;
+  overflow-x: hidden;
   border-color: var(--pad-border-color) !important;
 }
 
 :deep(.attachment-group-header) {
   color: var(--pad-text-color-200);
+}
+
+:deep(.q-expansion-item__content) {
+  min-width: 0;
+  overflow-x: hidden;
 }
 </style>
