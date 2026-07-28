@@ -46,13 +46,17 @@ export function useMediaAction(
 
     const showAudioDrawer = ref(false);
     const {
-        uploadTaskMap,
         uploadTasks,
         showUploadDialog,
-        isUploading,
+        hasActiveUploads,
+        allUploadsSettled,
         createTask,
         createUploadChannel,
-        trackCancelableTask,
+        failTask,
+        registerCancelableTask,
+        resetUploadTasks,
+        cancelUploadTask,
+        cancelAllUploads,
         uploadAttachment,
         uploadAttachmentChunked,
         uploadMemoryAttachmentChunked,
@@ -64,7 +68,11 @@ export function useMediaAction(
             return true;
         }
         if (showPanel.value) showPanel.value = false;
-        uploadTaskMap.value = {};
+        if (!resetUploadTasks()) {
+            showUploadDialog.value = true;
+            $q.notify({type: 'warning', message: '请先等待当前文件处理完成或取消任务'});
+            return true;
+        }
         if (!opts?.skipFocus) {
             if (platform() !== 'android') {
                 editorDomRef.value?.focus();
@@ -135,7 +143,11 @@ export function useMediaAction(
             return;
         }
 
-        uploadTaskMap.value = {};
+        if (!resetUploadTasks()) {
+            showUploadDialog.value = true;
+            $q.notify({type: 'warning', message: '请先等待当前文件处理完成或取消任务'});
+            return;
+        }
         editorDomRef.value?.focus();
 
         const displayFilename = currentDiaryAttachments.value
@@ -157,18 +169,20 @@ export function useMediaAction(
         try {
             const cancelRes = await apiCall(event, diaryId.value, attachmentId, ...apiArgs);
             showUploadDialog.value = true;
-            trackCancelableTask(cancelRes);
+            registerCancelableTask(key, cancelRes);
             console.log(`${operationName}命令已发送，取消令牌:`, cancelRes);
         } catch (e) {
-            uploadTaskMap.value[key].status = 'error';
-            $q.notify({type: 'negative', message: formatError(e)});
+            failTask(key, e);
         }
     }
 
     return {
         uploadTasks,
         showUploadDialog,
-        isUploading,
+        hasActiveUploads,
+        allUploadsSettled,
+        cancelUploadTask,
+        cancelAllUploads,
         showAudioDrawer,
         handleAudioRecorded: async (mimetype: string, data: Uint8Array) => {
             showAudioDrawer.value = false;
@@ -214,9 +228,10 @@ export function useMediaAction(
                     diaryId.value,
                     attachmentEncryptionByKind.image.value,
                 );
-                trackCancelableTask(res);
+                showUploadDialog.value = true;
+                registerCancelableTask(key, res);
             } catch (e) {
-                uploadTaskMap.value[key].status = 'error';
+                failTask(key, e);
                 console.error("调用 Rust 后端失败:", formatError(e));
             }
         },
@@ -238,6 +253,11 @@ export function useMediaAction(
         insertFile: async () => genericBatchUpload(attachmentEncryptionByKind.file.value),
         cachingAttachment: async (attachmentIds: string[]) => {
             if (!attachmentIds.length) return;
+            if (!resetUploadTasks()) {
+                showUploadDialog.value = true;
+                $q.notify({type: 'warning', message: '请先等待当前文件处理完成或取消任务'});
+                return;
+            }
             showUploadDialog.value = true;
             for (const attachmentId of attachmentIds) {
                 const filename = currentDiaryAttachments.value
@@ -246,9 +266,9 @@ export function useMediaAction(
                 const event = createUploadChannel(key);
                 try {
                     const cancelToken = await api.cmdCachingAttachment(event, diaryId.value, attachmentId);
-                    trackCancelableTask(cancelToken);
+                    registerCancelableTask(key, cancelToken);
                 } catch (e) {
-                    uploadTaskMap.value[key].status = 'error';
+                    failTask(key, e, undefined, false);
                     $q.notify({type: 'negative', message: `缓存 ${filename} 失败: ${formatError(e)}`});
                     console.error(`缓存 ${filename} 失败:`, e);
                 }
@@ -288,8 +308,12 @@ export function useMediaAction(
                 return;
             }
             console.log('粘贴的文件列表:', files.length);
+            if (!resetUploadTasks()) {
+                showUploadDialog.value = true;
+                $q.notify({type: 'warning', message: '请先等待当前文件处理完成或取消任务'});
+                return;
+            }
             showUploadDialog.value = true;
-            uploadTaskMap.value = {};
 
             const results = await batchUploadAll(Array.from(files), file => {
                 const detectedNodeKind = attachmentNodeKindFromMimeType(file.type);

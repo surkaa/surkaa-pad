@@ -3,17 +3,13 @@ import {computed, nextTick, onActivated, onMounted, ref, watch} from "vue";
 import TiptapEditor from "../../components/TiptapEditor.vue";
 import EditToolbar from "../../components/EditToolbar.vue";
 import {useDiaryCore} from "../../composables/useDiaryCore.ts";
-import {onBeforeRouteLeave, type NavigationGuardNext, useRoute} from "vue-router";
+import {useRoute} from "vue-router";
 import {Dialog, useQuasar} from "quasar";
 import {useEditorUI} from "../../composables/useEditorUI.ts";
 import {useMediaAction} from "../../composables/useMediaAction.ts";
 import CaptureAudioDrawer from "../../components/CaptureAudioDrawer.vue";
-import {useDataStore} from "../../stores/data.ts";
 import ImagePreview from "../../components/ImagePreview.vue";
-import api from "../../utils/api.ts";
-import {formatError} from "../../utils/formatError.ts";
 import {useConfigStore} from "../../stores/config.ts";
-import type {AttachmentMeta} from "../../bindings.ts";
 import {normalizeSearchTerms} from "../../utils/searchHighlight.ts";
 import DiaryInfoDialog from './DiaryInfoDialog.vue';
 import DiarySourceDialog from './DiarySourceDialog.vue';
@@ -21,6 +17,7 @@ import UploadTasksDialog from './UploadTasksDialog.vue';
 import UnusedAttachmentsDialog from './UnusedAttachmentsDialog.vue';
 import {useDiaryAttachmentRename} from '../../composables/useDiaryAttachmentRename';
 import {useDiaryEditorShortcuts} from '../../composables/useDiaryEditorShortcuts';
+import {useDiaryLeaveGuard} from '../../composables/useDiaryLeaveGuard';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -49,7 +46,14 @@ const {
 
 // 媒体操作
 const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, tiptapEditorRef);
-const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaAction;
+const {
+  uploadTasks,
+  showUploadDialog,
+  allUploadsSettled,
+  cancelUploadTask,
+  cancelAllUploads,
+  showAudioDrawer,
+} = mediaAction;
 const {
   showRenameDialog,
   oldFilename,
@@ -58,12 +62,6 @@ const {
   closeRenameDialog,
   confirmRename: handleRenameAttachment,
 } = useDiaryAttachmentRename(diaryId);
-const showUnusedAttachmentsDialog = ref(false);
-const unusedAttachmentActionLoading = ref(false);
-const pendingUnusedAttachments = ref<AttachmentMeta[]>([]);
-let pendingNavigation: NavigationGuardNext | null = null;
-
-const {deleteAttachment} = useDataStore();
 
 function openDiaryDetail() {
   if (!diary.value) {
@@ -133,55 +131,21 @@ async function unpinnedDiary() {
 
 defineOptions({name: 'DiaryDetail'});
 
-function finishUnusedAttachmentCheck() {
-  showUnusedAttachmentsDialog.value = false;
-  pendingUnusedAttachments.value = [];
-  const next = pendingNavigation;
-  pendingNavigation = null;
-  next?.();
-}
-
-async function appendUnusedAttachments() {
-  unusedAttachmentActionLoading.value = true;
-  try {
-    const inserted = await mediaAction.insertExistingAttachmentsAtEnd(pendingUnusedAttachments.value);
-    if (!inserted) {
-      throw new Error('编辑器未能插入附件');
-    }
-    await nextTick();
-    finishUnusedAttachmentCheck();
-  } catch (error) {
-    $q.notify({type: 'negative', message: `添加附件失败：${formatError(error)}`});
-  } finally {
-    unusedAttachmentActionLoading.value = false;
-  }
-}
-
-async function deleteUnusedAttachments() {
-  unusedAttachmentActionLoading.value = true;
-  const attachments = [...pendingUnusedAttachments.value];
-  try {
-    await Promise.all(attachments.map(att => api.cmdDeleteAttachment(diaryId.value, att.id)));
-    deleteAttachment(diaryId.value, attachments.map(att => att.id));
-    finishUnusedAttachmentCheck();
-  } catch (error) {
-    console.error('删除附件失败:', error);
-    $q.notify({type: 'negative', message: `删除附件失败：${formatError(error)}`});
-  } finally {
-    unusedAttachmentActionLoading.value = false;
-  }
-}
-
-onBeforeRouteLeave((_to, _from, next) => {
-  const orphans = unusedAttachments.value;
-  if (!orphans.length || isDelBack.value) {
-    // 删除日记后的退出不用咨询
-    next();
-    return;
-  }
-  pendingUnusedAttachments.value = [...orphans];
-  pendingNavigation = next;
-  showUnusedAttachmentsDialog.value = true;
+const {
+  showUnusedAttachmentsDialog,
+  unusedAttachmentActionLoading,
+  pendingUnusedAttachments,
+  finishUnusedAttachmentCheck,
+  appendUnusedAttachments,
+  deleteUnusedAttachments,
+} = useDiaryLeaveGuard({
+  diaryId,
+  unusedAttachments,
+  isDeletingDiary: isDelBack,
+  hasActiveUploads: mediaAction.hasActiveUploads,
+  showUploadDialog,
+  cancelAllUploads,
+  insertExistingAttachmentsAtEnd: mediaAction.insertExistingAttachmentsAtEnd,
 });
 
 onMounted(async () => {
@@ -292,7 +256,9 @@ onActivated(async () => {
     <UploadTasksDialog
         v-model="showUploadDialog"
         :tasks="uploadTasks"
-        :completed="isUploading"
+        :all-settled="allUploadsSettled"
+        @cancel="cancelUploadTask"
+        @cancel-all="cancelAllUploads"
     />
 
     <q-dialog no-refocus v-model="showRenameDialog" persistent>

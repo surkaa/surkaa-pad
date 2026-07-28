@@ -5,40 +5,120 @@ import {v4 as uuidv4} from 'uuid';
 import type {AttachmentMeta, AttachmentProcessEvent} from '../bindings';
 import {useDataStore} from '../stores/data';
 import api from '../utils/api';
+import {formatError} from '../utils/formatError';
+import {
+  applyUploadTaskEvent,
+  createUploadTask,
+  hasActiveUploadTasks,
+  isUploadTaskTerminal,
+  markUploadTaskFailed,
+  type UploadTask,
+} from '../utils/uploadTasks';
+
+export type {UploadTask} from '../utils/uploadTasks';
 
 const CHUNK_SIZE = 5 * 1024 * 1024;
 
-export interface UploadTask {
-  filename: string;
-  progress: number;
-  status: 'pending' | 'uploading' | 'completed' | 'error';
-  phase: 'preparing' | 'transferring' | 'finalizing';
+type AttachmentProcessSuccess = (meta: AttachmentMeta, url: string) => void;
+type TaskCanceler = () => Promise<boolean | void>;
+
+interface TaskController {
+  cancelerPromise: Promise<TaskCanceler | null>;
+  resolveCanceler: (canceler: TaskCanceler | null) => void;
+  cancelerResolved: boolean;
+  settledPromise: Promise<void>;
+  resolveSettled: () => void;
+  settled: boolean;
+  cancellationPromise?: Promise<boolean>;
+  onCanceled?: () => void;
+  cancellationNotified?: boolean;
 }
 
-type AttachmentProcessSuccess = (meta: AttachmentMeta, url: string) => void;
+function createTaskController(): TaskController {
+  let resolveCanceler!: (canceler: TaskCanceler | null) => void;
+  let resolveSettled!: () => void;
+  const cancelerPromise = new Promise<TaskCanceler | null>(resolve => {
+    resolveCanceler = resolve;
+  });
+  const settledPromise = new Promise<void>(resolve => {
+    resolveSettled = resolve;
+  });
+  return {
+    cancelerPromise,
+    resolveCanceler,
+    cancelerResolved: false,
+    settledPromise,
+    resolveSettled,
+    settled: false,
+  };
+}
+
+function isCancellationRequested(task: UploadTask): boolean {
+  return task.status === 'canceling' || task.status === 'canceled';
+}
 
 export function useAttachmentUploader(diaryId: Ref<string>) {
   const $q = useQuasar();
   const dataStore = useDataStore();
-  const cancelTokens = new Set<string>();
-  const chunkedUploadTokens = new Set<string>();
+  const taskControllers = new Map<string, TaskController>();
+  let cancelAllRequested = false;
   const uploadTaskMap = ref<Record<string, UploadTask>>({});
   const showUploadDialog = ref(false);
   const uploadTasks = computed(() => Object.values(uploadTaskMap.value));
-  const isUploading = computed(() => {
-    if (uploadTasks.value.length === 0) return true;
-    return uploadTasks.value.every(task => task.status === 'completed' || task.status === 'error');
-  });
+  const hasActiveUploads = computed(() => hasActiveUploadTasks(uploadTasks.value));
+  const allUploadsSettled = computed(() => !hasActiveUploads.value);
 
   function createTask(filename: string) {
     const key = uuidv4();
-    uploadTaskMap.value[key] = {
-      filename,
-      progress: 0,
-      status: 'pending',
-      phase: 'preparing',
-    };
+    uploadTaskMap.value[key] = createUploadTask(key, filename);
+    taskControllers.set(key, createTaskController());
     return key;
+  }
+
+  function resolveTaskCanceler(key: string, canceler: TaskCanceler | null) {
+    const controller = taskControllers.get(key);
+    if (!controller || controller.cancelerResolved) return;
+    controller.cancelerResolved = true;
+    controller.resolveCanceler(canceler);
+  }
+
+  function settleTask(key: string) {
+    const controller = taskControllers.get(key);
+    resolveTaskCanceler(key, null);
+    if (controller && !controller.settled) {
+      controller.settled = true;
+      controller.resolveSettled();
+    }
+    taskControllers.delete(key);
+  }
+
+  function notifyTaskCanceled(controller: TaskController) {
+    if (controller.cancellationNotified) return;
+    controller.cancellationNotified = true;
+    controller.onCanceled?.();
+  }
+
+  function failTask(
+    key: string,
+    error: unknown,
+    errorCallback?: (errorMessage: string) => void,
+    notify = true,
+  ) {
+    const task = uploadTaskMap.value[key];
+    if (!task) return;
+    const controller = taskControllers.get(key);
+    const message = formatError(error);
+    markUploadTaskFailed(task, message);
+    if (task.status === 'canceled' && controller) {
+      notifyTaskCanceled(controller);
+    }
+    settleTask(key);
+    if (task.status === 'error') {
+      if (notify) {
+        $q.notify({type: 'negative', message: `${task.filename} 上传失败: ${message}`});
+      }
+      errorCallback?.(message);
+    }
   }
 
   function createUploadChannel(
@@ -46,47 +126,131 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     onSuccess?: AttachmentProcessSuccess,
     onError?: (errorMessage: string) => void,
   ) {
+    const controller = taskControllers.get(key);
+    if (controller) {
+      controller.onCanceled = () => onError?.('上传已取消');
+    }
     const event = new Channel<AttachmentProcessEvent>();
     event.onmessage = message => {
       const task = uploadTaskMap.value[key];
       if (!task) return;
 
+      if (!applyUploadTaskEvent(task, message)) return;
       switch (message.event) {
-        case 'started':
-          task.status = 'uploading';
-          task.phase = 'transferring';
-          break;
-        case 'progress':
-          task.progress = message.data / 100;
-          break;
-        case 'finalizing':
-          task.phase = 'finalizing';
-          task.progress = Math.max(task.progress, 0.99);
-          break;
         case 'completed': {
-          task.status = 'completed';
-          task.progress = 1;
+          settleTask(key);
           const [meta, url] = message.data;
           dataStore.updateAttachment(diaryId.value, meta);
           onSuccess?.(meta, url);
           break;
         }
         case 'completedWithoutData':
-          task.status = 'completed';
-          task.progress = 1;
+          settleTask(key);
           break;
         case 'error':
-          task.status = 'error';
-          $q.notify({type: 'negative', message: `${task.filename} 上传失败: ${message.data}`});
-          onError?.(message.data);
+          settleTask(key);
+          if (task.status === 'error') {
+            $q.notify({type: 'negative', message: `${task.filename} 上传失败: ${message.data}`});
+            onError?.(message.data);
+          }
           break;
       }
     };
     return event;
   }
 
-  function trackCancelableTask(token: string) {
-    cancelTokens.add(token);
+  function registerTaskCanceler(key: string, canceler: TaskCanceler) {
+    const task = uploadTaskMap.value[key];
+    if (!task || isUploadTaskTerminal(task)) return;
+    resolveTaskCanceler(key, canceler);
+  }
+
+  function registerCancelableTask(key: string, token: string) {
+    registerTaskCanceler(key, async () => api.cmdCancelTask(token));
+  }
+
+  async function cancelUploadTask(key: string): Promise<boolean> {
+    const task = uploadTaskMap.value[key];
+    if (!task || isUploadTaskTerminal(task)) return true;
+
+    const controller = taskControllers.get(key);
+    if (!controller) {
+      failTask(key, '找不到上传任务的取消控制器');
+      return false;
+    }
+    if (controller.cancellationPromise) return controller.cancellationPromise;
+
+    task.status = 'canceling';
+    controller.cancellationPromise = (async () => {
+      try {
+        const canceler = await controller.cancelerPromise;
+        if (!canceler) {
+          if (task.status === 'canceled') notifyTaskCanceled(controller);
+          return isUploadTaskTerminal(task);
+        }
+        const canceled = await canceler();
+        if (canceled === false && !isUploadTaskTerminal(task)) {
+          const outcomeArrived = await Promise.race([
+            controller.settledPromise.then(() => true),
+            new Promise<boolean>(resolve => setTimeout(() => resolve(false), 1000)),
+          ]);
+          if (!outcomeArrived) {
+            throw new Error('后端任务已经结束，但未收到最终结果');
+          }
+        }
+        if (!isUploadTaskTerminal(task)) {
+          task.status = 'canceled';
+          delete task.error;
+        }
+        if (task.status === 'canceled') {
+          notifyTaskCanceled(controller);
+        }
+        settleTask(key);
+        return true;
+      } catch (error) {
+        if (isUploadTaskTerminal(task)) {
+          if (task.status === 'canceled') notifyTaskCanceled(controller);
+          return true;
+        }
+        task.status = 'error';
+        task.error = `取消失败：${formatError(error)}`;
+        settleTask(key);
+        $q.notify({type: 'negative', message: `${task.filename} ${task.error}`});
+        return false;
+      }
+    })();
+    return controller.cancellationPromise;
+  }
+
+  async function cancelAllUploads(): Promise<boolean> {
+    cancelAllRequested = true;
+    const activeTaskIds = uploadTasks.value
+      .filter(task => !isUploadTaskTerminal(task))
+      .map(task => task.id);
+    const results = await Promise.all(activeTaskIds.map(cancelUploadTask));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    return results.every(Boolean) && !hasActiveUploads.value;
+  }
+
+  function resetUploadTasks(): boolean {
+    if (hasActiveUploads.value) return false;
+    uploadTaskMap.value = {};
+    taskControllers.clear();
+    cancelAllRequested = false;
+    return true;
+  }
+
+  function cancelBeforeStart(key: string, errorCallback?: (errorMessage: string) => void): boolean {
+    if (!cancelAllRequested) return false;
+    const task = uploadTaskMap.value[key];
+    if (task) task.status = 'canceled';
+    const controller = taskControllers.get(key);
+    if (controller) {
+      controller.onCanceled = () => errorCallback?.('上传已取消');
+      notifyTaskCanceled(controller);
+    }
+    settleTask(key);
+    return true;
   }
 
   async function uploadAttachment(
@@ -98,19 +262,20 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     const rawName = accessPath.split(/[\\/]/).pop() || '未知文件';
     const key = createTask(rawName);
     const event = createUploadChannel(key, completedCallback, errorCallback);
+    if (cancelBeforeStart(key, errorCallback)) return;
 
     try {
-      trackCancelableTask(await api.cmdAddAttachment(
+      const token = await api.cmdAddAttachment(
         event,
         diaryId.value,
         accessPath,
         encrypted,
         rawName,
-      ));
+      );
+      registerCancelableTask(key, token);
     } catch (error) {
-      uploadTaskMap.value[key].status = 'error';
       console.error('调用 Rust 后端失败:', error);
-      errorCallback?.(String(error));
+      failTask(key, error, errorCallback);
     }
   }
 
@@ -124,12 +289,18 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     errorCallback?: (errorMessage: string) => void,
   ) {
     const key = createTask(filename);
+    const task = uploadTaskMap.value[key];
+    const controller = taskControllers.get(key);
+    if (controller) {
+      controller.onCanceled = () => errorCallback?.('上传已取消');
+    }
     showUploadDialog.value = true;
+    if (cancelBeforeStart(key, errorCallback)) return;
 
     let uploadToken: string | null = null;
     try {
-      uploadTaskMap.value[key].status = 'uploading';
-      uploadTaskMap.value[key].phase = 'transferring';
+      task.status = 'uploading';
+      task.phase = 'transferring';
       const startResult = await api.cmdStartChunkedUpload(
         diaryId.value,
         filename,
@@ -138,10 +309,16 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
         totalSize,
       );
       uploadToken = startResult.uploadToken;
-      chunkedUploadTokens.add(uploadToken);
+      registerTaskCanceler(key, async () => {
+        await api.cmdAbortChunkedUpload(startResult.uploadToken);
+      });
 
       const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
       for (let index = 0; index < totalChunks; index++) {
+        if (isCancellationRequested(task)) {
+          await cancelUploadTask(key);
+          return;
+        }
         const start = index * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, totalSize);
         const bytes = await readChunk(start, end);
@@ -149,28 +326,35 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
           throw new Error(`读取分片大小不匹配：expected=${end - start}, actual=${bytes.length}`);
         }
         const chunkResult = await api.cmdUploadChunk(uploadToken, index, Array.from(bytes));
-        uploadTaskMap.value[key].progress = Math.min(
-          chunkResult.uploadedBytes / chunkResult.totalBytes,
-          0.99,
-        );
+        task.progress = Math.min(chunkResult.uploadedBytes / chunkResult.totalBytes, 0.99);
       }
 
-      uploadTaskMap.value[key].phase = 'finalizing';
+      if (isCancellationRequested(task)) {
+        await cancelUploadTask(key);
+        return;
+      }
+      task.phase = 'finalizing';
       const finishResult = await api.cmdFinishChunkedUpload(uploadToken);
-      uploadTaskMap.value[key].status = 'completed';
-      uploadTaskMap.value[key].progress = 1;
-      chunkedUploadTokens.delete(uploadToken);
       uploadToken = null;
+      task.status = 'completed';
+      task.progress = 1;
+      settleTask(key);
       dataStore.updateAttachment(diaryId.value, finishResult.attachment);
       completedCallback?.(finishResult.attachment, finishResult.url);
     } catch (error) {
-      uploadTaskMap.value[key].status = 'error';
-      console.error('分片上传失败:', error);
-      errorCallback?.(String(error));
-      if (uploadToken) {
-        chunkedUploadTokens.delete(uploadToken);
-        void api.cmdAbortChunkedUpload(uploadToken).catch(() => {});
+      if (isCancellationRequested(task)) {
+        await cancelUploadTask(key);
+        return;
       }
+      if (uploadToken) {
+        try {
+          await api.cmdAbortChunkedUpload(uploadToken);
+        } catch (abortError) {
+          console.error('清理失败的分片上传会话失败:', abortError);
+        }
+      }
+      console.error('分片上传失败:', error);
+      failTask(key, error, errorCallback);
     }
   }
 
@@ -193,31 +377,23 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     );
   }
 
-  onUnmounted(async () => {
-    const cancellations: Promise<unknown>[] = [
-      ...Array.from(cancelTokens, token => api.cmdCancelTask(token)),
-      ...Array.from(chunkedUploadTokens, token => api.cmdAbortChunkedUpload(token)),
-    ];
-    if (cancellations.length > 0) {
-      const results = await Promise.allSettled(cancellations);
-      for (const result of results) {
-        if (result.status === 'rejected') {
-          console.error('取消上传任务失败:', result);
-        }
-      }
-    }
-    cancelTokens.clear();
-    chunkedUploadTokens.clear();
+  onUnmounted(() => {
+    void cancelAllUploads();
   });
 
   return {
     uploadTaskMap,
     uploadTasks,
     showUploadDialog,
-    isUploading,
+    hasActiveUploads,
+    allUploadsSettled,
     createTask,
     createUploadChannel,
-    trackCancelableTask,
+    failTask,
+    registerCancelableTask,
+    resetUploadTasks,
+    cancelUploadTask,
+    cancelAllUploads,
     uploadAttachment,
     uploadAttachmentChunked,
     uploadMemoryAttachmentChunked,

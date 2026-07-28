@@ -11,7 +11,7 @@
       </q-card-section>
       <q-card-section class="q-pt-md">
         <q-list dense>
-          <q-item v-for="task in tasks" :key="task.filename" class="q-px-none">
+          <q-item v-for="task in tasks" :key="task.id" class="q-px-none">
             <q-item-section>
               <q-item-label class="text-caption ellipsis upload-task-filename">
                 {{ task.filename }}
@@ -22,39 +22,69 @@
               <q-linear-progress
                 :value="task.progress"
                 :indeterminate="task.phase === 'finalizing' && task.status === 'uploading'"
-                :color="task.status === 'error' ? 'negative' : 'primary'"
+                :color="task.status === 'error' ? 'negative' : (task.status === 'canceled' ? 'grey' : 'primary')"
                 class="q-mt-sm"
                 :animation-speed="200"
               />
             </q-item-section>
             <q-item-section side>
-              <q-icon
-                :name="task.status === 'completed' ? 'check_circle' : (task.status === 'error' ? 'error' : 'cloud_upload')"
-                :color="task.status === 'completed' ? 'positive' : (task.status === 'error' ? 'negative' : 'grey')"
+              <q-btn
+                v-if="!isUploadTaskTerminal(task)"
+                flat
+                round
+                dense
+                icon="close"
+                color="grey"
+                :loading="task.status === 'canceling'"
+                aria-label="取消该任务"
+                @click="emit('cancel', task.id)"
               />
+              <q-icon v-else :name="uploadTaskIcon(task)" :color="uploadTaskColor(task)"/>
             </q-item-section>
           </q-item>
         </q-list>
       </q-card-section>
       <q-card-actions align="right">
-        <q-btn flat label="完成" color="primary" v-close-popup :disable="!completed"/>
+        <q-btn
+          v-if="hasActiveTasks"
+          flat
+          label="全部取消"
+          color="negative"
+          @click="emit('cancel-all')"
+        />
+        <q-btn flat label="完成" color="primary" v-close-popup :disable="!allSettled"/>
       </q-card-actions>
     </q-card>
   </q-dialog>
 </template>
 
 <script setup lang="ts">
-import type {UploadTask} from '../../composables/useAttachmentUploader';
+import {computed} from 'vue';
+import {
+  hasActiveUploadTasks,
+  isUploadTaskTerminal,
+  type UploadTask,
+  uploadTaskStatusText,
+} from '../../utils/uploadTasks';
 
-defineProps<{modelValue: boolean; tasks: UploadTask[]; completed: boolean}>();
-const emit = defineEmits<{(event: 'update:modelValue', value: boolean): void}>();
+const props = defineProps<{modelValue: boolean; tasks: UploadTask[]; allSettled: boolean}>();
+const emit = defineEmits<{
+  (event: 'update:modelValue', value: boolean): void;
+  (event: 'cancel', taskId: string): void;
+  (event: 'cancel-all'): void;
+}>();
+const hasActiveTasks = computed(() => hasActiveUploadTasks(props.tasks));
 
-function uploadTaskStatusText(task: UploadTask) {
-  if (task.status === 'completed') return '已完成';
-  if (task.status === 'error') return '上传失败';
-  if (task.phase === 'finalizing') return '正在完成：提交附件并保存日记';
-  if (task.status === 'pending') return '准备中';
-  return `上传中 ${Math.round(task.progress * 100)}%`;
+function uploadTaskIcon(task: UploadTask) {
+  if (task.status === 'completed') return 'check_circle';
+  if (task.status === 'canceled') return 'cancel';
+  return 'error';
+}
+
+function uploadTaskColor(task: UploadTask) {
+  if (task.status === 'completed') return 'positive';
+  if (task.status === 'error') return 'negative';
+  return 'grey';
 }
 </script>
 
@@ -65,5 +95,7 @@ function uploadTaskStatusText(task: UploadTask) {
 
 .upload-task-status {
   color: var(--pad-text-color-300) !important;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 </style>
