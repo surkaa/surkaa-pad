@@ -47,6 +47,11 @@ export function hasActiveUploadTasks(tasks: UploadTask[]): boolean {
   return tasks.some(task => !isUploadTaskTerminal(task));
 }
 
+export function uploadTasksDialogTitle(tasks: UploadTask[]): string {
+  if (tasks.length === 0) return '文件处理中';
+  return `${tasks.length}个文件${hasActiveUploadTasks(tasks) ? '正在处理中' : '已完成'}`;
+}
+
 export function applyUploadTaskEvent(task: UploadTask, message: AttachmentProcessEvent): boolean {
   if (isUploadTaskTerminal(task)) {
     const completedAfterCancellation = task.status === 'canceled'

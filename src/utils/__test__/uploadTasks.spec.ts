@@ -6,6 +6,7 @@ import {
   hasActiveUploadTasks,
   isUploadTaskTerminal,
   markUploadTaskFailed,
+  uploadTasksDialogTitle,
   uploadTaskStatusText,
 } from '../uploadTasks';
 
@@ -70,5 +71,18 @@ describe('upload task domain model', () => {
     expect(hasActiveUploadTasks([completed, failed, pending])).toBe(true);
     pending.status = 'canceled';
     expect(hasActiveUploadTasks([completed, failed, pending])).toBe(false);
+  });
+
+  it('summarizes the task count and terminal state in the dialog title', () => {
+    const completed = createUploadTask('completed-title', 'a.jpg');
+    completed.status = 'completed';
+    const canceled = createUploadTask('canceled-title', 'b.jpg');
+    canceled.status = 'canceled';
+    const failed = createUploadTask('failed-title', 'c.jpg');
+    failed.status = 'error';
+
+    expect(uploadTasksDialogTitle([completed, canceled, createUploadTask('active', 'd.jpg')]))
+      .toBe('3个文件正在处理中');
+    expect(uploadTasksDialogTitle([completed, canceled, failed])).toBe('3个文件已完成');
   });
 });

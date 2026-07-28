@@ -7,7 +7,7 @@
   >
     <q-card style="min-width: 300px; max-width: 500px">
       <q-card-section class="row items-center q-pb-none">
-        <div class="text-h6">文件处理中</div>
+        <div class="text-h6">{{ uploadTasksDialogTitle(tasks) }}</div>
       </q-card-section>
       <q-card-section class="q-pt-md">
         <q-list dense>
@@ -64,6 +64,7 @@ import {
   hasActiveUploadTasks,
   isUploadTaskTerminal,
   type UploadTask,
+  uploadTasksDialogTitle,
   uploadTaskStatusText,
 } from '../../utils/uploadTasks';
 
