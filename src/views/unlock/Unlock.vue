@@ -71,7 +71,7 @@ import {confirm} from '@tauri-apps/plugin-dialog';
 import {useQuasar} from "quasar";
 import {useTimeoutStore} from "../../stores/timeout.ts";
 import {useConfigStore} from "../../stores/config.ts";
-import {biometricCipher} from "@tauri-apps/plugin-biometric";
+import {biometricCipher} from "../../utils/biometric.ts";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {platform} from "@tauri-apps/plugin-os";

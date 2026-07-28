@@ -236,7 +236,7 @@ import {exportLogFile} from "../../utils";
 import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from "quasar";
 import {useConfigStore} from "../../stores/config.ts";
-import {biometricCipher} from "@tauri-apps/plugin-biometric";
+import {biometricCipher} from "../../utils/biometric.ts";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {biometricToggleAction} from "../../utils/biometricToggle.ts";

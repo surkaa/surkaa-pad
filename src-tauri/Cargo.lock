@@ -781,12 +781,13 @@ dependencies = [
 
 [[package]]
 name = "cfb"
-version = "0.12.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb9b414dc579b1b0194d06e65472b6ee2e87f623f970a715e3bb04e105400ffa"
+checksum = "a347dcabdae9c31b0825fd6a8bed285ec9c2acb89c47827126d52fa4f59cece3"
 dependencies = [
  "fnv",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
@@ -1458,7 +1459,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2536,9 +2537,11 @@ dependencies = [
 
 [[package]]
 name = "infer"
-version = "0.21.0"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4200d433cbd5178df7797c9c2e75b348b728e39631cf14520d1e2fc424201f4"
 dependencies = [
- "cfb 0.12.1",
+ "cfb 0.14.0",
 ]
 
 [[package]]
@@ -4015,7 +4018,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4540,7 +4543,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5209,7 +5212,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "image",
- "infer 0.21.0",
+ "infer 0.22.0",
  "md5",
  "quick-xml 0.39.2",
  "reqwest 0.12.28",
@@ -5528,6 +5531,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-biometric"
 version = "2.3.2"
+source = "git+https://github.com/surkaa/plugins-workspace?rev=6fa3112f426dd3a05619fd1f34a00089807c5fd5#6fa3112f426dd3a05619fd1f34a00089807c5fd5"
 dependencies = [
  "log",
  "serde",
@@ -5821,7 +5825,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6762,7 +6766,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

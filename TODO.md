@@ -45,5 +45,5 @@
   - 前端持久化 `remote_enabled`，Rust `AppState` 保存运行时状态；继续减少两者短暂不一致的可能性，并覆盖异常恢复测试。
 
 - [ ] 提升本地 Fork 依赖的可复现性
-  - `rust-s3`、`infer`、生物识别插件等依赖工作区外的 `../Forks` 路径。
-  - 评估改为固定 Git revision、workspace 子模块或发布版本，使干净环境和 CI 可以直接构建。
+  - `infer` 已改用 crates.io 发布版，生物识别 Rust 插件已固定到 Git revision，前端通过项目内封装调用插件命令。
+  - `rust-s3` 仍依赖工作区外的 `../Forks` 路径；需先将 OSS 签名服务名和列表响应兼容改动提交到可访问的 Fork，再固定 Git revision，使干净环境和 CI 可以直接构建。
