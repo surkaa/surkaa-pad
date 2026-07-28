@@ -115,8 +115,12 @@ export function useMediaAction(
         if (!accessStrArr) return;
 
         showUploadDialog.value = true;
+        const queuedUploads = accessStrArr.map(accessStr => ({
+            accessStr,
+            taskId: createTask(accessStr.split(/[\\/]/).pop() || '未知文件', true),
+        }));
 
-        const results = await batchUploadAll(accessStrArr, accessStr =>
+        const results = await batchUploadAll(queuedUploads, ({accessStr, taskId}) =>
             promisifyUpload<UploadedAttachment>((onSuccess, onError) => {
                 uploadAttachment(accessStr, encrypted,
                     (meta, url) => onSuccess({
@@ -125,7 +129,8 @@ export function useMediaAction(
                         filename: meta.filename,
                         url,
                     }),
-                    onError
+                    onError,
+                    taskId,
                 );
             })
         );
@@ -314,8 +319,12 @@ export function useMediaAction(
                 return;
             }
             showUploadDialog.value = true;
+            const queuedUploads = Array.from(files, file => ({
+                file,
+                taskId: createTask(file.name, true),
+            }));
 
-            const results = await batchUploadAll(Array.from(files), file => {
+            const results = await batchUploadAll(queuedUploads, ({file, taskId}) => {
                 const detectedNodeKind = attachmentNodeKindFromMimeType(file.type);
                 return promisifyUpload<UploadedAttachment>(
                     (onSuccess, onError) => {
@@ -334,6 +343,7 @@ export function useMediaAction(
                                 url,
                             }),
                             () => onError(),
+                            taskId,
                         );
                     }
                 );

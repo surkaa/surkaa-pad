@@ -1,6 +1,7 @@
 import type {AttachmentProcessEvent} from '../bindings';
 
 export type UploadTaskStatus =
+  | 'queued'
   | 'pending'
   | 'uploading'
   | 'canceling'
@@ -26,6 +27,13 @@ export function createUploadTask(id: string, filename: string): UploadTask {
     progress: 0,
     status: 'pending',
     phase: 'preparing',
+  };
+}
+
+export function createQueuedUploadTask(id: string, filename: string): UploadTask {
+  return {
+    ...createUploadTask(id, filename),
+    status: 'queued',
   };
 }
 
@@ -98,6 +106,7 @@ export function uploadTaskStatusText(task: UploadTask): string {
   if (task.status === 'canceling') return '正在取消';
   if (task.status === 'error') return task.error ? `失败：${task.error}` : '上传失败';
   if (task.phase === 'finalizing') return '正在完成：提交附件并保存日记';
+  if (task.status === 'queued') return '等待上传';
   if (task.status === 'pending') return '准备中';
   return `上传中 ${Math.round(task.progress * 100)}%`;
 }

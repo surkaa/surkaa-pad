@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {
   applyUploadTaskEvent,
+  createQueuedUploadTask,
   createUploadTask,
   hasActiveUploadTasks,
   isUploadTaskTerminal,
@@ -9,6 +10,13 @@ import {
 } from '../uploadTasks';
 
 describe('upload task domain model', () => {
+  it('shows a newly queued task as waiting', () => {
+    const task = createQueuedUploadTask('queued', 'queued.mp4');
+
+    expect(task.status).toBe('queued');
+    expect(uploadTaskStatusText(task)).toBe('等待上传');
+  });
+
   it('tracks transfer and finalization progress', () => {
     const task = createUploadTask('task-1', 'video.mp4');
 

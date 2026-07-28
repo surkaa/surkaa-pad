@@ -8,6 +8,7 @@ import api from '../utils/api';
 import {formatError} from '../utils/formatError';
 import {
   applyUploadTaskEvent,
+  createQueuedUploadTask,
   createUploadTask,
   hasActiveUploadTasks,
   isUploadTaskTerminal,
@@ -68,9 +69,11 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
   const hasActiveUploads = computed(() => hasActiveUploadTasks(uploadTasks.value));
   const allUploadsSettled = computed(() => !hasActiveUploads.value);
 
-  function createTask(filename: string) {
+  function createTask(filename: string, queued = false) {
     const key = uuidv4();
-    uploadTaskMap.value[key] = createUploadTask(key, filename);
+    uploadTaskMap.value[key] = queued
+      ? createQueuedUploadTask(key, filename)
+      : createUploadTask(key, filename);
     taskControllers.set(key, createTaskController());
     return key;
   }
@@ -180,6 +183,13 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     }
     if (controller.cancellationPromise) return controller.cancellationPromise;
 
+    if (task.status === 'queued') {
+      task.status = 'canceled';
+      notifyTaskCanceled(controller);
+      settleTask(key);
+      return true;
+    }
+
     task.status = 'canceling';
     controller.cancellationPromise = (async () => {
       try {
@@ -240,14 +250,22 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     return true;
   }
 
-  function cancelBeforeStart(key: string, errorCallback?: (errorMessage: string) => void): boolean {
-    if (!cancelAllRequested) return false;
+  function skipCanceledTaskBeforeStart(
+    key: string,
+    errorCallback?: (errorMessage: string) => void,
+  ): boolean {
     const task = uploadTaskMap.value[key];
-    if (task) task.status = 'canceled';
+    if (!task) throw new Error(`找不到预先登记的上传任务：${key}`);
+    if (!cancelAllRequested && task.status !== 'canceled' && task.status !== 'canceling') {
+      return false;
+    }
+    task.status = 'canceled';
     const controller = taskControllers.get(key);
     if (controller) {
       controller.onCanceled = () => errorCallback?.('上传已取消');
       notifyTaskCanceled(controller);
+    } else {
+      errorCallback?.('上传已取消');
     }
     settleTask(key);
     return true;
@@ -258,11 +276,15 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     encrypted: boolean,
     completedCallback?: AttachmentProcessSuccess,
     errorCallback?: (errorMessage: string) => void,
+    queuedTaskId?: string,
   ) {
     const rawName = accessPath.split(/[\\/]/).pop() || '未知文件';
-    const key = createTask(rawName);
+    const key = queuedTaskId ?? createTask(rawName);
     const event = createUploadChannel(key, completedCallback, errorCallback);
-    if (cancelBeforeStart(key, errorCallback)) return;
+    if (skipCanceledTaskBeforeStart(key, errorCallback)) return;
+    const task = uploadTaskMap.value[key];
+    if (!task) throw new Error(`找不到预先登记的上传任务：${key}`);
+    task.status = 'pending';
 
     try {
       const token = await api.cmdAddAttachment(
@@ -287,15 +309,17 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     readChunk: (start: number, end: number) => Promise<Uint8Array>,
     completedCallback?: AttachmentProcessSuccess,
     errorCallback?: (errorMessage: string) => void,
+    queuedTaskId?: string,
   ) {
-    const key = createTask(filename);
+    const key = queuedTaskId ?? createTask(filename);
     const task = uploadTaskMap.value[key];
+    if (!task) throw new Error(`找不到预先登记的上传任务：${key}`);
     const controller = taskControllers.get(key);
     if (controller) {
       controller.onCanceled = () => errorCallback?.('上传已取消');
     }
     showUploadDialog.value = true;
-    if (cancelBeforeStart(key, errorCallback)) return;
+    if (skipCanceledTaskBeforeStart(key, errorCallback)) return;
 
     let uploadToken: string | null = null;
     try {
