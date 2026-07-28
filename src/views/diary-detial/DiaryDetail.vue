@@ -15,16 +15,12 @@ import {formatError} from "../../utils/formatError.ts";
 import {useConfigStore} from "../../stores/config.ts";
 import type {AttachmentMeta} from "../../bindings.ts";
 import {normalizeSearchTerms} from "../../utils/searchHighlight.ts";
-import {platform} from "@tauri-apps/plugin-os";
-import {useEventListener} from "@vueuse/core";
-import {
-  findEditorShortcutAction,
-  type EditorShortcutAction,
-} from "../../utils/editorShortcuts.ts";
 import DiaryInfoDialog from './DiaryInfoDialog.vue';
 import DiarySourceDialog from './DiarySourceDialog.vue';
 import UploadTasksDialog from './UploadTasksDialog.vue';
 import UnusedAttachmentsDialog from './UnusedAttachmentsDialog.vue';
+import {useDiaryAttachmentRename} from '../../composables/useDiaryAttachmentRename';
+import {useDiaryEditorShortcuts} from '../../composables/useDiaryEditorShortcuts';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -37,14 +33,8 @@ const tiptapEditorRef = ref<InstanceType<typeof TiptapEditor>>();
 const editorDomRef = ref<HTMLElement>();
 const showDetailDialog = ref(false);
 const showSourceDialog = ref(false);
-const showRenameDialog = ref(false);
-const renameAttachmentId = ref('');
-const oldFilename = ref('');
-const newFilename = ref('');
 const pinnedDiaryIds = configStore.useTauriConfig('pinned_diary_ids');
 const editorShortcuts = configStore.useTauriConfig('windows_editor_shortcuts');
-const isWindows = platform() === 'windows';
-let renameCb: ((newFilename: string) => void) | null = null;
 
 const {
   diaryId, diary, attachments, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
@@ -60,12 +50,20 @@ const {
 // 媒体操作
 const mediaAction = useMediaAction(diaryId, editorDomRef, showToolbarPanel, tiptapEditorRef);
 const {uploadTasks, showUploadDialog, isUploading, showAudioDrawer} = mediaAction;
+const {
+  showRenameDialog,
+  oldFilename,
+  newFilename,
+  requestRename: renameAttachment,
+  closeRenameDialog,
+  confirmRename: handleRenameAttachment,
+} = useDiaryAttachmentRename(diaryId);
 const showUnusedAttachmentsDialog = ref(false);
 const unusedAttachmentActionLoading = ref(false);
 const pendingUnusedAttachments = ref<AttachmentMeta[]>([]);
 let pendingNavigation: NavigationGuardNext | null = null;
 
-const {deleteAttachment, updateAttachmentFilename} = useDataStore();
+const {deleteAttachment} = useDataStore();
 
 function openDiaryDetail() {
   if (!diary.value) {
@@ -79,59 +77,26 @@ function additionalAction() {
   showToolbarPanel.value = !showToolbarPanel.value;
 }
 
-function isEditableFieldOutsideDiaryEditor(target: EventTarget | null) {
-  const element = target instanceof Element ? target : null;
-  if (!element || element.closest('.ProseMirror')) return false;
-  return Boolean(element.closest('input, textarea, select, [contenteditable="true"]'));
-}
-
-function runEditorShortcut(action: EditorShortcutAction) {
-  showToolbarPanel.value = false;
-  switch (action) {
-    case 'insertPhoto':
-      void mediaAction.insertPhoto();
-      break;
-    case 'insertAudio':
-      void mediaAction.insertAudio();
-      break;
-    case 'audioRecording':
-      mediaAction.audioRecording();
-      break;
-    case 'insertVideo':
-      void mediaAction.insertVideo();
-      break;
-    case 'insertFile':
-      void mediaAction.insertFile();
-      break;
-  }
-}
-
-function handleEditorShortcut(event: KeyboardEvent) {
-  if (
-    event.repeat
-    || event.isComposing
-    || route.name !== 'DiaryDetail'
-    || isEditableFieldOutsideDiaryEditor(event.target)
-    || showMenu.value
+useDiaryEditorShortcuts({
+  shortcuts: editorShortcuts,
+  showToolbarPanel,
+  isInteractionBlocked: () => Boolean(
+    showMenu.value
     || showDetailDialog.value
     || showSourceDialog.value
     || showRenameDialog.value
     || showUnusedAttachmentsDialog.value
     || showUploadDialog.value
     || showAudioDrawer.value
-  ) return;
-
-  const action = findEditorShortcutAction(event, editorShortcuts.value);
-  if (!action) return;
-
-  event.preventDefault();
-  event.stopPropagation();
-  runEditorShortcut(action);
-}
-
-if (isWindows) {
-  useEventListener(window, 'keydown', handleEditorShortcut, {capture: true});
-}
+  ),
+  handlers: {
+    insertPhoto: () => void mediaAction.insertPhoto(),
+    insertAudio: () => void mediaAction.insertAudio(),
+    audioRecording: mediaAction.audioRecording,
+    insertVideo: () => void mediaAction.insertVideo(),
+    insertFile: () => void mediaAction.insertFile(),
+  },
+});
 
 function showDiarySource() {
   showMenu.value = false;
@@ -143,33 +108,6 @@ function showImage(src: string) {
     component: ImagePreview,
     componentProps: {src}
   })
-}
-
-function renameAttachment(attachmentId: string, filename: string, cb: (newFilename: string) => void) {
-  showRenameDialog.value = true;
-  renameAttachmentId.value = attachmentId;
-  oldFilename.value = filename;
-  newFilename.value = filename;
-  renameCb = cb;
-}
-
-async function handleRenameAttachment() {
-  if (!newFilename.value || oldFilename.value === newFilename.value) {
-    showRenameDialog.value = false;
-    return;
-  }
-  try {
-    await api.cmdUpdateAttachmentFilename(
-        diaryId.value,
-        renameAttachmentId.value,
-        newFilename.value
-    );
-    updateAttachmentFilename(diaryId.value, renameAttachmentId.value, newFilename.value);
-    showRenameDialog.value = false;
-    renameCb?.(newFilename.value);
-  } catch (e) {
-    $q.notify({type: 'negative', message: formatError(e)});
-  }
 }
 
 async function pinnedDiary() {
@@ -368,7 +306,7 @@ onActivated(async () => {
         </q-card-section>
 
         <q-card-actions align="right">
-          <q-btn flat label="取消" color="primary" v-close-popup/>
+          <q-btn flat label="取消" color="primary" @click="closeRenameDialog"/>
           <q-btn unelevated label="重命名" color="primary" :disable="!newFilename || newFilename === oldFilename"
                  @click="handleRenameAttachment"/>
         </q-card-actions>
