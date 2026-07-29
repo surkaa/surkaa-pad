@@ -184,6 +184,39 @@ async cmdRestoreRemoteStorage() : Promise<Result<boolean, AppError>> {
 }
 },
 /**
+ * 获取当前本地对象存储位置和数据规模。
+ */
+async cmdGetLocalStorageInfo() : Promise<Result<LocalStorageInfo, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_local_storage_info") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 预检查本地对象存储迁移。`base_path` 为空时表示迁移到默认位置。
+ */
+async cmdPlanLocalStorageMigration(basePath: string | null) : Promise<Result<LocalStorageMigrationPlan, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_plan_local_storage_migration", { basePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 执行本地对象存储迁移。成功后前端应立即重启应用。
+ */
+async cmdMigrateLocalStorage(event: TAURI_CHANNEL<LocalStorageMigrationEvent>, basePath: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_migrate_local_storage", { event, basePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 根据内容保存日记
  * # Arguments
  * * `content` - 日记内容
@@ -617,6 +650,10 @@ attachmentCounts: DiaryAttachmentCounts;
 encryptedAttachmentCounts: DiaryAttachmentCounts }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
+export type LocalStorageInfo = { currentPath: string; configuredPath: string; isDefault: boolean; legacyMigrationRequired: boolean; migrationPending: boolean; totalFiles: number; totalBytes: number }
+export type LocalStorageMigrationEvent = { event: "preparing"; data: { sourcePath: string; targetPath: string } } | { event: "started"; data: { totalFiles: number; totalBytes: number; fastMove: boolean } } | { event: "phase"; data: { phase: LocalStorageMigrationPhase } } | { event: "progress"; data: { phase: LocalStorageMigrationPhase; currentFile: string; currentFileIndex: number; totalFiles: number; currentFileBytes: number; currentFileSize: number; processedBytes: number; totalBytes: number } } | { event: "completed"; data: { targetPath: string; migratedFiles: number; migratedBytes: number; cleanupWarning: string | null } } | { event: "error"; data: { phase: LocalStorageMigrationPhase; currentFile: string | null; message: string } }
+export type LocalStorageMigrationPhase = "preparing" | "copying" | "verifying" | "switching" | "cleaning"
+export type LocalStorageMigrationPlan = { sourcePath: string; targetPath: string; totalFiles: number; totalBytes: number; availableBytes: number; requiredBytes: number; fastMove: boolean }
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type SyncDirection = "upload" | "download"
 export type SyncPhase = "preparing" | "attachments" | "manifests"

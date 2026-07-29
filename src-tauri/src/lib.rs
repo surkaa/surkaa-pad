@@ -32,6 +32,9 @@ use crate::diaries::diary_command::{
     cmd_delete_diary, cmd_get_diary_detail, cmd_get_diary_manifest, cmd_get_diary_summary,
     cmd_page_diary_ids, cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
 };
+use crate::local_storage::migration::{
+    cmd_get_local_storage_info, cmd_migrate_local_storage, cmd_plan_local_storage_migration,
+};
 use crate::object::object_command::{
     cmd_disable_remote_storage, cmd_enable_remote_storage, cmd_get_storage_mode,
     cmd_init_oss_client, cmd_migrate_legacy_remote_enabled, cmd_restore_remote_storage,
@@ -50,7 +53,7 @@ fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     );
     let los_path = local_storage.startup_root();
     let (listener, attachment_server) = bind_attachment_server()?;
-    let state = AppState::new(los_path, attachment_server, app_config);
+    let state = AppState::new(los_path, attachment_server, app_config, local_storage);
     start_attachment_server(listener, state.clone());
     app.manage(state);
 
@@ -75,6 +78,10 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_get_storage_mode,
             cmd_migrate_legacy_remote_enabled,
             cmd_restore_remote_storage,
+            // 本地存储位置管理
+            cmd_get_local_storage_info,
+            cmd_plan_local_storage_migration,
+            cmd_migrate_local_storage,
             // 日记基本操作
             cmd_save_diary,
             cmd_update_diary_content_only,

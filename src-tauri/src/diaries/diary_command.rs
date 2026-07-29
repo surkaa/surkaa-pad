@@ -24,6 +24,7 @@ pub async fn cmd_save_diary(
     state: State<'_, AppState>,
     content: DiaryContent,
 ) -> Result<(DiarySummary, DiaryContent), AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
     Ok(save_diary(&state.diary_cache(), &state.crypto(), &*store, content).await?)
 }
@@ -36,6 +37,7 @@ pub async fn cmd_save_diary(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
     Ok(delete_diary(&state.diary_cache(), &*store, id).await?)
 }
@@ -53,6 +55,7 @@ pub async fn cmd_update_diary_content_only(
     id: &str,
     new_content: DiaryContent,
 ) -> Result<DiarySummary, AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
     Ok(update_diary_content_only(
         &state.diary_cache(),

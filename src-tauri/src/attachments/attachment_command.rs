@@ -130,6 +130,7 @@ pub async fn cmd_delete_attachment(
     id: &str,
     attachment_id: String,
 ) -> Result<(), AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
     Ok(delete_attachment(
         &state.diary_cache(),
@@ -221,6 +222,7 @@ pub fn cmd_toggle_attachment_encryption(
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
+        let _storage_guard = state.lock_storage_operation().await;
         toggle_attachment_encryption_cancelable(
             &state,
             Arc::new(event),
@@ -252,6 +254,7 @@ pub fn cmd_rotate_image_attachment(
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
+        let _storage_guard = state.lock_storage_operation().await;
         rotate_image_attachment_cancelable(
             &state,
             Arc::new(event),
@@ -365,5 +368,6 @@ pub async fn cmd_update_attachment_filename(
     attachment_id: String,
     new_filename: String,
 ) -> Result<(), AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     Ok(update_attachment_filename(&state, &id, attachment_id, new_filename).await?)
 }

@@ -1,6 +1,8 @@
-use crate::app_config::{AppConfigStore, LocalStorageLocation};
+use crate::app_config::{AppConfigStore, LocalStorageLocation, PendingLocalStorageMigration};
 use crate::caches::{LEGACY_LOCAL_OBJECT_STORE_DIRECTORY, LOCAL_OBJECT_STORE_DIRECTORY};
 use std::path::PathBuf;
+
+pub mod migration;
 
 #[derive(Clone, Debug)]
 pub struct LocalStorageManager {
@@ -31,19 +33,58 @@ impl LocalStorageManager {
         }
     }
 
+    pub fn config(&self) -> AppConfigStore {
+        self.config.clone()
+    }
+
+    pub fn configured_location(&self) -> LocalStorageLocation {
+        self.config.current().local_storage_location().clone()
+    }
+
+    pub fn pending_migration(&self) -> Option<PendingLocalStorageMigration> {
+        self.config
+            .current()
+            .pending_local_storage_migration()
+            .cloned()
+    }
+
+    pub fn root_for_location(&self, location: &LocalStorageLocation) -> PathBuf {
+        match location {
+            LocalStorageLocation::Default => self.default_root.clone(),
+            LocalStorageLocation::Custom { base_path } => {
+                base_path.join(LOCAL_OBJECT_STORE_DIRECTORY)
+            }
+        }
+    }
+
     /// 在旧目录尚未迁移时继续使用旧数据，避免升级后出现空日记列表。
     pub fn startup_root(&self) -> PathBuf {
+        if let Some(pending) = self.pending_migration() {
+            if !pending.source_root().exists() && pending.target_root().exists() {
+                return pending.target_root().to_path_buf();
+            }
+        }
         let configured = self.config.current();
         if matches!(
             configured.local_storage_location(),
             LocalStorageLocation::Default
-        ) && !self.default_root.exists()
+        ) && (!self.default_root.exists() || directory_is_empty(&self.default_root))
             && self.legacy_root.exists()
         {
             return self.legacy_root.clone();
         }
         self.configured_root()
     }
+
+    pub fn is_legacy_root(&self, root: &std::path::Path) -> bool {
+        root == self.legacy_root
+    }
+}
+
+fn directory_is_empty(path: &PathBuf) -> bool {
+    std::fs::read_dir(path)
+        .map(|mut entries| entries.next().is_none())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -81,6 +122,7 @@ mod tests {
         std::fs::create_dir_all(&manager.legacy_root).unwrap();
 
         assert_eq!(manager.startup_root(), manager.legacy_root);
+        assert!(manager.is_legacy_root(&manager.startup_root()));
     }
 
     #[test]
@@ -89,8 +131,10 @@ mod tests {
         let manager = manager(&temp_dir, LocalStorageLocation::Default);
         std::fs::create_dir_all(&manager.legacy_root).unwrap();
         std::fs::create_dir_all(&manager.default_root).unwrap();
+        std::fs::write(manager.default_root.join("migration-complete"), b"ok").unwrap();
 
         assert_eq!(manager.startup_root(), manager.default_root);
+        assert!(!manager.is_legacy_root(&manager.startup_root()));
     }
 
     #[test]

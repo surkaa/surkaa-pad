@@ -145,6 +145,10 @@ impl LocalObjectStore {
         }
     }
 
+    pub fn root(&self) -> &Path {
+        self.store_dir.as_path()
+    }
+
     fn get_path(&self, key: &str) -> (PathBuf, PathBuf) {
         let data_path = self.store_dir.join(format!("{}{}", key, DATA_FILE_SUFFIX));
         let etag_path = self.store_dir.join(format!("{}{}", key, ETAG_FILE_SUFFIX));

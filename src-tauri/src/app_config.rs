@@ -21,12 +21,58 @@ pub enum LocalStorageLocation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingLocalStorageMigration {
+    #[serde(rename = "sourceRoot")]
+    source_root: PathBuf,
+    #[serde(rename = "targetRoot")]
+    target_root: PathBuf,
+    #[serde(rename = "stagingRoot")]
+    staging_root: PathBuf,
+    #[serde(rename = "targetLocation")]
+    target_location: LocalStorageLocation,
+}
+
+impl PendingLocalStorageMigration {
+    pub fn new(
+        source_root: PathBuf,
+        target_root: PathBuf,
+        staging_root: PathBuf,
+        target_location: LocalStorageLocation,
+    ) -> Self {
+        Self {
+            source_root,
+            target_root,
+            staging_root,
+            target_location,
+        }
+    }
+
+    pub fn source_root(&self) -> &Path {
+        &self.source_root
+    }
+
+    pub fn target_root(&self) -> &Path {
+        &self.target_root
+    }
+
+    pub fn staging_root(&self) -> &Path {
+        &self.staging_root
+    }
+
+    pub fn target_location(&self) -> &LocalStorageLocation {
+        &self.target_location
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfig {
     version: u32,
     #[serde(rename = "localStorageLocation", default)]
     local_storage_location: LocalStorageLocation,
     #[serde(rename = "remoteEnabled", default)]
     remote_enabled: Option<bool>,
+    #[serde(rename = "pendingLocalStorageMigration", default)]
+    pending_local_storage_migration: Option<PendingLocalStorageMigration>,
 }
 
 impl Default for AppConfig {
@@ -35,6 +81,7 @@ impl Default for AppConfig {
             version: APP_CONFIG_VERSION,
             local_storage_location: LocalStorageLocation::Default,
             remote_enabled: None,
+            pending_local_storage_migration: None,
         }
     }
 }
@@ -46,6 +93,10 @@ impl AppConfig {
 
     pub fn remote_enabled(&self) -> Option<bool> {
         self.remote_enabled
+    }
+
+    pub fn pending_local_storage_migration(&self) -> Option<&PendingLocalStorageMigration> {
+        self.pending_local_storage_migration.as_ref()
     }
 
     #[cfg(test)]
@@ -114,6 +165,25 @@ impl AppConfigStore {
     pub fn set_remote_enabled(&self, enabled: bool) -> Result<(), AppConfigError> {
         let mut next = self.current();
         next.remote_enabled = Some(enabled);
+        self.save(next)
+    }
+
+    pub fn begin_local_storage_migration(
+        &self,
+        pending: PendingLocalStorageMigration,
+    ) -> Result<(), AppConfigError> {
+        let mut next = self.current();
+        next.pending_local_storage_migration = Some(pending);
+        self.save(next)
+    }
+
+    pub fn complete_local_storage_migration(
+        &self,
+        location: LocalStorageLocation,
+    ) -> Result<(), AppConfigError> {
+        let mut next = self.current();
+        next.local_storage_location = location;
+        next.pending_local_storage_migration = None;
         self.save(next)
     }
 
@@ -262,6 +332,36 @@ mod tests {
 
         let reloaded = AppConfigStore::load(path).unwrap();
         assert_eq!(reloaded.current().remote_enabled(), Some(false));
+    }
+
+    #[test]
+    fn local_storage_migration_is_committed_atomically_with_location() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join(APP_CONFIG_FILENAME);
+        let store = AppConfigStore::load(path.clone()).unwrap();
+        let location = LocalStorageLocation::Custom {
+            base_path: PathBuf::from("D:/DiaryData"),
+        };
+        let pending = PendingLocalStorageMigration::new(
+            PathBuf::from("C:/old/lfc"),
+            PathBuf::from("D:/DiaryData/los"),
+            PathBuf::from("D:/DiaryData/los.migrating"),
+            location.clone(),
+        );
+
+        store.begin_local_storage_migration(pending).unwrap();
+        assert!(store.current().pending_local_storage_migration().is_some());
+
+        store
+            .complete_local_storage_migration(location.clone())
+            .unwrap();
+
+        let reloaded = AppConfigStore::load(path).unwrap();
+        assert_eq!(reloaded.current().local_storage_location(), &location);
+        assert!(reloaded
+            .current()
+            .pending_local_storage_migration()
+            .is_none());
     }
 
     #[test]

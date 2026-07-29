@@ -6,6 +6,7 @@ use crate::attachments::AttachmentServerHandle;
 use crate::caches::{DiaryMemoryCache, LocalObjectStore};
 use crate::cryptos::Crypto;
 use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
+use crate::local_storage::LocalStorageManager;
 use crate::object::OssClient;
 use crate::tasks::TaskPool;
 use dashmap::DashMap;
@@ -29,6 +30,7 @@ pub struct AppState {
     remote_enabled: Arc<AtomicBool>,
     storage_mode_gate: Arc<RwLock<()>>,
     app_config: AppConfigStore,
+    local_storage: LocalStorageManager,
 }
 
 impl AppState {
@@ -36,6 +38,7 @@ impl AppState {
         path: PathBuf,
         attachment_server: AttachmentServerHandle,
         app_config: AppConfigStore,
+        local_storage: LocalStorageManager,
     ) -> Self {
         let crypto = Crypto::new();
         let diary_cache = DiaryMemoryCache::new();
@@ -53,6 +56,7 @@ impl AppState {
             remote_enabled: Arc::new(AtomicBool::new(false)),
             storage_mode_gate: Arc::new(RwLock::new(())),
             app_config,
+            local_storage,
         }
     }
 
@@ -125,6 +129,10 @@ impl AppState {
         self.app_config.set_remote_enabled(enabled)
     }
 
+    pub fn local_storage(&self) -> LocalStorageManager {
+        self.local_storage.clone()
+    }
+
     /// 根据当前存储模式构造 DiaryStore
     pub fn diary_store(&self) -> Box<dyn DiaryStore> {
         if self.remote_enabled.load(Ordering::Relaxed) {
@@ -158,6 +166,12 @@ impl AppState {
         local_object_store: LocalObjectStore,
         attachment_server: AttachmentServerHandle,
     ) -> Self {
+        let app_config = AppConfigStore::in_memory(AppConfig::default());
+        let local_storage = LocalStorageManager::new(
+            app_config.clone(),
+            local_object_store.root().to_path_buf(),
+            local_object_store.root().to_path_buf(),
+        );
         Self {
             crypto,
             oss_client,
@@ -169,7 +183,8 @@ impl AppState {
             attachment_server,
             remote_enabled: Arc::new(AtomicBool::new(false)),
             storage_mode_gate: Arc::new(RwLock::new(())),
-            app_config: AppConfigStore::in_memory(AppConfig::default()),
+            app_config,
+            local_storage,
         }
     }
 }
