@@ -37,6 +37,9 @@ pub struct DiarySummary {
     /// Manifest 中的附件总数，包含未插入正文的附件
     #[specta(type = f64)]
     pub attachment_count: usize,
+    /// Manifest 中所有附件声明大小的总和，包含未插入正文的附件
+    #[specta(type = f64)]
+    pub attachment_total_size: u64,
     /// 正文节点中各类附件的数量，不包含未插入正文的附件
     pub attachment_counts: DiaryAttachmentCounts,
     /// 正文节点中各类加密附件的数量
@@ -47,6 +50,9 @@ impl DiarySummary {
     pub fn from_manifest(manifest: &DiaryManifest) -> Self {
         let title = manifest.content.title();
         let attachment_counts = manifest.content.attachment_counts();
+        let attachment_total_size = manifest.attachments.iter().fold(0u64, |total, attachment| {
+            total.saturating_add(attachment.size)
+        });
         let encrypted_attachment_ids = manifest
             .attachments
             .iter()
@@ -63,6 +69,7 @@ impl DiarySummary {
             updated: manifest.updated,
             title,
             attachment_count: manifest.attachments.len(),
+            attachment_total_size,
             attachment_counts,
             encrypted_attachment_counts,
         }
@@ -131,7 +138,7 @@ mod tests {
                     id: "audio-1".to_string(),
                     filename: "audio.m4a".to_string(),
                     mimetype: "video/mp4".to_string(),
-                    size: 1,
+                    size: 1_024,
                     encrypted: true,
                     nonce: Vec::new(),
                     algorithm: Gcm,
@@ -141,7 +148,7 @@ mod tests {
                     id: "file-1".to_string(),
                     filename: "plain.txt".to_string(),
                     mimetype: "text/plain".to_string(),
-                    size: 1,
+                    size: 2_048,
                     encrypted: false,
                     nonce: Vec::new(),
                     algorithm: Gcm,
@@ -151,7 +158,7 @@ mod tests {
                     id: "unused-image".to_string(),
                     filename: "unused.jpg".to_string(),
                     mimetype: "image/jpeg".to_string(),
-                    size: 1,
+                    size: 4_096,
                     encrypted: true,
                     nonce: Vec::new(),
                     algorithm: Gcm,
@@ -163,8 +170,10 @@ mod tests {
         let summary = DiarySummary::from_manifest(&manifest);
 
         assert_eq!(summary.attachment_count, 3);
+        assert_eq!(summary.attachment_total_size, 7_168);
         let serialized = serde_json::to_value(&summary).expect("serialize summary");
         assert_eq!(serialized["attachmentCount"], 3);
+        assert_eq!(serialized["attachmentTotalSize"], 7_168);
         assert!(serialized.get("attachments").is_none());
 
         let full_manifest = serde_json::to_value(&manifest).expect("serialize manifest");
