@@ -4,10 +4,6 @@
 
 ## P1：保存与存储一致性
 
-## P1：平台隔离与最小权限
-
-- [ ] Tauri capability 包含范围过大的文件系统权限。
-
 ## P2：前端与依赖清理
 
 - [ ] 已不再需要的 `tauri-plugin-store` 旧配置迁移代码、依赖和 capability 仍然存在。
