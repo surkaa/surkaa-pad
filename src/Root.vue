@@ -1,11 +1,24 @@
 <script setup lang="ts">
+import {Channel} from '@tauri-apps/api/core';
+import {relaunch} from '@tauri-apps/plugin-process';
 import {platform} from "@tauri-apps/plugin-os";
 import {useEventListener} from "@vueuse/core";
 import {useConfigStore} from "./stores/config.ts";
-import {watchEffect} from "vue";
+import {onMounted, ref, watchEffect} from "vue";
+import type {LocalStorageMigrationEvent} from './bindings';
+import LocalStorageMigrationDialog from './components/LocalStorageMigrationDialog.vue';
+import api from './utils/api';
+import {formatError} from './utils/formatError';
+import {
+  initialLocalStorageMigrationDisplay,
+  reduceLocalStorageMigrationDisplay,
+  withLocalStorageMigrationError,
+} from './utils/localStorageMigration';
 
 const configStore = useConfigStore();
 const p = platform();
+const showLocalStorageMigration = ref(false);
+const localStorageMigrationDisplay = ref(initialLocalStorageMigrationDisplay());
 
 if (p === 'windows') {
   useEventListener('keydown', (event: KeyboardEvent) => {
@@ -62,10 +75,55 @@ watchEffect((onCleanup) => {
       break;
   }
 });
+
+onMounted(checkStartupLocalStorageMigration);
+
+async function checkStartupLocalStorageMigration() {
+  try {
+    const status = await api.cmdGetLocalStorageMigrationStatus();
+    if (status.legacyMigrationRequired || status.migrationPending) {
+      await migrateLegacyLocalStorage();
+    }
+  } catch (error) {
+    console.error('检查本地数据迁移状态失败:', error);
+  }
+}
+
+async function migrateLegacyLocalStorage() {
+  showLocalStorageMigration.value = true;
+  localStorageMigrationDisplay.value = initialLocalStorageMigrationDisplay();
+  const event = new Channel<LocalStorageMigrationEvent>();
+  event.onmessage = (message) => {
+    localStorageMigrationDisplay.value = reduceLocalStorageMigrationDisplay(
+      localStorageMigrationDisplay.value,
+      message,
+    );
+  };
+
+  try {
+    await api.cmdMigrateLocalStorage(event, null);
+  } catch (error) {
+    if (!localStorageMigrationDisplay.value.error) {
+      localStorageMigrationDisplay.value = withLocalStorageMigrationError(
+        localStorageMigrationDisplay.value,
+        formatError(error),
+      );
+    }
+  }
+}
 </script>
 
 <template>
   <router-view v-slot="{ Component }">
     <component :is="Component"/>
   </router-view>
+  <LocalStorageMigrationDialog
+    v-model="showLocalStorageMigration"
+    title="升级本地数据目录"
+    :display="localStorageMigrationDisplay"
+    allow-defer
+    @retry="migrateLegacyLocalStorage"
+    @defer="showLocalStorageMigration = false"
+    @restart="relaunch"
+  />
 </template>

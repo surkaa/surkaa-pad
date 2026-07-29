@@ -195,6 +195,12 @@ async cmdGetLocalStorageInfo() : Promise<Result<LocalStorageInfo, AppError>> {
 }
 },
 /**
+ * 轻量检查启动时是否需要继续或执行本地存储迁移。
+ */
+async cmdGetLocalStorageMigrationStatus() : Promise<LocalStorageMigrationStatus> {
+    return await TAURI_INVOKE("cmd_get_local_storage_migration_status");
+},
+/**
  * 预检查本地对象存储迁移。`base_path` 为空时表示迁移到默认位置。
  */
 async cmdPlanLocalStorageMigration(basePath: string | null) : Promise<Result<LocalStorageMigrationPlan, AppError>> {
@@ -654,6 +660,7 @@ export type LocalStorageInfo = { currentPath: string; configuredPath: string; is
 export type LocalStorageMigrationEvent = { event: "preparing"; data: { sourcePath: string; targetPath: string } } | { event: "started"; data: { totalFiles: number; totalBytes: number; fastMove: boolean } } | { event: "phase"; data: { phase: LocalStorageMigrationPhase } } | { event: "progress"; data: { phase: LocalStorageMigrationPhase; currentFile: string; currentFileIndex: number; totalFiles: number; currentFileBytes: number; currentFileSize: number; processedBytes: number; totalBytes: number } } | { event: "completed"; data: { targetPath: string; migratedFiles: number; migratedBytes: number; cleanupWarning: string | null } } | { event: "error"; data: { phase: LocalStorageMigrationPhase; currentFile: string | null; message: string } }
 export type LocalStorageMigrationPhase = "preparing" | "copying" | "verifying" | "switching" | "cleaning"
 export type LocalStorageMigrationPlan = { sourcePath: string; targetPath: string; totalFiles: number; totalBytes: number; availableBytes: number; requiredBytes: number; fastMove: boolean }
+export type LocalStorageMigrationStatus = { legacyMigrationRequired: boolean; migrationPending: boolean }
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type SyncDirection = "upload" | "download"
 export type SyncPhase = "preparing" | "attachments" | "manifests"

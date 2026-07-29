@@ -106,6 +106,8 @@
         </q-list>
         </section>
 
+        <LocalStorageSettings v-if="isWindows"/>
+
         <section class="settings-group">
         <div class="group-title">数据管理</div>
         <q-list bordered separator class="pad-card">
@@ -219,6 +221,7 @@ import {useRemoteStorageSettings} from '../../composables/useRemoteStorageSettin
 import AttachmentEncryptionSettings from './AttachmentEncryptionSettings.vue';
 import AttachmentUploadSettings from './AttachmentUploadSettings.vue';
 import EditorShortcutSettings from './EditorShortcutSettings.vue';
+import LocalStorageSettings from './LocalStorageSettings.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();

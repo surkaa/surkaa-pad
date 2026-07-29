@@ -282,8 +282,11 @@ pub fn cmd_caching_attachment(
     id: String,
     attachment_id: String,
 ) -> Result<String, AppError> {
-    let store = state.diary_store();
-    Ok(state.task_pool().spawn(async move {
+    let task_pool = state.task_pool();
+    let state = state.inner().clone();
+    Ok(task_pool.spawn(async move {
+        let _storage_guard = state.lock_storage_operation().await;
+        let store = state.diary_store();
         caching_attachment(&*store, Arc::new(event), &id, &attachment_id).await;
     }))
 }

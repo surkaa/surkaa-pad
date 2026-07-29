@@ -33,7 +33,8 @@ use crate::diaries::diary_command::{
     cmd_page_diary_ids, cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
 };
 use crate::local_storage::migration::{
-    cmd_get_local_storage_info, cmd_migrate_local_storage, cmd_plan_local_storage_migration,
+    cmd_get_local_storage_info, cmd_get_local_storage_migration_status, cmd_migrate_local_storage,
+    cmd_plan_local_storage_migration,
 };
 use crate::object::object_command::{
     cmd_disable_remote_storage, cmd_enable_remote_storage, cmd_get_storage_mode,
@@ -80,6 +81,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_restore_remote_storage,
             // 本地存储位置管理
             cmd_get_local_storage_info,
+            cmd_get_local_storage_migration_status,
             cmd_plan_local_storage_migration,
             cmd_migrate_local_storage,
             // 日记基本操作

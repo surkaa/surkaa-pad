@@ -101,6 +101,13 @@ pub struct LocalStorageInfo {
 
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+pub struct LocalStorageMigrationStatus {
+    pub legacy_migration_required: bool,
+    pub migration_pending: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalStorageMigrationPlan {
     pub source_path: String,
     pub target_path: String,
@@ -204,6 +211,19 @@ pub async fn cmd_get_local_storage_info(
             .iter()
             .fold(0u64, |total, entry| total.saturating_add(entry.size)),
     })
+}
+
+/// 轻量检查启动时是否需要继续或执行本地存储迁移。
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_get_local_storage_migration_status(
+    state: State<'_, AppState>,
+) -> LocalStorageMigrationStatus {
+    let manager = state.local_storage();
+    LocalStorageMigrationStatus {
+        legacy_migration_required: manager.is_legacy_root(state.local_object_store().root()),
+        migration_pending: manager.pending_migration().is_some(),
+    }
 }
 
 /// 预检查本地对象存储迁移。`base_path` 为空时表示迁移到默认位置。
@@ -356,15 +376,6 @@ async fn execute_migration(
         }
     }
 
-    let copy_required = required_copy_space(plan.total_bytes());
-    let available = available_space_for(&plan.request.target_root)?;
-    if available < copy_required {
-        return Err(LocalStorageMigrationError::InsufficientSpace {
-            required: copy_required,
-            available,
-        });
-    }
-
     if plan.request.target_root.exists() && directory_has_entries(&plan.request.target_root)? {
         verify_entries(
             &source,
@@ -374,6 +385,13 @@ async fn execute_migration(
         )
         .await?;
     } else {
+        let available = available_space_for(&plan.request.target_root)?;
+        if available < plan.required_bytes {
+            return Err(LocalStorageMigrationError::InsufficientSpace {
+                required: plan.required_bytes,
+                available,
+            });
+        }
         let staging = LocalObjectStore::new(staging_root.clone());
         copy_entries(&source, &staging, &plan.entries, event.clone()).await?;
         verify_entries(&source, &staging, &plan.entries, event.clone()).await?;
@@ -449,10 +467,14 @@ async fn build_plan_for_resume(
     let fast_move = source_root.exists()
         && !target_nonempty
         && same_filesystem(&source_root, &request.target_root)?;
-    let required_bytes = if fast_move {
+    let staging_bytes = pending
+        .map(|pending| directory_size(pending.staging_root()))
+        .transpose()?
+        .unwrap_or(0);
+    let required_bytes = if fast_move || resuming_completed_target {
         0
     } else {
-        required_copy_space(total_bytes)
+        required_copy_space(total_bytes).saturating_sub(staging_bytes)
     };
 
     Ok(MigrationPlanInternal {
@@ -514,6 +536,26 @@ fn directory_has_entries(path: &Path) -> Result<bool, std::io::Error> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
+}
+
+fn directory_size(path: &Path) -> Result<u64, std::io::Error> {
+    if !path.exists() {
+        return Ok(0);
+    }
+    let mut total = 0u64;
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(directory) = stack.pop() {
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                stack.push(entry.path());
+            } else if file_type.is_file() {
+                total = total.saturating_add(entry.metadata()?.len());
+            }
+        }
+    }
+    Ok(total)
 }
 
 fn staging_root(target_root: &Path) -> PathBuf {
@@ -883,6 +925,18 @@ mod tests {
         assert_eq!(required_copy_space(large), large + large / 20);
     }
 
+    #[test]
+    fn directory_size_counts_existing_staging_files() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let nested = temp_dir.path().join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(temp_dir.path().join("object.data"), vec![1; 512]).unwrap();
+        std::fs::write(nested.join("object.md5"), vec![2; 32]).unwrap();
+
+        assert_eq!(directory_size(temp_dir.path()).unwrap(), 544);
+        assert_eq!(directory_size(&temp_dir.path().join("missing")).unwrap(), 0);
+    }
+
     #[tokio::test]
     async fn legacy_directory_is_moved_to_default_los_and_committed() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -990,6 +1044,18 @@ mod tests {
                 location.clone(),
             ))
             .unwrap();
+        let pending = manager.pending_migration().unwrap();
+        let resumed_plan = build_plan_for_resume(
+            &source,
+            MigrationRequest {
+                location: location.clone(),
+                target_root: pending.target_root().to_path_buf(),
+            },
+            Some(&pending),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resumed_plan.required_bytes, 0);
         let (sender, _receiver) = mpsc::unbounded_channel();
         let sender: Arc<dyn MessageSender<LocalStorageMigrationEvent>> = Arc::new(sender);
 
