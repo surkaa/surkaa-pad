@@ -4472,7 +4472,8 @@ dependencies = [
 
 [[package]]
 name = "rust-s3"
-version = "0.37.1"
+version = "0.37.2"
+source = "git+https://github.com/surkaa/rust-s3?rev=b208afb843d160b3085055507c69382f07dfb931#b208afb843d160b3085055507c69382f07dfb931"
 dependencies = [
  "async-trait",
  "aws-creds",

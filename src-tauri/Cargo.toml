@@ -80,7 +80,7 @@ http-range-header = "0.4.2"
 infer = "0.22"
 urlencoding = "2.1.3"
 image = "0.25.9"
-rust-s3 = { path = "../../Forks/rust-s3/s3", default-features = false, features = ["with-tokio", "tokio-rustls-tls"] }
+rust-s3 = { git = "https://github.com/surkaa/rust-s3", rev = "b208afb843d160b3085055507c69382f07dfb931", default-features = false, features = ["with-tokio", "tokio-rustls-tls"] }
 tokio-stream = "0.1.18"
 thiserror = "2"
 
