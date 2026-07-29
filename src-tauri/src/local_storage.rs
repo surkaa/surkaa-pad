@@ -4,6 +4,40 @@ use std::path::{Path, PathBuf};
 
 pub mod migration;
 
+pub(crate) const MINIMUM_FREE_SPACE_MARGIN: u64 = 1024 * 1024 * 1024;
+
+/// 为一次可能产生新文件的数据写入保留空间。
+///
+/// 除实际写入量外，至少保留 1 GiB；数据量较大时改用 5% 作为余量。
+/// 零写入不需要额外空间。
+pub(crate) fn required_space_with_margin(total_bytes: u64) -> u64 {
+    if total_bytes == 0 {
+        return 0;
+    }
+    total_bytes.saturating_add(MINIMUM_FREE_SPACE_MARGIN.max(total_bytes / 20))
+}
+
+/// 查询指定目录实际所在文件系统的可用空间。
+///
+/// 目录尚未创建时，从最近的已存在父目录判断，避免错误地固定检查系统盘。
+pub(crate) fn available_space_for(path: &Path) -> Result<u64, std::io::Error> {
+    let ancestor = existing_ancestor(path).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "找不到目标目录所在磁盘")
+    })?;
+    fs4::available_space(ancestor)
+}
+
+pub(crate) fn existing_ancestor(path: &Path) -> Option<&Path> {
+    let mut current = Some(path);
+    while let Some(candidate) = current {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
 #[derive(Clone, Debug)]
 pub struct LocalStorageManager {
     config: AppConfigStore,
@@ -188,5 +222,24 @@ mod tests {
         assert!(manager
             .active_root_unavailable_reason(&manager.startup_root())
             .is_none());
+    }
+
+    #[test]
+    fn required_space_adds_a_conservative_margin() {
+        assert_eq!(required_space_with_margin(0), 0);
+        assert_eq!(
+            required_space_with_margin(100),
+            100 + MINIMUM_FREE_SPACE_MARGIN
+        );
+        let large = MINIMUM_FREE_SPACE_MARGIN * 40;
+        assert_eq!(required_space_with_margin(large), large + large / 20);
+    }
+
+    #[test]
+    fn available_space_uses_existing_parent_for_new_directory() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let missing = temp_dir.path().join("not-created").join("los");
+
+        assert!(available_space_for(&missing).unwrap() > 0);
     }
 }

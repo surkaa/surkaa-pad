@@ -1,7 +1,9 @@
 use crate::app_config::{LocalStorageLocation, PendingLocalStorageMigration};
 use crate::caches::{LocalObjectEntry, LocalObjectStore};
 use crate::error::AppError;
-use crate::local_storage::LocalStorageManager;
+use crate::local_storage::{
+    available_space_for, existing_ancestor, required_space_with_margin, LocalStorageManager,
+};
 use crate::state::AppState;
 use crate::utils::message_sender::MessageSender;
 use futures_util::StreamExt;
@@ -16,8 +18,6 @@ use tauri::{AppHandle, State};
 use tauri_plugin_log::log;
 use tauri_plugin_opener::OpenerExt;
 use thiserror::Error;
-
-const MINIMUM_FREE_SPACE_MARGIN: u64 = 1024 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -499,7 +499,7 @@ async fn build_plan_for_resume(
     let required_bytes = if fast_move || resuming_completed_target {
         0
     } else {
-        required_copy_space(total_bytes).saturating_sub(staging_bytes)
+        required_space_with_margin(total_bytes).saturating_sub(staging_bytes)
     };
 
     Ok(MigrationPlanInternal {
@@ -589,31 +589,6 @@ fn staging_root(target_root: &Path) -> PathBuf {
         .and_then(|name| name.to_str())
         .unwrap_or("los");
     target_root.with_file_name(format!("{name}.migrating"))
-}
-
-fn required_copy_space(total_bytes: u64) -> u64 {
-    if total_bytes == 0 {
-        return 0;
-    }
-    total_bytes.saturating_add(MINIMUM_FREE_SPACE_MARGIN.max(total_bytes / 20))
-}
-
-fn available_space_for(path: &Path) -> Result<u64, std::io::Error> {
-    let ancestor = existing_ancestor(path).ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::NotFound, "找不到目标目录所在磁盘")
-    })?;
-    fs4::available_space(ancestor)
-}
-
-fn existing_ancestor(path: &Path) -> Option<&Path> {
-    let mut current = Some(path);
-    while let Some(candidate) = current {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        current = candidate.parent();
-    }
-    None
 }
 
 #[cfg(windows)]
@@ -944,10 +919,13 @@ mod tests {
 
     #[test]
     fn required_space_includes_safety_margin() {
-        assert_eq!(required_copy_space(0), 0);
-        assert_eq!(required_copy_space(100), 100 + MINIMUM_FREE_SPACE_MARGIN);
+        assert_eq!(required_space_with_margin(0), 0);
+        assert_eq!(
+            required_space_with_margin(100),
+            100 + crate::local_storage::MINIMUM_FREE_SPACE_MARGIN
+        );
         let large = 100 * 1024 * 1024 * 1024u64;
-        assert_eq!(required_copy_space(large), large + large / 20);
+        assert_eq!(required_space_with_margin(large), large + large / 20);
     }
 
     #[test]
