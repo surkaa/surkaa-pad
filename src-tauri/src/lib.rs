@@ -1,3 +1,4 @@
+pub mod ai;
 mod app_config;
 mod attachments;
 mod caches;
