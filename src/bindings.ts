@@ -673,6 +673,10 @@ title: string;
  */
 attachmentCount: number; 
 /**
+ * Manifest 中所有附件声明大小的总和，包含未插入正文的附件
+ */
+attachmentTotalSize: number; 
+/**
  * 正文节点中各类附件的数量，不包含未插入正文的附件
  */
 attachmentCounts: DiaryAttachmentCounts; 
