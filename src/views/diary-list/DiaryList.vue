@@ -18,9 +18,11 @@ import {
 import {useRouter} from 'vue-router';
 import {useDiaryListShortcuts} from '../../composables/useDiaryListShortcuts';
 import {formatEditorShortcut} from '../../utils/editorShortcuts';
+import {platform} from '@tauri-apps/plugin-os';
 
 const $q = useQuasar();
 const router = useRouter();
+const isWindows = platform() === 'windows';
 const timeoutStore = useTimeoutStore();
 const dataStore = useDataStore();
 const {
@@ -237,10 +239,10 @@ onDeactivated(() => {
 
     <Teleport v-if="isActivating" defer to="#header-actions">
       <q-btn flat round dense icon="search" aria-label="搜索日记" @click="openSearch">
-        <q-tooltip>搜索（{{ formatEditorShortcut(diaryListShortcuts.search) }}）</q-tooltip>
+        <q-tooltip v-if="isWindows">搜索（{{ formatEditorShortcut(diaryListShortcuts.search) }}）</q-tooltip>
       </q-btn>
-      <q-btn flat round dense icon="settings" aria-label="设置" @click="openSettings">
-        <q-tooltip>设置（{{ formatEditorShortcut(diaryListShortcuts.settings) }}）</q-tooltip>
+      <q-btn flat round dense icon="settings" aria-label="设置" class="q-ml-md" @click="openSettings">
+        <q-tooltip v-if="isWindows">设置（{{ formatEditorShortcut(diaryListShortcuts.settings) }}）</q-tooltip>
       </q-btn>
     </Teleport>
     <Teleport v-if="isActivating" defer to="#footer-content">
