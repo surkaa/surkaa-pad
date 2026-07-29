@@ -282,6 +282,7 @@ mod diary_list_tests {
                 format!("{}\n{}", title, content).as_str().into()
             );
             assert_eq!(detail.summary.id, id);
+            assert!(detail.manifest_size > 0);
             assert!(detail.attachments.is_empty());
             assert!(detail.attachment_urls.is_empty());
         }

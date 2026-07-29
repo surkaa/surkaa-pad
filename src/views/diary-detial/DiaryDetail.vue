@@ -34,7 +34,7 @@ const pinnedDiaryIds = configStore.useTauriConfig('pinned_diary_ids');
 const editorShortcuts = configStore.useTauriConfig('windows_editor_shortcuts');
 
 const {
-  diaryId, diary, attachments, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
+  diaryId, diary, attachments, diaryManifestSize, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
   loadDiaryInfo, deleteDiary
 } = useDiaryCore();
 
@@ -249,6 +249,7 @@ onActivated(async () => {
         :diary="diary"
         :diary-id="diaryId"
         :attachments="attachments"
+        :manifest-size="diaryManifestSize"
     />
 
     <DiarySourceDialog v-model="showSourceDialog" :diary-id="diaryId"/>

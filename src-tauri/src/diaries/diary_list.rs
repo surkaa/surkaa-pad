@@ -32,6 +32,7 @@ pub async fn get_diary_detail(
     id: &str,
 ) -> Result<DiaryDetail, DiaryError> {
     let diary = get_diary(cache, crypto, store, id).await?;
+    let manifest_size = store.get_manifest_size(id).await?;
     let mut map = HashMap::new();
     for attachment in &diary.attachments {
         let url = attachment_server.url(id, &attachment.id);
@@ -39,6 +40,7 @@ pub async fn get_diary_detail(
     }
     Ok(DiaryDetail {
         summary: DiarySummary::from_manifest(&diary),
+        manifest_size,
         content: diary.content,
         attachments: diary.attachments,
         attachment_urls: map,

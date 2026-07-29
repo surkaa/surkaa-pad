@@ -198,6 +198,8 @@ pub trait DiaryStore: Send + Sync {
     async fn download_manifest(&self, id: &str) -> Result<(Vec<u8>, String), DiaryError>;
     /// 获取 manifest 的元数据（etag），用于缓存校验。不存在时返回 Ok(None)
     async fn get_manifest_etag(&self, id: &str) -> Result<Option<String>, DiaryError>;
+    /// 获取加密 manifest 对象的真实字节数。
+    async fn get_manifest_size(&self, id: &str) -> Result<u64, DiaryError>;
     /// 删除日记（manifest + 所有附件）
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError>;
     /// 列出日记 ID（分页）
@@ -325,6 +327,14 @@ impl DiaryStore for LocalStore {
     async fn get_manifest_etag(&self, id: &str) -> Result<Option<String>, DiaryError> {
         let key = remote_manifest_key(id);
         Ok(self.los.get(&key).await?)
+    }
+
+    async fn get_manifest_size(&self, id: &str) -> Result<u64, DiaryError> {
+        let key = remote_manifest_key(id);
+        self.los
+            .get_size(&key)
+            .await?
+            .ok_or(CacheError::NotFound.into())
     }
 
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
@@ -496,6 +506,19 @@ impl DiaryStore for RemoteStore {
         let key = remote_manifest_key(id);
         let metadata = self.client.get_metadata(&key).await?;
         Ok(metadata.etag)
+    }
+
+    async fn get_manifest_size(&self, id: &str) -> Result<u64, DiaryError> {
+        let key = remote_manifest_key(id);
+        self.client
+            .get_metadata(&key)
+            .await?
+            .content_length
+            .ok_or_else(|| {
+                DiaryError::Object(ObjectError::OperationFailed(format!(
+                    "日记主文件缺少 Content-Length: {key}"
+                )))
+            })
     }
 
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
@@ -791,6 +814,17 @@ mod tests {
         let (downloaded, returned_etag) = store.download_manifest("test-id-1").await.unwrap();
         assert_eq!(downloaded, data);
         assert_eq!(returned_etag, etag);
+        assert_eq!(
+            store.get_manifest_size("test-id-1").await.unwrap(),
+            data.len() as u64
+        );
+    }
+
+    #[tokio::test]
+    async fn test_local_store_get_missing_manifest_size() {
+        let (store, _los, _td) = make_local_store();
+
+        assert!(store.get_manifest_size("nonexistent").await.is_err());
     }
 
     #[tokio::test]

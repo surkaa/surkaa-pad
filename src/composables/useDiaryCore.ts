@@ -29,6 +29,7 @@ export function useDiaryCore() {
     } = storeToRefs(dataStore);
 
     const diaryContent = ref<DiaryContent>({nodes: []});
+    const diaryManifestSize = ref<number>();
 
     const isDelBack = ref(false);
 
@@ -49,6 +50,7 @@ export function useDiaryCore() {
         try {
             const detail = await api.cmdGetDiaryDetail(currentId.value);
             diarySummaries.value[currentId.value] = detail.summary;
+            diaryManifestSize.value = detail.manifestSize;
             diaryContent.value = detail.content;
             currentDiaryAttachments.value = detail.attachments;
             currentDiaryAttachmentUrlMap.value = detail.attachmentUrls as Record<string, string>;
@@ -180,6 +182,7 @@ export function useDiaryCore() {
         diaryId: currentId,
         diary: currentDiary,
         attachments: currentDiaryAttachments,
+        diaryManifestSize,
         diaryContent,
         attachmentMap: currentDiaryAttachmentUrlMap,
         isInitialLoaded,

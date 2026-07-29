@@ -81,6 +81,8 @@ impl DiarySummary {
 #[serde(rename_all = "camelCase")]
 pub struct DiaryDetail {
     pub summary: DiarySummary,
+    #[specta(type = f64)]
+    pub manifest_size: u64,
     pub content: DiaryContent,
     pub attachments: Vec<AttachmentMeta>,
     pub attachment_urls: HashMap<String, String>,

@@ -661,7 +661,7 @@ export type DiaryContentNode = { type: "markdown"; text: string } | { type: "ima
 /**
  * 仅在进入日记编辑页后加载的完整详情。
  */
-export type DiaryDetail = { summary: DiarySummary; content: DiaryContent; attachments: AttachmentMeta[]; attachmentUrls: Partial<{ [key in string]: string }> }
+export type DiaryDetail = { summary: DiarySummary; manifestSize: number; content: DiaryContent; attachments: AttachmentMeta[]; attachmentUrls: Partial<{ [key in string]: string }> }
 export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: DiaryContent; created: number; updated: number; attachments: AttachmentMeta[]; version?: number }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**

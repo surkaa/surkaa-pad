@@ -15,6 +15,9 @@
         </div>
         <div class="text-caption">创建时间：{{ formatTimestamp(diary?.created) }}</div>
         <div class="text-caption">更新时间：{{ formatTimestamp(diary?.updated) }}</div>
+        <div v-if="manifestSize !== undefined" class="text-caption">
+          日记主文件大小：{{ formatBytes(manifestSize) }}
+        </div>
         <div class="text-caption">附件总大小：{{ formatBytes(diary?.attachmentTotalSize) }}</div>
 
         <q-separator class="q-my-md"/>
@@ -60,6 +63,7 @@ const props = defineProps<{
   diary?: DiarySummary;
   diaryId: string;
   attachments: AttachmentMeta[];
+  manifestSize?: number;
 }>();
 const emit = defineEmits<{(event: 'update:modelValue', value: boolean): void}>();
 const attachmentGroups = computed(() => groupAttachmentsByMimeType(props.attachments));
