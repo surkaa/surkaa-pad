@@ -3,25 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { effectScope, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
-vi.mock('@tauri-apps/plugin-store', () => {
-    const mockStore = {
-        length: vi.fn().mockResolvedValue(0),
-        get: vi.fn().mockResolvedValue(null),
-        set: vi.fn().mockResolvedValue(undefined),
-        save: vi.fn().mockResolvedValue(undefined),
-        onKeyChange: vi.fn().mockResolvedValue(vi.fn()),
-    }
-    return {
-        Store: {
-            load: vi.fn().mockResolvedValue(mockStore),
-        },
-    }
-})
-
 import { useConfigStore } from '../config'
 
 const STORAGE_PREFIX = 'config:'
-const MIGRATION_KEY = 'config:migrated'
 
 function clearConfigStorage() {
     for (let i = localStorage.length - 1; i >= 0; i--) {
@@ -30,15 +14,12 @@ function clearConfigStorage() {
             localStorage.removeItem(key)
         }
     }
-    localStorage.removeItem(MIGRATION_KEY)
 }
 
 describe('config store', () => {
     beforeEach(() => {
         setActivePinia(createPinia())
         clearConfigStorage()
-        // 模拟已迁移完成，跳过 tauri-plugin-store 调用
-        localStorage.setItem(MIGRATION_KEY, 'true')
     })
 
     describe('saveNormalConfig + getNormalConfig', () => {

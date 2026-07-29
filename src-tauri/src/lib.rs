@@ -136,8 +136,6 @@ pub fn run() {
     let app_builder = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
-        // 注册 Store 插件
-        .plugin(tauri_plugin_store::Builder::default().build())
         // 注册文件系统插件
         .plugin(tauri_plugin_fs::init())
         // 注册日志插件
@@ -164,7 +162,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init());
 
     // Android 插件必须在 Builder 阶段注册。若在 setup 中动态注册，插件初始化会在
-    // 持有 Tauri PluginStore 锁时等待 Android 主线程，而主线程加载首页又需要该锁，
+    // 持有 Tauri 内部插件注册锁时等待 Android 主线程，而主线程加载首页又需要该锁，
     // 两者竞争时会形成死锁并导致启动白屏。
     #[cfg(target_os = "android")]
     let app_builder = app_builder

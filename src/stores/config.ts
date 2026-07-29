@@ -1,7 +1,6 @@
 import {defineStore} from "pinia";
 import {customRef, onScopeDispose, Ref} from "vue";
 import {DEFAULT_THEME, ThemeType} from "../types.ts";
-import {Store} from "@tauri-apps/plugin-store";
 import {
     DEFAULT_WINDOWS_EDITOR_SHORTCUTS,
     type EditorShortcutConfig,
@@ -16,8 +15,6 @@ import {
 } from '../utils/diaryListShortcuts';
 
 const STORAGE_PREFIX = 'config:';
-const MIGRATION_KEY = 'config:migrated';
-const CONFIG_FILENAME = "settings.json";
 
 type ConfigMap = {
     "app-theme": ThemeType;
@@ -55,7 +52,6 @@ const DEFAULT_CONFIG = {
 } satisfies ConfigMap;
 
 type ConfigKey = keyof ConfigMap;
-const CONFIG_KEYS = Object.keys(DEFAULT_CONFIG) as ConfigKey[];
 
 function storageKey(key: ConfigKey): string {
     return `${STORAGE_PREFIX}${key}`;
@@ -105,56 +101,12 @@ function removeFromStorage(key: ConfigKey) {
     }));
 }
 
-/**
- * 从旧版 tauri-plugin-store 的 settings.json 迁移到 localStorage。
- * 只执行一次，迁移成功后在 localStorage 中设置标记。
- */
-async function migrateFromStore(): Promise<void> {
-    if (localStorage.getItem(MIGRATION_KEY)) return;
-
-    try {
-        const s = await Store.load(CONFIG_FILENAME);
-        const len = await s.length();
-        if (len === 0) {
-            localStorage.setItem(MIGRATION_KEY, 'true');
-            return;
-        }
-
-        for (const key of CONFIG_KEYS) {
-            const val = await s.get<ConfigMap[typeof key]>(key);
-            if (val !== null && val !== undefined) {
-                localStorage.setItem(
-                    storageKey(key),
-                    JSON.stringify(normalizeConfigValue(key, val)),
-                );
-            }
-        }
-        localStorage.setItem(MIGRATION_KEY, 'true');
-        console.info('[config-store] 已从 settings.json 迁移配置到 localStorage');
-    } catch (e) {
-        console.warn('[config-store] 迁移配置失败，使用默认值:', e);
-        localStorage.setItem(MIGRATION_KEY, 'true');
-    }
-}
-
 export const useConfigStore = defineStore('config', () => {
-    let migratePromise: Promise<void> | null = null;
-
-    function ensureMigrated(): Promise<void> {
-        if (migratePromise) return migratePromise;
-        migratePromise = migrateFromStore().finally(() => {
-            // 迁移失败也不阻塞后续读写，下次会重试
-        });
-        return migratePromise;
-    }
-
     async function saveNormalConfig<K extends ConfigKey>(key: K, value: ConfigMap[K]) {
-        await ensureMigrated();
         writeToStorage(key, value);
     }
 
     async function getNormalConfig<K extends ConfigKey>(key: K): Promise<ConfigMap[K]> {
-        await ensureMigrated();
         return readFromStorage(key);
     }
 
@@ -217,26 +169,16 @@ export const useConfigStore = defineStore('config', () => {
             window.removeEventListener(SAME_WINDOW_EVENT, onLocalChange);
         });
 
-        // 迁移完成后，用迁移来的值覆盖默认值（如果有变化）
-        ensureMigrated().then(() => {
-            const current = readFromStorage(key);
-            if (JSON.stringify(current) !== JSON.stringify(val)) {
-                handleChange(JSON.stringify(current));
-            }
-        });
-
         return tauriRef;
     }
 
     async function deleteConfig(...keys: ConfigKey[]): Promise<void> {
-        await ensureMigrated();
         for (const key of keys) {
             removeFromStorage(key);
         }
     }
 
     async function getLegacyRemoteEnabled(): Promise<boolean> {
-        await ensureMigrated();
         const raw = localStorage.getItem(`${STORAGE_PREFIX}remote_enabled`);
         if (raw !== null) {
             try {
@@ -249,7 +191,6 @@ export const useConfigStore = defineStore('config', () => {
     }
 
     async function deleteLegacyRemoteEnabled(): Promise<void> {
-        await ensureMigrated();
         localStorage.removeItem(`${STORAGE_PREFIX}remote_enabled`);
     }
 

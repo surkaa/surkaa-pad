@@ -12,7 +12,6 @@
     "core:default",
     "opener:default",
     "opener:allow-open-path",
-    "store:default",
     "dialog:default",
     "fs:allow-applog-read",
     "fs:allow-write-file",

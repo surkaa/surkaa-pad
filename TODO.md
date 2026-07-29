@@ -6,8 +6,6 @@
 
 ## P2：前端与依赖清理
 
-- [ ] 已不再需要的 `tauri-plugin-store` 旧配置迁移代码、依赖和 capability 仍然存在。
-
 - [ ] `DiaryDetail`、`DiarySearch` 和 `Settings` 为同步导入，非首屏代码进入了启动主包。
 
 - [ ] 编辑器占位/选中态#adb5bd、工具栏#fff、搜索筛选white和图片预览仍有未适配浅色、深色主题的硬编码颜色。
