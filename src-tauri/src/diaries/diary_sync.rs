@@ -1,4 +1,4 @@
-use crate::caches::{LocalCacheEntry, LocalFileCache};
+use crate::caches::{LocalObjectEntry, LocalObjectStore};
 use crate::object::{Object, OssClient};
 use crate::storages::diary_id_from_manifest_key;
 use crate::stream::ByteStream;
@@ -161,11 +161,11 @@ impl SyncFailure {
 }
 
 pub async fn sync_local_to_cloud(
-    lfc: &LocalFileCache,
+    los: &LocalObjectStore,
     client: &OssClient,
     event: Arc<dyn MessageSender<SyncProgressEvent>>,
 ) -> Result<SyncSummary, SyncFailure> {
-    let local_entries = lfc
+    let local_entries = los
         .get_all_entries()
         .await
         .map_err(|error| SyncFailure::new(error, SyncPhase::Preparing, None))?;
@@ -197,7 +197,7 @@ pub async fn sync_local_to_cloud(
             item.key,
             item.size
         );
-        let stream = lfc
+        let stream = los
             .get_stream(&item.key, None)
             .await
             .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
@@ -224,7 +224,7 @@ pub async fn sync_local_to_cloud(
             )
             .await
             .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
-        lfc.set_etag(&item.key, &etag)
+        los.set_etag(&item.key, &etag)
             .await
             .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
 
@@ -261,12 +261,12 @@ pub async fn sync_local_to_cloud(
 }
 
 pub async fn sync_cloud_to_local(
-    lfc: &LocalFileCache,
+    los: &LocalObjectStore,
     client: &OssClient,
     event: Arc<dyn MessageSender<SyncProgressEvent>>,
 ) -> Result<SyncSummary, SyncFailure> {
     let remote_entries = list_remote_objects(client).await?;
-    let local_entries = lfc
+    let local_entries = los
         .get_all_entries()
         .await
         .map_err(|error| SyncFailure::new(error, SyncPhase::Preparing, None))?;
@@ -318,7 +318,7 @@ pub async fn sync_cloud_to_local(
                 total_bytes: plan.total_bytes,
             },
         );
-        lfc.save_stream_with_etag(&item.key, etag, tracked_stream)
+        los.save_stream_with_etag(&item.key, etag, tracked_stream)
             .await
             .map_err(|error| SyncFailure::new(error, phase, Some(display_name.clone())))?;
 
@@ -354,7 +354,7 @@ pub async fn sync_cloud_to_local(
     })
 }
 
-fn local_entry(entry: LocalCacheEntry) -> SyncObjectEntry {
+fn local_entry(entry: LocalObjectEntry) -> SyncObjectEntry {
     SyncObjectEntry {
         key: entry.key,
         etag: Some(entry.etag),
@@ -370,7 +370,7 @@ fn remote_entry(entry: &Object) -> SyncObjectEntry {
     }
 }
 
-fn local_entry_map(entries: &[LocalCacheEntry]) -> HashMap<String, Option<String>> {
+fn local_entry_map(entries: &[LocalObjectEntry]) -> HashMap<String, Option<String>> {
     entries
         .iter()
         .map(|entry| (entry.key.clone(), Some(entry.etag.clone())))
@@ -559,7 +559,7 @@ fn percentage(current: u64, total: u64) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::caches::LocalFileCache;
+    use crate::caches::LocalObjectStore;
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
     use crate::diaries::{DiaryContent, DiaryManifest};
@@ -727,7 +727,7 @@ mod tests {
         let client = OssClient::from_env();
         let (client, guard) = TestOssGuard::new(client).await;
         let source_dir = tempfile::tempdir().expect("source temp dir");
-        let source_lfc = LocalFileCache::new(source_dir.path().to_path_buf());
+        let source_los = LocalObjectStore::new(source_dir.path().to_path_buf());
         let diary_id = "1234567890123";
         let attachment_key = format!("{diary_id}/large.bin");
         let manifest_key = remote_manifest_key(diary_id);
@@ -744,17 +744,17 @@ mod tests {
         let encrypted_manifest = crypto
             .encrypt(&serde_json::to_vec(&manifest).unwrap())
             .unwrap();
-        source_lfc
+        source_los
             .save_bytes(&attachment_key, &attachment)
             .await
             .unwrap();
-        source_lfc
+        source_los
             .save_bytes(&manifest_key, &encrypted_manifest)
             .await
             .unwrap();
 
         let (upload_tx, mut upload_rx) = unbounded_channel();
-        let upload_summary = sync_local_to_cloud(&source_lfc, &client, Arc::new(upload_tx))
+        let upload_summary = sync_local_to_cloud(&source_los, &client, Arc::new(upload_tx))
             .await
             .unwrap();
         let upload_events = std::iter::from_fn(|| upload_rx.try_recv().ok()).collect::<Vec<_>>();
@@ -784,16 +784,16 @@ mod tests {
         ));
 
         let (retry_tx, _retry_rx) = unbounded_channel();
-        let retry_summary = sync_local_to_cloud(&source_lfc, &client, Arc::new(retry_tx))
+        let retry_summary = sync_local_to_cloud(&source_los, &client, Arc::new(retry_tx))
             .await
             .unwrap();
         assert_eq!(retry_summary.transferred_files, 0);
         assert_eq!(retry_summary.skipped_files, 2);
 
         let target_dir = tempfile::tempdir().expect("target temp dir");
-        let target_lfc = LocalFileCache::new(target_dir.path().to_path_buf());
+        let target_los = LocalObjectStore::new(target_dir.path().to_path_buf());
         let (download_tx, mut download_rx) = unbounded_channel();
-        let download_summary = sync_cloud_to_local(&target_lfc, &client, Arc::new(download_tx))
+        let download_summary = sync_cloud_to_local(&target_los, &client, Arc::new(download_tx))
             .await
             .unwrap();
         let download_events =
@@ -801,14 +801,14 @@ mod tests {
 
         assert_eq!(download_summary.transferred_files, 2);
         assert_eq!(
-            target_lfc.get_data(&attachment_key).await.unwrap(),
+            target_los.get_data(&attachment_key).await.unwrap(),
             attachment
         );
         assert_eq!(
-            target_lfc.get_data(&manifest_key).await.unwrap(),
+            target_los.get_data(&manifest_key).await.unwrap(),
             encrypted_manifest
         );
-        let downloaded_stream = target_lfc.get_stream(&attachment_key, None).await.unwrap();
+        let downloaded_stream = target_los.get_stream(&attachment_key, None).await.unwrap();
         assert_eq!(
             collect_data(downloaded_stream).await.unwrap().len(),
             256 * 1024

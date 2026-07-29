@@ -10,7 +10,7 @@ use tauri::State;
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_clean_cache_file(state: State<'_, AppState>) -> Result<(), AppError> {
-    Ok(state.local_file_cache().delete_all().await?)
+    Ok(state.local_object_store().delete_all().await?)
 }
 
 /// 清理本地与 OSS 不一致或云端已不存在的缓存对象
@@ -24,7 +24,7 @@ pub async fn cmd_clean_unused_file(state: State<'_, AppState>) -> Result<Vec<Str
 
 async fn clean_unused_file(state: &AppState) -> Result<Vec<String>, AppError> {
     let _storage_mode_guard = state.lock_storage_operation().await;
-    // 本地模式下 LFC 是权威存储，不能用云端对象列表作为删除依据。
+    // 本地模式下 LOS 是权威存储，不能用云端对象列表作为删除依据。
     if !state.is_remote_enabled() {
         return Ok(Vec::new());
     }
@@ -43,10 +43,10 @@ async fn clean_unused_file(state: &AppState) -> Result<Vec<String>, AppError> {
         }
         next_token = nt;
     }
-    let lfc = state.local_file_cache();
-    let all_files = lfc.get_all().await?;
+    let los = state.local_object_store();
+    let all_files = los.get_all().await?;
     let need_deletion = plan_stale_cache_keys(&all_files, &remote_objs);
-    delete_cache_keys(&lfc, &need_deletion).await
+    delete_cache_keys(&los, &need_deletion).await
 }
 
 fn plan_stale_cache_keys(
@@ -66,12 +66,12 @@ fn plan_stale_cache_keys(
 }
 
 async fn delete_cache_keys(
-    lfc: &crate::caches::LocalFileCache,
+    los: &crate::caches::LocalObjectStore,
     keys: &[String],
 ) -> Result<Vec<String>, AppError> {
     let mut deleted = Vec::with_capacity(keys.len());
     for key in keys {
-        lfc.delete(key).await?;
+        los.delete(key).await?;
         deleted.push(key.clone());
     }
     Ok(deleted)
@@ -80,7 +80,7 @@ async fn delete_cache_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::caches::LocalFileCache;
+    use crate::caches::LocalObjectStore;
     use crate::cryptos::Crypto;
     use crate::object::OssClient;
 
@@ -121,29 +121,29 @@ mod tests {
     #[tokio::test]
     async fn local_mode_skips_cleanup_without_initialized_oss() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        lfc.save_bytes("local-only", b"must stay").await.unwrap();
-        let state = AppState::from_parts(Crypto::new(), OssClient::new(), lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        los.save_bytes("local-only", b"must stay").await.unwrap();
+        let state = AppState::from_parts(Crypto::new(), OssClient::new(), los.clone());
 
         let deleted = clean_unused_file(&state).await.unwrap();
 
         assert!(deleted.is_empty());
-        assert_eq!(lfc.get_data("local-only").await.unwrap(), b"must stay");
+        assert_eq!(los.get_data("local-only").await.unwrap(), b"must stay");
     }
 
     #[tokio::test]
     async fn stale_cache_deletion_reports_only_successful_deletes() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        lfc.save_bytes("keep", b"keep").await.unwrap();
-        lfc.save_bytes("delete", b"delete").await.unwrap();
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        los.save_bytes("keep", b"keep").await.unwrap();
+        los.save_bytes("delete", b"delete").await.unwrap();
 
-        let deleted = delete_cache_keys(&lfc, &["delete".to_string()])
+        let deleted = delete_cache_keys(&los, &["delete".to_string()])
             .await
             .unwrap();
 
         assert_eq!(deleted, vec!["delete"]);
-        assert!(lfc.get("delete").await.unwrap().is_none());
-        assert!(lfc.get("keep").await.unwrap().is_some());
+        assert!(los.get("delete").await.unwrap().is_none());
+        assert!(los.get("keep").await.unwrap().is_some());
     }
 }

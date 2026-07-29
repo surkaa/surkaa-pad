@@ -1,6 +1,6 @@
 use crate::attachments::chunked_upload::ChunkedUploadState;
 use crate::attachments::AttachmentServerHandle;
-use crate::caches::{DiaryMemoryCache, LocalFileCache};
+use crate::caches::{DiaryMemoryCache, LocalObjectStore};
 use crate::cryptos::Crypto;
 use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
 use crate::object::OssClient;
@@ -17,7 +17,7 @@ pub struct AppState {
     crypto: Crypto,
     oss_client: OssClient,
     diary_cache: DiaryMemoryCache,
-    local_file_cache: LocalFileCache,
+    local_object_store: LocalObjectStore,
     task_pool: TaskPool,
     chunked_uploads: Arc<DashMap<String, Arc<Mutex<ChunkedUploadState>>>>,
     filename_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>>,
@@ -31,12 +31,12 @@ impl AppState {
     pub fn new(path: PathBuf, attachment_server: AttachmentServerHandle) -> Self {
         let crypto = Crypto::new();
         let diary_cache = DiaryMemoryCache::new();
-        let local_file_cache = LocalFileCache::new(path);
+        let local_object_store = LocalObjectStore::new(path);
         let task_pool = TaskPool::new();
         Self {
             crypto,
             oss_client: OssClient::new(),
-            local_file_cache,
+            local_object_store,
             diary_cache,
             task_pool,
             chunked_uploads: Arc::new(DashMap::new()),
@@ -59,8 +59,8 @@ impl AppState {
         self.diary_cache.clone()
     }
 
-    pub fn local_file_cache(&self) -> LocalFileCache {
-        self.local_file_cache.clone()
+    pub fn local_object_store(&self) -> LocalObjectStore {
+        self.local_object_store.clone()
     }
 
     pub fn task_pool(&self) -> TaskPool {
@@ -105,11 +105,11 @@ impl AppState {
     pub fn diary_store(&self) -> Box<dyn DiaryStore> {
         if self.remote_enabled.load(Ordering::Relaxed) {
             Box::new(RemoteStore::new(
-                self.local_file_cache.clone(),
+                self.local_object_store.clone(),
                 self.oss_client.clone(),
             ))
         } else {
-            Box::new(LocalStore::new(self.local_file_cache.clone()))
+            Box::new(LocalStore::new(self.local_object_store.clone()))
         }
     }
 
@@ -117,12 +117,12 @@ impl AppState {
     pub fn from_parts(
         crypto: Crypto,
         oss_client: OssClient,
-        local_file_cache: LocalFileCache,
+        local_object_store: LocalObjectStore,
     ) -> Self {
         Self::from_parts_with_attachment_server(
             crypto,
             oss_client,
-            local_file_cache,
+            local_object_store,
             AttachmentServerHandle::for_test(),
         )
     }
@@ -131,14 +131,14 @@ impl AppState {
     pub fn from_parts_with_attachment_server(
         crypto: Crypto,
         oss_client: OssClient,
-        local_file_cache: LocalFileCache,
+        local_object_store: LocalObjectStore,
         attachment_server: AttachmentServerHandle,
     ) -> Self {
         Self {
             crypto,
             oss_client,
             diary_cache: DiaryMemoryCache::new(),
-            local_file_cache,
+            local_object_store,
             task_pool: TaskPool::new(),
             chunked_uploads: Arc::new(DashMap::new()),
             filename_allocators: Arc::new(DashMap::new()),
@@ -159,7 +159,7 @@ mod tests {
         let state = AppState::from_parts(
             Crypto::new(),
             OssClient::new(),
-            LocalFileCache::new(temp_dir.path().to_path_buf()),
+            LocalObjectStore::new(temp_dir.path().to_path_buf()),
         );
 
         let operation_guard = state.lock_storage_operation().await;

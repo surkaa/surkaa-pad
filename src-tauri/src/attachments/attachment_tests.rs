@@ -5,7 +5,7 @@ mod tests {
         rotate_image_attachment, toggle_attachment_encryption, update_attachment_filename,
     };
     use crate::attachments::attachment_types::AttachmentProcessEvent;
-    use crate::caches::{DiaryMemoryCache, LocalFileCache};
+    use crate::caches::{DiaryMemoryCache, LocalObjectStore};
     use crate::cryptos::Crypto;
     use crate::diaries::diary_store::RemoteStore;
     use crate::diaries::{delete_diary, get_diary, save_diary};
@@ -23,8 +23,8 @@ mod tests {
     use std::sync::Arc;
     use tokio::task::JoinHandle;
 
-    fn make_remote_state(crypto: &Crypto, client: &OssClient, lfc: &LocalFileCache) -> AppState {
-        let state = AppState::from_parts(crypto.clone(), client.clone(), lfc.clone());
+    fn make_remote_state(crypto: &Crypto, client: &OssClient, los: &LocalObjectStore) -> AppState {
+        let state = AppState::from_parts(crypto.clone(), client.clone(), los.clone());
         state.set_remote_enabled(true);
         state
     }
@@ -33,8 +33,8 @@ mod tests {
     async fn standard_upload_rolls_back_when_diary_is_deleted_before_manifest_update() {
         let crypto = Crypto::from_env();
         let temp_dir = tempfile::tempdir().expect("temp dir");
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let state = AppState::from_parts(crypto.clone(), OssClient::new(), lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let state = AppState::from_parts(crypto.clone(), OssClient::new(), los.clone());
         let store = state.diary_store();
         let (summary, _) = save_diary(&state.diary_cache(), &crypto, &*store, "upload race")
             .await
@@ -74,7 +74,7 @@ mod tests {
         release_tx.send(()).unwrap();
 
         assert!(upload.await.unwrap().is_err());
-        assert!(lfc.get_all().await.unwrap().is_empty());
+        assert!(los.get_all().await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -85,8 +85,8 @@ mod tests {
         let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let lfc = LocalFileCache::new(path);
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let los = LocalObjectStore::new(path);
+        let store = RemoteStore::new(los.clone(), client.clone());
 
         // 预置数据: 初始化日记主体
         let (summary, _) = save_diary(&cache, &crypto, &store, "并发附件测试日记主体")
@@ -97,7 +97,7 @@ mod tests {
         let concurrency_level = 10;
         let mut add_tasks: Vec<JoinHandle<_>> = Vec::with_capacity(concurrency_level);
 
-        let state = make_remote_state(&crypto, &client, &lfc);
+        let state = make_remote_state(&crypto, &client, &los);
 
         // 2. 核心测试: 并发添加附件
         for i in 0..concurrency_level {
@@ -135,7 +135,7 @@ mod tests {
         }
 
         // 3. 断言: 验证写一致性与防覆盖
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let store = RemoteStore::new(los.clone(), client.clone());
         let manifest = get_diary(&cache, &crypto, &store, &diary_id)
             .await
             .expect("重新获取日记清单失败");
@@ -176,11 +176,11 @@ mod tests {
         for attachment_id in attachment_ids {
             let cache_clone = cache.clone();
             let crypto_clone = crypto.clone();
-            let lfc_clone = lfc.clone();
+            let los_clone = los.clone();
             let client_clone = client.clone();
             let id_clone = diary_id.clone();
             del_tasks.push(tokio::spawn(async move {
-                let store = RemoteStore::new(lfc_clone, client_clone);
+                let store = RemoteStore::new(los_clone, client_clone);
                 delete_attachment(
                     &cache_clone,
                     &crypto_clone,
@@ -199,7 +199,7 @@ mod tests {
         }
 
         // 5. 断言: 验证并发删一致性
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let store = RemoteStore::new(los.clone(), client.clone());
         let final_manifest = get_diary(&cache, &crypto, &store, &diary_id)
             .await
             .expect("最终获取日记清单失败");
@@ -219,9 +219,9 @@ mod tests {
         let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let lfc = LocalFileCache::new(path);
-        let store = RemoteStore::new(lfc.clone(), client.clone());
-        let state = make_remote_state(&crypto, &client, &lfc);
+        let los = LocalObjectStore::new(path);
+        let store = RemoteStore::new(los.clone(), client.clone());
+        let state = make_remote_state(&crypto, &client, &los);
 
         // 预置数据：初始化日记
         let (summary, _) = save_diary(&cache, &crypto, &store, "加密切换测试")
@@ -259,7 +259,7 @@ mod tests {
         toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, attachment_id.clone()).await;
 
         // 验证元数据是否已更新为加密
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let store = RemoteStore::new(los.clone(), client.clone());
         let diary_encrypted = get_diary(&cache, &crypto, &store, &diary_id).await.unwrap();
         let meta_enc = diary_encrypted.attachments.first().unwrap();
         assert!(meta_enc.encrypted, "附件应该是加密状态");
@@ -270,7 +270,7 @@ mod tests {
         toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, attachment_id.clone()).await;
 
         // 检查数据是否还原
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let store = RemoteStore::new(los.clone(), client.clone());
         let diary_decrypted = get_diary(&cache, &crypto, &store, &diary_id).await.unwrap();
         let meta_dec = diary_decrypted.attachments.first().unwrap();
         assert!(!meta_dec.encrypted, "附件应该是明文状态");
@@ -294,9 +294,9 @@ mod tests {
         let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let lfc = LocalFileCache::new(path);
-        let store = RemoteStore::new(lfc.clone(), client.clone());
-        let state = make_remote_state(&crypto, &client, &lfc);
+        let los = LocalObjectStore::new(path);
+        let store = RemoteStore::new(los.clone(), client.clone());
+        let state = make_remote_state(&crypto, &client, &los);
 
         // 准备环境：保存日记并上传一张原始图片
         let (summary, _) = save_diary(&cache, &crypto, &store, "图片旋转测试")
@@ -377,7 +377,7 @@ mod tests {
             .unwrap();
 
         // 解密
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let store = RemoteStore::new(los.clone(), client.clone());
         let diary = get_diary(&cache, &crypto, &store, &diary_id).await.unwrap();
         let meta = diary.attachments.first().unwrap();
         let dec_stream = crypto
@@ -401,9 +401,9 @@ mod tests {
         let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let lfc = LocalFileCache::new(path);
-        let store = RemoteStore::new(lfc.clone(), client.clone());
-        let state = make_remote_state(&crypto, &client, &lfc);
+        let los = LocalObjectStore::new(path);
+        let store = RemoteStore::new(los.clone(), client.clone());
+        let state = make_remote_state(&crypto, &client, &los);
 
         // 预置数据：初始化日记主体
         let (summary, _) = save_diary(&cache, &crypto, &store, "附件缓存生命周期测试")
@@ -441,14 +441,14 @@ mod tests {
         let key = remote_attachments_key(&diary_id, &attachment_id);
 
         // 验证缓存是否存在以及数据内容
-        let cached = lfc.get(&key).await.unwrap();
+        let cached = los.get(&key).await.unwrap();
         assert!(cached.is_some(), "附件上传后应该被正确缓存");
-        let cached_data = lfc.get_data(&key).await.unwrap();
+        let cached_data = los.get_data(&key).await.unwrap();
         assert_eq!(cached_data, raw_data, "本地缓存内容与上传的原始数据不一致");
 
         // 删除已有缓存后主动缓存，验证远端附件被完整下载并只发送一次完成事件。
-        lfc.delete(&key).await.unwrap();
-        assert!(lfc.get(&key).await.unwrap().is_none());
+        los.delete(&key).await.unwrap();
+        assert!(los.get(&key).await.unwrap().is_none());
 
         let (cache_tx, mut cache_rx) =
             tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
@@ -478,7 +478,7 @@ mod tests {
         assert_eq!(started_count, 1);
         assert_eq!(completed_count, 1);
         assert!(reached_100_percent);
-        assert_eq!(lfc.get_data(&key).await.unwrap(), raw_data);
+        assert_eq!(los.get_data(&key).await.unwrap(), raw_data);
 
         // 触发 toggle_attachment_encryption，验证缓存是否被正确替换
         let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
@@ -491,18 +491,18 @@ mod tests {
         }
 
         // 验证切换加密后缓存内容已经发生变化（由于加入了加密，内容不可能与原文相同）
-        let new_cached_data = lfc.get_data(&key).await.unwrap();
+        let new_cached_data = los.get_data(&key).await.unwrap();
         assert_ne!(
             new_cached_data, raw_data,
             "切换加密后，本地缓存的载荷应该发生变化"
         );
 
         // 删除附件，验证缓存被清空
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let store = RemoteStore::new(los.clone(), client.clone());
         delete_attachment(&cache, &crypto, &store, &diary_id, attachment_id)
             .await
             .unwrap();
-        let cached_after_delete = lfc.get(&key).await.unwrap();
+        let cached_after_delete = los.get(&key).await.unwrap();
         assert!(
             cached_after_delete.is_none(),
             "附件删除后，关联的本地缓存应该被一并清除"
@@ -518,9 +518,9 @@ mod tests {
         let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let lfc = LocalFileCache::new(path);
-        let store = RemoteStore::new(lfc.clone(), client.clone());
-        let state = make_remote_state(&crypto, &client, &lfc);
+        let los = LocalObjectStore::new(path);
+        let store = RemoteStore::new(los.clone(), client.clone());
+        let state = make_remote_state(&crypto, &client, &los);
         let (summary, _) = save_diary(&cache, &crypto, &store, "test-content")
             .await
             .expect("初始化日记失败");
@@ -563,7 +563,7 @@ mod tests {
         .await
         .expect("附件更名失败");
         // 检查
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let store = RemoteStore::new(los.clone(), client.clone());
         let diary = get_diary(&cache, &crypto, &store, &diary_id)
             .await
             .expect("获取日记失败");

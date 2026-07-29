@@ -57,7 +57,7 @@ pub async fn save_diary<C: Into<DiaryContent>>(
     // 加密 manifest
     let encrypted_manifest = crypto.encrypt(&manifest_json)?;
 
-    // 上传到存储（LocalStore 写入 LFC，RemoteStore 写入 OSS + LFC 写透）
+    // 上传到存储（LocalStore 写入 LOS，RemoteStore 写入 OSS + LOS 写透）
     let etag = store.upload_manifest(&id, &encrypted_manifest).await?;
 
     // 保存到内存缓存中

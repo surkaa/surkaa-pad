@@ -79,7 +79,7 @@ pub async fn cmd_enable_remote_storage(
 
     // 2. 同步本地数据到云端
     let summary = match sync_local_to_cloud(
-        &state.local_file_cache(),
+        &state.local_object_store(),
         &state.oss_client(),
         event.clone(),
     )
@@ -152,7 +152,7 @@ pub async fn cmd_disable_remote_storage(
 
     // 1. 同步云端数据到本地
     let summary = match sync_cloud_to_local(
-        &state.local_file_cache(),
+        &state.local_object_store(),
         &state.oss_client(),
         event.clone(),
     )

@@ -1,6 +1,6 @@
 #[cfg(test)]
-mod lfc_tests {
-    use crate::caches::LocalFileCache;
+mod los_tests {
+    use crate::caches::LocalObjectStore;
     use crate::stream::{collect_data, create_mock_stream};
     use bytes::Bytes;
     use std::io;
@@ -14,7 +14,7 @@ mod lfc_tests {
     async fn test_save_bytes_and_get() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let cache = LocalFileCache::new(path);
+        let cache = LocalObjectStore::new(path);
         let key = "test-key";
         let data = b"hello world";
 
@@ -42,7 +42,7 @@ mod lfc_tests {
     async fn test_delete_nonexistent_key() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let cache = LocalFileCache::new(path);
+        let cache = LocalObjectStore::new(path);
         cache.delete("ghost").await.unwrap();
         assert!(cache.get("ghost").await.unwrap().is_none());
     }
@@ -52,7 +52,7 @@ mod lfc_tests {
         use std::sync::Arc;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let cache = Arc::new(LocalFileCache::new(path));
+        let cache = Arc::new(LocalObjectStore::new(path));
         let key1 = "key1";
         let key2 = "key2";
         let data1 = b"data1";
@@ -78,7 +78,7 @@ mod lfc_tests {
     #[tokio::test]
     async fn test_save_stream_with_etag_replaces_cache_after_complete_stream() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
-        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let cache = LocalObjectStore::new(temp_dir.path().to_path_buf());
         let key = "nested/streamed-file";
         cache.save_bytes(key, b"old data").await.unwrap();
 
@@ -101,7 +101,7 @@ mod lfc_tests {
     #[tokio::test]
     async fn test_save_stream_with_etag_preserves_cache_on_stream_error() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
-        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let cache = LocalObjectStore::new(temp_dir.path().to_path_buf());
         let key = "stream-error";
         cache.save_bytes(key, b"old data").await.unwrap();
         let old_etag = cache.get(key).await.unwrap();
@@ -130,7 +130,7 @@ mod lfc_tests {
     #[tokio::test]
     async fn test_save_stream_with_etag_rejects_empty_etag() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
-        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let cache = LocalObjectStore::new(temp_dir.path().to_path_buf());
 
         let result = cache
             .save_stream_with_etag("file", " ", create_mock_stream(vec![], 1))
@@ -146,7 +146,7 @@ mod lfc_tests {
     #[tokio::test]
     async fn test_chunked_save_rejects_empty_etag_and_removes_temp_file() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
-        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let cache = LocalObjectStore::new(temp_dir.path().to_path_buf());
         let handle = cache.begin_chunked_save("file").await.unwrap();
         handle.write_chunk(b"partial").await.unwrap();
 
@@ -167,7 +167,7 @@ mod lfc_tests {
     #[tokio::test]
     async fn test_set_etag_without_rewriting_data() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
-        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let cache = LocalObjectStore::new(temp_dir.path().to_path_buf());
         cache.save_bytes("file", b"cached data").await.unwrap();
 
         cache.set_etag("file", "REMOTE-ETAG").await.unwrap();
@@ -182,7 +182,7 @@ mod lfc_tests {
     #[tokio::test]
     async fn test_get_all_entries_includes_file_size() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
-        let cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let cache = LocalObjectStore::new(temp_dir.path().to_path_buf());
         cache.save_bytes("diary/file", b"12345").await.unwrap();
 
         let entries = cache.get_all_entries().await.unwrap();
@@ -196,7 +196,7 @@ mod lfc_tests {
     async fn test_get_all_entries_treats_missing_root_as_empty() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let missing_path = temp_dir.path().join("not-created");
-        let cache = LocalFileCache::new(missing_path.clone());
+        let cache = LocalObjectStore::new(missing_path.clone());
 
         assert!(!missing_path.exists());
         assert!(cache.get_all_entries().await.unwrap().is_empty());
@@ -209,7 +209,7 @@ mod lfc_tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
         println!("temp dir: {:?}", temp_dir);
-        let cache = LocalFileCache::new(path);
+        let cache = LocalObjectStore::new(path);
         let key1 = "key1";
         let key2 = "key2";
         let data1 = b"data1";
@@ -240,7 +240,7 @@ mod lfc_tests {
 
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let cache = LocalFileCache::new(path);
+        let cache = LocalObjectStore::new(path);
         let entries: Vec<(&str, &[u8])> = vec![
             ("a", b"data_a"),
             ("b/c", b"data_bc"),

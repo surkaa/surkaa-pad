@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::caches::{DiaryMemoryCache, LocalFileCache};
+    use crate::caches::{DiaryMemoryCache, LocalObjectStore};
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
     use crate::diaries::diary_migration::CURRENT_VERSION;
@@ -24,8 +24,8 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let lfc = LocalFileCache::new(path);
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let los = LocalObjectStore::new(path);
+        let store = RemoteStore::new(los.clone(), client.clone());
 
         // 测试创建
         let initial_content = "Integration test diary content.";
@@ -104,7 +104,7 @@ mod tests {
             remote_attachments_key(&id, "att-two"),
         ] {
             assert!(
-                lfc.get(&key).await.unwrap().is_none(),
+                los.get(&key).await.unwrap().is_none(),
                 "本地缓存仍残留 {key}"
             );
         }
@@ -112,7 +112,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_local_file_cache_integration() {
+    async fn test_local_object_store_integration() {
         // 初始化依赖
         let crypto = Crypto::from_env();
         let client = OssClient::from_env();
@@ -120,8 +120,8 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let lfc = LocalFileCache::new(path);
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let los = LocalObjectStore::new(path);
+        let store = RemoteStore::new(los.clone(), client.clone());
 
         // 保存第一篇日记
         let content1 = "Original content for cache test.";
@@ -139,7 +139,7 @@ mod tests {
         let etag1 = metadata.etag.unwrap_or_default().to_string();
 
         // 验证本地缓存已生成
-        let cached = lfc.get(&object_key).await.expect("检查缓存失败");
+        let cached = los.get(&object_key).await.expect("检查缓存失败");
         assert!(cached.is_some(), "本地缓存文件未生成");
         let cached_etag1 = cached.unwrap();
         assert_eq!(cached_etag1, etag1, "本地缓存的 etag 与 OSS 不一致");
@@ -178,13 +178,13 @@ mod tests {
         );
 
         // 验证本地缓存已被更新为新 etag 和新内容
-        let cached_after = lfc.get(&object_key).await.expect("检查缓存失败");
+        let cached_after = los.get(&object_key).await.expect("检查缓存失败");
         assert!(cached_after.is_some(), "本地缓存应存在");
         let cached_etag2 = cached_after.unwrap();
         assert_eq!(cached_etag2, new_etag, "本地缓存的 etag 未更新");
 
         // 验证本地缓存文件解密后的内容是否正确
-        let cached_bytes = lfc.get_data(&object_key).await.expect("读取缓存数据失败");
+        let cached_bytes = los.get_data(&object_key).await.expect("读取缓存数据失败");
         let decrypted = crypto.decrypt(&cached_bytes).expect("解密缓存数据失败");
         let cached_manifest: DiaryManifest =
             serde_json::from_slice(&decrypted).expect("反序列化缓存数据失败");
@@ -197,7 +197,7 @@ mod tests {
         delete_diary(&cache2, &store, &id)
             .await
             .expect("删除日记失败");
-        let cached_after_delete = lfc.get(&object_key).await.expect("检查缓存失败");
+        let cached_after_delete = los.get(&object_key).await.expect("检查缓存失败");
         assert!(cached_after_delete.is_none(), "删除后本地缓存应被移除");
         _guard.cleanup().await;
     }
@@ -205,7 +205,7 @@ mod tests {
 
 #[cfg(test)]
 mod diary_list_tests {
-    use crate::caches::{DiaryMemoryCache, LocalFileCache};
+    use crate::caches::{DiaryMemoryCache, LocalObjectStore};
     use crate::cryptos::Crypto;
     use crate::diaries::diary::save_diary;
     use crate::diaries::diary_store::RemoteStore;
@@ -222,8 +222,8 @@ mod diary_list_tests {
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let lfc = LocalFileCache::new(path);
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let los = LocalObjectStore::new(path);
+        let store = RemoteStore::new(los.clone(), client.clone());
 
         // 创建几个测试日记
         let title = "这是一个测试日记的标题";
@@ -292,7 +292,7 @@ mod diary_list_tests {
 #[cfg(test)]
 mod diary_search_tests {
     use crate::attachments::AttachmentMeta;
-    use crate::caches::{DiaryMemoryCache, LocalFileCache};
+    use crate::caches::{DiaryMemoryCache, LocalObjectStore};
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
     use crate::diaries::diary::{save_diary, update_diary_attachment};
@@ -360,8 +360,8 @@ mod diary_search_tests {
         let cache = DiaryMemoryCache::new();
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().to_path_buf();
-        let lfc = LocalFileCache::new(path);
-        let store = LocalStore::new(lfc);
+        let los = LocalObjectStore::new(path);
+        let store = LocalStore::new(los);
 
         // 创建几个测试日记
         let (first, _) = save_diary(
@@ -574,7 +574,7 @@ mod diary_search_tests {
 
 #[cfg(test)]
 mod diary_migration_tests {
-    use crate::caches::LocalFileCache;
+    use crate::caches::LocalObjectStore;
     use crate::diaries::diary_migration::{
         default_registry, get_version, legacy_attachment_id, migrate_manifest_bytes,
         MigrationContext, CURRENT_VERSION,
@@ -610,7 +610,7 @@ mod diary_migration_tests {
     #[tokio::test]
     async fn test_no_migration_needed_when_already_current() {
         let tempdir = tempfile::tempdir().unwrap();
-        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let store = LocalStore::new(LocalObjectStore::new(tempdir.path().to_path_buf()));
         let context = MigrationContext {
             diary_id: "test",
             store: &store,
@@ -628,7 +628,7 @@ mod diary_migration_tests {
         json["version"] = Value::Number((CURRENT_VERSION + 1).into());
         let bytes = serde_json::to_vec(&json).unwrap();
         let tempdir = tempfile::tempdir().unwrap();
-        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let store = LocalStore::new(LocalObjectStore::new(tempdir.path().to_path_buf()));
         let context = MigrationContext {
             diary_id: "test",
             store: &store,
@@ -677,7 +677,7 @@ mod diary_migration_tests {
 
         let bytes = serde_json::to_vec(&source).unwrap();
         let tempdir = tempfile::tempdir().unwrap();
-        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let store = LocalStore::new(LocalObjectStore::new(tempdir.path().to_path_buf()));
         let context = MigrationContext {
             diary_id: "migration-boundaries",
             store: &store,
@@ -730,7 +730,7 @@ mod diary_migration_tests {
             ]
         });
         let tempdir = tempfile::tempdir().unwrap();
-        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let store = LocalStore::new(LocalObjectStore::new(tempdir.path().to_path_buf()));
         let context = MigrationContext {
             diary_id: "duplicate",
             store: &store,
@@ -752,7 +752,7 @@ mod diary_migration_tests {
             "attachments": []
         });
         let tempdir = tempfile::tempdir().unwrap();
-        let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+        let store = LocalStore::new(LocalObjectStore::new(tempdir.path().to_path_buf()));
         let context = MigrationContext {
             diary_id: "requested-id",
             store: &store,
@@ -784,7 +784,7 @@ mod diary_migration_tests {
             // 序列化后通过完整迁移管道升级到最新版本
             let bytes = serde_json::to_vec(&json).unwrap();
             let tempdir = tempfile::tempdir().unwrap();
-            let store = LocalStore::new(LocalFileCache::new(tempdir.path().to_path_buf()));
+            let store = LocalStore::new(LocalObjectStore::new(tempdir.path().to_path_buf()));
             let diary_id = json["id"].as_str().unwrap();
             let context = MigrationContext {
                 diary_id,

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::caches::{CacheError, LocalFileCache};
+use crate::caches::{CacheError, LocalObjectStore};
 use crate::diaries::attachment_upload::{LocalAttachmentUpload, RemoteAttachmentUpload};
 use crate::diaries::{AttachmentUploadSession, DiaryError};
 use crate::object::{NextToken, ObjectError, ObjectMigrationOutcome, OssClient};
@@ -170,10 +170,10 @@ fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: &str) -> (Vec<S
     (attachment_keys, manifest_key)
 }
 
-async fn delete_local_diary_files(lfc: &LocalFileCache, id: &str) -> Result<(), DiaryError> {
-    let entries = match lfc.get_all().await {
+async fn delete_local_diary_files(los: &LocalObjectStore, id: &str) -> Result<(), DiaryError> {
+    let entries = match los.get_all().await {
         Ok(entries) => entries,
-        // 尚未产生任何本地缓存时，LFC 目录可能还没有创建；删除应保持幂等。
+        // 尚未产生任何本地缓存时，LOS 目录可能还没有创建；删除应保持幂等。
         Err(CacheError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(error) => return Err(error.into()),
     };
@@ -183,9 +183,9 @@ async fn delete_local_diary_files(lfc: &LocalFileCache, id: &str) -> Result<(), 
     // manifest 是日记是否存在的提交标志。只有附件全部删除成功后才删除它，
     // 这样失败时日记仍可见且可以安全重试。
     for key in attachment_keys {
-        lfc.delete(&key).await?;
+        los.delete(&key).await?;
     }
-    lfc.delete(&manifest_key).await?;
+    los.delete(&manifest_key).await?;
     Ok(())
 }
 
@@ -289,16 +289,16 @@ pub trait DiaryStore: Send + Sync {
 }
 
 // =============================================================================
-// LocalStore — 仅使用 LocalFileCache
+// LocalStore — 仅使用 LocalObjectStore
 // =============================================================================
 
 pub struct LocalStore {
-    lfc: LocalFileCache,
+    los: LocalObjectStore,
 }
 
 impl LocalStore {
-    pub fn new(lfc: LocalFileCache) -> Self {
-        Self { lfc }
+    pub fn new(los: LocalObjectStore) -> Self {
+        Self { los }
     }
 }
 
@@ -306,7 +306,7 @@ impl LocalStore {
 impl DiaryStore for LocalStore {
     async fn upload_manifest(&self, id: &str, data: &[u8]) -> Result<String, DiaryError> {
         let key = remote_manifest_key(id);
-        self.lfc.save_bytes(&key, data).await?;
+        self.los.save_bytes(&key, data).await?;
         let etag = format!("{:X}", md5::compute(data));
         Ok(etag)
     }
@@ -314,28 +314,28 @@ impl DiaryStore for LocalStore {
     async fn download_manifest(&self, id: &str) -> Result<(Vec<u8>, String), DiaryError> {
         let key = remote_manifest_key(id);
         let etag = self
-            .lfc
+            .los
             .get(&key)
             .await?
             .ok_or(crate::caches::CacheError::NotFound)?;
-        let data = self.lfc.get_data(&key).await?;
+        let data = self.los.get_data(&key).await?;
         Ok((data, etag))
     }
 
     async fn get_manifest_etag(&self, id: &str) -> Result<Option<String>, DiaryError> {
         let key = remote_manifest_key(id);
-        Ok(self.lfc.get(&key).await?)
+        Ok(self.los.get(&key).await?)
     }
 
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
-        delete_local_diary_files(&self.lfc, id).await
+        delete_local_diary_files(&self.los, id).await
     }
 
     async fn list_diary_ids(
         &self,
         next_token: NextToken,
     ) -> Result<(Vec<String>, NextToken), DiaryError> {
-        let all = self.lfc.get_all().await?;
+        let all = self.los.get_all().await?;
         let mut ids: Vec<String> = all
             .into_iter()
             .filter_map(|(key, _)| diary_id_from_manifest_key(&key))
@@ -366,7 +366,7 @@ impl DiaryStore for LocalStore {
     ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError> {
         let key = remote_attachments_key(id, filename);
         Ok(Box::new(
-            LocalAttachmentUpload::begin(self.lfc.clone(), key, size).await?,
+            LocalAttachmentUpload::begin(self.los.clone(), key, size).await?,
         ))
     }
 
@@ -378,7 +378,7 @@ impl DiaryStore for LocalStore {
         _known_etag: Option<&str>,
     ) -> Result<ByteStream, DiaryError> {
         let key = remote_attachments_key(id, filename);
-        Ok(self.lfc.get_stream(&key, range).await?)
+        Ok(self.los.get_stream(&key, range).await?)
     }
 
     async fn get_attachment_size(
@@ -388,7 +388,7 @@ impl DiaryStore for LocalStore {
         _known_etag: Option<&str>,
     ) -> Result<u64, DiaryError> {
         let key = remote_attachments_key(id, filename);
-        self.lfc
+        self.los
             .get_size(&key)
             .await?
             .ok_or_else(|| CacheError::NotFound.into())
@@ -401,7 +401,7 @@ impl DiaryStore for LocalStore {
         progress: StoreProgressCallback,
     ) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
-        self.lfc
+        self.los
             .get(&key)
             .await?
             .ok_or(crate::caches::CacheError::NotFound)?;
@@ -411,7 +411,7 @@ impl DiaryStore for LocalStore {
 
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
-        self.lfc.delete(&key).await?;
+        self.los.delete(&key).await?;
         Ok(())
     }
 
@@ -426,8 +426,8 @@ impl DiaryStore for LocalStore {
         if old_key == new_key {
             return Ok(ObjectMigrationOutcome::AlreadyMigrated);
         }
-        let old_etag = self.lfc.get(&old_key).await?;
-        let new_etag = self.lfc.get(&new_key).await?;
+        let old_etag = self.los.get(&old_key).await?;
+        let new_etag = self.los.get(&new_key).await?;
         match (old_etag, new_etag) {
             (None, None) => Ok(ObjectMigrationOutcome::Missing),
             (None, Some(_)) => Ok(ObjectMigrationOutcome::AlreadyMigrated),
@@ -435,15 +435,15 @@ impl DiaryStore for LocalStore {
                 if !etags_match(&old_etag, &new_etag) {
                     return Err(DiaryError::Object(ObjectError::KeyAlreadyExists(new_key)));
                 }
-                self.lfc.delete(&old_key).await?;
+                self.los.delete(&old_key).await?;
                 Ok(ObjectMigrationOutcome::AlreadyMigrated)
             }
             (Some(old_etag), None) => {
-                let stream = self.lfc.get_stream(&old_key, None).await?;
-                self.lfc
+                let stream = self.los.get_stream(&old_key, None).await?;
+                self.los
                     .save_stream_with_etag(&new_key, &old_etag, stream)
                     .await?;
-                self.lfc.delete(&old_key).await?;
+                self.los.delete(&old_key).await?;
                 Ok(ObjectMigrationOutcome::Migrated)
             }
         }
@@ -451,17 +451,17 @@ impl DiaryStore for LocalStore {
 }
 
 // =============================================================================
-// RemoteStore — OSS + LFC 写透缓存
+// RemoteStore — OSS + LOS 写透缓存
 // =============================================================================
 
 pub struct RemoteStore {
-    lfc: LocalFileCache,
+    los: LocalObjectStore,
     client: OssClient,
 }
 
 impl RemoteStore {
-    pub fn new(lfc: LocalFileCache, client: OssClient) -> Self {
-        Self { lfc, client }
+    pub fn new(los: LocalObjectStore, client: OssClient) -> Self {
+        Self { los, client }
     }
 }
 
@@ -470,17 +470,17 @@ impl DiaryStore for RemoteStore {
     async fn upload_manifest(&self, id: &str, data: &[u8]) -> Result<String, DiaryError> {
         let key = remote_manifest_key(id);
         let etag = self.client.upload_bytes(&key, data).await?;
-        let _ = self.lfc.save_bytes(&key, data).await;
+        let _ = self.los.save_bytes(&key, data).await;
         Ok(etag)
     }
 
     async fn download_manifest(&self, id: &str) -> Result<(Vec<u8>, String), DiaryError> {
         let key = remote_manifest_key(id);
         // 优先检查本地缓存
-        if let Some(cached_etag) = self.lfc.get(&key).await? {
+        if let Some(cached_etag) = self.los.get(&key).await? {
             let metadata = self.client.get_metadata(&key).await?;
             if metadata.etag.as_deref() == Some(&cached_etag) {
-                let data = self.lfc.get_data(&key).await?;
+                let data = self.los.get_data(&key).await?;
                 return Ok((data, cached_etag));
             }
         }
@@ -488,7 +488,7 @@ impl DiaryStore for RemoteStore {
         let data = self.client.download_bytes(&key).await?;
         let metadata = self.client.get_metadata(&key).await?;
         let etag = metadata.etag.unwrap_or_default();
-        let _ = self.lfc.save_bytes(&key, &data).await;
+        let _ = self.los.save_bytes(&key, &data).await;
         Ok((data, etag))
     }
 
@@ -508,7 +508,7 @@ impl DiaryStore for RemoteStore {
 
         // 远端是权威来源；远端完整删除后再清理本地副本。缓存清理失败也要
         // 返回错误，使用户可以重试，避免切换本地模式后旧日记重新出现。
-        delete_local_diary_files(&self.lfc, id).await
+        delete_local_diary_files(&self.los, id).await
     }
 
     async fn list_diary_ids(
@@ -533,7 +533,7 @@ impl DiaryStore for RemoteStore {
         let key = remote_attachments_key(id, filename);
         Ok(Box::new(
             RemoteAttachmentUpload::begin(
-                self.lfc.clone(),
+                self.los.clone(),
                 self.client.clone(),
                 key,
                 size,
@@ -551,16 +551,16 @@ impl DiaryStore for RemoteStore {
         known_etag: Option<&str>,
     ) -> Result<ByteStream, DiaryError> {
         let key = remote_attachments_key(id, filename);
-        if let Some(cached_etag) = self.lfc.get(&key).await? {
+        if let Some(cached_etag) = self.los.get(&key).await? {
             // 已知 etag 匹配，直接使用缓存
             if known_etag.is_some_and(|k| k == cached_etag) {
-                return Ok(self.lfc.get_stream(&key, range).await?);
+                return Ok(self.los.get_stream(&key, range).await?);
             }
             let metadata = self.client.get_metadata(&key).await?;
             if metadata.etag.as_deref() == Some(&cached_etag) {
-                return Ok(self.lfc.get_stream(&key, range).await?);
+                return Ok(self.los.get_stream(&key, range).await?);
             } else {
-                let _ = self.lfc.delete(&key).await;
+                let _ = self.los.delete(&key).await;
             }
         }
         let (stream, _) = self.client.download(&key, range).await?;
@@ -574,9 +574,9 @@ impl DiaryStore for RemoteStore {
         known_etag: Option<&str>,
     ) -> Result<u64, DiaryError> {
         let key = remote_attachments_key(id, filename);
-        if let Some(cached_etag) = self.lfc.get(&key).await? {
+        if let Some(cached_etag) = self.los.get(&key).await? {
             if known_etag.is_some_and(|etag| etags_match(etag, &cached_etag)) {
-                if let Some(size) = self.lfc.get_size(&key).await? {
+                if let Some(size) = self.los.get_size(&key).await? {
                     return Ok(size);
                 }
             }
@@ -587,11 +587,11 @@ impl DiaryStore for RemoteStore {
                 .as_deref()
                 .is_some_and(|etag| etags_match(etag, &cached_etag))
             {
-                if let Some(size) = self.lfc.get_size(&key).await? {
+                if let Some(size) = self.los.get_size(&key).await? {
                     return Ok(size);
                 }
             } else {
-                let _ = self.lfc.delete(&key).await;
+                let _ = self.los.delete(&key).await;
             }
             return metadata.content_length.ok_or_else(|| {
                 DiaryError::Object(ObjectError::OperationFailed(format!(
@@ -626,7 +626,7 @@ impl DiaryStore for RemoteStore {
         })?;
 
         if self
-            .lfc
+            .los
             .get(&key)
             .await?
             .is_some_and(|cached_etag| etags_match(&cached_etag, &remote_etag))
@@ -640,7 +640,7 @@ impl DiaryStore for RemoteStore {
         let tracked_stream = tracker_stream(size, stream, move |percent| {
             progress_for_stream(percent);
         });
-        self.lfc
+        self.los
             .save_stream_with_etag(&key, &remote_etag, tracked_stream)
             .await?;
         progress(100);
@@ -650,7 +650,7 @@ impl DiaryStore for RemoteStore {
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
         self.client.delete(&key).await?;
-        let _ = self.lfc.delete(&key).await;
+        let _ = self.los.delete(&key).await;
         Ok(())
     }
 
@@ -664,8 +664,8 @@ impl DiaryStore for RemoteStore {
         let new_key = remote_attachments_key(id, attachment_id);
         let outcome = self.client.migrate_object(&old_key, &new_key).await?;
         // OSS 是远程模式下的权威来源；清理两个位置的缓存，避免保留半迁移状态。
-        let _ = self.lfc.delete(&old_key).await;
-        let _ = self.lfc.delete(&new_key).await;
+        let _ = self.los.delete(&old_key).await;
+        let _ = self.los.delete(&new_key).await;
         Ok(outcome)
     }
 }
@@ -731,14 +731,17 @@ mod tests {
         crypto
     }
 
-    fn make_lfc() -> (LocalFileCache, tempfile::TempDir) {
+    fn make_los() -> (LocalObjectStore, tempfile::TempDir) {
         let temp_dir = tempfile::tempdir().expect("temp dir");
-        (LocalFileCache::new(temp_dir.path().to_path_buf()), temp_dir)
+        (
+            LocalObjectStore::new(temp_dir.path().to_path_buf()),
+            temp_dir,
+        )
     }
 
-    fn make_local_store() -> (LocalStore, LocalFileCache, tempfile::TempDir) {
-        let (lfc, td) = make_lfc();
-        (LocalStore::new(lfc.clone()), lfc, td)
+    fn make_local_store() -> (LocalStore, LocalObjectStore, tempfile::TempDir) {
+        let (los, td) = make_los();
+        (LocalStore::new(los.clone()), los, td)
     }
 
     #[tokio::test]
@@ -779,7 +782,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_manifest_roundtrip() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
         let data = b"encrypted manifest data";
 
         let etag = store.upload_manifest("test-id-1", data).await.unwrap();
@@ -792,7 +795,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_get_manifest_etag() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         // 不存在时返回 None
         let etag = store.get_manifest_etag("nonexistent").await.unwrap();
@@ -807,7 +810,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_delete_diary_all() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         // 上传 manifest 和附件
         store
@@ -876,10 +879,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_delete_is_idempotent_without_cache_directory() {
+    async fn local_delete_is_idempotent_without_store_directory() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().join("missing"));
-        let store = LocalStore::new(lfc);
+        let los = LocalObjectStore::new(temp_dir.path().join("missing"));
+        let store = LocalStore::new(los);
 
         store.delete_diary_all("missing-diary").await.unwrap();
     }
@@ -889,7 +892,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let cache_file = temp_dir.path().join("not-a-directory");
         tokio::fs::write(&cache_file, b"file").await.unwrap();
-        let store = LocalStore::new(LocalFileCache::new(cache_file));
+        let store = LocalStore::new(LocalObjectStore::new(cache_file));
 
         assert!(matches!(
             store.delete_diary_all("diary").await,
@@ -899,7 +902,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_list_diary_ids() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         // 空列表
         let (ids, next) = store.list_diary_ids(None).await.unwrap();
@@ -921,7 +924,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_list_diary_ids_pagination() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         // 跨过 50 条的分页边界，验证每一页拼接后仍保持最新在前。
         let mut expected = Vec::new();
@@ -945,7 +948,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_attachment_roundtrip() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
         let data = b"attachment content here";
 
         let etag = store
@@ -970,7 +973,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_cache_attachment_requires_existing_cache() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
         let progress_values = Arc::new(Mutex::new(Vec::new()));
 
         let missing_result = store
@@ -1006,7 +1009,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_delete_attachment() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         store
             .upload_attachment(
@@ -1037,7 +1040,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_migrates_attachment_object_idempotently() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
         let data = b"rename test data";
 
         store
@@ -1083,7 +1086,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_rejects_conflicting_migration_target() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
         for (key, data) in [
             ("old.txt", b"old".as_slice()),
             ("att-stable", b"new".as_slice()),
@@ -1122,7 +1125,7 @@ mod tests {
     async fn test_local_store_save_and_get_diary() {
         let cache = DiaryMemoryCache::new();
         let crypto = make_crypto();
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         let (summary, content) = save_diary(&cache, &crypto, &store, "Hello, local world!")
             .await
@@ -1141,7 +1144,7 @@ mod tests {
     async fn test_get_diary_commits_v4_only_after_object_migration_can_succeed() {
         let cache = DiaryMemoryCache::new();
         let crypto = make_crypto();
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
         let diary_id = "v3-object-migration";
         let old_filename = "photo.jpg";
         let attachment_id = legacy_attachment_id(diary_id, old_filename);
@@ -1236,7 +1239,7 @@ mod tests {
     async fn test_local_store_update_diary() {
         let cache = DiaryMemoryCache::new();
         let crypto = make_crypto();
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         let (summary, _) = save_diary(&cache, &crypto, &store, "original")
             .await
@@ -1258,7 +1261,7 @@ mod tests {
     async fn test_local_store_delete_diary() {
         let cache = DiaryMemoryCache::new();
         let crypto = make_crypto();
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         let (summary, _) = save_diary(&cache, &crypto, &store, "to be deleted")
             .await
@@ -1279,7 +1282,7 @@ mod tests {
     async fn delete_waits_for_an_active_diary_operation() {
         let cache = DiaryMemoryCache::new();
         let crypto = make_crypto();
-        let (store, lfc, _td) = make_local_store();
+        let (store, los, _td) = make_local_store();
         let (summary, _) = save_diary(&cache, &crypto, &store, "serialized delete")
             .await
             .unwrap();
@@ -1290,7 +1293,7 @@ mod tests {
         let task_id = summary.id.clone();
         let deletion = tokio::spawn(async move {
             let _ = started_tx.send(());
-            let task_store = LocalStore::new(lfc);
+            let task_store = LocalStore::new(los);
             delete_diary(&task_cache, &task_store, &task_id).await
         });
 
@@ -1306,7 +1309,7 @@ mod tests {
     async fn test_local_store_list_after_save() {
         let cache = DiaryMemoryCache::new();
         let crypto = make_crypto();
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         save_diary(&cache, &crypto, &store, "diary one")
             .await
@@ -1326,7 +1329,7 @@ mod tests {
     async fn test_local_store_get_nonexistent_diary() {
         let cache = DiaryMemoryCache::new();
         let crypto = make_crypto();
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         let result = get_diary(&cache, &crypto, &store, "nonexistent-id").await;
         assert!(result.is_err());
@@ -1336,16 +1339,16 @@ mod tests {
 
     #[test]
     fn test_app_state_diary_store_local_mode() {
-        let (lfc, _td) = make_lfc();
-        let state = crate::state::AppState::from_parts(Crypto::new(), OssClient::new(), lfc);
+        let (los, _td) = make_los();
+        let state = crate::state::AppState::from_parts(Crypto::new(), OssClient::new(), los);
         // 默认 remote_enabled = false
         assert!(!state.is_remote_enabled());
     }
 
     #[test]
     fn test_app_state_diary_store_remote_mode() {
-        let (lfc, _td) = make_lfc();
-        let state = crate::state::AppState::from_parts(Crypto::new(), OssClient::new(), lfc);
+        let (los, _td) = make_los();
+        let state = crate::state::AppState::from_parts(Crypto::new(), OssClient::new(), los);
         state.set_remote_enabled(true);
         assert!(state.is_remote_enabled());
 
@@ -1355,11 +1358,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_data_persistence_across_instances() {
-        let (lfc, _td) = make_lfc();
+        let (los, _td) = make_los();
 
         // 用第一个 store 实例写入
         {
-            let store = LocalStore::new(lfc.clone());
+            let store = LocalStore::new(los.clone());
             store
                 .upload_manifest("persist-test", b"persistent data")
                 .await
@@ -1368,7 +1371,7 @@ mod tests {
 
         // 用第二个 store 实例读取（模拟应用重启）
         {
-            let store = LocalStore::new(lfc.clone());
+            let store = LocalStore::new(los.clone());
             let (data, _etag) = store.download_manifest("persist-test").await.unwrap();
             assert_eq!(data, b"persistent data");
         }
@@ -1378,7 +1381,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_empty_manifest() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
         let etag = store.upload_manifest("empty", b"").await.unwrap();
         let (data, _) = store.download_manifest("empty").await.unwrap();
         assert!(data.is_empty());
@@ -1387,7 +1390,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_overwrite_manifest() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
 
         store
             .upload_manifest("overwrite", b"version 1")
@@ -1404,7 +1407,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_store_attachment_with_range() {
-        let (store, _lfc, _td) = make_local_store();
+        let (store, _los, _td) = make_local_store();
         let data = b"0123456789abcdef";
 
         store
@@ -1431,8 +1434,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_to_remote_data_transfer() {
-        let (lfc, _td) = make_lfc();
-        let local_store = LocalStore::new(lfc.clone());
+        let (los, _td) = make_los();
+        let local_store = LocalStore::new(los.clone());
 
         // 在 LocalStore 中创建数据
         local_store

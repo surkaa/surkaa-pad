@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::caches::{ChunkedSaveHandle, LocalFileCache};
+use crate::caches::{ChunkedSaveHandle, LocalObjectStore};
 use crate::diaries::DiaryError;
 use crate::object::{ObjectError, OssClient};
 
@@ -16,7 +16,7 @@ fn invalid_upload(message: impl Into<String>) -> DiaryError {
 }
 
 pub(crate) struct LocalAttachmentUpload {
-    lfc: LocalFileCache,
+    los: LocalObjectStore,
     key: String,
     handle: Option<ChunkedSaveHandle>,
     digest: md5::Context,
@@ -27,13 +27,13 @@ pub(crate) struct LocalAttachmentUpload {
 
 impl LocalAttachmentUpload {
     pub(crate) async fn begin(
-        lfc: LocalFileCache,
+        los: LocalObjectStore,
         key: String,
         expected_size: u64,
     ) -> Result<Self, DiaryError> {
-        let handle = lfc.begin_chunked_save(&key).await?;
+        let handle = los.begin_chunked_save(&key).await?;
         Ok(Self {
-            lfc,
+            los,
             key,
             handle: Some(handle),
             digest: md5::Context::new(),
@@ -105,7 +105,7 @@ impl AttachmentUploadSession for LocalAttachmentUpload {
             .take()
             .ok_or_else(|| invalid_upload("附件上传会话已经结束"))?;
         if let Err(error) = handle.finalize(&etag).await {
-            let _ = self.lfc.delete(&self.key).await;
+            let _ = self.los.delete(&self.key).await;
             return Err(error.into());
         }
         Ok(etag)
@@ -118,7 +118,7 @@ impl AttachmentUploadSession for LocalAttachmentUpload {
 }
 
 pub(crate) struct RemoteAttachmentUpload {
-    lfc: LocalFileCache,
+    los: LocalObjectStore,
     client: OssClient,
     key: String,
     mimetype: String,
@@ -133,14 +133,14 @@ pub(crate) struct RemoteAttachmentUpload {
 
 impl RemoteAttachmentUpload {
     pub(crate) async fn begin(
-        lfc: LocalFileCache,
+        los: LocalObjectStore,
         client: OssClient,
         key: String,
         expected_size: u64,
         mimetype: String,
     ) -> Result<Self, DiaryError> {
         let upload_id = client.initiate_multipart_upload(&key, &mimetype).await?;
-        let handle = match lfc.begin_chunked_save(&key).await {
+        let handle = match los.begin_chunked_save(&key).await {
             Ok(handle) => handle,
             Err(error) => {
                 let _ = client.abort_multipart_upload(&key, &upload_id).await;
@@ -148,7 +148,7 @@ impl RemoteAttachmentUpload {
             }
         };
         Ok(Self {
-            lfc,
+            los,
             client,
             key,
             mimetype,
@@ -276,7 +276,7 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
             .take()
             .ok_or_else(|| invalid_upload("附件上传会话已经结束"))?;
         if let Err(cache_error) = handle.finalize(&etag).await {
-            let local_rollback = self.lfc.delete(&self.key).await;
+            let local_rollback = self.los.delete(&self.key).await;
             let remote_rollback = self.client.delete(&self.key).await;
             if let Err(rollback_error) = remote_rollback {
                 return Err(DiaryError::Object(ObjectError::OperationFailed(format!(
@@ -313,8 +313,8 @@ mod tests {
     #[tokio::test]
     async fn local_session_writes_chunks_and_commits_real_etag() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = LocalStore::new(lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(los.clone());
         let data = b"hello chunked world";
         let mut session = store
             .begin_attachment_upload(
@@ -340,15 +340,15 @@ mod tests {
         let etag = session.finish().await.unwrap();
 
         assert_eq!(etag, format!("{:X}", md5::compute(data)));
-        assert_eq!(lfc.get("diary/attachment").await.unwrap(), Some(etag));
-        assert_eq!(lfc.get_data("diary/attachment").await.unwrap(), data);
+        assert_eq!(los.get("diary/attachment").await.unwrap(), Some(etag));
+        assert_eq!(los.get_data("diary/attachment").await.unwrap(), data);
     }
 
     #[tokio::test]
     async fn local_session_rejects_incomplete_upload_and_removes_temp_file() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = LocalStore::new(lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(los.clone());
         let mut session = store
             .begin_attachment_upload("diary", "attachment", 5, "application/octet-stream")
             .await
@@ -356,7 +356,7 @@ mod tests {
         session.write_chunk(b"123".to_vec()).await.unwrap();
 
         assert!(session.finish().await.is_err());
-        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("diary/attachment").await.unwrap().is_none());
         assert!(std::fs::read_dir(temp_dir.path().join("diary"))
             .unwrap()
             .next()
@@ -366,8 +366,8 @@ mod tests {
     #[tokio::test]
     async fn local_session_abort_removes_partial_upload() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = LocalStore::new(lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(los.clone());
         let mut session = store
             .begin_attachment_upload("diary", "attachment", 5, "application/octet-stream")
             .await
@@ -376,14 +376,14 @@ mod tests {
 
         session.abort().await.unwrap();
 
-        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("diary/attachment").await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn local_session_rejects_data_larger_than_declared_size() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = LocalStore::new(lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(los.clone());
         let mut session = store
             .begin_attachment_upload("diary", "attachment", 2, "application/octet-stream")
             .await
@@ -391,14 +391,14 @@ mod tests {
 
         assert!(session.write_chunk(b"123".to_vec()).await.is_err());
         assert!(session.abort().await.is_ok());
-        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("diary/attachment").await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn local_store_uploads_large_stream_with_confirmed_progress() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = LocalStore::new(lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(los.clone());
         let data = vec![7_u8; 8 * 1024 * 1024 + 123];
         let progress_values = Arc::new(Mutex::new(Vec::new()));
         let captured_progress = progress_values.clone();
@@ -419,7 +419,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(etag, format!("{:X}", md5::compute(&data)));
-        assert_eq!(lfc.get_data("diary/attachment").await.unwrap(), data);
+        assert_eq!(los.get_data("diary/attachment").await.unwrap(), data);
         let progress = progress_values.lock().unwrap();
         assert!(matches!(
             progress.last(),
@@ -433,8 +433,8 @@ mod tests {
     #[tokio::test]
     async fn local_store_aborts_partial_file_when_source_stream_fails() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = LocalStore::new(lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(los.clone());
         let stream: ByteStream = Box::pin(futures_util::stream::iter(vec![
             Ok(Bytes::from_static(b"partial")),
             Err(io::Error::other("simulated source failure")),
@@ -450,14 +450,14 @@ mod tests {
             )
             .await
             .is_err());
-        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("diary/attachment").await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn local_store_cancellation_aborts_partial_file_after_confirmed_chunk() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = LocalStore::new(lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(los.clone());
         let data = vec![7_u8; 8 * 1024 * 1024 + 123];
         let cancellation = CancellationToken::new();
         let cancellation_on_progress = cancellation.clone();
@@ -484,7 +484,7 @@ mod tests {
             result,
             Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
         ));
-        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("diary/attachment").await.unwrap().is_none());
         assert!(std::fs::read_dir(temp_dir.path().join("diary"))
             .unwrap()
             .next()
@@ -494,8 +494,8 @@ mod tests {
     #[tokio::test]
     async fn local_store_cancellation_before_finalize_does_not_commit_file() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = LocalStore::new(lfc.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(los.clone());
         let cancellation = CancellationToken::new();
         let cancellation_on_progress = cancellation.clone();
 
@@ -521,7 +521,7 @@ mod tests {
             result,
             Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
         ));
-        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("diary/attachment").await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -529,8 +529,8 @@ mod tests {
         let client = OssClient::from_env();
         let (client, guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = RemoteStore::new(los.clone(), client.clone());
         let first_chunk = vec![7_u8; 5 * 1024 * 1024];
         let second_chunk = b"last chunk".to_vec();
         let total_size = (first_chunk.len() + second_chunk.len()) as u64;
@@ -552,11 +552,11 @@ mod tests {
         assert_eq!(metadata.content_length, Some(total_size));
         assert_eq!(metadata.etag.as_deref(), Some(etag.as_str()));
         assert_eq!(
-            lfc.get("diary/attachment").await.unwrap().as_deref(),
+            los.get("diary/attachment").await.unwrap().as_deref(),
             Some(etag.as_str())
         );
         assert_eq!(
-            lfc.get_data("diary/attachment").await.unwrap().len() as u64,
+            los.get_data("diary/attachment").await.unwrap().len() as u64,
             total_size
         );
         guard.cleanup().await;
@@ -567,8 +567,8 @@ mod tests {
         let client = OssClient::from_env();
         let (client, guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = RemoteStore::new(los.clone(), client.clone());
         let mut session = store
             .begin_attachment_upload("diary", "attachment", 3, "application/octet-stream")
             .await
@@ -580,7 +580,7 @@ mod tests {
         session.abort().await.unwrap();
 
         wait_for_multipart_upload_count(&client, 0).await;
-        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("diary/attachment").await.unwrap().is_none());
         let (objects, _) = client.list("", None).await.unwrap();
         assert!(objects.is_empty());
         guard.cleanup().await;
@@ -591,8 +591,8 @@ mod tests {
         let client = OssClient::from_env();
         let (client, guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().unwrap();
-        let lfc = LocalFileCache::new(temp_dir.path().to_path_buf());
-        let store = RemoteStore::new(lfc.clone(), client.clone());
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = RemoteStore::new(los.clone(), client.clone());
         let task_pool = TaskPool::new();
         let (first_part_tx, first_part_rx) = oneshot::channel();
         let (result_tx, result_rx) = oneshot::channel();
@@ -646,7 +646,7 @@ mod tests {
             Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
         ));
         wait_for_multipart_upload_count(&client, 0).await;
-        assert!(lfc.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("diary/attachment").await.unwrap().is_none());
         let (objects, _) = client.list("", None).await.unwrap();
         assert!(objects.is_empty());
         guard.cleanup().await;

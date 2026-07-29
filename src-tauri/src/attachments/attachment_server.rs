@@ -390,7 +390,7 @@ fn build_attachment_response(
 mod tests {
     use super::*;
     use crate::attachments::AttachmentMeta;
-    use crate::caches::LocalFileCache;
+    use crate::caches::LocalObjectStore;
     use crate::cryptos::crypto_types::EncryptionAlgorithm::{Ctr, Gcm};
     use crate::cryptos::Crypto;
     use crate::diaries::{DiaryContent, DiaryManifest, DiaryStore, LocalStore, CURRENT_VERSION};
@@ -438,10 +438,10 @@ mod tests {
         declared_size: u64,
     ) -> TestServer {
         let temp_dir = tempfile::tempdir().unwrap();
-        let local_file_cache = LocalFileCache::new(temp_dir.path().to_path_buf());
+        let local_object_store = LocalObjectStore::new(temp_dir.path().to_path_buf());
         let crypto = Crypto::new();
         crypto.init_by_dek_string("42".repeat(32)).unwrap();
-        let store = LocalStore::new(local_file_cache.clone());
+        let store = LocalStore::new(local_object_store.clone());
 
         let source = create_mock_stream(plaintext.to_vec(), 64 * 1024);
         let (stream, nonce) = if encrypted {
@@ -458,7 +458,7 @@ mod tests {
         let state = AppState::from_parts_with_attachment_server(
             crypto,
             OssClient::new(),
-            local_file_cache,
+            local_object_store,
             handle.clone(),
         );
         state.diary_cache().insert(

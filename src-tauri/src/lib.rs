@@ -22,7 +22,7 @@ use crate::attachments::chunked_upload_command::{
 };
 use crate::attachments::{bind_attachment_server, start_attachment_server};
 use crate::caches::cache_command::{cmd_clean_cache_file, cmd_clean_unused_file};
-use crate::caches::LOCAL_FILE_CACHE_FILENAME;
+use crate::caches::LOCAL_OBJECT_STORE_DIRECTORY;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_encrypt_info, cmd_unlock,
     cmd_valid_password,
@@ -45,9 +45,9 @@ fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .path()
         .app_cache_dir()
         .expect("failed to get cache dir");
-    let lfc_path = cache_path.join(LOCAL_FILE_CACHE_FILENAME);
+    let los_path = cache_path.join(LOCAL_OBJECT_STORE_DIRECTORY);
     let (listener, attachment_server) = bind_attachment_server()?;
-    let state = AppState::new(lfc_path, attachment_server);
+    let state = AppState::new(los_path, attachment_server);
     start_attachment_server(listener, state.clone());
     app.manage(state);
 

@@ -60,14 +60,14 @@ flowchart TB
     Domain --> Store["DiaryStore"]
     Store --> Local["LocalStore"]
     Store --> Remote["RemoteStore"]
-    Local --> LFC["本地对象存储 LFC"]
+    Local --> LOS["本地对象存储 LOS"]
     Remote --> OSS["阿里云 OSS"]
-    Remote --> LFC
+    Remote --> LOS
     Vue -->|HTTP GET / Range| AttachmentServer["127.0.0.1 附件服务"]
     AttachmentServer --> Store
 ```
 
-本地模式下，LFC 是实际持久化存储；远程模式下，OSS 是主要存储，LFC 作为写透缓存。开启云存储时执行一次本地到云端迁移，关闭时执行一次云端到本地迁移，日常云模式写入则直接更新 OSS 和本地缓存。
+本地模式下，LOS 是实际持久化存储；远程模式下，OSS 是主要存储，LOS 作为写透缓存。开启云存储时执行一次本地到云端迁移，关闭时执行一次云端到本地迁移，日常云模式写入则直接更新 OSS 和本地缓存。
 
 ### 加密流程
 
@@ -76,10 +76,10 @@ flowchart TB
 3. 附件：AES-256-CTR 流式加密，支持分片上传和 Range 解密
 4. 密钥仅存于内存，会话结束后即销毁
 
-### 缓存策略
+### 本地存储与缓存策略
 
 - **内存缓存** (`DashMap`) — 按日记 ID 索引，命中直接返回
-- **本地对象存储** (`LocalFileCache`) — 本地模式下保存全部数据，远程模式下通过 ETag 校验避免重复下载
+- **本地对象存储** (`LocalObjectStore`) — 本地模式下保存全部数据，远程模式下通过 ETag 校验避免重复下载
 - **附件 HTTP 服务** — 仅监听回环地址，使用随机令牌并支持 Range 请求及流式 CTR 解密
 
 ## 配置云存储

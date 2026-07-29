@@ -191,7 +191,7 @@ async fn add_attachment_with_result_cancelable(
                 crypto.encrypt_streaming(stream)?
             };
 
-            // 通过 store 上传附件（LocalStore 写入 LFC，RemoteStore 写入 OSS + LFC 写透）
+            // 通过 store 上传附件（LocalStore 写入 LOS，RemoteStore 写入 OSS + LOS 写透）
             match store
                 .upload_attachment_with_progress(
                     id,
