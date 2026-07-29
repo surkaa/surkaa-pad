@@ -350,7 +350,7 @@ defineExpose({
   }
 
   p.is-editor-empty:first-child::before {
-    color: #adb5bd;
+    color: var(--pad-text-color-400);
     content: attr(data-placeholder);
     float: left;
     height: 0;
@@ -359,8 +359,8 @@ defineExpose({
 
   .search-highlight {
     border-radius: 2px;
-    background-color: rgba(255, 193, 7, 0.45);
-    box-shadow: 0 0 0 1px rgba(255, 193, 7, 0.22);
+    background-color: color-mix(in srgb, var(--pad-warning-color) 45%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--pad-warning-color) 22%, transparent);
   }
 }
 </style>
@@ -406,11 +406,11 @@ defineExpose({
   }
 
   img[data-id]:hover {
-    box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.5);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--pad-primary-color) 50%, transparent);
   }
 
   .ProseMirror > img.album-image-selected {
-    outline: 4px solid var(--pad-primary-color, #1976d2);
+    outline: 4px solid var(--pad-primary-color);
     outline-offset: 2px;
   }
 

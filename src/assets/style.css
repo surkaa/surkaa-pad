@@ -8,6 +8,7 @@
     --pad-primary-color: #C4A484;        /* 核心木色/按钮主色 */
     --pad-primary-light: #E2D1BC;        /* 浅木色 */
     --pad-primary-dark: #A48464;         /* 深木色 */
+    --pad-on-primary-color: #333333;     /* 主色背景上的文字 */
     --pad-primary-gradient: linear-gradient(135deg, var(--pad-primary-color) 0%, var(--pad-primary-dark) 100%);
 
     /* 功能色系 */
@@ -78,6 +79,11 @@
     --pad-transition-base: 250ms ease;
     --pad-transition-slow: 350ms ease;
 
+    --pad-preview-backdrop: rgb(20 20 20 / 92%);
+    --pad-preview-control-background: rgb(20 20 20 / 78%);
+    --pad-preview-control-border: rgb(255 255 255 / 16%);
+    --pad-preview-text-color: #FFFFFF;
+
     --pad-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
 }
 
@@ -87,6 +93,7 @@
     --pad-primary-color: #E2C7A8;        /* 亮木色/奶油色 */
     --pad-primary-light: #F2E4D1;        /* 浅木色 - 更浅 */
     --pad-primary-dark: #C9A886;         /* 深木色 */
+    --pad-on-primary-color: #1B2129;     /* 主色背景上的文字 */
     --pad-primary-gradient: linear-gradient(135deg, var(--pad-primary-color) 0%, var(--pad-primary-dark) 100%);
 
     /* 功能色系 */
@@ -145,6 +152,11 @@
     --pad-shadow-color-300: rgba(0, 0, 0, 0.3);
     --pad-shadow-color-400: rgba(0, 0, 0, 0.35);
     --pad-shadow-color-500: rgba(0, 0, 0, 0.4);
+
+    --pad-preview-backdrop: rgb(5 8 12 / 94%);
+    --pad-preview-control-background: rgb(27 33 41 / 88%);
+    --pad-preview-control-border: rgb(230 224 214 / 18%);
+    --pad-preview-text-color: #FDF5E6;
 
     .q-card, .q-dialog__inner > div {
         background-color: var(--pad-bg-color-200) !important;

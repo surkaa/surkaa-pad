@@ -174,8 +174,8 @@ const emit = defineEmits([
     color: var(--pad-text-color);
 
     &.is-active {
-      background: var(--pad-primary-color, #1976d2);
-      color: #fff;
+      background: var(--pad-primary-color);
+      color: var(--pad-on-primary-color);
     }
 
     &:disabled {

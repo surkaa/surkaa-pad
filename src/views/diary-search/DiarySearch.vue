@@ -359,7 +359,7 @@ onUnmounted(() => {
 
           &.is-selected {
             background-color: var(--q-primary) !important;
-            color: white !important;
+            color: var(--pad-on-primary-color) !important;
           }
         }
       }
@@ -403,7 +403,7 @@ onUnmounted(() => {
 
             &.is-selected {
               background-color: var(--q-primary) !important;
-              color: white !important;
+              color: var(--pad-on-primary-color) !important;
             }
           }
         }

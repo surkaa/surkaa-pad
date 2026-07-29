@@ -317,8 +317,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', handleResize));
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  color: white;
-  background: rgb(0 0 0 / 92%);
+  color: var(--pad-preview-text-color);
+  background: var(--pad-preview-backdrop);
   cursor: default;
   touch-action: none;
   user-select: none;
@@ -361,8 +361,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', handleResize));
   z-index: 2;
   top: 12px;
   right: 12px;
-  color: white;
-  background: rgb(0 0 0 / 35%);
+  color: var(--pad-preview-text-color);
+  background: var(--pad-preview-control-background);
 }
 
 .image-preview__toolbar {
@@ -374,9 +374,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', handleResize));
   align-items: center;
   gap: 2px;
   padding: 4px 8px;
-  color: white;
-  background: rgb(30 30 30 / 82%);
-  border: 1px solid rgb(255 255 255 / 14%);
+  color: var(--pad-preview-text-color);
+  background: var(--pad-preview-control-background);
+  border: 1px solid var(--pad-preview-control-border);
   border-radius: 24px;
   transform: translateX(-50%);
   backdrop-filter: blur(8px);
