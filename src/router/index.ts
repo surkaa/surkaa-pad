@@ -1,12 +1,9 @@
 import {createRouter, createWebHashHistory, type RouteRecordRaw} from "vue-router";
 import Unlock from "../views/unlock/Unlock.vue";
 import DiaryList from "../views/diary-list/DiaryList.vue";
-import DiaryDetail from "../views/diary-detial/DiaryDetail.vue";
-import Settings from "../views/settings/Settings.vue";
 import {addCache, removeCache} from "../composables/useKeepAlive.ts";
 import Layout from "../layout/Layout.vue";
 import {useLayoutStore} from "../stores/layout.ts";
-import DiarySearch from "../views/diary-search/DiarySearch.vue";
 
 const routes: RouteRecordRaw[] = [
     {
@@ -34,7 +31,7 @@ const routes: RouteRecordRaw[] = [
             {
                 name: 'DiaryDetail',
                 path: 'diary-detail/:id?',
-                component: DiaryDetail,
+                component: () => import('../views/diary-detial/DiaryDetail.vue'),
                 meta: {
                     title: '日记详情',
                     // 可以从日记列表或者日记搜索进入，所以深度设置为 3
@@ -46,7 +43,7 @@ const routes: RouteRecordRaw[] = [
             {
                 name: 'DiarySearch',
                 path: 'diary-search',
-                component: DiarySearch,
+                component: () => import('../views/diary-search/DiarySearch.vue'),
                 meta: {
                     title: '🔍',
                     depth: 2,
@@ -57,7 +54,7 @@ const routes: RouteRecordRaw[] = [
             {
                 name: 'Settings',
                 path: 'settings',
-                component: Settings,
+                component: () => import('../views/settings/Settings.vue'),
                 meta: {
                     title: '设置',
                     depth: 2,
