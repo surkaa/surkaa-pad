@@ -6,10 +6,6 @@
 
 ## P2：前端与依赖清理
 
-## P3：代码组织
-
-- [ ] `src-tauri/src/local_storage/migration.rs` 混合了不同版本的迁移逻辑、公共流程和大量测试，模块职责过重，考虑按不同版本拆分。
-
 ## AI Agent
 
 - [ ] 仅在 Windows 端接入本地部署的 AI Agent，确保日记数据不发送至外部平台，Android 端暂不支持。
