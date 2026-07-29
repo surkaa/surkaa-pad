@@ -1,71 +1,67 @@
 <template>
-  <section class="settings-group settings-section-component">
-    <div class="group-title">本地存储</div>
-    <q-list bordered separator class="pad-card">
-      <q-item
-        clickable
-        v-ripple
-        class="settings-item"
-        :disable="loadingInfo || !info"
-        @click="openDataLocation"
-      >
-        <q-item-section avatar class="settings-icon-section">
-          <q-icon name="folder_open"/>
-        </q-item-section>
-        <q-item-section>
-          <q-item-label class="label-text text-weight-medium">打开本地数据位置</q-item-label>
-          <q-item-label caption class="desc-text">
-            本地模式保存完整数据，云同步模式用作本地缓存
-          </q-item-label>
-          <q-item-label caption class="desc-text storage-summary">
-            <template v-if="info">
-              {{ info.totalFiles }} 个文件 · {{ formatBytes(info.totalBytes) }}
-              <span class="path-separator">·</span>
-              <span class="storage-path">{{ info.currentPath }}</span>
-            </template>
-            <template v-else>正在读取本地数据位置…</template>
-          </q-item-label>
-        </q-item-section>
-        <q-item-section side>
-          <q-spinner v-if="loadingInfo" color="primary" size="20px"/>
-          <q-icon v-else name="open_in_new" class="desc-text"/>
-        </q-item-section>
-      </q-item>
+  <q-item
+    clickable
+    v-ripple
+    class="settings-item"
+    :disable="loadingInfo || !info"
+    @click="openDataLocation"
+  >
+    <q-item-section avatar class="settings-icon-section">
+      <q-icon name="folder_open"/>
+    </q-item-section>
+    <q-item-section>
+      <q-item-label class="label-text text-weight-medium">打开本地数据位置</q-item-label>
+      <q-item-label caption class="desc-text">
+        本地模式保存完整数据，云同步模式用作本地缓存
+      </q-item-label>
+      <q-item-label caption class="desc-text storage-summary">
+        <template v-if="info">
+          {{ info.totalFiles }} 个文件 · {{ formatBytes(info.totalBytes) }}
+          <span class="path-separator">·</span>
+          <span class="storage-path">{{ info.currentPath }}</span>
+        </template>
+        <template v-else>正在读取本地数据位置…</template>
+      </q-item-label>
+    </q-item-section>
+    <q-item-section side>
+      <q-spinner v-if="loadingInfo" color="primary" size="20px"/>
+      <q-icon v-else name="open_in_new" class="desc-text"/>
+    </q-item-section>
+  </q-item>
 
-      <q-item clickable v-ripple class="settings-item" @click="chooseLocation">
-        <q-item-section avatar class="settings-icon-section">
-          <q-icon name="drive_file_move"/>
-        </q-item-section>
-        <q-item-section>
-          <q-item-label class="label-text text-weight-medium">更改本地数据位置</q-item-label>
-          <q-item-label caption class="desc-text">选择新目录并安全迁移现有数据</q-item-label>
-        </q-item-section>
-        <q-item-section side>
-          <q-icon name="chevron_right" class="desc-text"/>
-        </q-item-section>
-      </q-item>
+  <q-item clickable v-ripple class="settings-item" @click="chooseLocation">
+    <q-item-section avatar class="settings-icon-section">
+      <q-icon name="drive_file_move"/>
+    </q-item-section>
+    <q-item-section>
+      <q-item-label class="label-text text-weight-medium">更改本地数据位置</q-item-label>
+      <q-item-label caption class="desc-text">选择新目录并安全迁移现有数据</q-item-label>
+    </q-item-section>
+    <q-item-section side>
+      <q-icon name="chevron_right" class="desc-text"/>
+    </q-item-section>
+  </q-item>
 
-      <q-item
-        v-if="info && !info.isDefault"
-        clickable
-        v-ripple
-        class="settings-item"
-        @click="planMigration(null)"
-      >
-        <q-item-section avatar class="settings-icon-section">
-          <q-icon name="settings_backup_restore"/>
-        </q-item-section>
-        <q-item-section>
-          <q-item-label class="label-text text-weight-medium">恢复默认位置</q-item-label>
-          <q-item-label caption class="desc-text">将本地数据迁回应用默认数据目录</q-item-label>
-        </q-item-section>
-        <q-item-section side>
-          <q-icon name="chevron_right" class="desc-text"/>
-        </q-item-section>
-      </q-item>
-    </q-list>
+  <q-item
+    v-if="info && !info.isDefault"
+    clickable
+    v-ripple
+    class="settings-item"
+    @click="planMigration(null)"
+  >
+    <q-item-section avatar class="settings-icon-section">
+      <q-icon name="settings_backup_restore"/>
+    </q-item-section>
+    <q-item-section>
+      <q-item-label class="label-text text-weight-medium">恢复默认位置</q-item-label>
+      <q-item-label caption class="desc-text">将本地数据迁回应用默认数据目录</q-item-label>
+    </q-item-section>
+    <q-item-section side>
+      <q-icon name="chevron_right" class="desc-text"/>
+    </q-item-section>
+  </q-item>
 
-    <q-dialog v-model="showPlan" persistent>
+  <q-dialog v-model="showPlan" persistent>
       <q-card class="plan-dialog">
         <q-card-section>
           <div class="text-h6 dialog-title">迁移本地数据</div>
@@ -102,15 +98,14 @@
           <q-btn unelevated label="开始迁移" color="primary" :disable="!plan" @click="startMigration"/>
         </q-card-actions>
       </q-card>
-    </q-dialog>
+  </q-dialog>
 
-    <LocalStorageMigrationDialog
-      v-model="showProgress"
-      :display="migrationDisplay"
-      @retry="startMigration"
-      @restart="relaunchApp"
-    />
-  </section>
+  <LocalStorageMigrationDialog
+    v-model="showProgress"
+    :display="migrationDisplay"
+    @retry="startMigration"
+    @restart="relaunchApp"
+  />
 </template>
 
 <script setup lang="ts">

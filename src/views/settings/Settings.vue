@@ -106,11 +106,10 @@
         </q-list>
         </section>
 
-        <LocalStorageSettings v-if="isWindows"/>
-
         <section class="settings-group">
         <div class="group-title">数据管理</div>
         <q-list bordered separator class="pad-card">
+          <LocalStorageSettings v-if="isWindows"/>
           <q-item clickable v-ripple @click="exportLogFile" class="settings-item">
             <q-item-section avatar class="settings-icon-section">
               <q-icon name="description"/>
