@@ -307,17 +307,20 @@ pub async fn cmd_save_decrypt_attachment(
     id: String,
     attachment_id: String,
 ) -> Result<String, AppError> {
-    let store = state.diary_store();
-    let diary = get_diary(&state.diary_cache(), &state.crypto(), &*store, &id).await?;
-    let attachment = diary
-        .attachments
-        .iter()
-        .find(|attachment| attachment.id == attachment_id)
-        .ok_or_else(|| AppError {
-            error_type: "attachment".into(),
-            message: "附件不存在".into(),
-        })?
-        .clone();
+    let attachment = {
+        let _storage_guard = state.lock_storage_operation().await;
+        let store = state.diary_store();
+        let diary = get_diary(&state.diary_cache(), &state.crypto(), &*store, &id).await?;
+        diary
+            .attachments
+            .iter()
+            .find(|attachment| attachment.id == attachment_id)
+            .ok_or_else(|| AppError {
+                error_type: "attachment".into(),
+                message: "附件不存在".into(),
+            })?
+            .clone()
+    };
 
     let filepath = app_handle
         .dialog()
@@ -344,6 +347,7 @@ pub async fn cmd_save_decrypt_attachment(
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
+        let _storage_guard = state.lock_storage_operation().await;
         save_decrypt_attachment(
             &state,
             Arc::new(event),

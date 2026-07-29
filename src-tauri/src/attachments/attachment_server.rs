@@ -249,6 +249,8 @@ async fn process_attachment(
         .map_err(|_| ServerError::BadRequest("Invalid URL encoding in attachment id"))?
         .into_owned();
 
+    // 整个 HTTP 请求固定使用进入时的存储模式，避免读取 Manifest 后切换到另一存储。
+    let _storage_guard = state.lock_storage_operation().await;
     let cache = state.diary_cache();
     let crypto = state.crypto();
     let store = state.diary_store();
@@ -402,6 +404,7 @@ mod tests {
     struct TestServer {
         _temp_dir: TempDir,
         handle: AttachmentServerHandle,
+        state: AppState,
         task: tokio::task::JoinHandle<()>,
     }
 
@@ -483,11 +486,12 @@ mod tests {
             },
             "manifest-etag".to_string(),
         );
-        let task = tokio::spawn(run_attachment_server(listener, state));
+        let task = tokio::spawn(run_attachment_server(listener, state.clone()));
 
         TestServer {
             _temp_dir: temp_dir,
             handle,
+            state,
             task,
         }
     }
@@ -541,6 +545,32 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[CONTENT_LENGTH], data.len().to_string());
         assert!(response.bytes().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn attachment_request_waits_for_storage_mode_transition() {
+        let data = b"mode-stable attachment";
+        let server = start_test_server("diary-gate", "file.txt", "text/plain", data, false).await;
+        let transition_guard = server
+            .state
+            .try_lock_storage_mode_change()
+            .expect("应能开始存储模式切换");
+        let url = server.handle.url("diary-gate", "file.txt");
+        let mut request = tokio::spawn(async move { reqwest::get(url).await });
+
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), &mut request)
+                .await
+                .is_err()
+        );
+
+        drop(transition_guard);
+        let response = tokio::time::timeout(std::time::Duration::from_secs(2), request)
+            .await
+            .expect("释放模式切换锁后请求应继续")
+            .expect("请求任务不应 panic")
+            .expect("请求应成功");
+        assert_eq!(response.bytes().await.unwrap().as_ref(), data);
     }
 
     #[tokio::test]

@@ -130,7 +130,11 @@ pub struct LocalStorageMigrationPlan {
 /// 路径只从后端状态读取，不接受前端传入路径，避免为 opener 放开任意目录权限。
 #[tauri::command]
 #[specta::specta]
-pub fn cmd_open_local_storage(app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
+pub async fn cmd_open_local_storage(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let path = display_path(state.local_object_store().root());
     app.opener()
         .open_path(path, None::<&str>)
@@ -216,6 +220,7 @@ impl MigrationPlanInternal {
 pub async fn cmd_get_local_storage_info(
     state: State<'_, AppState>,
 ) -> Result<LocalStorageInfo, AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let los = state.local_object_store();
     let entries = los.get_all_entries().await?;
     let manager = state.local_storage();
@@ -258,6 +263,7 @@ pub async fn cmd_plan_local_storage_migration(
     state: State<'_, AppState>,
     base_path: Option<String>,
 ) -> Result<LocalStorageMigrationPlan, AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let request = resolve_request(&state.local_storage(), base_path)?;
     Ok(build_plan(&state.local_object_store(), request)
         .await?

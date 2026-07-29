@@ -78,6 +78,7 @@ pub async fn cmd_page_diary_ids(
     state: State<'_, AppState>,
     next_token: NextToken,
 ) -> Result<(Vec<String>, NextToken), AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
     Ok(page_diary_ids(&*store, next_token).await?)
 }
@@ -93,6 +94,7 @@ pub async fn cmd_get_diary_summary(
     state: State<'_, AppState>,
     id: &str,
 ) -> Result<DiarySummary, AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
     Ok(get_diary_summary(&state.diary_cache(), &state.crypto(), &*store, id).await?)
 }
@@ -108,6 +110,7 @@ pub async fn cmd_get_diary_detail(
     state: State<'_, AppState>,
     id: &str,
 ) -> Result<DiaryDetail, AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
     Ok(get_diary_detail(
         &state.diary_cache(),
@@ -130,6 +133,7 @@ pub async fn cmd_get_diary_manifest(
     state: State<'_, AppState>,
     id: &str,
 ) -> Result<DiaryManifest, AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
     Ok(get_diary(&state.diary_cache(), &state.crypto(), &*store, id).await?)
 }
@@ -153,11 +157,14 @@ pub fn cmd_search_diaries(
     attachment_types: Vec<AttachmentTypeFilter>,
     attachment_or: bool,
 ) -> Result<String, AppError> {
-    let cache = state.diary_cache();
-    let crypto = state.crypto();
-    let store = state.diary_store();
+    let task_pool = state.task_pool();
+    let state = state.inner().clone();
     let event = event.clone();
-    Ok(state.task_pool().spawn(async move {
+    Ok(task_pool.spawn(async move {
+        let _storage_guard = state.lock_storage_operation().await;
+        let cache = state.diary_cache();
+        let crypto = state.crypto();
+        let store = state.diary_store();
         search_diaries(
             &cache,
             &crypto,

@@ -57,6 +57,12 @@ pub async fn cmd_init_oss_client(
     bucket: String,
     endpoint: String,
 ) -> Result<(), AppError> {
+    let _storage_mode_guard = state
+        .try_lock_storage_mode_change()
+        .ok_or_else(|| AppError {
+            error_type: "storage_busy".into(),
+            message: "有存储操作正在进行，请等待完成后再初始化云存储".into(),
+        })?;
     log::info!("[oss cmd] bucket(len={}): {:?}", bucket.len(), bucket);
     log::info!("[oss cmd] endpoint(len={}): {:?}", endpoint.len(), endpoint);
     Ok(state.oss_client().initialize(endpoint, akid, aks, bucket)?)
@@ -308,7 +314,13 @@ pub fn cmd_migrate_legacy_remote_enabled(
 /// * `Result<bool, AppError>` - 当前进程最终启用的远程存储状态
 #[tauri::command]
 #[specta::specta]
-pub fn cmd_restore_remote_storage(state: State<'_, AppState>) -> Result<bool, AppError> {
+pub async fn cmd_restore_remote_storage(state: State<'_, AppState>) -> Result<bool, AppError> {
+    let _storage_mode_guard = state
+        .try_lock_storage_mode_change()
+        .ok_or_else(|| AppError {
+            error_type: "storage_busy".into(),
+            message: "有存储操作正在进行，请等待完成后再恢复存储模式".into(),
+        })?;
     let enabled = state.configured_remote_enabled().unwrap_or(false);
     if enabled && !state.oss_client().is_initialized() {
         return Err(AppError {
