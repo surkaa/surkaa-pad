@@ -5,6 +5,18 @@ use thiserror::Error;
 pub enum AiError {
     #[error("AI 服务地址无效: {0}")]
     InvalidBaseUrl(String),
+
+    #[error("请求 AI 服务失败: {0}")]
+    RequestFailed(String),
+
+    #[error("AI 服务返回 HTTP {status}: {message}")]
+    HttpStatus { status: u16, message: String },
+
+    #[error("AI 服务响应超过大小限制（最大 {limit_bytes} 字节）")]
+    ResponseTooLarge { limit_bytes: usize },
+
+    #[error("解析 AI 服务响应失败: {0}")]
+    InvalidResponse(String),
 }
 
 impl From<AiError> for AppError {
