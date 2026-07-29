@@ -24,6 +24,7 @@ type ConfigMap = {
     "biometric_enabled": boolean;
     "biometric_dek": string | null;
     "last_password_unlock_at": number | null;
+    "vault_verifier": number[] | null;
     "encrypted_oss_config": number[] | null;
     "default_image_size_is_small": boolean;
     "encrypt_image_attachments": boolean;
@@ -40,6 +41,7 @@ const DEFAULT_CONFIG = {
     "biometric_enabled": false,
     "biometric_dek": null,
     "last_password_unlock_at": null,
+    "vault_verifier": null,
     "encrypted_oss_config": null,
     "default_image_size_is_small": false,
     "encrypt_image_attachments": true,

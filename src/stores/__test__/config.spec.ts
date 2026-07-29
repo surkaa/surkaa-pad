@@ -134,6 +134,16 @@ describe('config store', () => {
                 .resolves.toBe(1_700_000_000_000)
         })
 
+        it('stores an encrypted verifier independently from the OSS config', async () => {
+            const store = useConfigStore()
+
+            await expect(store.getNormalConfig('vault_verifier')).resolves.toBeNull()
+            await store.saveNormalConfig('vault_verifier', [4, 5, 6])
+
+            await expect(store.getNormalConfig('vault_verifier')).resolves.toEqual([4, 5, 6])
+            await expect(store.getNormalConfig('encrypted_oss_config')).resolves.toBeNull()
+        })
+
         it('saves and retrieves number[]', async () => {
             const store = useConfigStore()
             await store.saveNormalConfig('encrypted_oss_config', [1, 2, 3])

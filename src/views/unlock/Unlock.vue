@@ -83,6 +83,11 @@ import PasswordLoginForm from './PasswordLoginForm.vue';
 import RemoteSetupForm from './RemoteSetupForm.vue';
 import {Channel} from '@tauri-apps/api/core';
 import type {SyncProgressEvent} from '../../bindings';
+import {
+  isVaultVerifierValid,
+  requiresVaultLogin,
+  VAULT_VERIFIER_TEXT,
+} from '../../utils/vault';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -91,6 +96,7 @@ const router = useRouter();
 
 const pipeline = ref<'wait-load-config' | 'login' | 'config' | 'first-time'>('wait-load-config');
 const encryptedConfig = ref<number[]>([]);
+const vaultVerifier = ref<number[]>([]);
 const ossConfig = ref<OssConfigType>({
   akid: '',
   aks: '',
@@ -134,6 +140,31 @@ async function refreshBiometricUnlockAllowed() {
 
   const lastPasswordUnlockAt = await configStore.getNormalConfig('last_password_unlock_at');
   biometricUnlockAllowed.value = canUseBiometricUnlock(lastPasswordUnlockAt);
+}
+
+async function createVaultVerifier() {
+  const encrypted = await api.cmdEncryptData(VAULT_VERIFIER_TEXT);
+  await configStore.saveNormalConfig('vault_verifier', encrypted);
+  vaultVerifier.value = encrypted;
+}
+
+async function verifyCurrentVault() {
+  if (vaultVerifier.value.length > 0) {
+    const decrypted = await api.cmdDecryptData(vaultVerifier.value);
+    if (!isVaultVerifierValid(decrypted)) {
+      throw new Error('Vault 校验值不匹配');
+    }
+    return;
+  }
+
+  // 兼容没有独立校验值的旧版纯本地安装：只要能够解密一篇已有日记，
+  // 就能确认当前主密码正确，之后会补建独立的 Vault 校验值。
+  if (encryptedConfig.value.length === 0) {
+    const [ids] = await api.cmdPageDiaryIds(null);
+    if (ids.length > 0) {
+      await api.cmdGetDiarySummary(ids[0]);
+    }
+  }
 }
 
 async function saveConfigAndLogin() {
@@ -213,6 +244,14 @@ async function saveConfigAndLogin() {
     return;
   }
 
+  try {
+    await createVaultVerifier();
+  } catch (e) {
+    $q.notify({type: 'negative', message: `初始化本地 Vault 失败: ${formatError(e)}`});
+    loading.value = false;
+    return;
+  }
+
   console.log('Setup & Unlock Successful');
   setTimeoutForCloseApp();
   await router.replace({name: 'DiaryList'});
@@ -242,7 +281,7 @@ async function unlock() {
 
   try {
     await api.cmdUnlock(masterPassword.value);
-    await recordPasswordUnlock();
+    await verifyCurrentVault();
 
     const remoteEnabled = await migrateRemoteStoragePreference();
     if (remoteEnabled) {
@@ -251,6 +290,11 @@ async function unlock() {
       }
     }
     await api.cmdRestoreRemoteStorage();
+
+    if (vaultVerifier.value.length === 0) {
+      await createVaultVerifier();
+    }
+    await recordPasswordUnlock();
 
     console.log('Unlock Successful');
     setTimeoutForCloseApp();
@@ -274,6 +318,8 @@ async function startLocalOnly() {
     await configStore.deleteLegacyRemoteEnabled();
     await api.cmdRestoreRemoteStorage();
 
+    await createVaultVerifier();
+
     console.log('Local-only Unlock Successful');
     setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
@@ -294,7 +340,8 @@ async function confirmReset() {
         'biometric_dek',
         'last_password_unlock_at',
     );
-    pipeline.value = 'first-time';
+    encryptedConfig.value = [];
+    pipeline.value = 'login';
     masterPassword.value = '';
     confirmMasterPassword.value = '';
   }
@@ -319,6 +366,7 @@ async function tryBiometricUnlock() {
     const {data} = await biometricCipher('请验证身份以解锁日记', {dataToDecrypt});
 
     await api.cmdBiometricUnlock(data);
+    await verifyCurrentVault();
 
     const remoteEnabled = await migrateRemoteStoragePreference();
     if (remoteEnabled) {
@@ -327,6 +375,10 @@ async function tryBiometricUnlock() {
       }
     }
     await api.cmdRestoreRemoteStorage();
+
+    if (vaultVerifier.value.length === 0) {
+      await createVaultVerifier();
+    }
 
     console.log('Biometric Unlock Successful');
     setTimeoutForCloseApp();
@@ -342,10 +394,25 @@ onMounted(async () => {
   version.value = await getVersion();
   appName.value = await getName();
   encryptedMemoryCost.value = await api.cmdEncryptInfo();
+  const verifier = await configStore.getNormalConfig('vault_verifier');
   const ec = await configStore.getNormalConfig('encrypted_oss_config');
-  if (ec) {
+  vaultVerifier.value = verifier ?? [];
+  encryptedConfig.value = ec ?? [];
+
+  let hasLegacyLocalVault = false;
+  if (!verifier && !ec) {
+    try {
+      const [ids] = await api.cmdPageDiaryIds(null);
+      hasLegacyLocalVault = ids.length > 0;
+    } catch (error) {
+      // 无法确认本地是否为空时，宁可要求登录，也不能误判为首次使用并覆盖密码基准。
+      console.error('检查旧版本地 Vault 失败:', error);
+      hasLegacyLocalVault = true;
+    }
+  }
+
+  if (requiresVaultLogin(!!verifier, !!ec, hasLegacyLocalVault)) {
     pipeline.value = 'login';
-    encryptedConfig.value = ec;
     biometricEnabled.value = isAndroid
         && await configStore.getNormalConfig('biometric_enabled');
     await refreshBiometricUnlockAllowed();
