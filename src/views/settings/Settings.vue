@@ -143,6 +143,14 @@
       </q-card>
     </q-dialog>
 
+    <DisableRemoteStorageDialog
+      v-model="showDisableRemotePlan"
+      :loading="planningDisableRemote"
+      :plan="disableRemotePlan"
+      @confirm="confirmDisableRemote"
+      @cancel="cancelDisableRemote"
+    />
+
     <!-- 同步进度对话框 -->
     <q-dialog v-model="showSyncProgress" persistent>
       <q-card class="pad-modal" style="min-width: 300px">
@@ -210,6 +218,7 @@ import {formatError} from "../../utils/formatError.ts";
 import {biometricToggleAction} from "../../utils/biometricToggle.ts";
 import {useRemoteStorageSettings} from '../../composables/useRemoteStorageSettings';
 import AttachmentSettings from './AttachmentSettings.vue';
+import DisableRemoteStorageDialog from '../../components/DisableRemoteStorageDialog.vue';
 import EditorShortcutSettings from './EditorShortcutSettings.vue';
 import LocalStorageSettings from './LocalStorageSettings.vue';
 
@@ -230,6 +239,9 @@ const {
   remoteEnabled,
   remoteStorageBusy,
   showOssConfigDialog,
+  showDisableRemotePlan,
+  planningDisableRemote,
+  disableRemotePlan,
   showSyncProgress,
   syncProgress,
   syncTotal,
@@ -238,6 +250,8 @@ const {
   syncFileDetail,
   ossConfig,
   handleRemoteToggle,
+  confirmDisableRemote,
+  cancelDisableRemote,
   enableRemote,
 } = useRemoteStorageSettings();
 

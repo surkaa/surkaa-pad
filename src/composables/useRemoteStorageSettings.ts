@@ -1,8 +1,7 @@
 import {Channel} from '@tauri-apps/api/core';
-import {confirm} from '@tauri-apps/plugin-dialog';
 import {useQuasar} from 'quasar';
 import {onMounted, ref} from 'vue';
-import type {SyncProgressEvent} from '../bindings';
+import type {DisableRemoteStoragePlan, SyncProgressEvent} from '../bindings';
 import {useConfigStore} from '../stores/config';
 import {useDataStore} from '../stores/data';
 import type {OssConfigType} from '../types';
@@ -22,6 +21,9 @@ export function useRemoteStorageSettings() {
   const remoteEnabled = ref(false);
   const remoteStorageBusy = ref(false);
   const showOssConfigDialog = ref(false);
+  const showDisableRemotePlan = ref(false);
+  const planningDisableRemote = ref(false);
+  const disableRemotePlan = ref<DisableRemoteStoragePlan>();
   const showSyncProgress = ref(false);
   const syncProgress = ref(0);
   const syncTotal = ref(0);
@@ -68,8 +70,10 @@ export function useRemoteStorageSettings() {
       remoteEnabled.value = false;
       dataStore.invalidateDiaryList();
       $q.notify({type: 'positive', message: '云同步已关闭，数据已下载到本地'});
+      return true;
     } catch (error) {
       $q.notify({type: 'negative', message: `关闭云同步失败: ${formatError(error)}`});
+      return false;
     } finally {
       showSyncProgress.value = false;
     }
@@ -85,14 +89,44 @@ export function useRemoteStorageSettings() {
       showOssConfigDialog.value = true;
     } else if (action === 'disable') {
       remoteStorageBusy.value = true;
+      planningDisableRemote.value = true;
+      disableRemotePlan.value = undefined;
+      showDisableRemotePlan.value = true;
       try {
-        if (await confirm('关闭云同步后，云端数据将下载到本地。确定继续？')) {
-          await disableRemote();
-        }
+        disableRemotePlan.value = await api.cmdPlanDisableRemoteStorage();
+      } catch (error) {
+        showDisableRemotePlan.value = false;
+        $q.notify({type: 'negative', message: `检查本地空间失败: ${formatError(error)}`});
       } finally {
+        planningDisableRemote.value = false;
         remoteStorageBusy.value = false;
       }
     }
+  }
+
+  async function confirmDisableRemote() {
+    const plan = disableRemotePlan.value;
+    if (!plan?.hasSufficientSpace) {
+      $q.notify({
+        type: 'warning',
+        message: '本地空间不足，请手动删除一些大附件或释放磁盘空间后重试',
+      });
+      return;
+    }
+    showDisableRemotePlan.value = false;
+    remoteStorageBusy.value = true;
+    try {
+      if (await disableRemote()) {
+        disableRemotePlan.value = undefined;
+      }
+    } finally {
+      remoteStorageBusy.value = false;
+    }
+  }
+
+  function cancelDisableRemote() {
+    showDisableRemotePlan.value = false;
+    disableRemotePlan.value = undefined;
   }
 
   async function enableRemote() {
@@ -130,6 +164,9 @@ export function useRemoteStorageSettings() {
     remoteEnabled,
     remoteStorageBusy,
     showOssConfigDialog,
+    showDisableRemotePlan,
+    planningDisableRemote,
+    disableRemotePlan,
     showSyncProgress,
     syncProgress,
     syncTotal,
@@ -138,6 +175,8 @@ export function useRemoteStorageSettings() {
     syncFileDetail,
     ossConfig,
     handleRemoteToggle,
+    confirmDisableRemote,
+    cancelDisableRemote,
     enableRemote,
   };
 }
