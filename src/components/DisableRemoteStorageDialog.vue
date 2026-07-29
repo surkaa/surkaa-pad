@@ -23,7 +23,7 @@
           <strong>{{ plan.skippedFiles }} 个文件 · {{ formatBytes(plan.skippedBytes) }}</strong>
         </div>
         <div class="detail-row">
-          <span>本次需要下载</span>
+          <span>实际待下载</span>
           <strong>{{ plan.downloadFiles }} 个文件 · {{ formatBytes(plan.downloadBytes) }}</strong>
         </div>
         <div class="detail-row">

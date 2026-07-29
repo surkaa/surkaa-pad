@@ -159,9 +159,8 @@ fn ensure_download_capacity(plan: &SyncPlan, available_bytes: u64) -> Result<(),
     }
     Err(SyncFailure::new(
         format!(
-            "本地存储空间不足：待下载 {}，包含安全余量后需要 {}，当前仅可用 {}。请手动删除一些大附件或释放磁盘空间后重试",
+            "为避免下载后磁盘空间过低，当前无法下载：待下载 {}，本地可用 {}。请手动删除一些大附件或释放磁盘空间后重试",
             format_bytes(plan.total_bytes),
-            format_bytes(required_bytes),
             format_bytes(available_bytes)
         ),
         SyncPhase::Preparing,
@@ -810,6 +809,8 @@ mod tests {
         let error = ensure_download_capacity(&plan, required - 1).unwrap_err();
         assert_eq!(error.phase, SyncPhase::Preparing);
         assert!(error.message.contains("手动删除一些大附件"));
+        assert!(error.message.contains(&format_bytes(plan.total_bytes)));
+        assert!(!error.message.contains("安全余量"));
     }
 
     #[test]

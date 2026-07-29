@@ -30,10 +30,6 @@ pub struct DisableRemoteStoragePlan {
     pub download_files: u32,
     #[specta(rename = "downloadBytes", type = f64)]
     pub download_bytes: u64,
-    #[specta(rename = "safetyMarginBytes", type = f64)]
-    pub safety_margin_bytes: u64,
-    #[specta(rename = "requiredBytes", type = f64)]
-    pub required_bytes: u64,
     #[specta(rename = "availableBytes", type = f64)]
     pub available_bytes: u64,
     #[specta(rename = "hasSufficientSpace")]
@@ -185,7 +181,8 @@ pub async fn cmd_plan_disable_remote_storage(
         error_type: "sync_plan".into(),
         message: format!("无法读取本地存储可用空间: {error}"),
     })?;
-    let required_bytes = required_space_with_margin(stats.download_bytes);
+    // 安全余量只参与是否允许下载的内部判定；对用户展示的实际需求始终是 download_bytes。
+    let protected_required_bytes = required_space_with_margin(stats.download_bytes);
     let plan = DisableRemoteStoragePlan {
         local_storage_path: los.root().to_string_lossy().into_owned(),
         remote_files: stats.remote_files,
@@ -194,20 +191,18 @@ pub async fn cmd_plan_disable_remote_storage(
         skipped_bytes: stats.skipped_bytes,
         download_files: stats.download_files,
         download_bytes: stats.download_bytes,
-        safety_margin_bytes: required_bytes.saturating_sub(stats.download_bytes),
-        required_bytes,
         available_bytes,
-        has_sufficient_space: available_bytes >= required_bytes,
+        has_sufficient_space: available_bytes >= protected_required_bytes,
     };
     log::info!(
-        "[remote] disable plan ready: remote_files={}, remote_bytes={}, download_files={}, download_bytes={}, skipped_files={}, available_bytes={}, required_bytes={}, sufficient={}",
+        "[remote] disable plan ready: remote_files={}, remote_bytes={}, download_files={}, download_bytes={}, skipped_files={}, available_bytes={}, protected_required_bytes={}, sufficient={}",
         plan.remote_files,
         plan.remote_bytes,
         plan.download_files,
         plan.download_bytes,
         plan.skipped_files,
         plan.available_bytes,
-        plan.required_bytes,
+        protected_required_bytes,
         plan.has_sufficient_space
     );
     Ok(plan)

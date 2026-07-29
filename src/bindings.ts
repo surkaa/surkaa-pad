@@ -684,7 +684,7 @@ attachmentCounts: DiaryAttachmentCounts;
  * 正文节点中各类加密附件的数量
  */
 encryptedAttachmentCounts: DiaryAttachmentCounts }
-export type DisableRemoteStoragePlan = { localStoragePath: string; remoteFiles: number; remoteBytes: number; skippedFiles: number; skippedBytes: number; downloadFiles: number; downloadBytes: number; safetyMarginBytes: number; requiredBytes: number; availableBytes: number; hasSufficientSpace: boolean }
+export type DisableRemoteStoragePlan = { localStoragePath: string; remoteFiles: number; remoteBytes: number; skippedFiles: number; skippedBytes: number; downloadFiles: number; downloadBytes: number; availableBytes: number; hasSufficientSpace: boolean }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
 export type LocalStorageInfo = { currentPath: string; configuredPath: string; isDefault: boolean; legacyMigrationRequired: boolean; migrationPending: boolean; totalFiles: number; totalBytes: number }
