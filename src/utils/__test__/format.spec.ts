@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {formatBytes, formatKiB} from '../format';
+import {formatAttachmentTotalSize, formatBytes, formatKiB} from '../format';
 
 describe('formatBytes', () => {
     it('preserves useful decimal precision for large attachments', () => {
@@ -17,6 +17,21 @@ describe('formatBytes', () => {
         expect(formatBytes(1023)).toBe('1023 B');
         expect(formatBytes(1024)).toBe('1 KB');
         expect(formatBytes()).toBe('N/A');
+    });
+});
+
+describe('formatAttachmentTotalSize', () => {
+    it('hides totals below one megabyte', () => {
+        expect(formatAttachmentTotalSize()).toBeNull();
+        expect(formatAttachmentTotalSize(Number.NaN)).toBeNull();
+        expect(formatAttachmentTotalSize(1024 ** 2 - 1)).toBeNull();
+    });
+
+    it('uses readable units at megabyte and gigabyte boundaries', () => {
+        expect(formatAttachmentTotalSize(1024 ** 2)).toBe('1 MB');
+        expect(formatAttachmentTotalSize(1.5 * 1024 ** 2)).toBe('1.5 MB');
+        expect(formatAttachmentTotalSize(1024 ** 3)).toBe('1 GB');
+        expect(formatAttachmentTotalSize(1.56 * 1024 ** 3)).toBe('1.56 GB');
     });
 });
 

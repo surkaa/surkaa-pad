@@ -3,6 +3,7 @@ import {computed, onBeforeUnmount, onMounted, ref} from "vue";
 import {formatTimestamp, getCurEmoji} from "../utils";
 import type {DiaryAttachmentCounts, DiarySummary} from "../bindings.ts";
 import {attachmentEncryptionFillPercentage} from "../utils/attachmentEncryptionFill.ts";
+import {formatAttachmentTotalSize} from "../utils/format.ts";
 
 const {diary} = defineProps<{
   diary: DiarySummary | null;
@@ -51,8 +52,9 @@ const encryptedAttachmentCounts = computed(() => diary?.encryptedAttachmentCount
   video: 0,
   file: 0,
 });
-const attachmentCount = computed(() => Object.values(attachmentCounts.value)
-    .reduce((total, count) => total + count, 0));
+const attachmentTotalSizeText = computed(() =>
+    formatAttachmentTotalSize(diary?.attachmentTotalSize),
+);
 
 function attachmentIconStyle(type: keyof DiaryAttachmentCounts): Record<string, string> {
   const percentage = attachmentEncryptionFillPercentage(
@@ -81,10 +83,10 @@ function attachmentIconStyle(type: keyof DiaryAttachmentCounts): Record<string, 
           {{ formatTimestamp(diary.updated) }}
         </span>
       </div>
-      <div class="card-actions" v-if="attachmentCount">
-        <span class="attachment-badge">
+      <div class="card-actions" v-if="attachmentTotalSizeText">
+        <span class="attachment-badge" title="所有附件总大小">
           <span class="badge-icon">📎</span>
-          <span class="badge-count">{{ attachmentCount }}</span>
+          <span class="badge-size">{{ attachmentTotalSizeText }}</span>
         </span>
       </div>
     </div>
@@ -210,7 +212,7 @@ function attachmentIconStyle(type: keyof DiaryAttachmentCounts): Record<string, 
           font-size: 12px;
         }
 
-        .badge-count {
+        .badge-size {
           font-weight: 600;
         }
       }

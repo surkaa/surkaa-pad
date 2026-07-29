@@ -84,6 +84,14 @@ export function formatBytes(bytes?: number): string {
     return `${formattedSize} ${units[index]}`;
 }
 
+/**
+ * 格式化日记卡片上的附件总大小；不足 1 MB 时隐藏，避免卡片信息过密。
+ */
+export function formatAttachmentTotalSize(bytes?: number): string | null {
+    if (bytes === undefined || !Number.isFinite(bytes) || bytes < 1024 ** 2) return null;
+    return formatBytes(bytes);
+}
+
 export function formatKiB(kibibytes?: number): string {
     if (kibibytes === undefined || kibibytes === null) return 'N/A';
     const bytes = kibibytes * 1024; // 将KiB转换为Bytes

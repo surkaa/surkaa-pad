@@ -33,6 +33,7 @@ function summary(id = '123'): DiarySummary {
     updated: 1,
     title: 'title',
     attachmentCount: 0,
+    attachmentTotalSize: 0,
     attachmentCounts: {image: 0, audio: 0, video: 0, file: 0},
     encryptedAttachmentCounts: {image: 0, audio: 0, video: 0, file: 0},
   }
