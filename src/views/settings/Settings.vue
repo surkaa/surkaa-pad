@@ -101,7 +101,10 @@
               />
             </q-item-section>
           </q-item>
-          <LocalStorageSettings v-if="isWindows"/>
+          <LocalStorageSettings
+              v-if="isWindows"
+              :refresh-revision="localStorageRefreshRevision"
+          />
           <q-item clickable v-ripple @click="exportLogFile" class="settings-item">
             <q-item-section avatar class="settings-icon-section">
               <q-icon name="description"/>
@@ -237,6 +240,7 @@ const isWindows = currentPlatform === 'windows';
 
 const {
   remoteEnabled,
+  localStorageRefreshRevision,
   remoteStorageBusy,
   showOssConfigDialog,
   showDisableRemotePlan,

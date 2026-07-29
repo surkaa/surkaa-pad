@@ -113,7 +113,7 @@ import {Channel} from '@tauri-apps/api/core';
 import {open} from '@tauri-apps/plugin-dialog';
 import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from 'quasar';
-import {onMounted, ref} from 'vue';
+import {onMounted, ref, watch} from 'vue';
 import type {
   LocalStorageInfo,
   LocalStorageMigrationEvent,
@@ -131,6 +131,11 @@ import {
 } from '../../utils/localStorageMigration';
 
 const $q = useQuasar();
+const props = withDefaults(defineProps<{
+  refreshRevision?: number;
+}>(), {
+  refreshRevision: 0,
+});
 const info = ref<LocalStorageInfo>();
 const plan = ref<LocalStorageMigrationPlan>();
 const selectedBasePath = ref<string | null>(null);
@@ -140,6 +145,7 @@ const showProgress = ref(false);
 const migrationDisplay = ref(initialLocalStorageMigrationDisplay());
 
 onMounted(loadInfo);
+watch(() => props.refreshRevision, () => void loadInfo());
 
 async function loadInfo() {
   loadingInfo.value = true;

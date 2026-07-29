@@ -19,6 +19,7 @@ export function useRemoteStorageSettings() {
   const configStore = useConfigStore();
   const dataStore = useDataStore();
   const remoteEnabled = ref(false);
+  const localStorageRefreshRevision = ref(0);
   const remoteStorageBusy = ref(false);
   const showOssConfigDialog = ref(false);
   const showDisableRemotePlan = ref(false);
@@ -69,6 +70,7 @@ export function useRemoteStorageSettings() {
       await api.cmdDisableRemoteStorage(event);
       remoteEnabled.value = false;
       dataStore.invalidateDiaryList();
+      localStorageRefreshRevision.value += 1;
       $q.notify({type: 'positive', message: '云同步已关闭，数据已下载到本地'});
       return true;
     } catch (error) {
@@ -150,6 +152,7 @@ export function useRemoteStorageSettings() {
       await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
       remoteEnabled.value = true;
       dataStore.invalidateDiaryList();
+      localStorageRefreshRevision.value += 1;
       $q.notify({type: 'positive', message: '云同步已启用'});
     } catch (error) {
       $q.notify({type: 'negative', message: `启用云同步失败: ${formatError(error)}`});
@@ -162,6 +165,7 @@ export function useRemoteStorageSettings() {
 
   return {
     remoteEnabled,
+    localStorageRefreshRevision,
     remoteStorageBusy,
     showOssConfigDialog,
     showDisableRemotePlan,
