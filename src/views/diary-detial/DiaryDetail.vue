@@ -35,7 +35,7 @@ const editorShortcuts = configStore.useTauriConfig('windows_editor_shortcuts');
 
 const {
   diaryId, diary, attachments, diaryManifestSize, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
-  loadDiaryInfo, deleteDiary
+  loadDiaryInfo, deleteDiary, flushPendingSave
 } = useDiaryCore();
 
 // UI交互
@@ -146,6 +146,7 @@ const {
   showUploadDialog,
   cancelAllUploads,
   insertExistingAttachmentsAtEnd: mediaAction.insertExistingAttachmentsAtEnd,
+  flushPendingSave,
 });
 
 onMounted(async () => {

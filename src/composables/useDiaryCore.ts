@@ -14,6 +14,7 @@ import {
 import type {DiaryContent} from "../bindings.ts";
 import {runDiaryDeletion} from "../utils/diaryDeletion.ts";
 import {findUnusedAttachments} from '../utils/diaryAttachments';
+import {LatestTaskQueue} from '../utils/latestTaskQueue';
 
 export function useDiaryCore() {
     const $q = useQuasar();
@@ -40,6 +41,10 @@ export function useDiaryCore() {
 
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
     const AUTO_SAVE_DELAY = 1000;
+
+    function cloneContent(content: DiaryContent): DiaryContent {
+        return JSON.parse(JSON.stringify(content)) as DiaryContent;
+    }
 
     const unusedAttachments = computed(() => {
         if (!currentDiary.value) return [];
@@ -68,29 +73,45 @@ export function useDiaryCore() {
         }
     }
 
-    async function saveDiary() {
+    async function persistDiary(content: DiaryContent) {
         if (isNew.value) {
-            try {
-                const [summary, content] = await api.cmdSaveDiary(diaryContent.value);
-                currentId.value = summary.id;
-                dataStore.insertNewDiary(summary);
-                diaryContent.value = content;
-                $q.notify({type: 'positive', message: '日记已自动创建'});
-            } catch (e) {
-                $q.notify({type: 'negative', message: `保存日记失败: ${formatError(e)}`});
-            }
+            const [summary] = await api.cmdSaveDiary(content);
+            currentId.value = summary.id;
+            dataStore.insertNewDiary(summary);
+            $q.notify({type: 'positive', message: '日记已自动创建'});
             return;
         }
 
+        // 已存在的日记，执行更新
+        diarySummaries.value[currentId.value] = await api.cmdUpdateDiaryContentOnly(
+            currentId.value,
+            content
+        );
+    }
+
+    const saveQueue = new LatestTaskQueue<DiaryContent>(persistDiary);
+
+    async function flushPendingSave(): Promise<boolean> {
+        if (saveTimeout) {
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+        }
+        if (!saveQueue.hasWork()) return true;
         try {
-            // 已存在的日记，执行更新
-            diarySummaries.value[currentId.value] = await api.cmdUpdateDiaryContentOnly(
-                currentId.value,
-                diaryContent.value
-            );
+            await saveQueue.flush();
+            return true;
         } catch (e) {
             $q.notify({type: 'negative', message: `保存日记失败: ${formatError(e)}`});
+            return false;
         }
+    }
+
+    function scheduleSave() {
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => {
+            saveTimeout = null;
+            void flushPendingSave();
+        }, AUTO_SAVE_DELAY);
     }
 
     function deleteDiary() {
@@ -101,6 +122,7 @@ export function useDiaryCore() {
             ok: {label: '删除', color: 'negative', flat: true},
             cancel: {label: '取消', color: 'primary', flat: true}
         }).onOk(async () => {
+            if (!(await flushPendingSave())) return;
             await runDiaryDeletion(
                 () => api.cmdDeleteDiary(currentId.value),
                 () => {
@@ -125,26 +147,15 @@ export function useDiaryCore() {
     watch(diaryContent, (newValue, oldValue) => {
         // 如果还没加载完，或者值根本没变，则不触发保存
         if (!isInitialLoaded.value || newValue === oldValue) return;
-        // 清除上一次的定时器（防抖）
-        if (saveTimeout) clearTimeout(saveTimeout);
-        // 开启新的定时器
-        saveTimeout = setTimeout(async () => {
-            await saveDiary();
-            saveTimeout = null;
-        }, AUTO_SAVE_DELAY);
+        saveQueue.request(cloneContent(newValue));
+        scheduleSave();
     });
 
     let unlisten: UnlistenFn | null = null;
     // 关闭窗口的处理逻辑
     const handleWindowClose = async (event: CloseRequestedEvent) => {
         event.preventDefault();
-        try {
-            if (saveTimeout) {
-                clearTimeout(saveTimeout);
-                saveTimeout = null;
-                await saveDiary();
-            }
-        } finally {
+        if (await flushPendingSave()) {
             await appWindow.destroy();
         }
     };
@@ -170,12 +181,7 @@ export function useDiaryCore() {
             unlisten = null;
         }
 
-        // 处理未保存的内容
-        if (saveTimeout) {
-            clearTimeout(saveTimeout);
-            saveTimeout = null;
-            await saveDiary();
-        }
+        await flushPendingSave();
     });
 
     return {
@@ -191,6 +197,7 @@ export function useDiaryCore() {
         isDelBack,
         loadDiaryInfo,
         deleteDiary,
-        updateContent
+        updateContent,
+        flushPendingSave,
     };
 }

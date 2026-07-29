@@ -15,6 +15,7 @@ interface UseDiaryLeaveGuardOptions {
   showUploadDialog: Ref<boolean>;
   cancelAllUploads: () => Promise<boolean>;
   insertExistingAttachmentsAtEnd: (attachments: AttachmentMeta[]) => Promise<boolean>;
+  flushPendingSave: () => Promise<boolean>;
 }
 
 export function useDiaryLeaveGuard(options: UseDiaryLeaveGuardOptions) {
@@ -25,12 +26,20 @@ export function useDiaryLeaveGuard(options: UseDiaryLeaveGuardOptions) {
   const pendingUnusedAttachments = ref<AttachmentMeta[]>([]);
   let pendingNavigation: NavigationGuardNext | null = null;
 
-  function finishUnusedAttachmentCheck() {
+  async function finishNavigation(next: NavigationGuardNext) {
+    if (await options.flushPendingSave()) {
+      next();
+    } else {
+      next(false);
+    }
+  }
+
+  async function finishUnusedAttachmentCheck() {
     showUnusedAttachmentsDialog.value = false;
     pendingUnusedAttachments.value = [];
     const next = pendingNavigation;
     pendingNavigation = null;
-    next?.();
+    if (next) await finishNavigation(next);
   }
 
   async function appendUnusedAttachments() {
@@ -39,7 +48,7 @@ export function useDiaryLeaveGuard(options: UseDiaryLeaveGuardOptions) {
       const inserted = await options.insertExistingAttachmentsAtEnd(pendingUnusedAttachments.value);
       if (!inserted) throw new Error('编辑器未能插入附件');
       await nextTick();
-      finishUnusedAttachmentCheck();
+      await finishUnusedAttachmentCheck();
     } catch (error) {
       $q.notify({type: 'negative', message: `添加附件失败：${formatError(error)}`});
     } finally {
@@ -53,7 +62,7 @@ export function useDiaryLeaveGuard(options: UseDiaryLeaveGuardOptions) {
     try {
       await Promise.all(attachments.map(att => api.cmdDeleteAttachment(options.diaryId.value, att.id)));
       dataStore.deleteAttachment(options.diaryId.value, attachments.map(att => att.id));
-      finishUnusedAttachmentCheck();
+      await finishUnusedAttachmentCheck();
     } catch (error) {
       console.error('删除附件失败:', error);
       $q.notify({type: 'negative', message: `删除附件失败：${formatError(error)}`});
@@ -98,7 +107,7 @@ export function useDiaryLeaveGuard(options: UseDiaryLeaveGuardOptions) {
       return;
     }
 
-    next();
+    void finishNavigation(next);
   }
 
   onBeforeRouteLeave((_to, _from, next) => continueNavigation(next));
