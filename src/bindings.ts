@@ -133,7 +133,21 @@ async cmdEnableRemoteStorage(event: TAURI_CHANNEL<SyncProgressEvent>, akid: stri
 }
 },
 /**
- * 禁用远程存储：同步云端数据到本地 → 设置 remote_enabled = false → 重置 OSS 客户端
+ * 只读取云端与本地对象元数据，规划关闭远程存储所需的下载和磁盘空间。
+ * 不读取对象正文，也不会修改当前存储模式。
+ * # Returns
+ * * `Result<DisableRemoteStoragePlan, AppError>` - 待下载数据、跳过数据、实际本地目录和容量信息
+ */
+async cmdPlanDisableRemoteStorage() : Promise<Result<DisableRemoteStoragePlan, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_plan_disable_remote_storage") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 禁用远程存储：重新规划并校验空间 → 同步云端数据到本地 → 设置 remote_enabled = false → 重置 OSS 客户端
  * # Arguments
  * * `event` - 接收同步进度与错误事件的通道
  * # Returns
@@ -666,6 +680,7 @@ attachmentCounts: DiaryAttachmentCounts;
  * 正文节点中各类加密附件的数量
  */
 encryptedAttachmentCounts: DiaryAttachmentCounts }
+export type DisableRemoteStoragePlan = { localStoragePath: string; remoteFiles: number; remoteBytes: number; skippedFiles: number; skippedBytes: number; downloadFiles: number; downloadBytes: number; safetyMarginBytes: number; requiredBytes: number; availableBytes: number; hasSufficientSpace: boolean }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
 export type LocalStorageInfo = { currentPath: string; configuredPath: string; isDefault: boolean; legacyMigrationRequired: boolean; migrationPending: boolean; totalFiles: number; totalBytes: number }

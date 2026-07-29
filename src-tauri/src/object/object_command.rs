@@ -148,7 +148,6 @@ pub async fn cmd_enable_remote_storage(
 }
 
 /// 只读取云端与本地对象元数据，规划关闭远程存储所需的下载和磁盘空间。
-///
 /// 不读取对象正文，也不会修改当前存储模式。
 /// # Returns
 /// * `Result<DisableRemoteStoragePlan, AppError>` - 待下载数据、跳过数据、实际本地目录和容量信息
