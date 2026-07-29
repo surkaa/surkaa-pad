@@ -31,13 +31,14 @@ SurKaa Pad 是一款基于 [Tauri 2](https://tauri.app/) 的本地优先、端�
 
 - **端到端加密能力** — 日记正文使用 AES-256-GCM，附件可使用 AES-256-CTR 流式加密，主密码通过 Argon2id 派生密钥
 - **本地优先** — 无云存储配置时，日记和附件完整保存在应用本地目录
+- **可迁移的本地存储** — 数据默认位于持久应用数据目录，Windows 可在设置中迁移到其他磁盘
 - **可选云同步** — 支持将本地密文迁移到阿里云 OSS，并在本地/远程模式间切换
 - **结构化编辑** — 基于 Tiptap，支持图片、图集、视频、音频和文件附件内联展示
 - **日记搜索** — 支持关键词以及图片、录音、视频、其他附件类型筛选
 - **生物识别解锁**（Android） — 指纹/面容快速解锁，免去重复输入密码
 - **主题切换** — 深色 / 浅色 / 跟随系统
 - **附件管理** — 图片旋转、附件单独加解密切换、拍照/录音/文件上传
-- **数据导出** — 支持导出日志，一键重置配置
+- **诊断日志** — 支持导出应用日志以便排查问题
 
 ## 技术栈
 
@@ -72,14 +73,15 @@ flowchart TB
 ### 加密流程
 
 1. 用户输入主密码 → Argon2id 从密码 + salt 派生 256 位 DEK
-2. 日记内容：V3 结构化 JSON manifest 经 AES-256-GCM 加密后写入当前存储
+2. 日记内容：V4 结构化 JSON manifest 经 AES-256-GCM 加密后写入当前存储
 3. 附件：AES-256-CTR 流式加密，支持分片上传和 Range 解密
 4. 密钥仅存于内存，会话结束后即销毁
 
 ### 本地存储与缓存策略
 
 - **内存缓存** (`DashMap`) — 按日记 ID 索引，命中直接返回
-- **本地对象存储** (`LocalObjectStore`) — 本地模式下保存全部数据，远程模式下通过 ETag 校验避免重复下载
+- **本地对象存储** (`LocalObjectStore`) — 默认位于 `app_local_data_dir()/los`；本地模式下保存全部数据，远程模式下通过 ETag 校验避免重复下载
+- **位置迁移** — 旧版 `app_cache_dir()/lfc` 会在启动时迁移；Windows 可选择任意目录，实际数据放在所选目录的 `los` 子目录中
 - **附件 HTTP 服务** — 仅监听回环地址，使用随机令牌并支持 Range 请求及流式 CTR 解密
 
 ## 配置云存储
@@ -115,7 +117,7 @@ SurKaa Pad 采用零知识架构设计：
 - [Rust](https://www.rust-lang.org/tools/install) stable 工具链
 - [Tauri 2 系统依赖](https://tauri.app/start/prerequisites/)
 
-当前部分 Rust 和 Tauri 插件依赖使用 `../Forks` 下的本地仓库（见 `Cargo.toml` 和 `package.json`）。在迁移到固定 Git revision 或发布版本前，干净环境需要先准备对应 Fork，才能完整安装和构建。
+部分 Rust 和 Tauri 插件依赖使用项目维护的 Git Fork，并在依赖配置中固定到具体 revision，以便干净环境可以复现构建。
 
 ### 本地运行
 
@@ -162,9 +164,11 @@ surkaa-pad/
 │       ├── diaries/        # Diary CRUD, sync, search, store abstraction
 │       ├── attachments/    # Attachment management
 │       ├── object/         # S3 client wrapper
-│       ├── caches/         # Two-layer cache
+│       ├── caches/         # Memory cache and local object store
+│       ├── local_storage/  # Local storage location migration
 │       ├── tasks/          # Cancellable async tasks
 │       ├── stream/         # Stream helpers
+│       ├── app_config.rs   # Rust-side persistent app state
 │       ├── storages.rs     # Remote path helpers
 │       ├── state.rs        # Global state (AppState)
 │       ├── error.rs        # App error types
