@@ -103,7 +103,8 @@ pub async fn cmd_enable_remote_storage(
         }
     };
 
-    // 3. 设置远程存储启用
+    // 3. 持久化配置后再启用运行时远程存储
+    state.persist_remote_enabled(true)?;
     state.set_remote_enabled(true);
     let _ = event.send(SyncProgressEvent::Completed {
         direction,
@@ -133,6 +134,7 @@ pub async fn cmd_disable_remote_storage(
 
     // 已处于本地模式时按幂等成功处理，避免状态恢复期间重复关闭访问未初始化的 OSS。
     if !state.is_remote_enabled() {
+        state.persist_remote_enabled(false)?;
         let _ = event.send(SyncProgressEvent::Completed {
             direction,
             transferred_files: 0,
@@ -169,7 +171,8 @@ pub async fn cmd_disable_remote_storage(
         }
     };
 
-    // 2. 设置远程存储禁用
+    // 2. 先持久化配置，再设置运行时远程存储禁用
+    state.persist_remote_enabled(false)?;
     state.set_remote_enabled(false);
 
     // 3. 重置 OSS 客户端
@@ -184,23 +187,45 @@ pub async fn cmd_disable_remote_storage(
     Ok(())
 }
 
-/// 获取当前存储模式
+/// 获取持久化的存储模式
 /// # Returns
-/// * `bool` - `true` 表示已启用远程存储，`false` 表示本地存储
+/// * `bool` - `true` 表示配置为远程存储，`false` 表示本地存储
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_get_storage_mode(state: State<'_, AppState>) -> bool {
-    state.is_remote_enabled()
+    state
+        .configured_remote_enabled()
+        .unwrap_or_else(|| state.is_remote_enabled())
 }
 
-/// 设置远程存储启用状态（解锁时从前端配置恢复）
+/// 将旧版前端保存的远程存储状态迁移到 Rust 配置。
 /// # Arguments
-/// * `enabled` - 是否启用远程存储
+/// * `legacy_enabled` - 旧版前端配置中的远程存储状态
 /// # Returns
-/// * `()` - 无返回数据
+/// * `Result<bool, AppError>` - Rust 配置中最终采用的远程存储状态
 #[tauri::command]
 #[specta::specta]
-pub fn cmd_set_remote_enabled(state: State<'_, AppState>, enabled: bool) {
+pub fn cmd_migrate_legacy_remote_enabled(
+    state: State<'_, AppState>,
+    legacy_enabled: bool,
+) -> Result<bool, AppError> {
+    Ok(state.initialize_configured_remote_enabled(legacy_enabled)?)
+}
+
+/// OSS 客户端初始化后，根据 Rust 配置恢复当前进程的远程存储状态。
+/// # Returns
+/// * `Result<bool, AppError>` - 当前进程最终启用的远程存储状态
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_restore_remote_storage(state: State<'_, AppState>) -> Result<bool, AppError> {
+    let enabled = state.configured_remote_enabled().unwrap_or(false);
+    if enabled && !state.oss_client().is_initialized() {
+        return Err(AppError {
+            error_type: "oss_not_initialized".into(),
+            message: "远程存储已配置，但 OSS 客户端尚未初始化".into(),
+        });
+    }
     state.set_remote_enabled(enabled);
-    log::info!("[remote] remote_enabled set to {}", enabled);
+    log::info!("[remote] runtime storage mode restored: remote={enabled}");
+    Ok(enabled)
 }

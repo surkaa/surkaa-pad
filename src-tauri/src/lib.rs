@@ -1,8 +1,10 @@
+mod app_config;
 mod attachments;
 mod caches;
 mod cryptos;
 mod diaries;
 mod error;
+mod local_storage;
 mod object;
 mod state;
 mod storages;
@@ -12,6 +14,7 @@ mod tasks;
 mod test_utils;
 mod utils;
 
+use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
     cmd_caching_attachment, cmd_delete_attachment, cmd_rotate_image_attachment,
@@ -21,8 +24,6 @@ use crate::attachments::chunked_upload_command::{
     cmd_abort_chunked_upload, cmd_finish_chunked_upload, cmd_start_chunked_upload, cmd_upload_chunk,
 };
 use crate::attachments::{bind_attachment_server, start_attachment_server};
-use crate::caches::cache_command::{cmd_clean_cache_file, cmd_clean_unused_file};
-use crate::caches::LOCAL_OBJECT_STORE_DIRECTORY;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_encrypt_info, cmd_unlock,
     cmd_valid_password,
@@ -31,23 +32,29 @@ use crate::diaries::diary_command::{
     cmd_delete_diary, cmd_get_diary_detail, cmd_get_diary_manifest, cmd_get_diary_summary,
     cmd_page_diary_ids, cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
 };
+use crate::local_storage::migration::{
+    cmd_get_local_storage_info, cmd_get_local_storage_migration_status, cmd_migrate_local_storage,
+    cmd_open_local_storage, cmd_plan_local_storage_migration,
+};
 use crate::object::object_command::{
     cmd_disable_remote_storage, cmd_enable_remote_storage, cmd_get_storage_mode,
-    cmd_init_oss_client, cmd_set_remote_enabled,
+    cmd_init_oss_client, cmd_migrate_legacy_remote_enabled, cmd_restore_remote_storage,
 };
 use crate::state::AppState;
 use crate::tasks::task_command::cmd_cancel_task;
 use tauri::{App, Manager};
 
 fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
-    let cache_path = app
-        .handle()
-        .path()
-        .app_cache_dir()
-        .expect("failed to get cache dir");
-    let los_path = cache_path.join(LOCAL_OBJECT_STORE_DIRECTORY);
+    let paths = app.handle().path();
+    let app_config = AppConfigStore::load(paths.app_config_dir()?.join(APP_CONFIG_FILENAME))?;
+    let local_storage = crate::local_storage::LocalStorageManager::new(
+        app_config.clone(),
+        paths.app_local_data_dir()?,
+        paths.app_cache_dir()?,
+    );
+    let los_path = local_storage.startup_root();
     let (listener, attachment_server) = bind_attachment_server()?;
-    let state = AppState::new(los_path, attachment_server);
+    let state = AppState::new(los_path, attachment_server, app_config, local_storage);
     start_attachment_server(listener, state.clone());
     app.manage(state);
 
@@ -70,7 +77,14 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_enable_remote_storage,
             cmd_disable_remote_storage,
             cmd_get_storage_mode,
-            cmd_set_remote_enabled,
+            cmd_migrate_legacy_remote_enabled,
+            cmd_restore_remote_storage,
+            // 本地存储位置管理
+            cmd_get_local_storage_info,
+            cmd_get_local_storage_migration_status,
+            cmd_open_local_storage,
+            cmd_plan_local_storage_migration,
+            cmd_migrate_local_storage,
             // 日记基本操作
             cmd_save_diary,
             cmd_update_diary_content_only,
@@ -98,8 +112,6 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_abort_chunked_upload,
             // 其他
             cmd_cancel_task,
-            cmd_clean_cache_file,
-            cmd_clean_unused_file,
         ]);
 
     #[cfg(debug_assertions)]

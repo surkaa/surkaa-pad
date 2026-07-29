@@ -148,22 +148,91 @@ async cmdDisableRemoteStorage(event: TAURI_CHANNEL<SyncProgressEvent>) : Promise
 }
 },
 /**
- * 获取当前存储模式
+ * 获取持久化的存储模式
  * # Returns
- * * `bool` - `true` 表示已启用远程存储，`false` 表示本地存储
+ * * `bool` - `true` 表示配置为远程存储，`false` 表示本地存储
  */
 async cmdGetStorageMode() : Promise<boolean> {
     return await TAURI_INVOKE("cmd_get_storage_mode");
 },
 /**
- * 设置远程存储启用状态（解锁时从前端配置恢复）
+ * 将旧版前端保存的远程存储状态迁移到 Rust 配置。
  * # Arguments
- * * `enabled` - 是否启用远程存储
+ * * `legacy_enabled` - 旧版前端配置中的远程存储状态
  * # Returns
- * * `()` - 无返回数据
+ * * `Result<bool, AppError>` - Rust 配置中最终采用的远程存储状态
  */
-async cmdSetRemoteEnabled(enabled: boolean) : Promise<void> {
-    await TAURI_INVOKE("cmd_set_remote_enabled", { enabled });
+async cmdMigrateLegacyRemoteEnabled(legacyEnabled: boolean) : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_migrate_legacy_remote_enabled", { legacyEnabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * OSS 客户端初始化后，根据 Rust 配置恢复当前进程的远程存储状态。
+ * # Returns
+ * * `Result<bool, AppError>` - 当前进程最终启用的远程存储状态
+ */
+async cmdRestoreRemoteStorage() : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_restore_remote_storage") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 获取当前本地对象存储位置和数据规模。
+ */
+async cmdGetLocalStorageInfo() : Promise<Result<LocalStorageInfo, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_local_storage_info") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 轻量检查启动时是否需要继续或执行本地存储迁移。
+ */
+async cmdGetLocalStorageMigrationStatus() : Promise<LocalStorageMigrationStatus> {
+    return await TAURI_INVOKE("cmd_get_local_storage_migration_status");
+},
+/**
+ * 使用系统文件管理器打开当前实际使用的本地对象存储目录。
+ * 路径只从后端状态读取，不接受前端传入路径，避免为 opener 放开任意目录权限。
+ */
+async cmdOpenLocalStorage() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_open_local_storage") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 预检查本地对象存储迁移。`base_path` 为空时表示迁移到默认位置。
+ */
+async cmdPlanLocalStorageMigration(basePath: string | null) : Promise<Result<LocalStorageMigrationPlan, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_plan_local_storage_migration", { basePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 执行本地对象存储迁移。成功后前端应立即重启应用。
+ */
+async cmdMigrateLocalStorage(event: TAURI_CHANNEL<LocalStorageMigrationEvent>, basePath: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_migrate_local_storage", { event, basePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 },
 /**
  * 根据内容保存日记
@@ -527,32 +596,6 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
-},
-/**
- * 清空所有本地对象数据
- * # Returns
- * * `Result<(), AppError>` - 成功时本地存储目录已清空
- */
-async cmdCleanCacheFile() : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_clean_cache_file") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * 清理本地与 OSS 不一致或云端已不存在的缓存对象
- * # Returns
- * * `Result<Vec<String>, AppError>` - 已删除的本地对象 key 列表
- */
-async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_clean_unused_file") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
 }
 }
 
@@ -625,6 +668,11 @@ attachmentCounts: DiaryAttachmentCounts;
 encryptedAttachmentCounts: DiaryAttachmentCounts }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
+export type LocalStorageInfo = { currentPath: string; configuredPath: string; isDefault: boolean; legacyMigrationRequired: boolean; migrationPending: boolean; totalFiles: number; totalBytes: number }
+export type LocalStorageMigrationEvent = { event: "preparing"; data: { sourcePath: string; targetPath: string } } | { event: "started"; data: { totalFiles: number; totalBytes: number; fastMove: boolean } } | { event: "phase"; data: { phase: LocalStorageMigrationPhase } } | { event: "progress"; data: { phase: LocalStorageMigrationPhase; currentFile: string; currentFileIndex: number; totalFiles: number; currentFileBytes: number; currentFileSize: number; processedBytes: number; totalBytes: number } } | { event: "completed"; data: { targetPath: string; migratedFiles: number; migratedBytes: number; cleanupWarning: string | null } } | { event: "error"; data: { phase: LocalStorageMigrationPhase; currentFile: string | null; message: string } }
+export type LocalStorageMigrationPhase = "preparing" | "copying" | "verifying" | "switching" | "cleaning"
+export type LocalStorageMigrationPlan = { sourcePath: string; targetPath: string; totalFiles: number; totalBytes: number; availableBytes: number; requiredBytes: number; fastMove: boolean }
+export type LocalStorageMigrationStatus = { legacyMigrationRequired: boolean; migrationPending: boolean; unavailablePath: string | null; unavailableReason: string | null }
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type SyncDirection = "upload" | "download"
 export type SyncPhase = "preparing" | "attachments" | "manifests"

@@ -81,6 +81,8 @@ import {masterPasswordConfirmationError} from "../../utils/masterPasswordSetup.t
 import FirstTimeUnlockForm from './FirstTimeUnlockForm.vue';
 import PasswordLoginForm from './PasswordLoginForm.vue';
 import RemoteSetupForm from './RemoteSetupForm.vue';
+import {Channel} from '@tauri-apps/api/core';
+import type {SyncProgressEvent} from '../../bindings';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -197,18 +199,19 @@ async function saveConfigAndLogin() {
     return;
   }
 
-  // 直接验证 OSS 配置是否可用，跳过二次输入密码
-  if (!(await initOss())) {
-    // OSS 验证失败，清除已保存的配置让用户重试
+  // 初始化 OSS 并由 Rust 完成远程模式持久化。
+  try {
+    const event = new Channel<SyncProgressEvent>();
+    const {akid, aks, bucket, endpoint} = ossConfig.value;
+    await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
+    await configStore.deleteLegacyRemoteEnabled();
+  } catch (e) {
+    $q.notify({type: "negative", message: `初始化 OSS 客户端失败: ${formatError(e)}`});
     await configStore.deleteConfig('encrypted_oss_config');
     masterPassword.value = '';
     loading.value = false;
     return;
   }
-
-  // OSS 配置成功，启用远程存储
-  await configStore.saveNormalConfig('remote_enabled', true);
-  await api.cmdSetRemoteEnabled(true);
 
   console.log('Setup & Unlock Successful');
   setTimeoutForCloseApp();
@@ -241,14 +244,13 @@ async function unlock() {
     await api.cmdUnlock(masterPassword.value);
     await recordPasswordUnlock();
 
-    const remoteEnabled = await configStore.getNormalConfig('remote_enabled');
+    const remoteEnabled = await migrateRemoteStoragePreference();
     if (remoteEnabled) {
       if (!(await initOss())) {
-        await api.cmdSetRemoteEnabled(false);
         return;
       }
     }
-    await api.cmdSetRemoteEnabled(remoteEnabled);
+    await api.cmdRestoreRemoteStorage();
 
     console.log('Unlock Successful');
     setTimeoutForCloseApp();
@@ -268,8 +270,9 @@ async function startLocalOnly() {
   try {
     await api.cmdUnlock(masterPassword.value);
     await recordPasswordUnlock();
-    await configStore.saveNormalConfig('remote_enabled', false);
-    await api.cmdSetRemoteEnabled(false);
+    await api.cmdMigrateLegacyRemoteEnabled(false);
+    await configStore.deleteLegacyRemoteEnabled();
+    await api.cmdRestoreRemoteStorage();
 
     console.log('Local-only Unlock Successful');
     setTimeoutForCloseApp();
@@ -283,9 +286,10 @@ async function startLocalOnly() {
 
 async function confirmReset() {
   if (await confirm('确定要重置OssClient配置吗？这将删除所有本地配置。')) {
+    const event = new Channel<SyncProgressEvent>();
+    await api.cmdDisableRemoteStorage(event);
     await configStore.deleteConfig(
         'encrypted_oss_config',
-        'remote_enabled',
         'biometric_enabled',
         'biometric_dek',
         'last_password_unlock_at',
@@ -316,14 +320,13 @@ async function tryBiometricUnlock() {
 
     await api.cmdBiometricUnlock(data);
 
-    const remoteEnabled = await configStore.getNormalConfig('remote_enabled');
+    const remoteEnabled = await migrateRemoteStoragePreference();
     if (remoteEnabled) {
       if (!(await initOss())) {
-        await api.cmdSetRemoteEnabled(false);
         return;
       }
     }
-    await api.cmdSetRemoteEnabled(remoteEnabled);
+    await api.cmdRestoreRemoteStorage();
 
     console.log('Biometric Unlock Successful');
     setTimeoutForCloseApp();
@@ -354,6 +357,13 @@ onMounted(async () => {
     pipeline.value = 'first-time';
   }
 });
+
+async function migrateRemoteStoragePreference(): Promise<boolean> {
+  const legacyEnabled = await configStore.getLegacyRemoteEnabled();
+  const enabled = await api.cmdMigrateLegacyRemoteEnabled(legacyEnabled);
+  await configStore.deleteLegacyRemoteEnabled();
+  return enabled;
+}
 </script>
 
 <style scoped lang="scss">

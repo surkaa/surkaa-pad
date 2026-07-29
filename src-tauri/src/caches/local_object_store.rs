@@ -10,8 +10,8 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
 
-// 保留旧目录名，避免纯代码重命名导致现有本地数据不可见。
-pub const LOCAL_OBJECT_STORE_DIRECTORY: &str = "lfc";
+pub const LOCAL_OBJECT_STORE_DIRECTORY: &str = "los";
+pub const LEGACY_LOCAL_OBJECT_STORE_DIRECTORY: &str = "lfc";
 
 const DATA_FILE_SUFFIX: &str = ".data";
 // `.md5` 是旧版本沿用的磁盘格式；文件内容现在表示对象 ETag，不保证一定是 MD5。
@@ -143,6 +143,10 @@ impl LocalObjectStore {
         Self {
             store_dir: Arc::new(exists_dir),
         }
+    }
+
+    pub fn root(&self) -> &Path {
+        self.store_dir.as_path()
     }
 
     fn get_path(&self, key: &str) -> (PathBuf, PathBuf) {
@@ -369,20 +373,6 @@ impl LocalObjectStore {
         } else {
             Err(CacheError::NotFound)
         }
-    }
-
-    /// 删除所有本地对象
-    pub async fn delete_all(&self) -> Result<(), CacheError> {
-        let mut read_dir = tokio::fs::read_dir(self.store_dir.as_path()).await?;
-        while let Some(entry) = read_dir.next_entry().await? {
-            let file_type = entry.file_type().await?;
-            if file_type.is_dir() {
-                tokio::fs::remove_dir_all(entry.path()).await?;
-            } else {
-                tokio::fs::remove_file(entry.path()).await?;
-            }
-        }
-        Ok(())
     }
 
     /// 获取所有有效本地对象的信息。
