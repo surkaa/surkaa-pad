@@ -19,6 +19,7 @@
 
 - 所有 Rust 修改完成后，运行 `cargo clippy` 检查并修复警告。
 - 不要在代码中残留 `#[allow(dead_code)]` 或 `#[allow(unused)]` 标注，除非有明确的阶段性保留理由。
+- Android 构建中的 HTTP/TLS 依赖必须优先使用纯 Rust 的 rustls 后端，避免引入 OpenSSL/native-tls 造成交叉编译问题。`reqwest` 应保持 `default-features = false` 并显式启用对应版本的 rustls feature（`0.13` 为 `rustls`）；升级网络依赖后必须验证 Android 构建，不能无意切回 native-tls。
 
 ### 开发启动与 bindings 生成
 
