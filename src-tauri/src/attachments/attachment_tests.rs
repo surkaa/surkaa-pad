@@ -2,12 +2,13 @@
 mod tests {
     use crate::attachments::attachment::{
         add_attachment, add_attachment_with_result, caching_attachment, delete_attachment,
-        rotate_image_attachment, toggle_attachment_encryption, update_attachment_filename,
+        finish_attachment_replacement, rotate_image_attachment, toggle_attachment_encryption,
+        update_attachment_filename,
     };
     use crate::attachments::attachment_types::AttachmentProcessEvent;
     use crate::caches::{DiaryMemoryCache, LocalObjectStore};
     use crate::cryptos::Crypto;
-    use crate::diaries::diary_store::RemoteStore;
+    use crate::diaries::diary_store::{DiaryStore, LocalStore, RemoteStore};
     use crate::diaries::{delete_diary, get_diary, save_diary};
     use crate::object::OssClient;
     use crate::state::AppState;
@@ -75,6 +76,59 @@ mod tests {
 
         assert!(upload.await.unwrap().is_err());
         assert!(los.get_all().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn encryption_replacement_restores_old_object_when_manifest_publish_fails() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let store = LocalStore::new(los);
+        let old_data = b"readable before metadata update".to_vec();
+        let replacement = b"encrypted replacement bytes".to_vec();
+
+        store
+            .upload_attachment(
+                "diary",
+                "attachment",
+                old_data.len() as u64,
+                "text/plain",
+                create_mock_stream(old_data.clone(), old_data.len()),
+            )
+            .await
+            .unwrap();
+        store
+            .create_attachment_backup("diary", "attachment")
+            .await
+            .unwrap();
+        store
+            .upload_attachment(
+                "diary",
+                "attachment",
+                replacement.len() as u64,
+                "text/plain",
+                create_mock_stream(replacement.clone(), replacement.len()),
+            )
+            .await
+            .unwrap();
+
+        let result =
+            finish_attachment_replacement(&store, "diary", "attachment", "text/plain", || async {
+                Err(crate::attachments::AttachmentError::InvalidOperation(
+                    "manifest publish failed".to_string(),
+                ))
+            })
+            .await;
+
+        assert!(result.is_err());
+        let stream = store
+            .download_attachment("diary", "attachment", None, None)
+            .await
+            .unwrap();
+        assert_eq!(collect_data(stream).await.unwrap(), old_data);
+        assert!(store
+            .restore_attachment_backup("diary", "attachment", "text/plain")
+            .await
+            .is_err());
     }
 
     #[tokio::test]

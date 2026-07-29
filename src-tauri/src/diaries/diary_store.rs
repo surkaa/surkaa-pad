@@ -16,6 +16,10 @@ pub type AttachmentUploadProgressCallback = Arc<dyn Fn(AttachmentUploadProgress)
 
 const ATTACHMENT_UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
+fn attachment_backup_key(id: &str, filename: &str) -> String {
+    format!("{id}/.attachment-transaction/{filename}")
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AttachmentUploadProgress {
     Transferring(u8),
@@ -281,6 +285,17 @@ pub trait DiaryStore: Send + Sync {
     ) -> Result<(), DiaryError>;
     /// 删除附件
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError>;
+    /// 覆盖附件前创建临时备份，供 Manifest 发布失败时回滚。
+    async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError>;
+    /// 使用临时备份恢复附件。
+    async fn restore_attachment_backup(
+        &self,
+        id: &str,
+        filename: &str,
+        mimetype: &str,
+    ) -> Result<(), DiaryError>;
+    /// 删除附件临时备份。
+    async fn delete_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError>;
     /// 将 V3 的 filename 对象 key 幂等迁移为 V4 attachment ID。
     async fn migrate_attachment_object(
         &self,
@@ -422,6 +437,42 @@ impl DiaryStore for LocalStore {
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
         self.los.delete(&key).await?;
+        Ok(())
+    }
+
+    async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        let backup_key = attachment_backup_key(id, filename);
+        let etag = self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
+        let stream = self.los.get_stream(&key, None).await?;
+        self.los
+            .save_stream_with_etag(&backup_key, &etag, stream)
+            .await?;
+        Ok(())
+    }
+
+    async fn restore_attachment_backup(
+        &self,
+        id: &str,
+        filename: &str,
+        _mimetype: &str,
+    ) -> Result<(), DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        let backup_key = attachment_backup_key(id, filename);
+        let etag = self
+            .los
+            .get(&backup_key)
+            .await?
+            .ok_or(CacheError::NotFound)?;
+        let stream = self.los.get_stream(&backup_key, None).await?;
+        self.los.save_stream_with_etag(&key, &etag, stream).await?;
+        Ok(())
+    }
+
+    async fn delete_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+        self.los
+            .delete(&attachment_backup_key(id, filename))
+            .await?;
         Ok(())
     }
 
@@ -674,6 +725,48 @@ impl DiaryStore for RemoteStore {
         let key = remote_attachments_key(id, filename);
         self.client.delete(&key).await?;
         let _ = self.los.delete(&key).await;
+        Ok(())
+    }
+
+    async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+        self.cache_attachment(id, filename, Arc::new(|_| {}))
+            .await?;
+        let key = remote_attachments_key(id, filename);
+        let backup_key = attachment_backup_key(id, filename);
+        let etag = self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
+        let stream = self.los.get_stream(&key, None).await?;
+        self.los
+            .save_stream_with_etag(&backup_key, &etag, stream)
+            .await?;
+        Ok(())
+    }
+
+    async fn restore_attachment_backup(
+        &self,
+        id: &str,
+        filename: &str,
+        mimetype: &str,
+    ) -> Result<(), DiaryError> {
+        let key = remote_attachments_key(id, filename);
+        let backup_key = attachment_backup_key(id, filename);
+        let size = self
+            .los
+            .get_size(&backup_key)
+            .await?
+            .ok_or(CacheError::NotFound)?;
+        let stream = self.los.get_stream(&backup_key, None).await?;
+        let remote_etag = self.client.upload(&key, size, stream, mimetype).await?;
+        let cache_stream = self.los.get_stream(&backup_key, None).await?;
+        self.los
+            .save_stream_with_etag(&key, &remote_etag, cache_stream)
+            .await?;
+        Ok(())
+    }
+
+    async fn delete_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+        self.los
+            .delete(&attachment_backup_key(id, filename))
+            .await?;
         Ok(())
     }
 

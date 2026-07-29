@@ -18,8 +18,10 @@ use futures_util::StreamExt;
 use image::ImageFormat;
 use std::collections::HashSet;
 use std::fs::File;
+use std::future::Future;
 use std::io::{Cursor, Write};
 use std::sync::Arc;
+use tauri_plugin_log::log;
 use tokio_util::sync::CancellationToken;
 
 fn attachment_upload_progress(
@@ -392,8 +394,10 @@ pub async fn toggle_attachment_encryption_cancelable(
             ));
         };
 
-        // 通过 store 上传
-        let new_etag = store
+        store.create_attachment_backup(id, &attachment_id).await?;
+
+        // 通过 store 上传；传输失败时原对象仍未提交或仍可直接使用，只需清理备份。
+        let upload_result = store
             .upload_attachment_with_progress(
                 id,
                 &attachment_id,
@@ -405,8 +409,17 @@ pub async fn toggle_attachment_encryption_cancelable(
                     Some(cancellation.clone()),
                 ),
             )
-            .await
-            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
+            .await;
+        let new_etag = match upload_result {
+            Ok(etag) => etag,
+            Err(error) => {
+                if let Err(cleanup_error) = store.delete_attachment_backup(id, &attachment_id).await
+                {
+                    log::warn!("清理未使用的附件事务备份失败: {cleanup_error}");
+                }
+                return Err(AttachmentError::InvalidOperation(error.to_string()));
+            }
+        };
 
         // 构造新的元数据并更新 Manifest
         let mut new_meta = old_meta.clone();
@@ -414,9 +427,12 @@ pub async fn toggle_attachment_encryption_cancelable(
         new_meta.nonce = new_nonce;
         new_meta.etag = Some(new_etag);
 
-        update_diary_attachment_locked(&cache, &crypto, &*store, id, new_meta.clone(), &guard)
-            .await
-            .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
+        finish_attachment_replacement(&*store, id, &attachment_id, &old_meta.mimetype, || async {
+            update_diary_attachment_locked(&cache, &crypto, &*store, id, new_meta.clone(), &guard)
+                .await
+                .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))
+        })
+        .await?;
 
         let url = state.attachment_url(id, &new_meta.id);
         Ok((new_meta, url))
@@ -428,6 +444,41 @@ pub async fn toggle_attachment_encryption_cancelable(
         }
         Err(e) => {
             let _ = event.send(AttachmentProcessEvent::Error(e.to_string()));
+        }
+    }
+}
+
+pub(crate) async fn finish_attachment_replacement<F, Fut>(
+    store: &dyn DiaryStore,
+    id: &str,
+    attachment_id: &str,
+    mimetype: &str,
+    publish_manifest: F,
+) -> Result<(), AttachmentError>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<(), AttachmentError>>,
+{
+    match publish_manifest().await {
+        Ok(()) => {
+            if let Err(error) = store.delete_attachment_backup(id, attachment_id).await {
+                log::warn!("附件事务已提交，但清理备份失败: {error}");
+            }
+            Ok(())
+        }
+        Err(publish_error) => {
+            if let Err(rollback_error) = store
+                .restore_attachment_backup(id, attachment_id, mimetype)
+                .await
+            {
+                return Err(AttachmentError::InvalidOperation(format!(
+                    "{publish_error}；恢复旧附件失败: {rollback_error}"
+                )));
+            }
+            if let Err(error) = store.delete_attachment_backup(id, attachment_id).await {
+                log::warn!("附件已回滚，但清理事务备份失败: {error}");
+            }
+            Err(publish_error)
         }
     }
 }
