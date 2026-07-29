@@ -30,7 +30,7 @@
       <q-expansion-item expand-separator class="encryption-expansion">
         <template #header>
           <q-item-section avatar class="settings-icon-section">
-            <q-icon name="encrypted"/>
+            <q-icon name="lock"/>
           </q-item-section>
           <q-item-section>
             <q-item-label class="label-text text-weight-medium">默认加密</q-item-label>
@@ -125,7 +125,7 @@ const encryptionSettings = [
 .encryption-expansion {
   :deep(.q-expansion-item__container > .q-item) {
     min-height: 66px;
-    padding: 10px 16px;
+    padding: 10px 12px;
   }
 
   :deep(.q-expansion-item__toggle-icon) {

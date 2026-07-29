@@ -143,7 +143,7 @@ function notifyInvalidShortcut() {
 .shortcut-groups {
   :deep(.q-expansion-item__container > .q-item) {
     min-height: 66px;
-    padding: 10px 16px;
+    padding: 10px 12px;
   }
 
   :deep(.q-expansion-item__toggle-icon) {

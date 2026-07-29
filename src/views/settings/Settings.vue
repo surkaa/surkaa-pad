@@ -344,7 +344,7 @@ defineOptions({name: 'Settings'});
 
   .settings-item {
     min-height: 66px;
-    padding: 10px 16px;
+    padding: 10px 12px;
 
     :deep(.q-item__section:not(.q-item__section--side)) {
       align-items: flex-start;
@@ -358,7 +358,7 @@ defineOptions({name: 'Settings'});
 
   .settings-icon-section {
     min-width: 42px;
-    padding-right: 14px;
+    padding-right: 10px;
 
     .q-icon {
       width: 34px;
