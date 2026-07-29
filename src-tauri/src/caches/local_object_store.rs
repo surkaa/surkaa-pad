@@ -371,20 +371,6 @@ impl LocalObjectStore {
         }
     }
 
-    /// 删除所有本地对象
-    pub async fn delete_all(&self) -> Result<(), CacheError> {
-        let mut read_dir = tokio::fs::read_dir(self.store_dir.as_path()).await?;
-        while let Some(entry) = read_dir.next_entry().await? {
-            let file_type = entry.file_type().await?;
-            if file_type.is_dir() {
-                tokio::fs::remove_dir_all(entry.path()).await?;
-            } else {
-                tokio::fs::remove_file(entry.path()).await?;
-            }
-        }
-        Ok(())
-    }
-
     /// 获取所有有效本地对象的信息。
     pub async fn get_all_entries(&self) -> Result<Vec<LocalObjectEntry>, CacheError> {
         let mut results = Vec::new();

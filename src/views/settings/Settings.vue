@@ -121,30 +121,6 @@
               <q-icon name="chevron_right" class="desc-text"/>
             </q-item-section>
           </q-item>
-          <q-item v-if="remoteEnabled" clickable v-ripple @click="cleanUnusedFile" class="settings-item">
-            <q-item-section avatar class="settings-icon-section">
-              <q-icon name="cleaning_services"/>
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="label-text text-weight-medium">清除过期缓存</q-item-label>
-              <q-item-label caption class="desc-text">清理不再使用的本地附件缓存</q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <q-icon name="chevron_right" class="desc-text"/>
-            </q-item-section>
-          </q-item>
-          <q-item clickable v-ripple @click="handleReset" class="settings-item danger-item">
-            <q-item-section avatar class="settings-icon-section">
-              <q-icon name="restart_alt"/>
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="text-negative text-weight-medium">重置应用配置</q-item-label>
-              <q-item-label caption class="desc-text">清除本机配置并重启应用</q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <q-icon name="chevron_right" color="negative"/>
-            </q-item-section>
-          </q-item>
         </q-list>
         </section>
       </div>
@@ -233,7 +209,6 @@ import {ref} from 'vue';
 import {platform} from "@tauri-apps/plugin-os";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {exportLogFile} from "../../utils";
-import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from "quasar";
 import {useConfigStore} from "../../stores/config.ts";
 import {biometricCipher} from "../../utils/biometric.ts";
@@ -315,37 +290,6 @@ async function confirmEnableBiometric() {
 function cancelBiometric() {
   showPasswordVerify.value = false;
   verifyPassword.value = '';
-}
-
-async function handleReset() {
-  if (await confirm('确定要重置应用配置吗？此操作不可撤销。重置后将自动重启应用')) {
-    await configStore.deleteConfig(
-        'encrypted_oss_config',
-        'remote_enabled',
-        'biometric_dek',
-        'biometric_enabled',
-        'last_password_unlock_at',
-        'encrypt_image_attachments',
-        'encrypt_audio_attachments',
-        'encrypt_video_attachments',
-        'encrypt_file_attachments',
-        'attachment_upload_concurrency',
-        'windows_editor_shortcuts',
-        'windows_diary_list_shortcuts',
-    );
-    await api.cmdCleanCacheFile();
-    $q.notify('配置已重置, 即将自动重启');
-    setTimeout(relaunch, 1000);
-  }
-}
-
-async function cleanUnusedFile() {
-  try {
-    const deleted = await api.cmdCleanUnusedFile();
-    $q.notify({type: 'positive', message: `清除了${deleted.length}个缓存文件`});
-  } catch (e) {
-    $q.notify({type: 'negative', message: formatError(e)});
-  }
 }
 
 defineOptions({name: 'Settings'});
@@ -431,11 +375,6 @@ defineOptions({name: 'Settings'});
       color: var(--pad-primary-dark);
       font-size: 20px;
     }
-  }
-
-  .danger-item .settings-icon-section .q-icon {
-    background: color-mix(in srgb, var(--pad-danger-color) 14%, transparent);
-    color: var(--pad-danger-color);
   }
 
   .theme-heading {

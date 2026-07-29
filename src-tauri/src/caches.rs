@@ -1,4 +1,3 @@
-pub mod cache_command;
 mod cache_error;
 mod diary_memory_cache;
 mod local_object_store;

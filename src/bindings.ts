@@ -527,32 +527,6 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
-},
-/**
- * 清空所有本地对象数据
- * # Returns
- * * `Result<(), AppError>` - 成功时本地存储目录已清空
- */
-async cmdCleanCacheFile() : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_clean_cache_file") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * 清理本地与 OSS 不一致或云端已不存在的缓存对象
- * # Returns
- * * `Result<Vec<String>, AppError>` - 已删除的本地对象 key 列表
- */
-async cmdCleanUnusedFile() : Promise<Result<string[], AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_clean_unused_file") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
 }
 }
 

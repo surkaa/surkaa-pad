@@ -21,7 +21,6 @@ use crate::attachments::chunked_upload_command::{
     cmd_abort_chunked_upload, cmd_finish_chunked_upload, cmd_start_chunked_upload, cmd_upload_chunk,
 };
 use crate::attachments::{bind_attachment_server, start_attachment_server};
-use crate::caches::cache_command::{cmd_clean_cache_file, cmd_clean_unused_file};
 use crate::caches::LOCAL_OBJECT_STORE_DIRECTORY;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_encrypt_info, cmd_unlock,
@@ -98,8 +97,6 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_abort_chunked_upload,
             // 其他
             cmd_cancel_task,
-            cmd_clean_cache_file,
-            cmd_clean_unused_file,
         ]);
 
     #[cfg(debug_assertions)]
