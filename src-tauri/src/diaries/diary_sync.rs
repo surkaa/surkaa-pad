@@ -1,4 +1,5 @@
 use crate::caches::{LocalObjectEntry, LocalObjectStore};
+use crate::local_storage::{available_space_for, required_space_with_margin};
 use crate::object::{Object, OssClient};
 use crate::storages::diary_id_from_manifest_key;
 use crate::stream::ByteStream;
@@ -124,7 +125,60 @@ struct SyncItem {
 struct SyncPlan {
     items: Vec<SyncItem>,
     skipped_files: u32,
+    skipped_bytes: u64,
     total_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CloudToLocalSyncStats {
+    pub remote_files: u32,
+    pub remote_bytes: u64,
+    pub download_files: u32,
+    pub download_bytes: u64,
+    pub skipped_files: u32,
+    pub skipped_bytes: u64,
+}
+
+impl SyncPlan {
+    fn stats(&self) -> CloudToLocalSyncStats {
+        CloudToLocalSyncStats {
+            remote_files: (self.items.len() as u32).saturating_add(self.skipped_files),
+            remote_bytes: self.total_bytes.saturating_add(self.skipped_bytes),
+            download_files: self.items.len() as u32,
+            download_bytes: self.total_bytes,
+            skipped_files: self.skipped_files,
+            skipped_bytes: self.skipped_bytes,
+        }
+    }
+}
+
+fn ensure_download_capacity(plan: &SyncPlan, available_bytes: u64) -> Result<(), SyncFailure> {
+    let required_bytes = required_space_with_margin(plan.total_bytes);
+    if available_bytes >= required_bytes {
+        return Ok(());
+    }
+    Err(SyncFailure::new(
+        format!(
+            "本地存储空间不足：待下载 {}，包含安全余量后需要 {}，当前仅可用 {}。请手动删除一些大附件或释放磁盘空间后重试",
+            format_bytes(plan.total_bytes),
+            format_bytes(required_bytes),
+            format_bytes(available_bytes)
+        ),
+        SyncPhase::Preparing,
+        None,
+    ))
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
+    const MIB: f64 = 1024.0 * 1024.0;
+    if bytes >= 1024 * 1024 * 1024 {
+        format!("{:.2} GiB", bytes as f64 / GIB)
+    } else if bytes >= 1024 * 1024 {
+        format!("{:.2} MiB", bytes as f64 / MIB)
+    } else {
+        format!("{bytes} 字节")
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -260,25 +314,44 @@ pub async fn sync_local_to_cloud(
     })
 }
 
-pub async fn sync_cloud_to_local(
+pub async fn inspect_cloud_to_local(
     los: &LocalObjectStore,
     client: &OssClient,
-    event: Arc<dyn MessageSender<SyncProgressEvent>>,
-) -> Result<SyncSummary, SyncFailure> {
+) -> Result<CloudToLocalSyncStats, SyncFailure> {
+    Ok(cloud_to_local_plan(los, client).await?.stats())
+}
+
+async fn cloud_to_local_plan(
+    los: &LocalObjectStore,
+    client: &OssClient,
+) -> Result<SyncPlan, SyncFailure> {
     let remote_entries = list_remote_objects(client).await?;
     let local_entries = los
         .get_all_entries()
         .await
         .map_err(|error| SyncFailure::new(error, SyncPhase::Preparing, None))?;
-    let plan = build_plan(
+    Ok(build_plan(
         remote_entries.iter().map(remote_entry).collect(),
         &local_entry_map(&local_entries),
-    );
+    ))
+}
+
+pub async fn sync_cloud_to_local(
+    los: &LocalObjectStore,
+    client: &OssClient,
+    event: Arc<dyn MessageSender<SyncProgressEvent>>,
+) -> Result<SyncSummary, SyncFailure> {
+    let plan = cloud_to_local_plan(los, client).await?;
+    let available_bytes = available_space_for(los.root())
+        .map_err(|error| SyncFailure::new(error, SyncPhase::Preparing, None))?;
+    ensure_download_capacity(&plan, available_bytes)?;
     log::info!(
-        "[sync] download plan ready: transfer_files={}, skipped_files={}, total_bytes={}",
+        "[sync] download plan ready: transfer_files={}, skipped_files={}, total_bytes={}, available_bytes={}, required_bytes={}",
         plan.items.len(),
         plan.skipped_files,
-        plan.total_bytes
+        plan.total_bytes,
+        available_bytes,
+        required_space_with_margin(plan.total_bytes)
     );
     send_started(&event, SyncDirection::Download, &plan);
 
@@ -390,6 +463,7 @@ fn build_plan(
 ) -> SyncPlan {
     let mut items = Vec::new();
     let mut skipped_files = 0u32;
+    let mut skipped_bytes = 0u64;
     let source_diary_ids = source_entries
         .iter()
         .filter_map(|entry| match classify_storage_key(&entry.key) {
@@ -407,6 +481,7 @@ fn build_plan(
         }
         if etag_options_match(entry.etag.as_deref(), target_etags.get(&entry.key)) {
             skipped_files += 1;
+            skipped_bytes = skipped_bytes.saturating_add(entry.size);
             continue;
         }
         items.push(SyncItem {
@@ -430,6 +505,7 @@ fn build_plan(
     SyncPlan {
         items,
         skipped_files,
+        skipped_bytes,
         total_bytes,
     }
 }
@@ -591,9 +667,21 @@ mod tests {
         let plan = build_plan(source, &target);
 
         assert_eq!(plan.skipped_files, 1);
+        assert_eq!(plan.skipped_bytes, 10);
         assert_eq!(plan.total_bytes, 1_000);
         assert_eq!(plan.items.len(), 1);
         assert_eq!(plan.items[0].key, "123/photo.jpg");
+        assert_eq!(
+            plan.stats(),
+            CloudToLocalSyncStats {
+                remote_files: 2,
+                remote_bytes: 1_010,
+                download_files: 1,
+                download_bytes: 1_000,
+                skipped_files: 1,
+                skipped_bytes: 10,
+            }
+        );
     }
 
     #[test]
@@ -608,6 +696,7 @@ mod tests {
         assert!(plan.items.is_empty());
         assert_eq!(plan.total_bytes, 0);
         assert_eq!(plan.skipped_files, 0);
+        assert_eq!(plan.skipped_bytes, 0);
     }
 
     #[test]
@@ -654,6 +743,7 @@ mod tests {
         assert_eq!(plan.items.len(), 2);
         assert_eq!(plan.total_bytes, 12);
         assert_eq!(plan.skipped_files, 1);
+        assert_eq!(plan.skipped_bytes, 10);
     }
 
     #[test]
@@ -675,6 +765,7 @@ mod tests {
         assert_eq!(keys, ["123/photo.jpg", "123/manifest.enc"]);
         assert_eq!(plan.total_bytes, 30);
         assert_eq!(plan.skipped_files, 0);
+        assert_eq!(plan.stats().remote_bytes, 30);
     }
 
     #[test]
@@ -702,6 +793,30 @@ mod tests {
         assert_eq!(percentage(0, 0), 100);
         assert_eq!(percentage(50, 100), 50);
         assert_eq!(percentage(u64::MAX, u64::MAX), 100);
+    }
+
+    #[test]
+    fn download_capacity_blocks_below_safety_margin() {
+        let plan = build_plan(
+            vec![
+                entry("123/manifest.enc", Some("MANIFEST"), 10),
+                entry("123/video.mp4", Some("VIDEO"), 2 * 1024 * 1024),
+            ],
+            &HashMap::new(),
+        );
+        let required = required_space_with_margin(plan.total_bytes);
+
+        assert!(ensure_download_capacity(&plan, required).is_ok());
+        let error = ensure_download_capacity(&plan, required - 1).unwrap_err();
+        assert_eq!(error.phase, SyncPhase::Preparing);
+        assert!(error.message.contains("手动删除一些大附件"));
+    }
+
+    #[test]
+    fn empty_download_plan_needs_no_safety_margin() {
+        let plan = build_plan(Vec::new(), &HashMap::new());
+
+        assert!(ensure_download_capacity(&plan, 0).is_ok());
     }
 
     #[test]

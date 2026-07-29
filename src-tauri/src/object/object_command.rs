@@ -1,13 +1,44 @@
 use crate::diaries::diary_sync::{
-    sync_cloud_to_local, sync_local_to_cloud, SyncDirection, SyncPhase, SyncProgressEvent,
+    inspect_cloud_to_local, sync_cloud_to_local, sync_local_to_cloud, SyncDirection, SyncPhase,
+    SyncProgressEvent,
 };
 use crate::error::AppError;
+use crate::local_storage::{available_space_for, required_space_with_margin};
 use crate::state::AppState;
 use crate::utils::message_sender::MessageSender;
+use serde::Serialize;
+use specta::Type;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::State;
 use tauri_plugin_log::log;
+
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DisableRemoteStoragePlan {
+    #[specta(rename = "localStoragePath")]
+    pub local_storage_path: String,
+    #[specta(rename = "remoteFiles")]
+    pub remote_files: u32,
+    #[specta(rename = "remoteBytes", type = f64)]
+    pub remote_bytes: u64,
+    #[specta(rename = "skippedFiles")]
+    pub skipped_files: u32,
+    #[specta(rename = "skippedBytes", type = f64)]
+    pub skipped_bytes: u64,
+    #[specta(rename = "downloadFiles")]
+    pub download_files: u32,
+    #[specta(rename = "downloadBytes", type = f64)]
+    pub download_bytes: u64,
+    #[specta(rename = "safetyMarginBytes", type = f64)]
+    pub safety_margin_bytes: u64,
+    #[specta(rename = "requiredBytes", type = f64)]
+    pub required_bytes: u64,
+    #[specta(rename = "availableBytes", type = f64)]
+    pub available_bytes: u64,
+    #[specta(rename = "hasSufficientSpace")]
+    pub has_sufficient_space: bool,
+}
 
 /// 初始化 OSS 客户端
 /// # Arguments
@@ -116,7 +147,68 @@ pub async fn cmd_enable_remote_storage(
     Ok(())
 }
 
-/// 禁用远程存储：同步云端数据到本地 → 设置 remote_enabled = false → 重置 OSS 客户端
+/// 只读取云端与本地对象元数据，规划关闭远程存储所需的下载和磁盘空间。
+///
+/// 不读取对象正文，也不会修改当前存储模式。
+/// # Returns
+/// * `Result<DisableRemoteStoragePlan, AppError>` - 待下载数据、跳过数据、实际本地目录和容量信息
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_plan_disable_remote_storage(
+    state: State<'_, AppState>,
+) -> Result<DisableRemoteStoragePlan, AppError> {
+    if !state.is_remote_enabled() {
+        return Err(AppError {
+            error_type: "storage_mode".into(),
+            message: "云存储当前未启用".into(),
+        });
+    }
+    let _storage_mode_guard = state
+        .try_lock_storage_mode_change()
+        .ok_or_else(|| AppError {
+            error_type: "storage_busy".into(),
+            message: "有存储操作正在进行，请等待完成后再检查本地空间".into(),
+        })?;
+    let los = state.local_object_store();
+    let stats = inspect_cloud_to_local(&los, &state.oss_client())
+        .await
+        .map_err(|error| AppError {
+            error_type: "sync_plan".into(),
+            message: error.message,
+        })?;
+    let available_bytes = available_space_for(los.root()).map_err(|error| AppError {
+        error_type: "sync_plan".into(),
+        message: format!("无法读取本地存储可用空间: {error}"),
+    })?;
+    let required_bytes = required_space_with_margin(stats.download_bytes);
+    let plan = DisableRemoteStoragePlan {
+        local_storage_path: los.root().to_string_lossy().into_owned(),
+        remote_files: stats.remote_files,
+        remote_bytes: stats.remote_bytes,
+        skipped_files: stats.skipped_files,
+        skipped_bytes: stats.skipped_bytes,
+        download_files: stats.download_files,
+        download_bytes: stats.download_bytes,
+        safety_margin_bytes: required_bytes.saturating_sub(stats.download_bytes),
+        required_bytes,
+        available_bytes,
+        has_sufficient_space: available_bytes >= required_bytes,
+    };
+    log::info!(
+        "[remote] disable plan ready: remote_files={}, remote_bytes={}, download_files={}, download_bytes={}, skipped_files={}, available_bytes={}, required_bytes={}, sufficient={}",
+        plan.remote_files,
+        plan.remote_bytes,
+        plan.download_files,
+        plan.download_bytes,
+        plan.skipped_files,
+        plan.available_bytes,
+        plan.required_bytes,
+        plan.has_sufficient_space
+    );
+    Ok(plan)
+}
+
+/// 禁用远程存储：重新规划并校验空间 → 同步云端数据到本地 → 设置 remote_enabled = false → 重置 OSS 客户端
 /// # Arguments
 /// * `event` - 接收同步进度与错误事件的通道
 /// # Returns

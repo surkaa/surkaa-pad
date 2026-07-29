@@ -38,7 +38,8 @@ use crate::local_storage::migration::{
 };
 use crate::object::object_command::{
     cmd_disable_remote_storage, cmd_enable_remote_storage, cmd_get_storage_mode,
-    cmd_init_oss_client, cmd_migrate_legacy_remote_enabled, cmd_restore_remote_storage,
+    cmd_init_oss_client, cmd_migrate_legacy_remote_enabled, cmd_plan_disable_remote_storage,
+    cmd_restore_remote_storage,
 };
 use crate::state::AppState;
 use crate::tasks::task_command::cmd_cancel_task;
@@ -75,6 +76,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_init_oss_client,
             // 远程存储管理
             cmd_enable_remote_storage,
+            cmd_plan_disable_remote_storage,
             cmd_disable_remote_storage,
             cmd_get_storage_mode,
             cmd_migrate_legacy_remote_enabled,
