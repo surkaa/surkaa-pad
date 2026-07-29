@@ -148,22 +148,40 @@ async cmdDisableRemoteStorage(event: TAURI_CHANNEL<SyncProgressEvent>) : Promise
 }
 },
 /**
- * 获取当前存储模式
+ * 获取持久化的存储模式
  * # Returns
- * * `bool` - `true` 表示已启用远程存储，`false` 表示本地存储
+ * * `bool` - `true` 表示配置为远程存储，`false` 表示本地存储
  */
 async cmdGetStorageMode() : Promise<boolean> {
     return await TAURI_INVOKE("cmd_get_storage_mode");
 },
 /**
- * 设置远程存储启用状态（解锁时从前端配置恢复）
+ * 将旧版前端保存的远程存储状态迁移到 Rust 配置。
  * # Arguments
- * * `enabled` - 是否启用远程存储
+ * * `legacy_enabled` - 旧版前端配置中的远程存储状态
  * # Returns
- * * `()` - 无返回数据
+ * * `Result<bool, AppError>` - Rust 配置中最终采用的远程存储状态
  */
-async cmdSetRemoteEnabled(enabled: boolean) : Promise<void> {
-    await TAURI_INVOKE("cmd_set_remote_enabled", { enabled });
+async cmdMigrateLegacyRemoteEnabled(legacyEnabled: boolean) : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_migrate_legacy_remote_enabled", { legacyEnabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * OSS 客户端初始化后，根据 Rust 配置恢复当前进程的远程存储状态。
+ * # Returns
+ * * `Result<bool, AppError>` - 当前进程最终启用的远程存储状态
+ */
+async cmdRestoreRemoteStorage() : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_restore_remote_storage") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 },
 /**
  * 根据内容保存日记

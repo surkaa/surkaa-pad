@@ -1,3 +1,6 @@
+#[cfg(test)]
+use crate::app_config::AppConfig;
+use crate::app_config::{AppConfigError, AppConfigStore};
 use crate::attachments::chunked_upload::ChunkedUploadState;
 use crate::attachments::AttachmentServerHandle;
 use crate::caches::{DiaryMemoryCache, LocalObjectStore};
@@ -25,10 +28,15 @@ pub struct AppState {
     /// 是否启用远程存储
     remote_enabled: Arc<AtomicBool>,
     storage_mode_gate: Arc<RwLock<()>>,
+    app_config: AppConfigStore,
 }
 
 impl AppState {
-    pub fn new(path: PathBuf, attachment_server: AttachmentServerHandle) -> Self {
+    pub fn new(
+        path: PathBuf,
+        attachment_server: AttachmentServerHandle,
+        app_config: AppConfigStore,
+    ) -> Self {
         let crypto = Crypto::new();
         let diary_cache = DiaryMemoryCache::new();
         let local_object_store = LocalObjectStore::new(path);
@@ -44,6 +52,7 @@ impl AppState {
             attachment_server,
             remote_enabled: Arc::new(AtomicBool::new(false)),
             storage_mode_gate: Arc::new(RwLock::new(())),
+            app_config,
         }
     }
 
@@ -101,6 +110,21 @@ impl AppState {
         self.remote_enabled.store(enabled, Ordering::Relaxed);
     }
 
+    pub fn configured_remote_enabled(&self) -> Option<bool> {
+        self.app_config.current().remote_enabled()
+    }
+
+    pub fn initialize_configured_remote_enabled(
+        &self,
+        legacy_enabled: bool,
+    ) -> Result<bool, AppConfigError> {
+        self.app_config.initialize_remote_enabled(legacy_enabled)
+    }
+
+    pub fn persist_remote_enabled(&self, enabled: bool) -> Result<(), AppConfigError> {
+        self.app_config.set_remote_enabled(enabled)
+    }
+
     /// 根据当前存储模式构造 DiaryStore
     pub fn diary_store(&self) -> Box<dyn DiaryStore> {
         if self.remote_enabled.load(Ordering::Relaxed) {
@@ -145,6 +169,7 @@ impl AppState {
             attachment_server,
             remote_enabled: Arc::new(AtomicBool::new(false)),
             storage_mode_gate: Arc::new(RwLock::new(())),
+            app_config: AppConfigStore::in_memory(AppConfig::default()),
         }
     }
 }
@@ -167,5 +192,23 @@ mod tests {
 
         drop(operation_guard);
         assert!(state.try_lock_storage_mode_change().is_some());
+    }
+
+    #[test]
+    fn configured_remote_mode_is_separate_from_runtime_mode() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let state = AppState::from_parts(
+            Crypto::new(),
+            OssClient::new(),
+            LocalObjectStore::new(temp_dir.path().to_path_buf()),
+        );
+
+        assert_eq!(state.configured_remote_enabled(), None);
+        assert!(state.initialize_configured_remote_enabled(true).unwrap());
+        assert_eq!(state.configured_remote_enabled(), Some(true));
+        assert!(!state.is_remote_enabled());
+
+        state.set_remote_enabled(true);
+        assert!(state.is_remote_enabled());
     }
 }

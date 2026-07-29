@@ -65,7 +65,6 @@ export function useRemoteStorageSettings() {
       event.onmessage = handleSyncProgressEvent;
 
       await api.cmdDisableRemoteStorage(event);
-      await configStore.saveNormalConfig('remote_enabled', false);
       remoteEnabled.value = false;
       dataStore.invalidateDiaryList();
       $q.notify({type: 'positive', message: '云同步已关闭，数据已下载到本地'});
@@ -109,14 +108,12 @@ export function useRemoteStorageSettings() {
 
     try {
       const encryptedConfig = await api.cmdEncryptData(JSON.stringify(ossConfig.value));
-      await configStore.saveNormalConfig('remote_enabled', false);
       await configStore.saveNormalConfig('encrypted_oss_config', encryptedConfig);
 
       const event = new Channel<SyncProgressEvent>();
       event.onmessage = handleSyncProgressEvent;
 
       await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
-      await configStore.saveNormalConfig('remote_enabled', true);
       remoteEnabled.value = true;
       dataStore.invalidateDiaryList();
       $q.notify({type: 'positive', message: '云同步已启用'});

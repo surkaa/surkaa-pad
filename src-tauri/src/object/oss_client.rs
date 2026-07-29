@@ -91,6 +91,13 @@ impl OssClient {
         }
     }
 
+    pub fn is_initialized(&self) -> bool {
+        self.inner
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_some()
+    }
+
     #[cfg(test)]
     pub fn with_key_prefix(&self, prefix: String) -> Self {
         let key_prefix = prefix.trim_matches('/');

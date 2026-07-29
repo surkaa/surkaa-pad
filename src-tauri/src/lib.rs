@@ -34,7 +34,7 @@ use crate::diaries::diary_command::{
 };
 use crate::object::object_command::{
     cmd_disable_remote_storage, cmd_enable_remote_storage, cmd_get_storage_mode,
-    cmd_init_oss_client, cmd_set_remote_enabled,
+    cmd_init_oss_client, cmd_migrate_legacy_remote_enabled, cmd_restore_remote_storage,
 };
 use crate::state::AppState;
 use crate::tasks::task_command::cmd_cancel_task;
@@ -44,13 +44,13 @@ fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let paths = app.handle().path();
     let app_config = AppConfigStore::load(paths.app_config_dir()?.join(APP_CONFIG_FILENAME))?;
     let local_storage = crate::local_storage::LocalStorageManager::new(
-        app_config,
+        app_config.clone(),
         paths.app_local_data_dir()?,
         paths.app_cache_dir()?,
     );
     let los_path = local_storage.startup_root();
     let (listener, attachment_server) = bind_attachment_server()?;
-    let state = AppState::new(los_path, attachment_server);
+    let state = AppState::new(los_path, attachment_server, app_config);
     start_attachment_server(listener, state.clone());
     app.manage(state);
 
@@ -73,7 +73,8 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_enable_remote_storage,
             cmd_disable_remote_storage,
             cmd_get_storage_mode,
-            cmd_set_remote_enabled,
+            cmd_migrate_legacy_remote_enabled,
+            cmd_restore_remote_storage,
             // 日记基本操作
             cmd_save_diary,
             cmd_update_diary_content_only,

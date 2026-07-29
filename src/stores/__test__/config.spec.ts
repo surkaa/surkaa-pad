@@ -107,6 +107,23 @@ describe('config store', () => {
             expect(await store.getNormalConfig('biometric_enabled')).toBe(true)
         })
 
+        it('reads and removes the legacy remote storage preference', async () => {
+            const store = useConfigStore()
+            localStorage.setItem(`${STORAGE_PREFIX}remote_enabled`, 'false')
+
+            await expect(store.getLegacyRemoteEnabled()).resolves.toBe(false)
+            await store.deleteLegacyRemoteEnabled()
+
+            expect(localStorage.getItem(`${STORAGE_PREFIX}remote_enabled`)).toBeNull()
+        })
+
+        it('infers the legacy remote preference from an OSS config when the flag is missing', async () => {
+            const store = useConfigStore()
+            localStorage.setItem(`${STORAGE_PREFIX}encrypted_oss_config`, '[1,2,3]')
+
+            await expect(store.getLegacyRemoteEnabled()).resolves.toBe(true)
+        })
+
         it('defaults the last password unlock time to missing and persists it', async () => {
             const store = useConfigStore()
             await expect(store.getNormalConfig('last_password_unlock_at')).resolves.toBeNull()

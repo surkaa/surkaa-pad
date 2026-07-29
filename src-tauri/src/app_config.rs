@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use thiserror::Error;
@@ -24,6 +25,8 @@ pub struct AppConfig {
     version: u32,
     #[serde(rename = "localStorageLocation", default)]
     local_storage_location: LocalStorageLocation,
+    #[serde(rename = "remoteEnabled", default)]
+    remote_enabled: Option<bool>,
 }
 
 impl Default for AppConfig {
@@ -31,6 +34,7 @@ impl Default for AppConfig {
         Self {
             version: APP_CONFIG_VERSION,
             local_storage_location: LocalStorageLocation::Default,
+            remote_enabled: None,
         }
     }
 }
@@ -38,6 +42,10 @@ impl Default for AppConfig {
 impl AppConfig {
     pub fn local_storage_location(&self) -> &LocalStorageLocation {
         &self.local_storage_location
+    }
+
+    pub fn remote_enabled(&self) -> Option<bool> {
+        self.remote_enabled
     }
 
     #[cfg(test)]
@@ -70,6 +78,7 @@ impl From<AppConfigError> for AppError {
 
 #[derive(Clone, Debug)]
 pub struct AppConfigStore {
+    path: Option<Arc<PathBuf>>,
     config: Arc<Mutex<AppConfig>>,
 }
 
@@ -77,6 +86,7 @@ impl AppConfigStore {
     pub fn load(path: PathBuf) -> Result<Self, AppConfigError> {
         let config = load_config(&path)?;
         Ok(Self {
+            path: Some(Arc::new(path)),
             config: Arc::new(Mutex::new(config)),
         })
     }
@@ -84,12 +94,35 @@ impl AppConfigStore {
     #[cfg(test)]
     pub fn in_memory(config: AppConfig) -> Self {
         Self {
+            path: None,
             config: Arc::new(Mutex::new(config)),
         }
     }
 
     pub fn current(&self) -> AppConfig {
         self.lock_config().clone()
+    }
+
+    pub fn initialize_remote_enabled(&self, legacy_enabled: bool) -> Result<bool, AppConfigError> {
+        if let Some(enabled) = self.current().remote_enabled() {
+            return Ok(enabled);
+        }
+        self.set_remote_enabled(legacy_enabled)?;
+        Ok(legacy_enabled)
+    }
+
+    pub fn set_remote_enabled(&self, enabled: bool) -> Result<(), AppConfigError> {
+        let mut next = self.current();
+        next.remote_enabled = Some(enabled);
+        self.save(next)
+    }
+
+    fn save(&self, config: AppConfig) -> Result<(), AppConfigError> {
+        if let Some(path) = &self.path {
+            save_config_atomic(path, &config)?;
+        }
+        *self.lock_config() = config;
+        Ok(())
     }
 
     fn lock_config(&self) -> MutexGuard<'_, AppConfig> {
@@ -128,6 +161,45 @@ fn validate_version(config: AppConfig) -> Result<AppConfig, AppConfigError> {
     Ok(config)
 }
 
+fn save_config_atomic(path: &Path, config: &AppConfig) -> Result<(), AppConfigError> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "应用配置路径缺少父目录")
+    })?;
+    fs::create_dir_all(parent)?;
+
+    let temp_path = path.with_extension("json.tmp");
+    let backup_path = backup_path(path);
+    let bytes = serde_json::to_vec_pretty(config)?;
+    let mut temp_file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temp_path)?;
+    temp_file.write_all(&bytes)?;
+    temp_file.sync_all()?;
+    drop(temp_file);
+
+    if backup_path.exists() {
+        fs::remove_file(&backup_path)?;
+    }
+    let had_current = path.exists();
+    if had_current {
+        fs::rename(path, &backup_path)?;
+    }
+
+    if let Err(error) = fs::rename(&temp_path, path) {
+        if had_current {
+            let _ = fs::rename(&backup_path, path);
+        }
+        return Err(error.into());
+    }
+
+    if had_current {
+        let _ = fs::remove_file(backup_path);
+    }
+    Ok(())
+}
+
 fn backup_path(path: &Path) -> PathBuf {
     path.with_extension("json.bak")
 }
@@ -163,6 +235,33 @@ mod tests {
         let store = AppConfigStore::load(path).unwrap();
 
         assert_eq!(store.current(), config);
+    }
+
+    #[test]
+    fn remote_enabled_is_initialized_once_and_persisted() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join(APP_CONFIG_FILENAME);
+        let store = AppConfigStore::load(path.clone()).unwrap();
+
+        assert_eq!(store.current().remote_enabled(), None);
+        assert!(store.initialize_remote_enabled(true).unwrap());
+        assert!(store.initialize_remote_enabled(false).unwrap());
+
+        let reloaded = AppConfigStore::load(path).unwrap();
+        assert_eq!(reloaded.current().remote_enabled(), Some(true));
+    }
+
+    #[test]
+    fn remote_enabled_can_be_updated_after_initialization() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join(APP_CONFIG_FILENAME);
+        let store = AppConfigStore::load(path.clone()).unwrap();
+
+        store.set_remote_enabled(true).unwrap();
+        store.set_remote_enabled(false).unwrap();
+
+        let reloaded = AppConfigStore::load(path).unwrap();
+        assert_eq!(reloaded.current().remote_enabled(), Some(false));
     }
 
     #[test]

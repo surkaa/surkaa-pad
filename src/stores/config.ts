@@ -25,7 +25,6 @@ type ConfigMap = {
     "biometric_dek": string | null;
     "last_password_unlock_at": number | null;
     "encrypted_oss_config": number[] | null;
-    "remote_enabled": boolean;
     "default_image_size_is_small": boolean;
     "encrypt_image_attachments": boolean;
     "encrypt_audio_attachments": boolean;
@@ -42,7 +41,6 @@ const DEFAULT_CONFIG = {
     "biometric_dek": null,
     "last_password_unlock_at": null,
     "encrypted_oss_config": null,
-    "remote_enabled": false,
     "default_image_size_is_small": false,
     "encrypt_image_attachments": true,
     "encrypt_audio_attachments": true,
@@ -71,11 +69,6 @@ function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): Conf
 function readFromStorage<K extends ConfigKey>(key: K): ConfigMap[K] {
     const raw = localStorage.getItem(storageKey(key));
     if (raw === null) {
-        // 兼容旧版本：如果 encrypted_oss_config 存在但 remote_enabled 不存在，默认启用远程
-        if (key === 'remote_enabled') {
-            const hasOssConfig = localStorage.getItem(storageKey('encrypted_oss_config')) !== null;
-            return (hasOssConfig ? true : DEFAULT_CONFIG[key]) as ConfigMap[K];
-        }
         return DEFAULT_CONFIG[key];
     }
     try {
@@ -240,10 +233,30 @@ export const useConfigStore = defineStore('config', () => {
         }
     }
 
+    async function getLegacyRemoteEnabled(): Promise<boolean> {
+        await ensureMigrated();
+        const raw = localStorage.getItem(`${STORAGE_PREFIX}remote_enabled`);
+        if (raw !== null) {
+            try {
+                return JSON.parse(raw) === true;
+            } catch {
+                return false;
+            }
+        }
+        return localStorage.getItem(storageKey('encrypted_oss_config')) !== null;
+    }
+
+    async function deleteLegacyRemoteEnabled(): Promise<void> {
+        await ensureMigrated();
+        localStorage.removeItem(`${STORAGE_PREFIX}remote_enabled`);
+    }
+
     return {
         saveNormalConfig,
         getNormalConfig,
         useTauriConfig,
-        deleteConfig
+        deleteConfig,
+        getLegacyRemoteEnabled,
+        deleteLegacyRemoteEnabled,
     }
 });
