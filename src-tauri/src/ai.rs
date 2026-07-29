@@ -1,5 +1,5 @@
 mod config;
 mod error;
 
-pub use config::{AiEndpointScope, AiProviderConfig};
+pub use config::AiProviderConfig;
 pub use error::AiError;
