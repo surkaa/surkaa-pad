@@ -2,12 +2,18 @@
   <section class="settings-group settings-section-component">
     <div class="group-title">本地存储</div>
     <q-list bordered separator class="pad-card">
-      <q-item clickable v-ripple class="settings-item" :disable="loadingInfo" @click="chooseLocation">
+      <q-item
+        clickable
+        v-ripple
+        class="settings-item"
+        :disable="loadingInfo || !info"
+        @click="openDataLocation"
+      >
         <q-item-section avatar class="settings-icon-section">
-          <q-icon name="folder"/>
+          <q-icon name="folder_open"/>
         </q-item-section>
         <q-item-section>
-          <q-item-label class="label-text text-weight-medium">本地数据位置</q-item-label>
+          <q-item-label class="label-text text-weight-medium">打开本地数据位置</q-item-label>
           <q-item-label caption class="desc-text">
             本地模式保存完整数据，云同步模式用作本地缓存
           </q-item-label>
@@ -22,7 +28,20 @@
         </q-item-section>
         <q-item-section side>
           <q-spinner v-if="loadingInfo" color="primary" size="20px"/>
-          <q-icon v-else name="chevron_right" class="desc-text"/>
+          <q-icon v-else name="open_in_new" class="desc-text"/>
+        </q-item-section>
+      </q-item>
+
+      <q-item clickable v-ripple class="settings-item" @click="chooseLocation">
+        <q-item-section avatar class="settings-icon-section">
+          <q-icon name="drive_file_move"/>
+        </q-item-section>
+        <q-item-section>
+          <q-item-label class="label-text text-weight-medium">更改本地数据位置</q-item-label>
+          <q-item-label caption class="desc-text">选择新目录并安全迁移现有数据</q-item-label>
+        </q-item-section>
+        <q-item-section side>
+          <q-icon name="chevron_right" class="desc-text"/>
         </q-item-section>
       </q-item>
 
@@ -97,6 +116,7 @@
 <script setup lang="ts">
 import {Channel} from '@tauri-apps/api/core';
 import {open} from '@tauri-apps/plugin-dialog';
+import {openPath} from '@tauri-apps/plugin-opener';
 import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from 'quasar';
 import {onMounted, ref} from 'vue';
@@ -145,6 +165,15 @@ async function chooseLocation() {
   });
   if (typeof selected === 'string') {
     await planMigration(selected);
+  }
+}
+
+async function openDataLocation() {
+  if (!info.value) return;
+  try {
+    await openPath(info.value.currentPath);
+  } catch (error) {
+    $q.notify({type: 'negative', message: `打开本地数据位置失败：${formatError(error)}`});
   }
 }
 
