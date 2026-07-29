@@ -10,8 +10,8 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
 
-// 保留旧目录名，避免纯代码重命名导致现有本地数据不可见。
-pub const LOCAL_OBJECT_STORE_DIRECTORY: &str = "lfc";
+pub const LOCAL_OBJECT_STORE_DIRECTORY: &str = "los";
+pub const LEGACY_LOCAL_OBJECT_STORE_DIRECTORY: &str = "lfc";
 
 const DATA_FILE_SUFFIX: &str = ".data";
 // `.md5` 是旧版本沿用的磁盘格式；文件内容现在表示对象 ETag，不保证一定是 MD5。

@@ -1,8 +1,10 @@
+mod app_config;
 mod attachments;
 mod caches;
 mod cryptos;
 mod diaries;
 mod error;
+mod local_storage;
 mod object;
 mod state;
 mod storages;
@@ -12,6 +14,7 @@ mod tasks;
 mod test_utils;
 mod utils;
 
+use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
     cmd_caching_attachment, cmd_delete_attachment, cmd_rotate_image_attachment,
@@ -21,7 +24,6 @@ use crate::attachments::chunked_upload_command::{
     cmd_abort_chunked_upload, cmd_finish_chunked_upload, cmd_start_chunked_upload, cmd_upload_chunk,
 };
 use crate::attachments::{bind_attachment_server, start_attachment_server};
-use crate::caches::LOCAL_OBJECT_STORE_DIRECTORY;
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_encrypt_info, cmd_unlock,
     cmd_valid_password,
@@ -39,12 +41,14 @@ use crate::tasks::task_command::cmd_cancel_task;
 use tauri::{App, Manager};
 
 fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
-    let cache_path = app
-        .handle()
-        .path()
-        .app_cache_dir()
-        .expect("failed to get cache dir");
-    let los_path = cache_path.join(LOCAL_OBJECT_STORE_DIRECTORY);
+    let paths = app.handle().path();
+    let app_config = AppConfigStore::load(paths.app_config_dir()?.join(APP_CONFIG_FILENAME))?;
+    let local_storage = crate::local_storage::LocalStorageManager::new(
+        app_config,
+        paths.app_local_data_dir()?,
+        paths.app_cache_dir()?,
+    );
+    let los_path = local_storage.startup_root();
     let (listener, attachment_server) = bind_attachment_server()?;
     let state = AppState::new(los_path, attachment_server);
     start_attachment_server(listener, state.clone());
