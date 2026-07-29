@@ -15,6 +15,7 @@
         </div>
         <div class="text-caption">创建时间：{{ formatTimestamp(diary?.created) }}</div>
         <div class="text-caption">更新时间：{{ formatTimestamp(diary?.updated) }}</div>
+        <div class="text-caption">附件总大小：{{ formatBytes(diary?.attachmentTotalSize) }}</div>
 
         <q-separator class="q-my-md"/>
 
@@ -51,7 +52,7 @@
 import {computed, ref} from 'vue';
 import type {AttachmentMeta, DiarySummary} from '../../bindings';
 import AttachmentCard from '../../components/AttachmentCard.vue';
-import {formatTimestamp} from '../../utils';
+import {formatBytes, formatTimestamp} from '../../utils';
 import {attachmentGroupIcon, groupAttachmentsByMimeType} from '../../utils/attachmentGrouping';
 
 const props = defineProps<{

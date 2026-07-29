@@ -89,7 +89,14 @@ export function formatBytes(bytes?: number): string {
  */
 export function formatAttachmentTotalSize(bytes?: number): string | null {
     if (bytes === undefined || !Number.isFinite(bytes) || bytes < 1024 ** 2) return null;
-    return formatBytes(bytes);
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    let index = 0;
+    let size = bytes;
+    while (size >= 1024 && index < units.length - 1) {
+        size /= 1024;
+        index++;
+    }
+    return `${Math.round(size)} ${units[index]}`;
 }
 
 export function formatKiB(kibibytes?: number): string {

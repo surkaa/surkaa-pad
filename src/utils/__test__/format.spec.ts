@@ -27,11 +27,11 @@ describe('formatAttachmentTotalSize', () => {
         expect(formatAttachmentTotalSize(1024 ** 2 - 1)).toBeNull();
     });
 
-    it('uses readable units at megabyte and gigabyte boundaries', () => {
+    it('uses rounded integer units at megabyte and gigabyte boundaries', () => {
         expect(formatAttachmentTotalSize(1024 ** 2)).toBe('1 MB');
-        expect(formatAttachmentTotalSize(1.5 * 1024 ** 2)).toBe('1.5 MB');
+        expect(formatAttachmentTotalSize(1.5 * 1024 ** 2)).toBe('2 MB');
         expect(formatAttachmentTotalSize(1024 ** 3)).toBe('1 GB');
-        expect(formatAttachmentTotalSize(1.56 * 1024 ** 3)).toBe('1.56 GB');
+        expect(formatAttachmentTotalSize(1.56 * 1024 ** 3)).toBe('2 GB');
     });
 });
 

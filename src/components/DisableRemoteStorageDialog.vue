@@ -27,13 +27,9 @@
           <strong>{{ plan.downloadFiles }} 个文件 · {{ formatBytes(plan.downloadBytes) }}</strong>
         </div>
         <div class="detail-row">
-          <span>安全余量</span>
-          <strong>{{ formatBytes(plan.safetyMarginBytes) }}</strong>
-        </div>
-        <div class="detail-row">
-          <span>所需 / 可用空间</span>
+          <span>本地可用空间</span>
           <strong :class="{'insufficient-text': !plan.hasSufficientSpace}">
-            {{ formatBytes(plan.requiredBytes) }} / {{ formatBytes(plan.availableBytes) }}
+            {{ formatBytes(plan.availableBytes) }}
           </strong>
         </div>
         <div class="path-detail">
@@ -43,7 +39,7 @@
 
         <div v-if="!plan.hasSufficientSpace" class="space-warning">
           <q-icon name="warning" size="20px"/>
-          <span>本地空间不足，无法开始下载。请手动删除一些大附件或释放磁盘空间后重试。</span>
+          <span>为避免下载后磁盘空间过低，当前无法开始下载。请手动删除一些大附件或释放磁盘空间后重试。</span>
         </div>
         <div v-else-if="plan.downloadBytes > 0" class="download-tip">
           下载期间请保持应用运行；数据量较大时可能需要较长时间。
