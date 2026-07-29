@@ -51,12 +51,6 @@ fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     start_attachment_server(listener, state.clone());
     app.manage(state);
 
-    #[cfg(target_os = "android")]
-    {
-        let _ = app.handle().plugin(tauri_plugin_biometric::init());
-        let _ = app.handle().plugin(tauri_plugin_native_camera::init());
-    }
-
     Ok(())
 }
 
@@ -125,7 +119,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
 pub fn run() {
     let builder = generate_specta_builder();
 
-    tauri::Builder::default()
+    let app_builder = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         // 注册 Store 插件
@@ -153,7 +147,17 @@ pub fn run() {
         // 注册 os 插件
         .plugin(tauri_plugin_os::init())
         // 注册 dialog 插件
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    // Android 插件必须在 Builder 阶段注册。若在 setup 中动态注册，插件初始化会在
+    // 持有 Tauri PluginStore 锁时等待 Android 主线程，而主线程加载首页又需要该锁，
+    // 两者竞争时会形成死锁并导致启动白屏。
+    #[cfg(target_os = "android")]
+    let app_builder = app_builder
+        .plugin(tauri_plugin_biometric::init())
+        .plugin(tauri_plugin_native_camera::init());
+
+    app_builder
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             run_setup(app)?;
