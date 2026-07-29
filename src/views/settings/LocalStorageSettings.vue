@@ -111,7 +111,6 @@
 <script setup lang="ts">
 import {Channel} from '@tauri-apps/api/core';
 import {open} from '@tauri-apps/plugin-dialog';
-import {openPath} from '@tauri-apps/plugin-opener';
 import {relaunch} from '@tauri-apps/plugin-process';
 import {useQuasar} from 'quasar';
 import {onMounted, ref} from 'vue';
@@ -122,6 +121,7 @@ import type {
 } from '../../bindings';
 import LocalStorageMigrationDialog from '../../components/LocalStorageMigrationDialog.vue';
 import api from '../../utils/api';
+import {copyTextToClipboard} from '../../utils/clipboard';
 import {formatBytes} from '../../utils/format';
 import {formatError} from '../../utils/formatError';
 import {
@@ -166,9 +166,21 @@ async function chooseLocation() {
 async function openDataLocation() {
   if (!info.value) return;
   try {
-    await openPath(info.value.currentPath);
+    await api.cmdOpenLocalStorage();
   } catch (error) {
-    $q.notify({type: 'negative', message: `打开本地数据位置失败：${formatError(error)}`});
+    console.error('打开本地数据位置失败:', error);
+    try {
+      await copyTextToClipboard(info.value.currentPath);
+      $q.notify({
+        type: 'warning',
+        message: '无法打开系统文件管理器，本地数据路径已复制',
+      });
+    } catch (copyError) {
+      $q.notify({
+        type: 'negative',
+        message: `打开目录和复制路径均失败：${formatError(copyError)}`,
+      });
+    }
   }
 }
 

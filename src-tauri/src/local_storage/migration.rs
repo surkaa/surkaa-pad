@@ -12,8 +12,9 @@ use std::path::Component;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, State};
 use tauri_plugin_log::log;
+use tauri_plugin_opener::OpenerExt;
 use thiserror::Error;
 
 const MINIMUM_FREE_SPACE_MARGIN: u64 = 1024 * 1024 * 1024;
@@ -123,6 +124,20 @@ pub struct LocalStorageMigrationPlan {
     #[specta(type = f64)]
     pub required_bytes: u64,
     pub fast_move: bool,
+}
+
+/// 使用系统文件管理器打开当前实际使用的本地对象存储目录。
+/// 路径只从后端状态读取，不接受前端传入路径，避免为 opener 放开任意目录权限。
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_open_local_storage(app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
+    let path = display_path(state.local_object_store().root());
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|error| AppError {
+            error_type: "open_local_storage".into(),
+            message: error.to_string(),
+        })
 }
 
 #[derive(Debug, Error)]

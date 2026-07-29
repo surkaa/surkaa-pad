@@ -201,6 +201,18 @@ async cmdGetLocalStorageMigrationStatus() : Promise<LocalStorageMigrationStatus>
     return await TAURI_INVOKE("cmd_get_local_storage_migration_status");
 },
 /**
+ * 使用系统文件管理器打开当前实际使用的本地对象存储目录。
+ * 路径只从后端状态读取，不接受前端传入路径，避免为 opener 放开任意目录权限。
+ */
+async cmdOpenLocalStorage() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_open_local_storage") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 预检查本地对象存储迁移。`base_path` 为空时表示迁移到默认位置。
  */
 async cmdPlanLocalStorageMigration(basePath: string | null) : Promise<Result<LocalStorageMigrationPlan, AppError>> {

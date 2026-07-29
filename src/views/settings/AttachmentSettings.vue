@@ -27,24 +27,36 @@
         </q-item-section>
       </q-item>
 
-      <q-item
-        v-for="setting in encryptionSettings"
-        :key="setting.key"
-        tag="label"
-        v-ripple
-        class="settings-item"
-      >
-        <q-item-section avatar class="settings-icon-section">
-          <q-icon :name="setting.icon"/>
-        </q-item-section>
-        <q-item-section>
-          <q-item-label class="label-text text-weight-medium">{{ setting.label }}</q-item-label>
-          <q-item-label caption class="desc-text">{{ setting.description }}</q-item-label>
-        </q-item-section>
-        <q-item-section side>
-          <q-toggle v-model="setting.value.value" color="primary"/>
-        </q-item-section>
-      </q-item>
+      <q-expansion-item expand-separator class="encryption-expansion">
+        <template #header>
+          <q-item-section avatar class="settings-icon-section">
+            <q-icon name="encrypted"/>
+          </q-item-section>
+          <q-item-section>
+            <q-item-label class="label-text text-weight-medium">默认加密</q-item-label>
+            <q-item-label caption class="desc-text">设置四类新上传附件的加密状态</q-item-label>
+          </q-item-section>
+        </template>
+
+        <q-item
+          v-for="setting in encryptionSettings"
+          :key="setting.key"
+          tag="label"
+          v-ripple
+          class="settings-item encryption-setting-item"
+        >
+          <q-item-section avatar class="settings-icon-section">
+            <q-icon :name="setting.icon"/>
+          </q-item-section>
+          <q-item-section>
+            <q-item-label class="label-text text-weight-medium">{{ setting.label }}</q-item-label>
+            <q-item-label caption class="desc-text">{{ setting.description }}</q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <q-toggle v-model="setting.value.value" color="primary"/>
+          </q-item-section>
+        </q-item>
+      </q-expansion-item>
     </q-list>
   </section>
 </template>
@@ -107,6 +119,29 @@ const encryptionSettings = [
 
   :deep(.q-field__marginal) {
     color: var(--pad-text-color-300) !important;
+  }
+}
+
+.encryption-expansion {
+  :deep(.q-expansion-item__container > .q-item) {
+    min-height: 66px;
+    padding: 10px 16px;
+  }
+
+  :deep(.q-expansion-item__toggle-icon) {
+    color: var(--pad-text-color-400);
+  }
+}
+
+.encryption-setting-item {
+  background: color-mix(in srgb, var(--pad-bg-color-100) 36%, transparent);
+  border-top: 1px solid var(--pad-border-color-100);
+}
+
+@media (max-width: 600px) {
+  .encryption-expansion :deep(.q-expansion-item__container > .q-item) {
+    padding-right: 12px;
+    padding-left: 12px;
   }
 }
 </style>
