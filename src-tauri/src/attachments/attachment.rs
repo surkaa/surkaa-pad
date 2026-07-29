@@ -413,11 +413,15 @@ pub async fn toggle_attachment_encryption_cancelable(
         let new_etag = match upload_result {
             Ok(etag) => etag,
             Err(error) => {
-                if let Err(cleanup_error) = store.delete_attachment_backup(id, &attachment_id).await
-                {
-                    log::warn!("清理未使用的附件事务备份失败: {cleanup_error}");
-                }
-                return Err(AttachmentError::InvalidOperation(error.to_string()));
+                let upload_error = AttachmentError::InvalidOperation(error.to_string());
+                return Err(rollback_attachment_replacement(
+                    &*store,
+                    id,
+                    &attachment_id,
+                    &old_meta.mimetype,
+                    upload_error,
+                )
+                .await);
             }
         };
 
@@ -467,20 +471,34 @@ where
             Ok(())
         }
         Err(publish_error) => {
-            if let Err(rollback_error) = store
-                .restore_attachment_backup(id, attachment_id, mimetype)
-                .await
-            {
-                return Err(AttachmentError::InvalidOperation(format!(
-                    "{publish_error}；恢复旧附件失败: {rollback_error}"
-                )));
-            }
-            if let Err(error) = store.delete_attachment_backup(id, attachment_id).await {
-                log::warn!("附件已回滚，但清理事务备份失败: {error}");
-            }
-            Err(publish_error)
+            Err(
+                rollback_attachment_replacement(store, id, attachment_id, mimetype, publish_error)
+                    .await,
+            )
         }
     }
+}
+
+pub(crate) async fn rollback_attachment_replacement(
+    store: &dyn DiaryStore,
+    id: &str,
+    attachment_id: &str,
+    mimetype: &str,
+    primary_error: AttachmentError,
+) -> AttachmentError {
+    if let Err(rollback_error) = store
+        .restore_attachment_backup(id, attachment_id, mimetype)
+        .await
+    {
+        // 恢复失败时保留备份，避免把最后一份可恢复数据一并删除。
+        return AttachmentError::InvalidOperation(format!(
+            "{primary_error}；恢复旧附件失败: {rollback_error}"
+        ));
+    }
+    if let Err(error) = store.delete_attachment_backup(id, attachment_id).await {
+        log::warn!("附件已回滚，但清理事务备份失败: {error}");
+    }
+    primary_error
 }
 
 #[cfg(test)]

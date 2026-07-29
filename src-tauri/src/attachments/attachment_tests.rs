@@ -2,8 +2,8 @@
 mod tests {
     use crate::attachments::attachment::{
         add_attachment, add_attachment_with_result, caching_attachment, delete_attachment,
-        finish_attachment_replacement, rotate_image_attachment, toggle_attachment_encryption,
-        update_attachment_filename,
+        finish_attachment_replacement, rollback_attachment_replacement, rotate_image_attachment,
+        toggle_attachment_encryption, update_attachment_filename,
     };
     use crate::attachments::attachment_types::AttachmentProcessEvent;
     use crate::caches::{DiaryMemoryCache, LocalObjectStore};
@@ -120,6 +120,117 @@ mod tests {
             .await;
 
         assert!(result.is_err());
+        let stream = store
+            .download_attachment("diary", "attachment", None, None)
+            .await
+            .unwrap();
+        assert_eq!(collect_data(stream).await.unwrap(), old_data);
+        assert!(store
+            .restore_attachment_backup("diary", "attachment", "text/plain")
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn encryption_replacement_restores_old_object_when_upload_reports_failure() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let store = LocalStore::new(LocalObjectStore::new(temp_dir.path().to_path_buf()));
+        let old_data = b"old attachment remains recoverable".to_vec();
+        let replacement = b"replacement committed before failure".to_vec();
+
+        store
+            .upload_attachment(
+                "diary",
+                "attachment",
+                old_data.len() as u64,
+                "text/plain",
+                create_mock_stream(old_data.clone(), old_data.len()),
+            )
+            .await
+            .unwrap();
+        store
+            .create_attachment_backup("diary", "attachment")
+            .await
+            .unwrap();
+        store
+            .upload_attachment(
+                "diary",
+                "attachment",
+                replacement.len() as u64,
+                "text/plain",
+                create_mock_stream(replacement.clone(), replacement.len()),
+            )
+            .await
+            .unwrap();
+
+        let error = rollback_attachment_replacement(
+            &store,
+            "diary",
+            "attachment",
+            "text/plain",
+            crate::attachments::AttachmentError::InvalidOperation(
+                "upload finalization failed".to_string(),
+            ),
+        )
+        .await;
+
+        assert!(error.to_string().contains("upload finalization failed"));
+        let stream = store
+            .download_attachment("diary", "attachment", None, None)
+            .await
+            .unwrap();
+        assert_eq!(collect_data(stream).await.unwrap(), old_data);
+        assert!(store
+            .restore_attachment_backup("diary", "attachment", "text/plain")
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn remote_encryption_replacement_restores_old_object_after_failure() {
+        let client = OssClient::from_env();
+        let (client, _guard) = TestOssGuard::new(client).await;
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let store = RemoteStore::new(LocalObjectStore::new(temp_dir.path().to_path_buf()), client);
+        let old_data = b"old remote attachment".to_vec();
+        let replacement = b"new remote attachment".to_vec();
+
+        store
+            .upload_attachment(
+                "diary",
+                "attachment",
+                old_data.len() as u64,
+                "text/plain",
+                create_mock_stream(old_data.clone(), old_data.len()),
+            )
+            .await
+            .unwrap();
+        store
+            .create_attachment_backup("diary", "attachment")
+            .await
+            .unwrap();
+        store
+            .upload_attachment(
+                "diary",
+                "attachment",
+                replacement.len() as u64,
+                "text/plain",
+                create_mock_stream(replacement.clone(), replacement.len()),
+            )
+            .await
+            .unwrap();
+
+        rollback_attachment_replacement(
+            &store,
+            "diary",
+            "attachment",
+            "text/plain",
+            crate::attachments::AttachmentError::InvalidOperation(
+                "remote upload finalization failed".to_string(),
+            ),
+        )
+        .await;
+
         let stream = store
             .download_attachment("diary", "attachment", None, None)
             .await
