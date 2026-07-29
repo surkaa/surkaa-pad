@@ -7,7 +7,9 @@ use crate::utils::message_sender::MessageSender;
 use futures_util::StreamExt;
 use serde::Serialize;
 use specta::Type;
-use std::path::{Component, Path, PathBuf};
+#[cfg(windows)]
+use std::path::Component;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::State;
