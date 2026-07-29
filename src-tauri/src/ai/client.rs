@@ -1,4 +1,5 @@
-use super::{AiError, AiModel, AiProviderConfig};
+use super::{AiError, AiModel, AiModelProvider, AiProviderConfig};
+use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::{Client, RequestBuilder, Response};
 use serde::Deserialize;
@@ -23,7 +24,17 @@ impl OpenAiCompatibleClient {
         Ok(Self { http, config })
     }
 
-    pub async fn list_models(&self) -> Result<Vec<AiModel>, AiError> {
+    fn authorize(&self, request: RequestBuilder) -> RequestBuilder {
+        match self.config.api_key() {
+            Some(api_key) => request.bearer_auth(api_key),
+            None => request,
+        }
+    }
+}
+
+#[async_trait]
+impl AiModelProvider for OpenAiCompatibleClient {
+    async fn list_models(&self) -> Result<Vec<AiModel>, AiError> {
         let request = self.authorize(self.http.get(self.config.models_url()));
         let response = request
             .timeout(MODELS_REQUEST_TIMEOUT)
@@ -54,13 +65,6 @@ impl OpenAiCompatibleClient {
                 owned_by: model.owned_by,
             })
             .collect())
-    }
-
-    fn authorize(&self, request: RequestBuilder) -> RequestBuilder {
-        match self.config.api_key() {
-            Some(api_key) => request.bearer_auth(api_key),
-            None => request,
-        }
     }
 }
 
@@ -145,7 +149,8 @@ mod tests {
         )
         .await;
         let config = AiProviderConfig::new(&base_url, Some("test-secret".into())).unwrap();
-        let client = OpenAiCompatibleClient::new(config).unwrap();
+        let client: Box<dyn AiModelProvider> =
+            Box::new(OpenAiCompatibleClient::new(config).unwrap());
 
         let models = client.list_models().await.unwrap();
 
