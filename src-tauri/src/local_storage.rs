@@ -1,6 +1,6 @@
 use crate::app_config::{AppConfigStore, LocalStorageLocation, PendingLocalStorageMigration};
 use crate::caches::{LEGACY_LOCAL_OBJECT_STORE_DIRECTORY, LOCAL_OBJECT_STORE_DIRECTORY};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub mod migration;
 
@@ -79,6 +79,18 @@ impl LocalStorageManager {
     pub fn is_legacy_root(&self, root: &std::path::Path) -> bool {
         root == self.legacy_root
     }
+
+    /// 自定义位置一旦完成配置就必须保持可访问，不能像全新默认目录一样按空存储处理。
+    pub fn active_root_unavailable_reason(&self, root: &Path) -> Option<String> {
+        if !matches!(
+            self.configured_location(),
+            LocalStorageLocation::Custom { .. }
+        ) || root != self.configured_root()
+        {
+            return None;
+        }
+        std::fs::read_dir(root).err().map(|error| error.to_string())
+    }
 }
 
 fn directory_is_empty(path: &PathBuf) -> bool {
@@ -149,5 +161,32 @@ mod tests {
         );
 
         assert_eq!(manager.startup_root(), base_path.join("los"));
+    }
+
+    #[test]
+    fn missing_custom_root_is_reported_as_unavailable() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let base_path = temp_dir.path().join("chosen");
+        let manager = manager(
+            &temp_dir,
+            LocalStorageLocation::Custom {
+                base_path: base_path.clone(),
+            },
+        );
+        let root = base_path.join("los");
+
+        assert!(manager.active_root_unavailable_reason(&root).is_some());
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(manager.active_root_unavailable_reason(&root).is_none());
+    }
+
+    #[test]
+    fn missing_default_root_is_valid_for_a_new_install() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = manager(&temp_dir, LocalStorageLocation::Default);
+
+        assert!(manager
+            .active_root_unavailable_reason(&manager.startup_root())
+            .is_none());
     }
 }

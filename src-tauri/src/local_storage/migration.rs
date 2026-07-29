@@ -106,6 +106,8 @@ pub struct LocalStorageInfo {
 pub struct LocalStorageMigrationStatus {
     pub legacy_migration_required: bool,
     pub migration_pending: bool,
+    pub unavailable_path: Option<String>,
+    pub unavailable_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -222,9 +224,15 @@ pub fn cmd_get_local_storage_migration_status(
     state: State<'_, AppState>,
 ) -> LocalStorageMigrationStatus {
     let manager = state.local_storage();
+    let root = state.local_object_store();
+    let unavailable_reason = manager.active_root_unavailable_reason(root.root());
     LocalStorageMigrationStatus {
-        legacy_migration_required: manager.is_legacy_root(state.local_object_store().root()),
+        legacy_migration_required: manager.is_legacy_root(root.root()),
         migration_pending: manager.pending_migration().is_some(),
+        unavailable_path: unavailable_reason
+            .as_ref()
+            .map(|_| display_path(root.root())),
+        unavailable_reason,
     }
 }
 
