@@ -351,7 +351,7 @@ defineOptions({name: 'Settings'});
       text-align: left;
     }
 
-    :deep(.q-item__section--side) {
+    :deep(.q-item__section--side:not(.q-item__section--avatar)) {
       padding-left: 12px;
     }
   }
