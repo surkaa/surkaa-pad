@@ -124,7 +124,7 @@
 
     <!-- OSS 配置对话框 -->
     <q-dialog v-model="showOssConfigDialog" persistent>
-      <q-card class="pad-modal" style="min-width: 340px">
+      <q-card class="pad-modal oss-config-modal" style="min-width: 340px">
         <q-card-section>
           <div class="text-h6 title-text">配置云存储</div>
           <div class="text-caption desc-text">填写阿里云 OSS 配置以启用云同步</div>
@@ -444,6 +444,40 @@ defineOptions({name: 'Settings'});
       padding: 4px;
       font-size: 12px;
     }
+  }
+}
+
+// QDialog 会将内容 Teleport 到页面根节点之外，因此这里不能依赖
+// #settings-page 祖先选择器来设置弹窗内输入框的主题颜色。
+.oss-config-modal {
+  background-color: var(--pad-bg-color-100);
+  color: var(--pad-text-color-100);
+  border-radius: var(--pad-radius-xl);
+
+  .title-text {
+    color: var(--pad-text-color-100);
+  }
+
+  .desc-text {
+    color: var(--pad-text-color-400);
+  }
+
+  :deep(.q-field__control) {
+    background-color: var(--pad-bg-color-200);
+  }
+
+  :deep(.q-field__native),
+  :deep(.q-field__input) {
+    color: var(--pad-text-color-200) !important;
+  }
+
+  :deep(.q-field__label),
+  :deep(.q-field__marginal) {
+    color: var(--pad-text-color-300);
+  }
+
+  :deep(.q-field--outlined .q-field__control::before) {
+    border-color: var(--pad-border-color-100);
   }
 }
 </style>

@@ -40,7 +40,7 @@ export function attachmentGroupIcon(type: string): string {
         case 'audio': return 'audio_file';
         case 'video': return 'video_file';
         case 'text': return 'description';
-        case 'application': return 'draft';
+        case 'application': return 'insert_drive_file';
         default: return 'attach_file';
     }
 }

@@ -1,6 +1,10 @@
 import {describe, expect, it} from 'vitest';
 import type {AttachmentMeta} from '../../bindings';
-import {groupAttachmentsByMimeType, mimeTopLevelType} from '../attachmentGrouping';
+import {
+    attachmentGroupIcon,
+    groupAttachmentsByMimeType,
+    mimeTopLevelType,
+} from '../attachmentGrouping';
 
 function attachment(id: string, filename: string, mimetype: string): AttachmentMeta {
     return {
@@ -57,5 +61,16 @@ describe('groupAttachmentsByMimeType', () => {
         ]);
 
         expect(groups[0].attachments.map(item => item.id)).toEqual(['a', 'b']);
+    });
+});
+
+describe('attachmentGroupIcon', () => {
+    it('uses a bundled file icon for application attachments', () => {
+        expect(attachmentGroupIcon('application')).toBe('insert_drive_file');
+    });
+
+    it('uses a generic attachment icon for unconfigured MIME groups', () => {
+        expect(attachmentGroupIcon('font')).toBe('attach_file');
+        expect(attachmentGroupIcon('other')).toBe('attach_file');
     });
 });
