@@ -24,7 +24,7 @@ export default defineConfig(async ({mode}) => {
             host: host || false,
             hmr,
             watch: {
-                ignored: ["**/src-tauri/**"],
+                ignored: ["**/src-tauri/**", "**/.pnpm-store/**"],
             },
         },
     }

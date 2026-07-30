@@ -48,8 +48,10 @@ use crate::tasks::task_command::cmd_cancel_task;
 use tauri::{App, Manager};
 
 fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    tauri_plugin_log::log::info!("[startup] Rust setup started");
     let paths = app.handle().path();
     let app_config = AppConfigStore::load(paths.app_config_dir()?.join(APP_CONFIG_FILENAME))?;
+    tauri_plugin_log::log::info!("[startup] app config loaded");
     let local_storage = crate::local_storage::LocalStorageManager::new(
         app_config.clone(),
         paths.app_local_data_dir()?,
@@ -57,9 +59,11 @@ fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     );
     let los_path = local_storage.startup_root();
     let (listener, attachment_server) = bind_attachment_server()?;
+    tauri_plugin_log::log::info!("[startup] attachment server bound");
     let state = AppState::new(los_path, attachment_server, app_config, local_storage);
     start_attachment_server(listener, state.clone());
     app.manage(state);
+    tauri_plugin_log::log::info!("[startup] Rust setup completed");
 
     Ok(())
 }

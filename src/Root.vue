@@ -14,6 +14,7 @@ import {
   reduceLocalStorageMigrationDisplay,
   withLocalStorageMigrationError,
 } from './utils/localStorageMigration';
+import {logStartupError, logStartupPhase} from './utils/startupLog';
 
 const configStore = useConfigStore();
 const p = platform();
@@ -80,9 +81,13 @@ watchEffect((onCleanup) => {
   }
 });
 
-onMounted(checkStartupLocalStorageMigration);
+onMounted(() => {
+  logStartupPhase('Root mounted');
+  void checkStartupLocalStorageMigration();
+});
 
 async function checkStartupLocalStorageMigration() {
+  logStartupPhase('Local storage startup check started');
   checkingLocalStorage.value = true;
   try {
     const status = await api.cmdGetLocalStorageMigrationStatus();
@@ -97,9 +102,11 @@ async function checkStartupLocalStorageMigration() {
       await migrateLegacyLocalStorage();
     }
   } catch (error) {
+    logStartupError('Local storage startup check failed', error);
     console.error('检查本地数据迁移状态失败:', error);
   } finally {
     checkingLocalStorage.value = false;
+    logStartupPhase('Local storage startup check completed');
   }
 }
 

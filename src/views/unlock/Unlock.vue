@@ -88,6 +88,7 @@ import {
   requiresVaultLogin,
   VAULT_VERIFIER_TEXT,
 } from '../../utils/vault';
+import {logStartupError, logStartupPhase} from '../../utils/startupLog';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -390,12 +391,36 @@ async function tryBiometricUnlock() {
   }
 }
 
-onMounted(async () => {
-  version.value = await getVersion();
-  appName.value = await getName();
-  encryptedMemoryCost.value = await api.cmdEncryptInfo();
-  const verifier = await configStore.getNormalConfig('vault_verifier');
-  const ec = await configStore.getNormalConfig('encrypted_oss_config');
+onMounted(() => {
+  logStartupPhase('Unlock mounted');
+  void loadAppMetadata();
+  void initializeUnlockPipeline();
+});
+
+async function loadAppMetadata() {
+  logStartupPhase('Unlock metadata loading started');
+  try {
+    const [appVersion, productName, memoryCost] = await Promise.all([
+      getVersion(),
+      getName(),
+      api.cmdEncryptInfo(),
+    ]);
+    version.value = appVersion;
+    appName.value = productName;
+    encryptedMemoryCost.value = memoryCost;
+    logStartupPhase('Unlock metadata loading completed');
+  } catch (error) {
+    logStartupError('Unlock metadata loading failed', error);
+    console.warn(`读取应用展示信息失败: ${formatError(error)}`);
+  }
+}
+
+async function initializeUnlockPipeline() {
+  logStartupPhase('Unlock pipeline initialization started');
+  const [verifier, ec] = await Promise.all([
+    configStore.getNormalConfig('vault_verifier'),
+    configStore.getNormalConfig('encrypted_oss_config'),
+  ]);
   vaultVerifier.value = verifier ?? [];
   encryptedConfig.value = ec ?? [];
 
@@ -412,7 +437,11 @@ onMounted(async () => {
   }
 
   if (requiresVaultLogin(!!verifier, !!ec, hasLegacyLocalVault)) {
+    if (import.meta.env.DEV) {
+      masterPassword.value = '1';
+    }
     pipeline.value = 'login';
+    logStartupPhase('Unlock login form selected');
     biometricEnabled.value = isAndroid
         && await configStore.getNormalConfig('biometric_enabled');
     await refreshBiometricUnlockAllowed();
@@ -422,8 +451,9 @@ onMounted(async () => {
     }
   } else {
     pipeline.value = 'first-time';
+    logStartupPhase('Unlock first-time form selected');
   }
-});
+}
 
 async function migrateRemoteStoragePreference(): Promise<boolean> {
   const legacyEnabled = await configStore.getLegacyRemoteEnabled();
