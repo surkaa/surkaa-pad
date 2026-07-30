@@ -1,22 +1,32 @@
 <script setup lang="ts">
-import {nextTick, onActivated, ref} from 'vue';
+import {Channel} from '@tauri-apps/api/core';
+import {computed, nextTick, onActivated, onBeforeUnmount, ref} from 'vue';
 import {useRouter} from 'vue-router';
-import type {AiAgentResponse} from '../../bindings';
-import {formatAiResponseMeta, runAiQuestion} from '../../utils/aiAssistant';
+import {openUrl} from '@tauri-apps/plugin-opener';
+import {useQuasar} from 'quasar';
+import type {AiAgentEvent} from '../../bindings';
+import {
+  formatAiResponseMeta,
+  initialAiAgentDisplayState,
+  isTerminalAiExchangeState,
+  reduceAiAgentEvent,
+  startAiQuestion,
+  type AiAgentDisplayState,
+  type AiExchangeState,
+} from '../../utils/aiAssistant';
+import {renderAiMarkdown} from '../../utils/aiMarkdown';
 import {
   loadAiServiceConfig,
   type AiServiceConfig,
 } from '../../utils/aiConfig';
+import api from '../../utils/api';
 import {formatError} from '../../utils/formatError';
 
-type ExchangeState = 'loading' | 'completed' | 'failed';
-
-interface AiExchange {
+interface AiExchange extends AiAgentDisplayState {
   id: number;
   question: string;
-  state: ExchangeState;
-  response: AiAgentResponse | null;
-  error: string | null;
+  taskToken: string | null;
+  cancelRequested: boolean;
 }
 
 const suggestions = [
@@ -26,6 +36,7 @@ const suggestions = [
 ];
 
 const router = useRouter();
+const $q = useQuasar();
 const scrollContainer = ref<HTMLElement | null>(null);
 const config = ref<AiServiceConfig | null>(null);
 const configError = ref<string | null>(null);
@@ -33,11 +44,19 @@ const loadingConfig = ref(true);
 const question = ref('');
 const sending = ref(false);
 const exchanges = ref<AiExchange[]>([]);
+const isCanceling = computed(() => exchanges.value.some(exchange => exchange.state === 'canceling'));
 let nextExchangeId = 1;
+let pendingScrollFrame: number | null = null;
+let unmounting = false;
 
 defineOptions({name: 'AiAssistant'});
 
 onActivated(refreshConfig);
+onBeforeUnmount(() => {
+  unmounting = true;
+  if (pendingScrollFrame !== null) cancelAnimationFrame(pendingScrollFrame);
+  void cancelActiveQuestion(false);
+});
 
 async function refreshConfig() {
   loadingConfig.value = true;
@@ -72,39 +91,106 @@ async function submitQuestion() {
   if (!activeConfig || !prompt || sending.value) return;
 
   const exchange: AiExchange = {
+    ...initialAiAgentDisplayState(),
     id: nextExchangeId++,
     question: prompt,
-    state: 'loading',
-    response: null,
-    error: null,
+    taskToken: null,
+    cancelRequested: false,
   };
   exchanges.value.push(exchange);
   question.value = '';
   sending.value = true;
   await scrollToBottom();
 
+  const event = new Channel<AiAgentEvent>();
+  event.onmessage = message => handleAgentEvent(exchange.id, message);
+
   try {
-    const response = await runAiQuestion(activeConfig, prompt);
-    replaceExchange(exchange.id, {
-      ...exchange,
-      state: 'completed',
-      response,
-    });
+    const taskToken = await startAiQuestion(activeConfig, prompt, event);
+    const current = findExchange(exchange.id);
+    if (!current || isTerminalAiExchangeState(current.state)) return;
+    current.taskToken = taskToken;
+    if (current.cancelRequested) await cancelExchange(current, true);
   } catch (error) {
-    replaceExchange(exchange.id, {
-      ...exchange,
-      state: 'failed',
-      error: formatError(error),
-    });
-  } finally {
-    sending.value = false;
-    await scrollToBottom();
+    const current = findExchange(exchange.id);
+    if (current && !isTerminalAiExchangeState(current.state)) {
+      finishExchange(current, 'failed', formatError(error));
+    }
   }
 }
 
-function replaceExchange(id: number, replacement: AiExchange) {
-  const index = exchanges.value.findIndex(exchange => exchange.id === id);
-  if (index !== -1) exchanges.value[index] = replacement;
+function handleAgentEvent(id: number, message: AiAgentEvent) {
+  const exchange = findExchange(id);
+  if (!exchange || isTerminalAiExchangeState(exchange.state)) return;
+
+  Object.assign(exchange, reduceAiAgentEvent(exchange, message));
+  if (isTerminalAiExchangeState(exchange.state)) {
+    finishExchange(exchange, exchange.state, exchange.error);
+  }
+  scheduleScrollToBottom();
+}
+
+async function cancelActiveQuestion(notify = true) {
+  const exchange = [...exchanges.value]
+    .reverse()
+    .find(item => item.state === 'running' || item.state === 'canceling');
+  if (!exchange) return;
+  exchange.cancelRequested = true;
+  exchange.state = 'canceling';
+  exchange.status = '正在停止生成…';
+  scheduleScrollToBottom();
+  if (exchange.taskToken) await cancelExchange(exchange, notify);
+}
+
+async function cancelExchange(exchange: AiExchange, notify: boolean) {
+  const taskToken = exchange.taskToken;
+  if (!taskToken || isTerminalAiExchangeState(exchange.state)) return;
+  try {
+    await api.cmdCancelTask(taskToken);
+  } catch (error) {
+    if (!isTerminalAiExchangeState(exchange.state)) {
+      exchange.state = 'running';
+      exchange.cancelRequested = false;
+      exchange.status = '正在生成回答…';
+    }
+    if (notify) {
+      $q.notify({type: 'negative', message: `停止生成失败：${formatError(error)}`});
+    }
+  }
+}
+
+async function handleAnswerClick(event: MouseEvent) {
+  const target = event.target instanceof Element ? event.target.closest('a') : null;
+  if (!(target instanceof HTMLAnchorElement)) return;
+  event.preventDefault();
+  try {
+    const url = new URL(target.href);
+    if (!['http:', 'https:'].includes(url.protocol)) return;
+    await openUrl(url.href);
+  } catch (error) {
+    $q.notify({type: 'negative', message: `打开链接失败：${formatError(error)}`});
+  }
+}
+
+function findExchange(id: number) {
+  return exchanges.value.find(exchange => exchange.id === id);
+}
+
+function finishExchange(exchange: AiExchange, state: Extract<AiExchangeState, 'completed' | 'failed' | 'cancelled'>, error: string | null = null) {
+  exchange.state = state;
+  exchange.error = error;
+  exchange.taskToken = null;
+  exchange.cancelRequested = false;
+  sending.value = false;
+  scheduleScrollToBottom();
+}
+
+function scheduleScrollToBottom() {
+  if (unmounting || pendingScrollFrame !== null) return;
+  pendingScrollFrame = requestAnimationFrame(() => {
+    pendingScrollFrame = null;
+    void scrollToBottom();
+  });
 }
 
 async function scrollToBottom() {
@@ -155,17 +241,30 @@ async function scrollToBottom() {
             <q-icon name="auto_awesome" size="18px"/>
           </div>
           <div class="message answer-message">
-            <div v-if="exchange.state === 'loading'" class="answer-loading">
-              <q-spinner-dots color="primary" size="24px"/>
-              <span>正在查找并读取相关日记…</span>
+            <div
+              v-if="exchange.answer"
+              :class="{'answer-text': true, 'ai-markdown': true, 'is-streaming': exchange.state === 'running'}"
+              @click="handleAnswerClick"
+              v-html="renderAiMarkdown(exchange.answer)"
+            ></div>
+            <div
+              v-if="exchange.state === 'running' || exchange.state === 'canceling'"
+              class="answer-status"
+            >
+              <q-spinner-dots v-if="exchange.state === 'running'" color="primary" size="24px"/>
+              <q-spinner v-else color="primary" size="18px"/>
+              <span>{{ exchange.status }}</span>
             </div>
-            <template v-else-if="exchange.response">
-              <div class="answer-text">{{ exchange.response.answer }}</div>
+            <template v-if="exchange.state === 'completed' && exchange.response">
               <div class="answer-meta">{{ formatAiResponseMeta(exchange.response) }}</div>
             </template>
-            <div v-else class="answer-error">
+            <div v-else-if="exchange.state === 'failed'" class="answer-error">
               <q-icon name="error_outline"/>
               <span>{{ exchange.error || 'AI 服务请求失败' }}</span>
+            </div>
+            <div v-else-if="exchange.state === 'cancelled'" class="answer-cancelled">
+              <q-icon name="stop_circle"/>
+              <span>已停止生成</span>
             </div>
           </div>
         </div>
@@ -194,12 +293,12 @@ async function scrollToBottom() {
         <q-btn
           round
           unelevated
-          color="primary"
-          icon="send"
-          aria-label="发送问题"
-          :loading="sending"
-          :disable="!config || !question.trim() || sending"
-          @click="submitQuestion"
+          :color="sending ? 'negative' : 'primary'"
+          :icon="sending ? 'stop' : 'send'"
+          :aria-label="sending ? '停止生成' : '发送问题'"
+          :loading="isCanceling"
+          :disable="sending ? isCanceling : !config || !question.trim()"
+          @click="sending ? cancelActiveQuestion() : submitQuestion()"
         />
       </div>
       <div class="privacy-hint">问题及 Agent 读取的日记文字会发送到你配置的 AI 服务</div>
@@ -332,19 +431,129 @@ async function scrollToBottom() {
 }
 
 .answer-text {
-  white-space: pre-wrap;
+  line-height: 1.65;
+
+  &.is-streaming::after {
+    content: '';
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 3px;
+    vertical-align: -0.12em;
+    background: var(--pad-primary-dark);
+    animation: ai-cursor-blink 0.9s steps(1) infinite;
+  }
 }
 
-.answer-loading,
-.answer-error {
+.ai-markdown {
+  :deep(> :first-child) {
+    margin-top: 0;
+  }
+
+  :deep(> :last-child) {
+    margin-bottom: 0;
+  }
+
+  :deep(h1),
+  :deep(h2),
+  :deep(h3),
+  :deep(h4),
+  :deep(h5),
+  :deep(h6) {
+    margin: 1.15em 0 0.55em;
+    color: var(--pad-text-color-100);
+    line-height: 1.35;
+  }
+
+  :deep(h1) { font-size: 1.45rem; }
+  :deep(h2) { font-size: 1.3rem; }
+  :deep(h3) { font-size: 1.16rem; }
+
+  :deep(p),
+  :deep(ul),
+  :deep(ol),
+  :deep(blockquote),
+  :deep(pre),
+  :deep(table) {
+    margin: 0.7em 0;
+  }
+
+  :deep(ul),
+  :deep(ol) {
+    padding-left: 1.5em;
+  }
+
+  :deep(blockquote) {
+    padding: 0.25em 0.85em;
+    color: var(--pad-text-color-300);
+    border-left: 3px solid var(--pad-border-color-300);
+  }
+
+  :deep(code) {
+    padding: 0.12em 0.35em;
+    border-radius: var(--pad-radius-sm);
+    color: var(--pad-text-color-200);
+    background: var(--pad-bg-color-300);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+
+  :deep(pre) {
+    overflow-x: auto;
+    padding: 12px;
+    border-radius: var(--pad-radius-md);
+    background: var(--pad-bg-color-300);
+
+    code {
+      padding: 0;
+      background: transparent;
+    }
+  }
+
+  :deep(table) {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+
+  :deep(th),
+  :deep(td) {
+    padding: 6px 10px;
+    border: 1px solid var(--pad-border-color-200);
+    text-align: left;
+  }
+
+  :deep(th) {
+    background: var(--pad-bg-color-300);
+  }
+
+  :deep(a) {
+    color: var(--pad-primary-dark);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  :deep(.ai-markdown-image-placeholder) {
+    color: var(--pad-text-color-400);
+  }
+}
+
+.answer-status,
+.answer-error,
+.answer-cancelled {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.answer-loading,
+.answer-status,
 .answer-meta {
   color: var(--pad-text-color-400);
+}
+
+.answer-status {
+  margin-top: 6px;
+  font-size: 0.8rem;
 }
 
 .answer-meta {
@@ -354,6 +563,14 @@ async function scrollToBottom() {
 
 .answer-error {
   color: var(--pad-danger-color);
+}
+
+.answer-cancelled {
+  color: var(--pad-text-color-400);
+}
+
+@keyframes ai-cursor-blink {
+  50% { opacity: 0; }
 }
 
 .composer-area {

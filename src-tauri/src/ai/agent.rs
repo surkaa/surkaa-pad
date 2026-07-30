@@ -30,6 +30,30 @@ pub struct AiAgentResponse {
     pub usage: Option<AiUsage>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "event",
+    content = "data"
+)]
+pub enum AiAgentEvent {
+    ModelStarted {
+        #[specta(type = f64)]
+        round: usize,
+    },
+    ToolExecutionStarted {
+        #[specta(type = f64)]
+        round: usize,
+        #[specta(rename = "toolCount", type = f64)]
+        tool_count: usize,
+    },
+    AnswerDelta(String),
+    Completed(AiAgentResponse),
+    Failed(String),
+    Cancelled,
+}
+
 impl<'a> AiAgent<'a> {
     pub fn new(provider: &'a dyn AiModelProvider, tools: &'a dyn AiToolExecutor) -> Self {
         Self {
@@ -46,6 +70,18 @@ impl<'a> AiAgent<'a> {
     }
 
     pub async fn run(&self, model: &str, prompt: &str) -> Result<AiAgentResponse, AiError> {
+        self.run_stream(model, prompt, &|_| Ok(())).await
+    }
+
+    pub async fn run_stream<F>(
+        &self,
+        model: &str,
+        prompt: &str,
+        emit: &F,
+    ) -> Result<AiAgentResponse, AiError>
+    where
+        F: Fn(AiAgentEvent) -> Result<(), AiError> + Send + Sync,
+    {
         if prompt.trim().is_empty() {
             return Err(AiError::InvalidRequest("问题不能为空".into()));
         }
@@ -63,13 +99,13 @@ impl<'a> AiAgent<'a> {
         let mut total_usage = None;
 
         for round in 1..=self.max_model_rounds {
+            emit(AiAgentEvent::ModelStarted { round })?;
             let completion = self
                 .provider
-                .complete(AiCompletionRequest::new(
-                    model,
-                    messages.clone(),
-                    definitions.clone(),
-                )?)
+                .complete_stream(
+                    AiCompletionRequest::new(model, messages.clone(), definitions.clone())?,
+                    &|delta| emit(AiAgentEvent::AnswerDelta(delta)),
+                )
                 .await?;
             accumulate_usage(&mut total_usage, completion.usage);
 
@@ -93,6 +129,10 @@ impl<'a> AiAgent<'a> {
             }
 
             let tool_calls = assistant_message.tool_calls.clone();
+            emit(AiAgentEvent::ToolExecutionStarted {
+                round,
+                tool_count: tool_calls.len(),
+            })?;
             messages.push(AiMessage::Assistant(AiAssistantMessage {
                 content: assistant_message.content,
                 tool_calls: tool_calls.clone(),

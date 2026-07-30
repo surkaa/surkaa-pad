@@ -4,7 +4,7 @@ use super::{
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Deserialize)]
 pub(super) struct ModelListResponse {
@@ -49,6 +49,10 @@ pub(super) struct ChatCompletionRequest {
     messages: Vec<ChatMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<ChatToolDefinition>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<StreamOptions>,
 }
 
 impl From<&AiCompletionRequest> for ChatCompletionRequest {
@@ -61,8 +65,27 @@ impl From<&AiCompletionRequest> for ChatCompletionRequest {
                 .iter()
                 .map(ChatToolDefinition::from)
                 .collect(),
+            stream: false,
+            stream_options: None,
         }
     }
+}
+
+impl ChatCompletionRequest {
+    pub(super) fn streaming(request: &AiCompletionRequest) -> Self {
+        Self {
+            stream: true,
+            stream_options: Some(StreamOptions {
+                include_usage: true,
+            }),
+            ..Self::from(request)
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct StreamOptions {
+    include_usage: bool,
 }
 
 #[derive(Serialize)]
@@ -302,5 +325,184 @@ impl From<ChatUsage> for AiUsage {
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
         }
+    }
+}
+
+#[derive(Deserialize)]
+struct ChatCompletionChunk {
+    #[serde(default)]
+    choices: Vec<StreamChoice>,
+    #[serde(default)]
+    usage: Option<ChatUsage>,
+}
+
+#[derive(Deserialize)]
+struct StreamChoice {
+    #[serde(default)]
+    index: usize,
+    delta: StreamAssistantDelta,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+struct StreamAssistantDelta {
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Vec<StreamToolCallDelta>,
+}
+
+#[derive(Deserialize)]
+struct StreamToolCallDelta {
+    index: usize,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    function: Option<StreamFunctionDelta>,
+}
+
+#[derive(Deserialize)]
+struct StreamFunctionDelta {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<FunctionArgumentsDelta>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FunctionArgumentsDelta {
+    Encoded(String),
+    Json(Value),
+}
+
+#[derive(Default)]
+struct PartialToolCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+#[derive(Default)]
+pub(super) struct ChatCompletionAccumulator {
+    content: String,
+    tool_calls: BTreeMap<usize, PartialToolCall>,
+    finish_reason: Option<String>,
+    usage: Option<AiUsage>,
+    saw_primary_choice: bool,
+}
+
+impl ChatCompletionAccumulator {
+    pub(super) fn push(&mut self, data: &str) -> Result<Vec<String>, AiError> {
+        let chunk: ChatCompletionChunk = serde_json::from_str(data)
+            .map_err(|error| AiError::InvalidResponse(error.to_string()))?;
+        if let Some(usage) = chunk.usage {
+            self.usage = Some(usage.into());
+        }
+
+        let mut content_deltas = Vec::new();
+        for choice in chunk.choices {
+            if choice.index != 0 {
+                continue;
+            }
+            self.saw_primary_choice = true;
+            if let Some(content) = choice.delta.content.filter(|content| !content.is_empty()) {
+                self.content.push_str(&content);
+                content_deltas.push(content);
+            }
+            for call in choice.delta.tool_calls {
+                self.push_tool_call(call)?;
+            }
+            if choice.finish_reason.is_some() {
+                self.finish_reason = choice.finish_reason;
+            }
+        }
+        Ok(content_deltas)
+    }
+
+    fn push_tool_call(&mut self, delta: StreamToolCallDelta) -> Result<(), AiError> {
+        let call = self.tool_calls.entry(delta.index).or_default();
+        if let Some(id) = delta.id {
+            call.id.push_str(&id);
+        }
+        if let Some(function) = delta.function {
+            if let Some(name) = function.name {
+                call.name.push_str(&name);
+            }
+            if let Some(arguments) = function.arguments {
+                match arguments {
+                    FunctionArgumentsDelta::Encoded(arguments) => {
+                        call.arguments.push_str(&arguments)
+                    }
+                    FunctionArgumentsDelta::Json(arguments) => {
+                        if !call.arguments.is_empty() {
+                            return Err(AiError::InvalidResponse(
+                                "流式工具调用混用了字符串和 JSON 参数".into(),
+                            ));
+                        }
+                        call.arguments = arguments.to_string();
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn finish(self) -> Result<AiCompletion, AiError> {
+        if !self.saw_primary_choice {
+            return Err(AiError::InvalidResponse(
+                "流式对话响应不包含候选结果".into(),
+            ));
+        }
+
+        let mut tool_call_ids = HashSet::new();
+        let mut tool_calls = Vec::with_capacity(self.tool_calls.len());
+        for (_, call) in self.tool_calls {
+            if call.id.trim().is_empty() || call.name.trim().is_empty() {
+                return Err(AiError::InvalidResponse(
+                    "流式工具调用缺少 ID 或名称".into(),
+                ));
+            }
+            if !tool_call_ids.insert(call.id.clone()) {
+                return Err(AiError::InvalidResponse(format!(
+                    "流式对话响应包含重复的工具调用 ID: {}",
+                    call.id
+                )));
+            }
+            let arguments = if call.arguments.trim().is_empty() {
+                Value::Object(Default::default())
+            } else {
+                serde_json::from_str(&call.arguments).map_err(|_| {
+                    AiError::InvalidResponse("流式工具调用参数不是有效的 JSON".into())
+                })?
+            };
+            if !arguments.is_object() {
+                return Err(AiError::InvalidResponse(format!(
+                    "工具 {} 的流式调用参数必须是 JSON 对象",
+                    call.name
+                )));
+            }
+            tool_calls.push(AiToolCall {
+                id: call.id,
+                name: call.name,
+                arguments,
+            });
+        }
+
+        let content = (!self.content.trim().is_empty()).then_some(self.content);
+        if content.is_none() && tool_calls.is_empty() {
+            return Err(AiError::InvalidResponse(
+                "流式助手响应不包含文本或工具调用".into(),
+            ));
+        }
+        Ok(AiCompletion {
+            message: AiAssistantMessage {
+                content,
+                tool_calls,
+            },
+            finish_reason: self.finish_reason,
+            usage: self.usage,
+        })
     }
 }

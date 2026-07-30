@@ -4,6 +4,7 @@ use super::{
     AiProviderConfig, AiToolCall, AiToolDefinition, AiToolResult, AiUsage, OpenAiCompatibleClient,
 };
 use serde_json::{json, Value};
+use std::sync::Mutex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -165,6 +166,94 @@ async fn completes_text_chat_and_maps_usage() {
 }
 
 #[tokio::test]
+async fn streams_text_deltas_and_maps_final_usage() {
+    let body = concat!(
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"找到 \"},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"3 篇日记\"},\"finish_reason\":\"stop\"}]}\n\n",
+        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":6,\"total_tokens\":26}}\n\n",
+        "data: [DONE]\n\n",
+    );
+    let (base_url, captured_request) = spawn_sse_response(body).await;
+    let config = AiProviderConfig::new(&base_url, None).unwrap();
+    let client = OpenAiCompatibleClient::new(config).unwrap();
+    let request = AiCompletionRequest::new(
+        "qwen3:8b",
+        vec![AiMessage::User("最近写了什么？".into())],
+        vec![],
+    )
+    .unwrap();
+    let received = Mutex::new(String::new());
+
+    let completion = client
+        .complete_stream(request, &|delta| {
+            received.lock().unwrap().push_str(&delta);
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(received.into_inner().unwrap(), "找到 3 篇日记");
+    assert_eq!(completion.message.content.as_deref(), Some("找到 3 篇日记"));
+    assert_eq!(completion.finish_reason.as_deref(), Some("stop"));
+    assert_eq!(
+        completion.usage,
+        Some(AiUsage {
+            prompt_tokens: 20,
+            completion_tokens: 6,
+            total_tokens: 26,
+        })
+    );
+    let body = captured_json_body(captured_request.await.unwrap());
+    assert_eq!(body["stream"], true);
+    assert_eq!(body["stream_options"]["include_usage"], true);
+}
+
+#[tokio::test]
+async fn reconstructs_fragmented_streaming_tool_calls() {
+    let body = concat!(
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"read_diary\",\"arguments\":\"{\\\"dia\"}}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"ryId\\\":\\\"123\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+        "data: [DONE]\n\n",
+    );
+    let (base_url, _) = spawn_sse_response(body).await;
+    let config = AiProviderConfig::new(&base_url, None).unwrap();
+    let client = OpenAiCompatibleClient::new(config).unwrap();
+    let request =
+        AiCompletionRequest::new("model", vec![AiMessage::User("读取日记".into())], vec![])
+            .unwrap();
+
+    let completion = client.complete_stream(request, &|_| Ok(())).await.unwrap();
+
+    assert_eq!(
+        completion.message.tool_calls,
+        vec![AiToolCall {
+            id: "call-1".into(),
+            name: "read_diary".into(),
+            arguments: json!({"diaryId": "123"}),
+        }]
+    );
+    assert_eq!(completion.finish_reason.as_deref(), Some("tool_calls"));
+}
+
+#[tokio::test]
+async fn rejects_a_stream_that_ends_without_done_marker() {
+    let body = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"半截回答\"}}]}\n\n";
+    let (base_url, _) = spawn_sse_response(body).await;
+    let config = AiProviderConfig::new(&base_url, None).unwrap();
+    let client = OpenAiCompatibleClient::new(config).unwrap();
+    let request =
+        AiCompletionRequest::new("model", vec![AiMessage::User("测试".into())], vec![]).unwrap();
+
+    assert_eq!(
+        client.complete_stream(request, &|_| Ok(())).await,
+        Err(AiError::InvalidResponse(
+            "流式对话响应在 [DONE] 前意外结束".into()
+        ))
+    );
+}
+
+#[tokio::test]
 async fn sends_tool_definitions_and_maps_string_encoded_tool_calls() {
     let (base_url, captured_request) = spawn_json_response(
         200,
@@ -295,10 +384,23 @@ async fn spawn_json_response(
     spawn_response(status, body, None).await
 }
 
+async fn spawn_sse_response(body: &'static str) -> (String, oneshot::Receiver<String>) {
+    spawn_typed_response(200, body, None, "text/event-stream").await
+}
+
 async fn spawn_response(
     status: u16,
     body: &'static str,
     declared_content_length: Option<usize>,
+) -> (String, oneshot::Receiver<String>) {
+    spawn_typed_response(status, body, declared_content_length, "application/json").await
+}
+
+async fn spawn_typed_response(
+    status: u16,
+    body: &'static str,
+    declared_content_length: Option<usize>,
+    content_type: &'static str,
 ) -> (String, oneshot::Receiver<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -315,7 +417,7 @@ async fn spawn_response(
             _ => "Error",
         };
         let response = format!(
-            "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
             declared_content_length.unwrap_or(body.len())
         );
         socket.write_all(response.as_bytes()).await.unwrap();

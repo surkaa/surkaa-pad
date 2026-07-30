@@ -13,7 +13,7 @@ mod provider;
 mod tools;
 mod types;
 
-pub use agent::{AiAgent, AiAgentResponse};
+pub use agent::{AiAgent, AiAgentEvent, AiAgentResponse};
 pub use client::OpenAiCompatibleClient;
 pub use config::AiProviderConfig;
 pub use diary_tools::DiaryReadTools;

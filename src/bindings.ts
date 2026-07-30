@@ -619,12 +619,13 @@ async cmdListAiModels(baseUrl: string, apiKey: string | null) : Promise<Result<A
  * * `api_key` - 可选的 Bearer API Key
  * * `model` - 本次问答使用的模型 ID
  * * `prompt` - 用户问题
+ * * `event` - 接收模型状态、增量回答和最终结果的事件通道
  * # Returns
- * * `Result<AiAgentResponse, AppError>` - 最终回答、模型调用轮数和 token 用量
+ * * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
  */
-async cmdRunAiAgent(baseUrl: string, apiKey: string | null, model: string, prompt: string) : Promise<Result<AiAgentResponse, AppError>> {
+async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, model: string, prompt: string) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_agent", { baseUrl, apiKey, model, prompt }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_agent", { event, baseUrl, apiKey, model, prompt }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -657,6 +658,7 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 
 /** user-defined types **/
 
+export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "toolExecutionStarted"; data: { round: number; toolCount: number } } | { event: "answerDelta"; data: string } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
 export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null }
 export type AiModel = { id: string; ownedBy: string | null }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }

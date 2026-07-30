@@ -183,6 +183,38 @@ async fn executes_tools_and_feeds_results_back_to_the_model() {
 }
 
 #[tokio::test]
+async fn streams_model_tool_and_answer_events_in_order() {
+    let provider = FakeProvider::new(vec![
+        completion(None, vec![tool_call("call-1")], None),
+        completion(Some("最终回答"), vec![], None),
+    ]);
+    let tools = FakeTools::succeeding(json!({"content": "正文"}));
+    let events = Mutex::new(Vec::new());
+
+    let response = AiAgent::new(&provider, &tools)
+        .run_stream("qwen", "读取日记", &|event| {
+            events.lock().unwrap().push(event);
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(response.answer, "最终回答");
+    assert_eq!(
+        events.into_inner().unwrap(),
+        vec![
+            AiAgentEvent::ModelStarted { round: 1 },
+            AiAgentEvent::ToolExecutionStarted {
+                round: 1,
+                tool_count: 1,
+            },
+            AiAgentEvent::ModelStarted { round: 2 },
+            AiAgentEvent::AnswerDelta("最终回答".into()),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn hides_internal_tool_error_details_from_the_model() {
     let provider = FakeProvider::new(vec![
         completion(None, vec![tool_call("call-1")], None),

@@ -1,8 +1,11 @@
-use super::openai_protocol::{ChatCompletionRequest, ChatCompletionResponse, ModelListResponse};
+use super::openai_protocol::{
+    ChatCompletionAccumulator, ChatCompletionRequest, ChatCompletionResponse, ModelListResponse,
+};
 use super::{
     AiCompletion, AiCompletionRequest, AiError, AiModel, AiModelProvider, AiProviderConfig,
 };
 use async_trait::async_trait;
+use eventsource_stream::{EventStreamError, Eventsource};
 use futures_util::StreamExt;
 use reqwest::{Client, RequestBuilder, Response};
 use serde::Deserialize;
@@ -63,6 +66,74 @@ impl AiModelProvider for OpenAiCompatibleClient {
         let response: ChatCompletionResponse = serde_json::from_slice(&body)
             .map_err(|error| AiError::InvalidResponse(error.to_string()))?;
         response.try_into()
+    }
+
+    async fn complete_stream(
+        &self,
+        request: AiCompletionRequest,
+        on_delta: &(dyn Fn(String) -> Result<(), AiError> + Send + Sync),
+    ) -> Result<AiCompletion, AiError> {
+        let payload = ChatCompletionRequest::streaming(&request);
+        let request = self.authorize(
+            self.http
+                .post(self.config.chat_completions_url())
+                .json(&payload),
+        );
+        let response = request
+            .timeout(COMPLETION_REQUEST_TIMEOUT)
+            .send()
+            .await
+            .map_err(|error| AiError::RequestFailed(error.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = read_limited_body(response, MAX_COMPLETION_RESPONSE_BYTES).await?;
+            return Err(AiError::HttpStatus {
+                status: status.as_u16(),
+                message: response_error_message(&body),
+            });
+        }
+
+        let byte_stream = response.bytes_stream().map({
+            let mut response_bytes = 0_usize;
+            move |chunk| {
+                let chunk = chunk.map_err(|error| AiError::RequestFailed(error.to_string()))?;
+                response_bytes = response_bytes.saturating_add(chunk.len());
+                if response_bytes > MAX_COMPLETION_RESPONSE_BYTES {
+                    return Err(AiError::ResponseTooLarge {
+                        limit_bytes: MAX_COMPLETION_RESPONSE_BYTES,
+                    });
+                }
+                Ok(chunk)
+            }
+        });
+        let mut events = byte_stream.eventsource();
+        let mut accumulator = ChatCompletionAccumulator::default();
+        let mut completed = false;
+        while let Some(event) = events.next().await {
+            let event = event.map_err(map_event_stream_error)?;
+            if event.data.trim() == "[DONE]" {
+                completed = true;
+                break;
+            }
+            for delta in accumulator.push(&event.data)? {
+                on_delta(delta)?;
+            }
+        }
+
+        if !completed {
+            return Err(AiError::InvalidResponse(
+                "流式对话响应在 [DONE] 前意外结束".into(),
+            ));
+        }
+        accumulator.finish()
+    }
+}
+
+fn map_event_stream_error(error: EventStreamError<AiError>) -> AiError {
+    match error {
+        EventStreamError::Transport(error) => error,
+        other => AiError::InvalidResponse(other.to_string()),
     }
 }
 

@@ -1,6 +1,12 @@
 import {describe, expect, it, vi} from 'vitest';
-import type {AiAgentResponse} from '../../bindings';
-import {formatAiResponseMeta, runAiQuestion} from '../aiAssistant';
+import type {Channel} from '@tauri-apps/api/core';
+import type {AiAgentEvent} from '../../bindings';
+import {
+  formatAiResponseMeta,
+  initialAiAgentDisplayState,
+  reduceAiAgentEvent,
+  startAiQuestion,
+} from '../aiAssistant';
 import type {AiServiceConfig} from '../aiConfig';
 
 const config: AiServiceConfig = {
@@ -9,18 +15,15 @@ const config: AiServiceConfig = {
   model: 'qwen3:8b',
 };
 
-describe('runAiQuestion', () => {
+describe('startAiQuestion', () => {
   it('trims the question and forwards the configured service', async () => {
-    const response: AiAgentResponse = {
-      answer: '回答',
-      modelRounds: 2,
-      usage: null,
-    };
-    const runner = vi.fn().mockResolvedValue(response);
+    const event = {} as Channel<AiAgentEvent>;
+    const runner = vi.fn().mockResolvedValue('task-token');
 
-    await expect(runAiQuestion(config, '  最近写了什么？\n', runner))
-      .resolves.toEqual(response);
+    await expect(startAiQuestion(config, '  最近写了什么？\n', event, runner))
+      .resolves.toBe('task-token');
     expect(runner).toHaveBeenCalledWith(
+      event,
       'http://localhost:11434/v1',
       'local-secret',
       'qwen3:8b',
@@ -29,20 +32,84 @@ describe('runAiQuestion', () => {
   });
 
   it('omits a blank API key and rejects blank questions', async () => {
-    const runner = vi.fn().mockResolvedValue({
-      answer: '回答',
-      modelRounds: 1,
-      usage: null,
-    });
+    const event = {} as Channel<AiAgentEvent>;
+    const runner = vi.fn().mockResolvedValue('task-token');
 
-    await runAiQuestion({...config, apiKey: '  '}, '问题', runner);
+    await startAiQuestion({...config, apiKey: '  '}, '问题', event, runner);
     expect(runner).toHaveBeenCalledWith(
+      event,
       config.baseUrl,
       null,
       config.model,
       '问题',
     );
-    await expect(runAiQuestion(config, ' \n ', runner)).rejects.toThrow('问题不能为空');
+    await expect(startAiQuestion(config, ' \n ', event, runner)).rejects.toThrow('问题不能为空');
+  });
+});
+
+describe('reduceAiAgentEvent', () => {
+  it('streams text, clears temporary tool preambles, and completes with final metadata', () => {
+    let state = initialAiAgentDisplayState();
+    state = reduceAiAgentEvent(state, {
+      event: 'modelStarted',
+      data: {round: 1},
+    });
+    state = reduceAiAgentEvent(state, {event: 'answerDelta', data: '我先查找'});
+    expect(state.answer).toBe('我先查找');
+
+    state = reduceAiAgentEvent(state, {
+      event: 'toolExecutionStarted',
+      data: {round: 1, toolCount: 2},
+    });
+    expect(state.answer).toBe('');
+    expect(state.status).toContain('2 个日记读取操作');
+
+    state = reduceAiAgentEvent(state, {
+      event: 'modelStarted',
+      data: {round: 2},
+    });
+    state = reduceAiAgentEvent(state, {event: 'answerDelta', data: '最终'});
+    state = reduceAiAgentEvent(state, {event: 'answerDelta', data: '回答'});
+    expect(state.answer).toBe('最终回答');
+
+    const response = {answer: '最终回答', modelRounds: 2, usage: null};
+    state = reduceAiAgentEvent(state, {event: 'completed', data: response});
+    expect(state).toEqual({
+      state: 'completed',
+      answer: '最终回答',
+      status: '',
+      response,
+      error: null,
+    });
+  });
+
+  it('ignores late deltas while canceling but still accepts terminal events', () => {
+    const canceling = {
+      ...initialAiAgentDisplayState(),
+      state: 'canceling' as const,
+      answer: '已生成部分',
+      status: '正在停止生成…',
+    };
+
+    expect(reduceAiAgentEvent(canceling, {
+      event: 'answerDelta',
+      data: '不应追加',
+    })).toEqual(canceling);
+    expect(reduceAiAgentEvent(canceling, {event: 'cancelled'})).toMatchObject({
+      state: 'cancelled',
+      answer: '已生成部分',
+      status: '',
+    });
+  });
+
+  it('keeps a backend failure message for display', () => {
+    const failed = reduceAiAgentEvent(initialAiAgentDisplayState(), {
+      event: 'failed',
+      data: '模型服务断开连接',
+    });
+
+    expect(failed.state).toBe('failed');
+    expect(failed.error).toBe('模型服务断开连接');
   });
 });
 

@@ -1,10 +1,12 @@
 use super::{
-    AiAgent, AiAgentResponse, AiModel, AiModelProvider, AiProviderConfig, DiaryReadTools,
+    AiAgent, AiAgentEvent, AiError, AiModel, AiModelProvider, AiProviderConfig, DiaryReadTools,
     OpenAiCompatibleClient,
 };
 use crate::error::AppError;
 use crate::state::AppState;
+use tauri::ipc::Channel;
 use tauri::State;
+use tauri_plugin_log::log;
 
 /// 获取 OpenAI 兼容服务提供的模型列表。
 /// # Arguments
@@ -29,19 +31,48 @@ pub async fn cmd_list_ai_models(
 /// * `api_key` - 可选的 Bearer API Key
 /// * `model` - 本次问答使用的模型 ID
 /// * `prompt` - 用户问题
+/// * `event` - 接收模型状态、增量回答和最终结果的事件通道
 /// # Returns
-/// * `Result<AiAgentResponse, AppError>` - 最终回答、模型调用轮数和 token 用量
+/// * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_run_ai_agent(
+pub fn cmd_run_ai_agent(
     state: State<'_, AppState>,
+    event: Channel<AiAgentEvent>,
     base_url: String,
     api_key: Option<String>,
     model: String,
     prompt: String,
-) -> Result<AiAgentResponse, AppError> {
+) -> Result<String, AppError> {
     let config = AiProviderConfig::new(&base_url, api_key)?;
     let client = OpenAiCompatibleClient::new(config)?;
-    let tools = DiaryReadTools::new(state.inner().clone());
-    Ok(AiAgent::new(&client, &tools).run(&model, &prompt).await?)
+    let task_pool = state.task_pool();
+    let state = state.inner().clone();
+    Ok(task_pool.spawn_cancelable(move |cancellation| async move {
+        let tools = DiaryReadTools::new(state);
+        let agent = AiAgent::new(&client, &tools);
+        let emit = |message| send_event(&event, message);
+        let run = agent.run_stream(&model, &prompt, &emit);
+
+        tokio::select! {
+            _ = cancellation.cancelled() => {
+                let _ = send_event(&event, AiAgentEvent::Cancelled);
+            }
+            result = run => match result {
+                Ok(response) => {
+                    let _ = send_event(&event, AiAgentEvent::Completed(response));
+                }
+                Err(error) => {
+                    log::warn!("AI Agent 运行失败: {error}");
+                    let _ = send_event(&event, AiAgentEvent::Failed(error.to_string()));
+                }
+            }
+        }
+    }))
+}
+
+fn send_event(event: &Channel<AiAgentEvent>, message: AiAgentEvent) -> Result<(), AiError> {
+    event
+        .send(message)
+        .map_err(|error| AiError::EventSendFailed(error.to_string()))
 }

@@ -23,6 +23,9 @@ pub enum AiError {
 
     #[error("AI Agent 在 {max_rounds} 轮内未能完成回答")]
     AgentRoundLimitExceeded { max_rounds: usize },
+
+    #[error("发送 AI Agent 进度失败: {0}")]
+    EventSendFailed(String),
 }
 
 impl From<AiError> for AppError {

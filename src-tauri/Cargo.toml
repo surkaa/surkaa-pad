@@ -84,6 +84,7 @@ tokio-stream = "0.1.18"
 thiserror = "2"
 fs4 = "1"
 dunce = "1"
+eventsource-stream = "0.2"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-biometric = { git = "https://github.com/surkaa/plugins-workspace", rev = "6fa3112f426dd3a05619fd1f34a00089807c5fd5" }
