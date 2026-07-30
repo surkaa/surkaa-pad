@@ -55,6 +55,15 @@ async fn omits_authorization_header_when_api_key_is_missing() {
 }
 
 #[tokio::test]
+async fn treats_ollama_null_model_data_as_an_empty_list() {
+    let (base_url, _) = spawn_json_response(200, r#"{"object":"list","data":null}"#).await;
+    let config = AiProviderConfig::new(&base_url, None).unwrap();
+    let client = OpenAiCompatibleClient::new(config).unwrap();
+
+    assert!(client.list_models().await.unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn maps_openai_error_response_without_exposing_the_api_key() {
     let (base_url, _) = spawn_json_response(401, r#"{"error":{"message":"API Key 无效"}}"#).await;
     let config = AiProviderConfig::new(&base_url, Some("secret-not-in-error".into())).unwrap();

@@ -23,6 +23,7 @@ type ConfigMap = {
     "last_password_unlock_at": number | null;
     "vault_verifier": number[] | null;
     "encrypted_oss_config": number[] | null;
+    "encrypted_ai_config": number[] | null;
     "default_image_size_is_small": boolean;
     "encrypt_image_attachments": boolean;
     "encrypt_audio_attachments": boolean;
@@ -40,6 +41,7 @@ const DEFAULT_CONFIG = {
     "last_password_unlock_at": null,
     "vault_verifier": null,
     "encrypted_oss_config": null,
+    "encrypted_ai_config": null,
     "default_image_size_is_small": false,
     "encrypt_image_attachments": true,
     "encrypt_audio_attachments": true,

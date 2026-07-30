@@ -75,6 +75,8 @@
         </q-list>
         </section>
 
+        <AiSettings/>
+
         <AttachmentSettings/>
 
         <EditorShortcutSettings v-if="isWindows"/>
@@ -221,6 +223,7 @@ import {formatError} from "../../utils/formatError.ts";
 import {biometricToggleAction} from "../../utils/biometricToggle.ts";
 import {useRemoteStorageSettings} from '../../composables/useRemoteStorageSettings';
 import AttachmentSettings from './AttachmentSettings.vue';
+import AiSettings from './AiSettings.vue';
 import DisableRemoteStorageDialog from '../../components/DisableRemoteStorageDialog.vue';
 import EditorShortcutSettings from './EditorShortcutSettings.vue';
 import LocalStorageSettings from './LocalStorageSettings.vue';

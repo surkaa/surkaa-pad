@@ -2,13 +2,22 @@ use super::{
     AiAssistantMessage, AiCompletion, AiCompletionRequest, AiError, AiMessage, AiModel, AiToolCall,
     AiToolDefinition, AiUsage,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
 
 #[derive(Deserialize)]
 pub(super) struct ModelListResponse {
+    #[serde(deserialize_with = "deserialize_nullable_vec")]
     data: Vec<ModelObject>,
+}
+
+fn deserialize_nullable_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 impl ModelListResponse {

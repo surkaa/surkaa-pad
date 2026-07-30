@@ -125,6 +125,17 @@ describe('config store', () => {
             await expect(store.getNormalConfig('encrypted_oss_config')).resolves.toBeNull()
         })
 
+        it('keeps the encrypted AI config separate from other secrets', async () => {
+            const store = useConfigStore()
+
+            await expect(store.getNormalConfig('encrypted_ai_config')).resolves.toBeNull()
+            await store.saveNormalConfig('encrypted_ai_config', [7, 8, 9])
+
+            await expect(store.getNormalConfig('encrypted_ai_config')).resolves.toEqual([7, 8, 9])
+            await expect(store.getNormalConfig('encrypted_oss_config')).resolves.toBeNull()
+            await expect(store.getNormalConfig('vault_verifier')).resolves.toBeNull()
+        })
+
         it('saves and retrieves number[]', async () => {
             const store = useConfigStore()
             await store.saveNormalConfig('encrypted_oss_config', [1, 2, 3])
