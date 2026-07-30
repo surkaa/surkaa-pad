@@ -43,20 +43,13 @@ pub async fn search_diaries(
             // 多线程搜索
             let fetches = ids.into_iter().map(|id| {
                 let ecc = event.clone();
-                let kc = keywords.clone();
+                let keywords = keywords.clone();
                 let attachment_types = attachment_types.clone();
                 async move {
                     let diary = get_diary(cache, crypto, store, &id).await?;
 
-                    let searchable_text = diary.content.searchable_text();
                     // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词
-                    let keyword_matches = if kc.is_empty() {
-                        true
-                    } else if keyword_or {
-                        kc.iter().any(|keyword| searchable_text.contains(keyword))
-                    } else {
-                        kc.iter().all(|keyword| searchable_text.contains(keyword))
-                    };
+                    let keyword_matches = diary.content.matches_keywords(&keywords, keyword_or);
                     let attachment_matches = attachment_types.is_empty()
                         || if attachment_or {
                             attachment_types.iter().any(|filter| {

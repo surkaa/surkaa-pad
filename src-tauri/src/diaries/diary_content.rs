@@ -108,6 +108,23 @@ impl DiaryContent {
             .join("")
     }
 
+    pub(crate) fn matches_keywords(&self, keywords: &[String], match_any: bool) -> bool {
+        if keywords.is_empty() {
+            return true;
+        }
+
+        let searchable_text = self.searchable_text();
+        if match_any {
+            keywords
+                .iter()
+                .any(|keyword| searchable_text.contains(keyword))
+        } else {
+            keywords
+                .iter()
+                .all(|keyword| searchable_text.contains(keyword))
+        }
+    }
+
     pub fn title(&self) -> String {
         self.nodes
             .iter()
@@ -425,6 +442,20 @@ mod tests {
 
         assert_eq!(content.title(), "1231");
         assert_eq!(content.searchable_text(), "1231test 顺序");
+    }
+
+    #[test]
+    fn matches_all_or_any_whitespace_separated_keywords() {
+        let content = DiaryContent {
+            nodes: vec![DiaryContentNode::Markdown {
+                text: "上海旅行记录".to_string(),
+            }],
+        };
+
+        assert!(content.matches_keywords(&["上海".into(), "旅行".into()], false));
+        assert!(!content.matches_keywords(&["上海".into(), "北京".into()], false));
+        assert!(content.matches_keywords(&["上海".into(), "北京".into()], true));
+        assert!(content.matches_keywords(&[], false));
     }
 
     #[test]

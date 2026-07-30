@@ -20,6 +20,9 @@ pub enum AiError {
 
     #[error("解析 AI 服务响应失败: {0}")]
     InvalidResponse(String),
+
+    #[error("AI Agent 在 {max_rounds} 轮内未能完成回答")]
+    AgentRoundLimitExceeded { max_rounds: usize },
 }
 
 impl From<AiError> for AppError {
