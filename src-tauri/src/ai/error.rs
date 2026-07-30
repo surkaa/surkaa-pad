@@ -6,6 +6,9 @@ pub enum AiError {
     #[error("AI 服务地址无效: {0}")]
     InvalidBaseUrl(String),
 
+    #[error("AI 请求无效: {0}")]
+    InvalidRequest(String),
+
     #[error("请求 AI 服务失败: {0}")]
     RequestFailed(String),
 
