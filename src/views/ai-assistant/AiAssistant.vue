@@ -7,12 +7,15 @@ import {useQuasar} from 'quasar';
 import type {AiAgentEvent} from '../../bindings';
 import {
   formatAiResponseMeta,
+  formatAiProcessSummary,
+  formatProcessDuration,
   initialAiAgentDisplayState,
   isTerminalAiExchangeState,
   reduceAiAgentEvent,
   startAiQuestion,
   type AiAgentDisplayState,
   type AiExchangeState,
+  type AiProcessStep,
 } from '../../utils/aiAssistant';
 import {renderAiMarkdown} from '../../utils/aiMarkdown';
 import {
@@ -27,6 +30,7 @@ interface AiExchange extends AiAgentDisplayState {
   question: string;
   taskToken: string | null;
   cancelRequested: boolean;
+  processExpanded: boolean;
 }
 
 const suggestions = [
@@ -96,6 +100,7 @@ async function submitQuestion() {
     question: prompt,
     taskToken: null,
     cancelRequested: false,
+    processExpanded: true,
   };
   exchanges.value.push(exchange);
   question.value = '';
@@ -181,8 +186,25 @@ function finishExchange(exchange: AiExchange, state: Extract<AiExchangeState, 'c
   exchange.error = error;
   exchange.taskToken = null;
   exchange.cancelRequested = false;
+  exchange.processExpanded = state !== 'completed';
   sending.value = false;
   scheduleScrollToBottom();
+}
+
+function processHeader(exchange: AiExchange): string {
+  if (exchange.state === 'running' || exchange.state === 'canceling') {
+    return exchange.status || 'AI 正在处理…';
+  }
+  const summary = formatAiProcessSummary(exchange.processSteps);
+  if (exchange.state === 'failed') return `${summary} · 处理失败`;
+  if (exchange.state === 'cancelled') return `${summary} · 已停止`;
+  return summary;
+}
+
+function processStepIcon(step: AiProcessStep): string {
+  if (step.state === 'failed') return 'error';
+  if (step.state === 'cancelled') return 'stop_circle';
+  return 'check_circle';
 }
 
 function scheduleScrollToBottom() {
@@ -241,6 +263,58 @@ async function scrollToBottom() {
             <q-icon name="auto_awesome" size="18px"/>
           </div>
           <div class="message answer-message">
+            <div v-if="exchange.processSteps.length" class="process-panel">
+              <button
+                type="button"
+                class="process-header"
+                :aria-expanded="exchange.processExpanded"
+                @click="exchange.processExpanded = !exchange.processExpanded"
+              >
+                <q-spinner-dots
+                  v-if="exchange.state === 'running'"
+                  color="primary"
+                  size="20px"
+                />
+                <q-spinner
+                  v-else-if="exchange.state === 'canceling'"
+                  color="primary"
+                  size="16px"
+                />
+                <q-icon v-else name="account_tree" class="process-header-icon"/>
+                <span>{{ processHeader(exchange) }}</span>
+                <q-icon
+                  name="expand_more"
+                  class="process-expand-icon"
+                  :class="{'is-expanded': exchange.processExpanded}"
+                />
+              </button>
+              <q-slide-transition>
+                <div v-show="exchange.processExpanded" class="process-steps">
+                  <div
+                    v-for="step in exchange.processSteps"
+                    :key="step.id"
+                    class="process-step"
+                    :class="`is-${step.state}`"
+                  >
+                    <div class="process-step-marker">
+                      <q-spinner
+                        v-if="step.state === 'running'"
+                        color="primary"
+                        size="15px"
+                      />
+                      <q-icon v-else :name="processStepIcon(step)"/>
+                    </div>
+                    <div class="process-step-content">
+                      <div class="process-step-title">{{ step.title }}</div>
+                      <div v-if="step.detail" class="process-step-detail">{{ step.detail }}</div>
+                    </div>
+                    <div v-if="step.durationMs !== null" class="process-step-duration">
+                      {{ formatProcessDuration(step.durationMs) }}
+                    </div>
+                  </div>
+                </div>
+              </q-slide-transition>
+            </div>
             <div
               v-if="exchange.answer"
               :class="{'answer-text': true, 'ai-markdown': true, 'is-streaming': exchange.state === 'running'}"
@@ -248,7 +322,7 @@ async function scrollToBottom() {
               v-html="renderAiMarkdown(exchange.answer)"
             ></div>
             <div
-              v-if="exchange.state === 'running' || exchange.state === 'canceling'"
+              v-if="(exchange.state === 'running' || exchange.state === 'canceling') && exchange.processSteps.length === 0"
               class="answer-status"
             >
               <q-spinner-dots v-if="exchange.state === 'running'" color="primary" size="24px"/>
@@ -256,7 +330,9 @@ async function scrollToBottom() {
               <span>{{ exchange.status }}</span>
             </div>
             <template v-if="exchange.state === 'completed' && exchange.response">
-              <div class="answer-meta">{{ formatAiResponseMeta(exchange.response) }}</div>
+              <div v-if="exchange.response.usage" class="answer-meta">
+                {{ formatAiResponseMeta(exchange.response) }}
+              </div>
             </template>
             <div v-else-if="exchange.state === 'failed'" class="answer-error">
               <q-icon name="error_outline"/>
@@ -443,6 +519,112 @@ async function scrollToBottom() {
     background: var(--pad-primary-dark);
     animation: ai-cursor-blink 0.9s steps(1) infinite;
   }
+}
+
+.process-panel {
+  margin-bottom: 10px;
+  overflow: hidden;
+  border: 1px solid var(--pad-border-color-100);
+  border-radius: var(--pad-radius-md);
+  background: var(--pad-bg-color-100);
+}
+
+.process-header {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  color: var(--pad-text-color-300);
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+
+  span {
+    flex: 1;
+  }
+}
+
+.process-header-icon {
+  color: var(--pad-primary-dark);
+}
+
+.process-expand-icon {
+  flex: none;
+  color: var(--pad-text-color-400);
+  transition: transform 0.2s ease;
+
+  &.is-expanded {
+    transform: rotate(180deg);
+  }
+}
+
+.process-steps {
+  padding: 2px 10px 9px;
+  border-top: 1px solid var(--pad-border-color-100);
+}
+
+.process-step {
+  min-height: 38px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 0;
+
+  & + & {
+    border-top: 1px solid var(--pad-border-color-100);
+  }
+
+  &.is-failed .process-step-marker {
+    color: var(--pad-danger-color);
+  }
+
+  &.is-cancelled .process-step-marker {
+    color: var(--pad-text-color-400);
+  }
+}
+
+.process-step-marker {
+  flex: none;
+  width: 18px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--pad-primary-dark);
+  font-size: 16px;
+}
+
+.process-step-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.process-step-title {
+  color: var(--pad-text-color-200);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.process-step-detail,
+.process-step-duration {
+  color: var(--pad-text-color-400);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.process-step-detail {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.process-step-duration {
+  flex: none;
+  padding-top: 1px;
+  white-space: nowrap;
 }
 
 .ai-markdown {

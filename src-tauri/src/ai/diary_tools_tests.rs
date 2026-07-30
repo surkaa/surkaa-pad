@@ -30,6 +30,55 @@ fn definitions_expose_only_three_read_only_tools() {
     );
 }
 
+#[test]
+fn describes_tool_calls_and_results_without_exposing_raw_payloads() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state = AppState::from_parts(
+        crate::cryptos::Crypto::new(),
+        crate::object::OssClient::new(),
+        crate::caches::LocalObjectStore::new(temp_dir.path().to_path_buf()),
+    );
+    let tools = DiaryReadTools::new(state);
+    let search = tool_call(
+        SEARCH_DIARIES_TOOL,
+        json!({"query": "  今天\n下雨  ", "limit": 5}),
+    );
+    let search_display = tools.describe_call(&search);
+
+    assert_eq!(search_display.title, "搜索日记");
+    assert_eq!(search_display.detail.as_deref(), Some("“今天 下雨”"));
+    assert_eq!(
+        tools.summarize_result(&search, Ok(&json!({"diaries": [{}, {}]}))),
+        "找到 2 篇日记"
+    );
+
+    let read = tool_call(READ_DIARY_TOOL, json!({"diaryId": "123"}));
+    let read_display = tools.describe_call(&read);
+    assert_eq!(read_display.title, "读取日记");
+    assert_eq!(read_display.detail.as_deref(), Some("日记 123"));
+    assert_eq!(
+        tools.summarize_result(&read, Ok(&json!({"summary": {"title": " 测试\n日记 "}})),),
+        "已读取“测试 日记”"
+    );
+
+    let private_error = AiToolError::ExecutionFailed {
+        tool: READ_DIARY_TOOL.into(),
+        message: "C:\\Users\\name\\private diary.enc not found".into(),
+    };
+    let failure = tools.summarize_result(&read, Err(&private_error));
+    assert_eq!(failure, "操作失败，AI 将根据现有信息继续处理");
+    assert!(!failure.contains("C:\\Users"));
+    assert!(!failure.contains("private diary.enc"));
+}
+
+#[test]
+fn truncates_tool_display_text_on_character_boundaries() {
+    let compact = compact_tool_display(&format!("  {}\n尾部  ", "词".repeat(100)));
+
+    assert_eq!(compact.chars().count(), MAX_TOOL_DISPLAY_CHARS + 1);
+    assert!(compact.ends_with('…'));
+}
+
 #[tokio::test]
 async fn rejects_unknown_tools_and_invalid_arguments_without_reading_storage() {
     let temp_dir = tempfile::tempdir().unwrap();

@@ -1,4 +1,4 @@
-use super::{AiToolCall, AiToolDefinition, AiToolError, AiToolExecutor};
+use super::{AiToolCall, AiToolCallDisplay, AiToolDefinition, AiToolError, AiToolExecutor};
 use crate::attachments::AttachmentMeta;
 use crate::diaries::{
     get_diary, DiaryAttachmentCounts, DiaryContentNode, DiaryManifest, DiarySummary,
@@ -18,6 +18,7 @@ const DEFAULT_RESULT_LIMIT: usize = 10;
 const MAX_RESULT_LIMIT: usize = 20;
 const MAX_SUMMARY_TITLE_CHARS: usize = 200;
 const MAX_DIARY_CONTENT_CHARS: usize = 60_000;
+const MAX_TOOL_DISPLAY_CHARS: usize = 80;
 
 #[derive(Clone)]
 pub struct DiaryReadTools {
@@ -159,6 +160,58 @@ impl AiToolExecutor for DiaryReadTools {
         ]
     }
 
+    fn describe_call(&self, call: &AiToolCall) -> AiToolCallDisplay {
+        match call.name.as_str() {
+            LIST_DIARIES_TOOL => AiToolCallDisplay::new(
+                "列出最近日记",
+                call.arguments
+                    .get("limit")
+                    .and_then(Value::as_u64)
+                    .map(|limit| format!("最多 {limit} 篇")),
+            ),
+            SEARCH_DIARIES_TOOL => AiToolCallDisplay::new(
+                "搜索日记",
+                call.arguments
+                    .get("query")
+                    .and_then(Value::as_str)
+                    .map(compact_tool_display)
+                    .filter(|query| !query.is_empty())
+                    .map(|query| format!("“{query}”")),
+            ),
+            READ_DIARY_TOOL => AiToolCallDisplay::new(
+                "读取日记",
+                call.arguments
+                    .get("diaryId")
+                    .and_then(Value::as_str)
+                    .map(compact_tool_display)
+                    .filter(|id| !id.is_empty())
+                    .map(|id| format!("日记 {id}")),
+            ),
+            _ => AiToolCallDisplay::new("执行未知日记操作", None),
+        }
+    }
+
+    fn summarize_result(&self, call: &AiToolCall, result: Result<&Value, &AiToolError>) -> String {
+        let Ok(value) = result else {
+            return "操作失败，AI 将根据现有信息继续处理".into();
+        };
+        match call.name.as_str() {
+            LIST_DIARIES_TOOL | SEARCH_DIARIES_TOOL => value
+                .get("diaries")
+                .and_then(Value::as_array)
+                .map(|diaries| format!("找到 {} 篇日记", diaries.len()))
+                .unwrap_or_else(|| "日记查询完成".into()),
+            READ_DIARY_TOOL => value
+                .pointer("/summary/title")
+                .and_then(Value::as_str)
+                .map(compact_tool_display)
+                .filter(|title| !title.is_empty())
+                .map(|title| format!("已读取“{title}”"))
+                .unwrap_or_else(|| "日记读取完成".into()),
+            _ => "操作完成".into(),
+        }
+    }
+
     async fn execute(&self, call: &AiToolCall) -> Result<Value, AiToolError> {
         match call.name.as_str() {
             LIST_DIARIES_TOOL => {
@@ -186,6 +239,11 @@ impl AiToolExecutor for DiaryReadTools {
             _ => Err(AiToolError::UnknownTool(call.name.clone())),
         }
     }
+}
+
+fn compact_tool_display(value: &str) -> String {
+    let compact = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_with_ellipsis(&compact, MAX_TOOL_DISPLAY_CHARS)
 }
 
 #[derive(Deserialize)]

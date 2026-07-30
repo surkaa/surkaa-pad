@@ -3,6 +3,8 @@ import type {Channel} from '@tauri-apps/api/core';
 import type {AiAgentEvent} from '../../bindings';
 import {
   formatAiResponseMeta,
+  formatAiProcessSummary,
+  formatProcessDuration,
   initialAiAgentDisplayState,
   reduceAiAgentEvent,
   startAiQuestion,
@@ -58,11 +60,47 @@ describe('reduceAiAgentEvent', () => {
     expect(state.answer).toBe('我先查找');
 
     state = reduceAiAgentEvent(state, {
-      event: 'toolExecutionStarted',
-      data: {round: 1, toolCount: 2},
+      event: 'modelCompleted',
+      data: {
+        round: 1,
+        toolCount: 1,
+        elapsedMs: 1200,
+      },
     });
     expect(state.answer).toBe('');
-    expect(state.status).toContain('2 个日记读取操作');
+    expect(state.processSteps[0]).toMatchObject({
+      id: 'model-1',
+      title: '分析问题',
+      state: 'completed',
+      durationMs: 1200,
+      detail: '决定执行 1 个日记操作',
+    });
+
+    state = reduceAiAgentEvent(state, {
+      event: 'toolStarted',
+      data: {
+        operationId: 1,
+        round: 1,
+        title: '搜索日记',
+        detail: '“今天 下雨”',
+      },
+    });
+    expect(state.status).toBe('正在搜索日记…');
+    state = reduceAiAgentEvent(state, {
+      event: 'toolCompleted',
+      data: {
+        operationId: 1,
+        summary: '找到 2 篇日记',
+        succeeded: true,
+        elapsedMs: 320,
+      },
+    });
+    expect(state.processSteps[1]).toMatchObject({
+      id: 'tool-1',
+      state: 'completed',
+      detail: '找到 2 篇日记',
+      durationMs: 320,
+    });
 
     state = reduceAiAgentEvent(state, {
       event: 'modelStarted',
@@ -70,7 +108,12 @@ describe('reduceAiAgentEvent', () => {
     });
     state = reduceAiAgentEvent(state, {event: 'answerDelta', data: '最终'});
     state = reduceAiAgentEvent(state, {event: 'answerDelta', data: '回答'});
+    state = reduceAiAgentEvent(state, {
+      event: 'modelCompleted',
+      data: {round: 2, toolCount: 0, elapsedMs: 850},
+    });
     expect(state.answer).toBe('最终回答');
+    expect(state.processSteps[2].title).toBe('生成回答');
 
     const response = {answer: '最终回答', modelRounds: 2, usage: null};
     state = reduceAiAgentEvent(state, {event: 'completed', data: response});
@@ -80,7 +123,10 @@ describe('reduceAiAgentEvent', () => {
       status: '',
       response,
       error: null,
+      processSteps: state.processSteps,
     });
+    expect(formatAiProcessSummary(state.processSteps))
+      .toBe('1 次日记操作 · 2.4 秒');
   });
 
   it('ignores late deltas while canceling but still accepts terminal events', () => {
@@ -102,6 +148,38 @@ describe('reduceAiAgentEvent', () => {
     });
   });
 
+  it('marks active process steps when a request fails or is cancelled', () => {
+    const running = reduceAiAgentEvent(initialAiAgentDisplayState(), {
+      event: 'modelStarted',
+      data: {round: 1},
+    });
+
+    expect(reduceAiAgentEvent(running, {event: 'failed', data: '连接失败'})
+      .processSteps[0].state).toBe('failed');
+    expect(reduceAiAgentEvent(running, {event: 'cancelled'})
+      .processSteps[0].state).toBe('cancelled');
+  });
+
+  it('keeps failed tool operations visible while the agent continues', () => {
+    let state = reduceAiAgentEvent(initialAiAgentDisplayState(), {
+      event: 'toolStarted',
+      data: {operationId: 1, round: 1, title: '读取日记', detail: '日记 123'},
+    });
+    state = reduceAiAgentEvent(state, {
+      event: 'toolCompleted',
+      data: {
+        operationId: 1,
+        summary: '操作失败，AI 将根据现有信息继续处理',
+        succeeded: false,
+        elapsedMs: 40,
+      },
+    });
+
+    expect(state.state).toBe('running');
+    expect(state.processSteps[0]).toMatchObject({state: 'failed', durationMs: 40});
+    expect(state.status).toContain('继续处理');
+  });
+
   it('keeps a backend failure message for display', () => {
     const failed = reduceAiAgentEvent(initialAiAgentDisplayState(), {
       event: 'failed',
@@ -113,14 +191,24 @@ describe('reduceAiAgentEvent', () => {
   });
 });
 
+describe('process formatting', () => {
+  it('formats compact durations and process totals', () => {
+    expect(formatProcessDuration(999)).toBe('999 毫秒');
+    expect(formatProcessDuration(1500)).toBe('1.5 秒');
+    expect(formatProcessDuration(60_000)).toBe('1 分钟');
+    expect(formatProcessDuration(65_000)).toBe('1 分 5 秒');
+    expect(formatAiProcessSummary([])).toBe('处理完成');
+  });
+});
+
 describe('formatAiResponseMeta', () => {
-  it('shows model rounds and optional token usage', () => {
+  it('shows input, output, and total token usage when available', () => {
     expect(formatAiResponseMeta({
       answer: '回答',
       modelRounds: 3,
       usage: {promptTokens: 20, completionTokens: 8, totalTokens: 28},
-    })).toBe('3 次模型调用 · 28 Token');
+    })).toBe('输入 20 Token · 输出 8 Token');
     expect(formatAiResponseMeta({answer: '回答', modelRounds: 1, usage: null}))
-      .toBe('1 次模型调用');
+      .toBe('');
   });
 });

@@ -5,6 +5,7 @@ use super::{
 use serde::Serialize;
 use serde_json::json;
 use specta::Type;
+use std::time::{Duration, Instant};
 use tauri_plugin_log::log;
 
 const DEFAULT_MAX_MODEL_ROUNDS: usize = 8;
@@ -42,11 +43,29 @@ pub enum AiAgentEvent {
         #[specta(type = f64)]
         round: usize,
     },
-    ToolExecutionStarted {
+    ModelCompleted {
         #[specta(type = f64)]
         round: usize,
         #[specta(rename = "toolCount", type = f64)]
         tool_count: usize,
+        #[specta(rename = "elapsedMs", type = f64)]
+        elapsed_ms: u64,
+    },
+    ToolStarted {
+        #[specta(rename = "operationId", type = f64)]
+        operation_id: usize,
+        #[specta(type = f64)]
+        round: usize,
+        title: String,
+        detail: Option<String>,
+    },
+    ToolCompleted {
+        #[specta(rename = "operationId", type = f64)]
+        operation_id: usize,
+        summary: String,
+        succeeded: bool,
+        #[specta(rename = "elapsedMs", type = f64)]
+        elapsed_ms: u64,
     },
     AnswerDelta(String),
     Completed(AiAgentResponse),
@@ -97,9 +116,11 @@ impl<'a> AiAgent<'a> {
             AiMessage::User(prompt.trim().into()),
         ];
         let mut total_usage = None;
+        let mut next_operation_id = 1;
 
         for round in 1..=self.max_model_rounds {
             emit(AiAgentEvent::ModelStarted { round })?;
+            let model_started_at = Instant::now();
             let completion = self
                 .provider
                 .complete_stream(
@@ -107,6 +128,12 @@ impl<'a> AiAgent<'a> {
                     &|delta| emit(AiAgentEvent::AnswerDelta(delta)),
                 )
                 .await?;
+            let tool_count = completion.message.tool_calls.len();
+            emit(AiAgentEvent::ModelCompleted {
+                round,
+                tool_count,
+                elapsed_ms: elapsed_millis(model_started_at.elapsed()),
+            })?;
             accumulate_usage(&mut total_usage, completion.usage);
 
             let assistant_message = completion.message;
@@ -129,17 +156,32 @@ impl<'a> AiAgent<'a> {
             }
 
             let tool_calls = assistant_message.tool_calls.clone();
-            emit(AiAgentEvent::ToolExecutionStarted {
-                round,
-                tool_count: tool_calls.len(),
-            })?;
             messages.push(AiMessage::Assistant(AiAssistantMessage {
                 content: assistant_message.content,
                 tool_calls: tool_calls.clone(),
             }));
 
             for call in tool_calls {
-                let result = match self.tools.execute(&call).await {
+                let operation_id = next_operation_id;
+                next_operation_id += 1;
+                let display = self.tools.describe_call(&call);
+                emit(AiAgentEvent::ToolStarted {
+                    operation_id,
+                    round,
+                    title: display.title,
+                    detail: display.detail,
+                })?;
+                let tool_started_at = Instant::now();
+                let execution = self.tools.execute(&call).await;
+                let summary = self.tools.summarize_result(&call, execution.as_ref());
+                let succeeded = execution.is_ok();
+                emit(AiAgentEvent::ToolCompleted {
+                    operation_id,
+                    summary,
+                    succeeded,
+                    elapsed_ms: elapsed_millis(tool_started_at.elapsed()),
+                })?;
+                let result = match execution {
                     Ok(value) => json!({"ok": true, "result": value}),
                     Err(error) => {
                         log::warn!("AI 工具调用失败: {error}");
@@ -155,6 +197,10 @@ impl<'a> AiAgent<'a> {
 
         unreachable!("positive max_model_rounds always returns from the loop")
     }
+}
+
+fn elapsed_millis(duration: Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
 }
 
 fn accumulate_usage(total: &mut Option<AiUsage>, usage: Option<AiUsage>) {

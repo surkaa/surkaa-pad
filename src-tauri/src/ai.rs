@@ -19,7 +19,7 @@ pub use config::AiProviderConfig;
 pub use diary_tools::DiaryReadTools;
 pub use error::AiError;
 pub use provider::AiModelProvider;
-pub use tools::{AiToolError, AiToolExecutor};
+pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor};
 pub use types::{
     AiAssistantMessage, AiCompletion, AiCompletionRequest, AiMessage, AiModel, AiToolCall,
     AiToolDefinition, AiToolResult, AiUsage,

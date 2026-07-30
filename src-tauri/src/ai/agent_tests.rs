@@ -200,18 +200,45 @@ async fn streams_model_tool_and_answer_events_in_order() {
         .unwrap();
 
     assert_eq!(response.answer, "最终回答");
+    let events = events.into_inner().unwrap();
+    assert_eq!(events.len(), 7);
+    assert_eq!(events[0], AiAgentEvent::ModelStarted { round: 1 });
+    assert!(matches!(
+        &events[1],
+        AiAgentEvent::ModelCompleted {
+            round: 1,
+            tool_count: 1,
+            ..
+        }
+    ));
     assert_eq!(
-        events.into_inner().unwrap(),
-        vec![
-            AiAgentEvent::ModelStarted { round: 1 },
-            AiAgentEvent::ToolExecutionStarted {
-                round: 1,
-                tool_count: 1,
-            },
-            AiAgentEvent::ModelStarted { round: 2 },
-            AiAgentEvent::AnswerDelta("最终回答".into()),
-        ]
+        events[2],
+        AiAgentEvent::ToolStarted {
+            operation_id: 1,
+            round: 1,
+            title: "执行日记操作".into(),
+            detail: None,
+        }
     );
+    assert!(matches!(
+        &events[3],
+        AiAgentEvent::ToolCompleted {
+            operation_id: 1,
+            summary,
+            succeeded: true,
+            ..
+        } if summary == "操作完成"
+    ));
+    assert_eq!(events[4], AiAgentEvent::ModelStarted { round: 2 });
+    assert_eq!(events[5], AiAgentEvent::AnswerDelta("最终回答".into()));
+    assert!(matches!(
+        &events[6],
+        AiAgentEvent::ModelCompleted {
+            round: 2,
+            tool_count: 0,
+            ..
+        }
+    ));
 }
 
 #[tokio::test]
@@ -221,9 +248,13 @@ async fn hides_internal_tool_error_details_from_the_model() {
         completion(Some("读取失败，请稍后重试"), vec![], None),
     ]);
     let tools = FakeTools::failing("C:\\Users\\name\\private diary.enc not found");
+    let events = Mutex::new(Vec::new());
 
     AiAgent::new(&provider, &tools)
-        .run("qwen", "读取日记")
+        .run_stream("qwen", "读取日记", &|event| {
+            events.lock().unwrap().push(event);
+            Ok(())
+        })
         .await
         .unwrap();
 
@@ -234,6 +265,21 @@ async fn hides_internal_tool_error_details_from_the_model() {
     assert!(result.content.contains("execution_failed"));
     assert!(!result.content.contains("C:\\Users"));
     assert!(!result.content.contains("private diary.enc"));
+    let events = events.into_inner().unwrap();
+    let failed_event = events
+        .iter()
+        .find_map(|event| match event {
+            AiAgentEvent::ToolCompleted {
+                summary,
+                succeeded: false,
+                ..
+            } => Some(summary),
+            _ => None,
+        })
+        .expect("failed tool event");
+    assert_eq!(failed_event, "操作失败，AI 将根据现有信息继续处理");
+    assert!(!failed_event.contains("C:\\Users"));
+    assert!(!failed_event.contains("private diary.enc"));
 }
 
 #[tokio::test]

@@ -7,7 +7,34 @@ use thiserror::Error;
 pub trait AiToolExecutor: Send + Sync {
     fn definitions(&self) -> Vec<AiToolDefinition>;
 
+    fn describe_call(&self, _call: &AiToolCall) -> AiToolCallDisplay {
+        AiToolCallDisplay::new("执行日记操作", None)
+    }
+
+    fn summarize_result(&self, _call: &AiToolCall, result: Result<&Value, &AiToolError>) -> String {
+        if result.is_ok() {
+            "操作完成".into()
+        } else {
+            "操作失败，AI 将根据现有信息继续处理".into()
+        }
+    }
+
     async fn execute(&self, call: &AiToolCall) -> Result<Value, AiToolError>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AiToolCallDisplay {
+    pub title: String,
+    pub detail: Option<String>,
+}
+
+impl AiToolCallDisplay {
+    pub fn new(title: impl Into<String>, detail: Option<String>) -> Self {
+        Self {
+            title: title.into(),
+            detail,
+        }
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
