@@ -125,10 +125,14 @@ pub struct AiCompletion {
     pub usage: Option<AiUsage>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct AiUsage {
+    #[specta(type = f64)]
     pub prompt_tokens: u64,
+    #[specta(type = f64)]
     pub completion_tokens: u64,
+    #[specta(type = f64)]
     pub total_tokens: u64,
 }
 

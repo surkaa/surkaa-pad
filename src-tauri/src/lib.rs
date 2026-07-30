@@ -15,6 +15,7 @@ mod tasks;
 mod test_utils;
 mod utils;
 
+use crate::ai::ai_command::{cmd_list_ai_models, cmd_run_ai_agent};
 use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
@@ -113,6 +114,9 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_upload_chunk,
             cmd_finish_chunked_upload,
             cmd_abort_chunked_upload,
+            // AI Agent
+            cmd_list_ai_models,
+            cmd_run_ai_agent,
             // 其他
             cmd_cancel_task,
         ]);

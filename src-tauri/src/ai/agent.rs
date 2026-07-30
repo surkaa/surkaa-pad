@@ -2,7 +2,9 @@ use super::{
     AiAssistantMessage, AiCompletionRequest, AiError, AiMessage, AiModelProvider, AiToolExecutor,
     AiToolResult, AiUsage,
 };
+use serde::Serialize;
 use serde_json::json;
+use specta::Type;
 use tauri_plugin_log::log;
 
 const DEFAULT_MAX_MODEL_ROUNDS: usize = 8;
@@ -19,9 +21,11 @@ pub struct AiAgent<'a> {
     max_model_rounds: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct AiAgentResponse {
     pub answer: String,
+    #[specta(type = f64)]
     pub model_rounds: usize,
     pub usage: Option<AiUsage>,
 }

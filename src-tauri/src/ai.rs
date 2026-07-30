@@ -1,6 +1,7 @@
 mod agent;
 #[cfg(test)]
 mod agent_tests;
+pub mod ai_command;
 mod client;
 #[cfg(test)]
 mod client_tests;

@@ -597,6 +597,40 @@ async cmdAbortChunkedUpload(uploadToken: string) : Promise<Result<null, AppError
 }
 },
 /**
+ * 获取 OpenAI 兼容服务提供的模型列表。
+ * # Arguments
+ * * `base_url` - OpenAI 兼容 API 根地址，例如 `http://localhost:11434/v1`
+ * * `api_key` - 可选的 Bearer API Key；本地 Ollama 通常不需要
+ * # Returns
+ * * `Result<Vec<AiModel>, AppError>` - 服务返回的可用模型
+ */
+async cmdListAiModels(baseUrl: string, apiKey: string | null) : Promise<Result<AiModel[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_list_ai_models", { baseUrl, apiKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 使用只读日记工具运行一次 AI Agent 问答。
+ * # Arguments
+ * * `base_url` - OpenAI 兼容 API 根地址
+ * * `api_key` - 可选的 Bearer API Key
+ * * `model` - 本次问答使用的模型 ID
+ * * `prompt` - 用户问题
+ * # Returns
+ * * `Result<AiAgentResponse, AppError>` - 最终回答、模型调用轮数和 token 用量
+ */
+async cmdRunAiAgent(baseUrl: string, apiKey: string | null, model: string, prompt: string) : Promise<Result<AiAgentResponse, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_agent", { baseUrl, apiKey, model, prompt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 取消任务
  * # Arguments
  * * `cancel_token` - 创建后台任务时返回的取消令牌
@@ -623,6 +657,9 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 
 /** user-defined types **/
 
+export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null }
+export type AiModel = { id: string; ownedBy: string | null }
+export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }
 export type AttachmentMeta = { 
