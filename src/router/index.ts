@@ -52,6 +52,17 @@ const routes: RouteRecordRaw[] = [
                 }
             },
             {
+                name: 'AiAssistant',
+                path: 'ai-assistant',
+                component: () => import('../views/ai-assistant/AiAssistant.vue'),
+                meta: {
+                    title: 'AI 助手',
+                    depth: 2,
+                    keepAlive: true,
+                    hideFooter: true
+                }
+            },
+            {
                 name: 'Settings',
                 path: 'settings',
                 component: () => import('../views/settings/Settings.vue'),

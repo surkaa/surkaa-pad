@@ -56,6 +56,10 @@ function openSearch() {
   void router.push({name: 'DiarySearch'});
 }
 
+function openAiAssistant() {
+  void router.push({name: 'AiAssistant'});
+}
+
 function openSettings() {
   void router.push({name: 'Settings'});
 }
@@ -238,7 +242,10 @@ onDeactivated(() => {
     </q-page-sticky>
 
     <Teleport v-if="isActivating" defer to="#header-actions">
-      <q-btn flat round dense icon="search" aria-label="搜索日记" @click="openSearch">
+      <q-btn flat round dense icon="auto_awesome" aria-label="AI 助手" @click="openAiAssistant">
+        <q-tooltip>AI 助手</q-tooltip>
+      </q-btn>
+      <q-btn flat round dense icon="search" aria-label="搜索日记" class="q-ml-md" @click="openSearch">
         <q-tooltip v-if="isWindows">搜索（{{ formatEditorShortcut(diaryListShortcuts.search) }}）</q-tooltip>
       </q-btn>
       <q-btn flat round dense icon="settings" aria-label="设置" class="q-ml-md" @click="openSettings">
