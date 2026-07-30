@@ -523,7 +523,7 @@ mod tests {
             nodes: vec![DiaryContentNode::Album {
                 id: "album-1".to_string(),
                 attachment_ids: vec!["1.jpg".to_string()],
-                display_mode: super::AlbumDisplayMode::StackedCards,
+                display_mode: AlbumDisplayMode::StackedCards,
             }],
         };
         let json = serde_json::to_value(content).unwrap();

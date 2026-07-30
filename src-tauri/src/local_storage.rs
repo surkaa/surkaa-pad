@@ -110,7 +110,7 @@ impl LocalStorageManager {
         self.configured_root()
     }
 
-    pub fn is_legacy_root(&self, root: &std::path::Path) -> bool {
+    pub fn is_legacy_root(&self, root: &Path) -> bool {
         root == self.legacy_root
     }
 

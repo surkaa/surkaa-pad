@@ -627,7 +627,7 @@ fn percentage(current: u64, total: u64) -> u8 {
     if total == 0 {
         100
     } else {
-        ((current as u128 * 100 / total as u128).min(100)) as u8
+        (current as u128 * 100 / total as u128).min(100) as u8
     }
 }
 

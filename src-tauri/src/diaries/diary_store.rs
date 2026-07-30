@@ -148,7 +148,7 @@ async fn upload_stream_to_session(
         let percent = if expected_size == 0 {
             99
         } else {
-            ((transferred as u128 * 99 / expected_size as u128).min(99)) as u8
+            (transferred as u128 * 99 / expected_size as u128).min(99) as u8
         };
         progress(AttachmentUploadProgress::Transferring(percent));
     }
@@ -330,11 +330,7 @@ impl DiaryStore for LocalStore {
 
     async fn download_manifest(&self, id: &str) -> Result<(Vec<u8>, String), DiaryError> {
         let key = remote_manifest_key(id);
-        let etag = self
-            .los
-            .get(&key)
-            .await?
-            .ok_or(crate::caches::CacheError::NotFound)?;
+        let etag = self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
         let data = self.los.get_data(&key).await?;
         Ok((data, etag))
     }
@@ -426,10 +422,7 @@ impl DiaryStore for LocalStore {
         progress: StoreProgressCallback,
     ) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
-        self.los
-            .get(&key)
-            .await?
-            .ok_or(crate::caches::CacheError::NotFound)?;
+        self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
         progress(100);
         Ok(())
     }
@@ -1415,7 +1408,7 @@ mod tests {
             .unwrap();
         let guard = lock_diary_operation(&summary.id).await;
 
-        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (started_tx, started_rx) = oneshot::channel();
         let task_cache = cache.clone();
         let task_id = summary.id.clone();
         let deletion = tokio::spawn(async move {
