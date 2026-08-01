@@ -104,6 +104,8 @@ const editorShortcutIcons: Record<EditorShortcutAction, string> = {
   insertFile: 'attach_file',
 };
 const diaryListShortcutIcons: Record<DiaryListShortcutAction, string> = {
+  createDiary: 'add',
+  aiAssistant: 'auto_awesome',
   search: 'search',
   settings: 'settings',
 };

@@ -65,6 +65,8 @@ function openSettings() {
 }
 
 useDiaryListShortcuts(diaryListShortcuts, {
+  createDiary: () => void openDiary(),
+  aiAssistant: openAiAssistant,
   search: openSearch,
   settings: openSettings,
 });
@@ -238,12 +240,18 @@ onDeactivated(() => {
           padding="16px 20px"
           class="pad-fab-gradient"
           @click="openDiary()"
-      />
+      >
+        <q-tooltip v-if="isWindows">
+          新建日记（{{ formatEditorShortcut(diaryListShortcuts.createDiary) }}）
+        </q-tooltip>
+      </q-btn>
     </q-page-sticky>
 
     <Teleport v-if="isActivating" defer to="#header-actions">
       <q-btn flat round dense icon="auto_awesome" aria-label="AI 助手" @click="openAiAssistant">
-        <q-tooltip>AI 助手</q-tooltip>
+        <q-tooltip v-if="isWindows">
+          AI 助手（{{ formatEditorShortcut(diaryListShortcuts.aiAssistant) }}）
+        </q-tooltip>
       </q-btn>
       <q-btn flat round dense icon="search" aria-label="搜索日记" class="q-ml-md" @click="openSearch">
         <q-tooltip v-if="isWindows">搜索（{{ formatEditorShortcut(diaryListShortcuts.search) }}）</q-tooltip>

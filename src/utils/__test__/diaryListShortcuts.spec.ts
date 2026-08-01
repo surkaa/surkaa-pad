@@ -6,6 +6,7 @@ import {
   findDiaryListShortcutAction,
   findDiaryListShortcutConflict,
   isEditableShortcutTarget,
+  normalizeDiaryListShortcutConfig,
 } from '../diaryListShortcuts';
 
 function shortcutEvent(code: string, overrides: Partial<KeyboardEvent> = {}) {
@@ -20,7 +21,15 @@ function shortcutEvent(code: string, overrides: Partial<KeyboardEvent> = {}) {
 }
 
 describe('diary list shortcuts', () => {
-  it('maps Ctrl+F and Ctrl+Comma to list navigation', () => {
+  it('maps the default list shortcuts to their actions', () => {
+    expect(findDiaryListShortcutAction(
+      shortcutEvent('KeyN'),
+      DEFAULT_WINDOWS_DIARY_LIST_SHORTCUTS,
+    )).toBe('createDiary');
+    expect(findDiaryListShortcutAction(
+      shortcutEvent('KeyA', {altKey: true}),
+      DEFAULT_WINDOWS_DIARY_LIST_SHORTCUTS,
+    )).toBe('aiAssistant');
     expect(findDiaryListShortcutAction(
       shortcutEvent('KeyF'),
       DEFAULT_WINDOWS_DIARY_LIST_SHORTCUTS,
@@ -33,6 +42,8 @@ describe('diary list shortcuts', () => {
 
   it('uses configured shortcuts and rejects unmatched shortcuts', () => {
     const shortcuts = {
+      createDiary: 'Ctrl+KeyN',
+      aiAssistant: 'Ctrl+Alt+KeyA',
       search: 'Ctrl+Alt+KeyS',
       settings: '',
     };
@@ -43,6 +54,18 @@ describe('diary list shortcuts', () => {
     )).toBe('search');
     expect(findDiaryListShortcutAction(shortcutEvent('KeyF'), shortcuts)).toBeNull();
     expect(findDiaryListShortcutAction(shortcutEvent('Comma'), shortcuts)).toBeNull();
+  });
+
+  it('fills new actions when loading a saved legacy shortcut config', () => {
+    expect(normalizeDiaryListShortcutConfig({
+      search: 'Ctrl+Alt+KeyS',
+      settings: '',
+    })).toEqual({
+      createDiary: 'Ctrl+KeyN',
+      aiAssistant: 'Ctrl+Alt+KeyA',
+      search: 'Ctrl+Alt+KeyS',
+      settings: '',
+    });
   });
 
   it('finds conflicts only between list actions', () => {

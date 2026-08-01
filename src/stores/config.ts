@@ -11,6 +11,7 @@ import {
 } from '../utils/uploadConcurrency';
 import {
     DEFAULT_WINDOWS_DIARY_LIST_SHORTCUTS,
+    normalizeDiaryListShortcutConfig,
     type DiaryListShortcutConfig,
 } from '../utils/diaryListShortcuts';
 
@@ -62,6 +63,9 @@ function storageKey(key: ConfigKey): string {
 function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): ConfigMap[K] {
     if (key === 'attachment_upload_concurrency') {
         return normalizeUploadConcurrency(value) as ConfigMap[K];
+    }
+    if (key === 'windows_diary_list_shortcuts') {
+        return normalizeDiaryListShortcutConfig(value) as ConfigMap[K];
     }
     return value as ConfigMap[K];
 }

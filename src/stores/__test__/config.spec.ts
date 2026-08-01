@@ -48,8 +48,25 @@ describe('config store', () => {
             const store = useConfigStore()
 
             await expect(store.getNormalConfig('windows_diary_list_shortcuts')).resolves.toEqual({
+                createDiary: 'Ctrl+KeyN',
+                aiAssistant: 'Ctrl+Alt+KeyA',
                 search: 'Ctrl+KeyF',
                 settings: 'Ctrl+Comma',
+            })
+        })
+
+        it('fills shortcuts added after an older list shortcut config was saved', async () => {
+            localStorage.setItem(
+                `${STORAGE_PREFIX}windows_diary_list_shortcuts`,
+                JSON.stringify({search: 'Ctrl+Alt+KeyS', settings: ''}),
+            )
+            const store = useConfigStore()
+
+            await expect(store.getNormalConfig('windows_diary_list_shortcuts')).resolves.toEqual({
+                createDiary: 'Ctrl+KeyN',
+                aiAssistant: 'Ctrl+Alt+KeyA',
+                search: 'Ctrl+Alt+KeyS',
+                settings: '',
             })
         })
 
