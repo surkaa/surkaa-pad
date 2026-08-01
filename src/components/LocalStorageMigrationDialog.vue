@@ -21,6 +21,7 @@
           :value="Math.min(display.progress / display.total, 1)"
           color="primary"
           rounded
+          instant-feedback
           class="q-mt-sm"
         />
         <q-spinner
