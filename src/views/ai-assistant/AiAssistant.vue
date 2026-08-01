@@ -64,7 +64,11 @@ useAiAssistantShortcuts(shortcuts, {
   focusInput: () => questionInput.value?.focus(),
 });
 
-onActivated(refreshConfig);
+onActivated(async () => {
+  await refreshConfig();
+  await nextTick();
+  questionInput.value?.focus();
+});
 onBeforeUnmount(() => {
   unmounting = true;
   if (pendingScrollFrame !== null) cancelAnimationFrame(pendingScrollFrame);

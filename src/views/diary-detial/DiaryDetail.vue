@@ -150,13 +150,18 @@ const {
 });
 
 onMounted(async () => {
-  if (!isNew.value) {
+  const shouldFocusEditor = isNew.value;
+  if (!shouldFocusEditor) {
     await loadDiaryInfo();
   } else {
     // 新建日记，直接标记加载完成，允许保存
     isInitialLoaded.value = true;
   }
   setupToolbar();
+  if (shouldFocusEditor) {
+    await nextTick();
+    tiptapEditorRef.value?.focusEnd();
+  }
 });
 
 watch(() => tiptapEditorRef.value?.editor, (newEditor) => {
