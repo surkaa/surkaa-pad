@@ -5,9 +5,6 @@ pub enum ObjectError {
     #[error("Failed to create s3 client: {0}")]
     CreateFailed(String),
 
-    #[error("Key already exists: {0}")]
-    KeyAlreadyExists(String),
-
     #[error("Object storage operation failed: {0}")]
     OperationFailed(String),
 

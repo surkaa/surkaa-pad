@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::object::object_types::STREAM_MIME_TYPE;
-    use crate::object::{ObjectError, ObjectMigrationOutcome, OssClient};
+    use crate::object::OssClient;
     use crate::stream::{collect_data, create_mock_stream, ByteStream};
     use crate::test_utils::TestOssGuard;
     use bytes::Bytes;
@@ -278,71 +278,5 @@ mod tests {
         let (download, _) = client.download(test_key, None).await.unwrap();
         assert_eq!(collect_data(download).await.unwrap(), test_content);
         guard.cleanup().await;
-    }
-
-    #[tokio::test]
-    async fn test_migrate_object_is_idempotent_and_rejects_conflicts() {
-        let client = OssClient::from_env();
-        let (client, _guard) = TestOssGuard::new(client).await;
-        // V3 的对象键包含原始文件名，可能含中文、空格等必须在 CopyObject
-        // 请求头中编码的字符。
-        let test_key = "旧附件 name (1).txt";
-        let test_content = b"Hello OSS Renamed Test".to_vec();
-
-        client
-            .upload_bytes(test_key, &test_content.to_vec())
-            .await
-            .expect("上传测试文件失败");
-        let new_key = "att-stable";
-        assert_eq!(
-            client.migrate_object(test_key, new_key).await.unwrap(),
-            ObjectMigrationOutcome::Migrated
-        );
-        // 确认旧键不存在
-        let (objects, next_token) = client.list("", None).await.expect("列出对象失败");
-        assert!(next_token.is_none(), "不应有续页");
-        assert!(
-            !objects.iter().any(|obj| obj.key == test_key),
-            "旧键仍然存在"
-        );
-        // 新键存在且内容正确
-        let (download_stream, _) = client.download(new_key, None).await.expect("下载失败");
-        let downloaded_data = collect_data(download_stream).await.expect("接收下载流失败");
-        assert_eq!(test_content, downloaded_data);
-        assert_eq!(
-            client.migrate_object(test_key, new_key).await.unwrap(),
-            ObjectMigrationOutcome::AlreadyMigrated
-        );
-
-        // 模拟 CopyObject 已成功但 DeleteObject 尚未执行：内容相同时应删除旧 key。
-        client
-            .upload_bytes(test_key, &test_content.to_vec())
-            .await
-            .expect("上传测试文件失败");
-        assert_eq!(
-            client.migrate_object(test_key, new_key).await.unwrap(),
-            ObjectMigrationOutcome::AlreadyMigrated
-        );
-        let (objects, _) = client.list("", None).await.expect("列出对象失败");
-        assert!(!objects.iter().any(|object| object.key == test_key));
-
-        // 同一目标已有不同内容时不允许覆盖，且保留旧对象供人工恢复。
-        client
-            .upload_bytes(test_key, b"different")
-            .await
-            .expect("上传冲突测试文件失败");
-        assert!(matches!(
-            client.migrate_object(test_key, new_key).await,
-            Err(ObjectError::KeyAlreadyExists(key)) if key == new_key
-        ));
-        assert!(client.download(test_key, None).await.is_ok());
-        assert_eq!(
-            client
-                .migrate_object("missing-old", "missing-new")
-                .await
-                .unwrap(),
-            ObjectMigrationOutcome::Missing
-        );
-        _guard.cleanup().await;
     }
 }

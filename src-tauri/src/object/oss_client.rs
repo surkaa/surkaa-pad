@@ -12,15 +12,6 @@ use tokio_util::io::StreamReader;
 
 const STREAM_UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
-fn etags_match(left: Option<&str>, right: Option<&str>) -> bool {
-    match (left, right) {
-        (Some(left), Some(right)) => left
-            .trim_matches('"')
-            .eq_ignore_ascii_case(right.trim_matches('"')),
-        _ => false,
-    }
-}
-
 fn oss_config_diagnostics(endpoint: &str, akid: &str, sakey: &str, bucket: &str) -> String {
     format!(
         "[oss init] config lengths: endpoint={}, bucket={}, akid={}, sakey={}",
@@ -44,13 +35,6 @@ pub struct Object {
     pub key: String,
     pub size: u64,
     pub etag: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ObjectMigrationOutcome {
-    Migrated,
-    AlreadyMigrated,
-    Missing,
 }
 
 struct OssClientInner {
@@ -198,80 +182,6 @@ impl OssClient {
             .initialize(endpoint, akid, sakey, bucket)
             .expect("创建 S3 client 失败");
         client
-    }
-
-    /// 幂等地迁移对象，供日记 schema 升级使用。
-    pub async fn migrate_object(
-        &self,
-        old_key: &str,
-        new_key: &str,
-    ) -> Result<ObjectMigrationOutcome, ObjectError> {
-        if old_key == new_key {
-            return Ok(ObjectMigrationOutcome::AlreadyMigrated);
-        }
-
-        let bucket = self.inner()?;
-        let old_key = self.physical_key(old_key);
-        let new_key = self.physical_key(new_key);
-        let (old_metadata, old_status) = bucket
-            .head_object(&old_key)
-            .await
-            .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
-        let (new_metadata, new_status) = bucket
-            .head_object(&new_key)
-            .await
-            .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
-        let old_exists = (200..300).contains(&old_status);
-        let new_exists = (200..300).contains(&new_status);
-        if !old_exists && old_status != 404 {
-            return Err(ObjectError::OperationFailed(format!(
-                "HEAD {} failed: HTTP {}",
-                self.logical_key(old_key),
-                old_status
-            )));
-        }
-        if !new_exists && new_status != 404 {
-            return Err(ObjectError::OperationFailed(format!(
-                "HEAD {} failed: HTTP {}",
-                self.logical_key(new_key),
-                new_status
-            )));
-        }
-
-        match (old_exists, new_exists) {
-            (false, false) => Ok(ObjectMigrationOutcome::Missing),
-            (false, true) => Ok(ObjectMigrationOutcome::AlreadyMigrated),
-            (true, true) => {
-                if !etags_match(old_metadata.e_tag.as_deref(), new_metadata.e_tag.as_deref()) {
-                    return Err(ObjectError::KeyAlreadyExists(self.logical_key(new_key)));
-                }
-                bucket
-                    .delete_object(&old_key)
-                    .await
-                    .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
-                Ok(ObjectMigrationOutcome::AlreadyMigrated)
-            }
-            (true, false) => {
-                // CopyObject 的源对象通过 HTTP header 传递。V3 使用原始文件名作为
-                // 对象键，中文、空格等字符必须先按 URL 编码，否则 reqwest 在签名
-                // 阶段无法将该 header 转为字符串。
-                let encoded_old_key = urlencoding::encode(&old_key);
-                let copy_status = bucket
-                    .copy_object_internal(encoded_old_key.as_ref(), &new_key)
-                    .await
-                    .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
-                if copy_status >= 300 {
-                    return Err(ObjectError::OperationFailed(format!(
-                        "Copy failed: HTTP {copy_status}"
-                    )));
-                }
-                bucket
-                    .delete_object(&old_key)
-                    .await
-                    .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
-                Ok(ObjectMigrationOutcome::Migrated)
-            }
-        }
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/putobject
