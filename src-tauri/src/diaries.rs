@@ -22,8 +22,8 @@ pub use diary_error::DiaryError;
 pub use diary_store::{DiaryStore, LocalStore, RemoteStore};
 pub use diary_types::DiaryManifest;
 pub(crate) use diary_types::DiarySummary;
+#[cfg(test)]
+pub(crate) use diary_types::CURRENT_VERSION;
 
 #[cfg(test)]
 pub use diary_list::*;
-#[cfg(test)]
-pub(crate) use diary_migration::CURRENT_VERSION;

@@ -389,21 +389,6 @@ async cmdInspectDiaryVersions(event: TAURI_CHANNEL<DiaryVersionEvent>) : Promise
 }
 },
 /**
- * 批量升级当前存储中的旧版日记；单篇失败不会中止其他日记。
- * # Arguments
- * * `event` - 接收升级进度和最终报告的事件通道
- * # Returns
- * * `Result<String, AppError>` - 后台升级任务令牌，可通过 `cmd_cancel_task` 取消
- */
-async cmdUpgradeLegacyDiaries(event: TAURI_CHANNEL<DiaryVersionEvent>) : Promise<Result<string, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_upgrade_legacy_diaries", { event }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * 给日记添加附件
  * # Arguments
  * * `event` - 接收上传进度与结果事件的通道
@@ -731,7 +716,7 @@ export type DiaryContentNode = { type: "markdown"; text: string } | { type: "ima
  * 仅在进入日记编辑页后加载的完整详情。
  */
 export type DiaryDetail = { summary: DiarySummary; manifestSize: number; content: DiaryContent; attachments: AttachmentMeta[]; attachmentUrls: Partial<{ [key in string]: string }> }
-export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: DiaryContent; created: number; updated: number; attachments: AttachmentMeta[]; version?: number }
+export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: DiaryContent; created: number; updated: number; attachments: AttachmentMeta[]; version: number }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行
@@ -753,11 +738,9 @@ attachmentCounts: DiaryAttachmentCounts;
  * 正文节点中各类加密附件的数量
  */
 encryptedAttachmentCounts: DiaryAttachmentCounts }
-export type DiaryVersionCount = { version: number; count: number }
-export type DiaryVersionEvent = { event: "started"; data: { operation: DiaryVersionOperation; scope: DiaryVersionStorageScope; total: number } } | { event: "progress"; data: { operation: DiaryVersionOperation; processed: number; total: number; diaryId: string; outcome: DiaryVersionItemOutcome } } | { event: "completed"; data: { operation: DiaryVersionOperation; report: DiaryVersionReport } } | { event: "cancelled"; data: { operation: DiaryVersionOperation; report: DiaryVersionReport } } | { event: "error"; data: { operation: DiaryVersionOperation; message: string } }
-export type DiaryVersionItemOutcome = "current" | "legacy" | "newer" | "upgraded" | "failed"
-export type DiaryVersionOperation = "inspect" | "upgrade"
-export type DiaryVersionReport = { scope: DiaryVersionStorageScope; currentVersion: number; totalDiaries: number; processedDiaries: number; currentDiaries: number; legacyDiaries: number; newerDiaries: number; failedDiaries: number; upgradedDiaries: number; versions: DiaryVersionCount[]; failedDiaryIds: string[] }
+export type DiaryVersionEvent = { event: "started"; data: { scope: DiaryVersionStorageScope; total: number } } | { event: "progress"; data: { processed: number; total: number; diaryId: string; outcome: DiaryVersionItemOutcome } } | { event: "completed"; data: { report: DiaryVersionReport } } | { event: "cancelled"; data: { report: DiaryVersionReport } } | { event: "error"; data: { message: string } }
+export type DiaryVersionItemOutcome = "current" | "legacy" | "newer" | "failed"
+export type DiaryVersionReport = { scope: DiaryVersionStorageScope; currentVersion: number; totalDiaries: number; processedDiaries: number; currentDiaries: number; legacyDiaries: number; newerDiaries: number; failedDiaries: number; failedDiaryIds: string[] }
 export type DiaryVersionStorageScope = "local" | "cloud"
 export type DisableRemoteStoragePlan = { localStoragePath: string; remoteFiles: number; remoteBytes: number; skippedFiles: number; skippedBytes: number; downloadFiles: number; downloadBytes: number; availableBytes: number; hasSufficientSpace: boolean }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"

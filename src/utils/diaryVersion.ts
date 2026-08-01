@@ -1,7 +1,6 @@
 import type {
   DiaryVersionEvent,
   DiaryVersionItemOutcome,
-  DiaryVersionOperation,
   DiaryVersionReport,
   DiaryVersionStorageScope,
 } from '../bindings';
@@ -10,7 +9,6 @@ export type DiaryVersionDisplayPhase = 'idle' | 'running' | 'completed' | 'cance
 
 export interface DiaryVersionDisplayState {
   phase: DiaryVersionDisplayPhase;
-  operation: DiaryVersionOperation | null;
   scope: DiaryVersionStorageScope | null;
   processed: number;
   total: number;
@@ -20,12 +18,9 @@ export interface DiaryVersionDisplayState {
   error: string;
 }
 
-export function initialDiaryVersionDisplay(
-  operation: DiaryVersionOperation | null = null,
-): DiaryVersionDisplayState {
+export function initialDiaryVersionDisplay(running = false): DiaryVersionDisplayState {
   return {
-    phase: operation ? 'running' : 'idle',
-    operation,
+    phase: running ? 'running' : 'idle',
     scope: null,
     processed: 0,
     total: 0,
@@ -56,7 +51,7 @@ export function reduceDiaryVersionEvent(
   switch (message.event) {
     case 'started':
       return {
-        ...initialDiaryVersionDisplay(message.data.operation),
+        ...initialDiaryVersionDisplay(true),
         scope: message.data.scope,
         total: message.data.total,
       };
@@ -64,32 +59,26 @@ export function reduceDiaryVersionEvent(
       return {
         ...state,
         phase: 'running',
-        operation: message.data.operation,
         processed: message.data.processed,
         total: message.data.total,
         currentDiaryId: message.data.diaryId,
         currentOutcome: message.data.outcome,
       };
     case 'completed':
-      return terminalState('completed', message.data.operation, message.data.report);
+      return terminalState('completed', message.data.report);
     case 'cancelled':
-      return terminalState('cancelled', message.data.operation, message.data.report);
+      return terminalState('cancelled', message.data.report);
     case 'error':
-      return withDiaryVersionError(
-        {...state, operation: message.data.operation},
-        message.data.message,
-      );
+      return withDiaryVersionError(state, message.data.message);
   }
 }
 
 function terminalState(
   phase: 'completed' | 'cancelled',
-  operation: DiaryVersionOperation,
   report: DiaryVersionReport,
 ): DiaryVersionDisplayState {
   return {
     phase,
-    operation,
     scope: report.scope,
     processed: report.processedDiaries,
     total: report.totalDiaries,
@@ -116,10 +105,8 @@ export function diaryVersionOutcomeText(outcome: DiaryVersionItemOutcome | null)
       return '旧版';
     case 'newer':
       return '高于当前版本';
-    case 'upgraded':
-      return '已升级';
     case 'failed':
-      return '读取或升级失败';
+      return '读取失败';
     default:
       return '';
   }

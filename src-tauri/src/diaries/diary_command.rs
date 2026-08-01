@@ -10,8 +10,7 @@ use crate::diaries::diary_types::{
     AttachmentTypeFilter, DiaryDetail, DiarySummary, SearchDiariesEvent,
 };
 use crate::diaries::diary_version::{
-    inspect_diary_versions, upgrade_legacy_diaries, DiaryVersionEvent, DiaryVersionOperation,
-    DiaryVersionRunResult, DiaryVersionStorageScope,
+    inspect_diary_versions, DiaryVersionEvent, DiaryVersionRunResult, DiaryVersionStorageScope,
 };
 use crate::diaries::{get_diary, DiaryContent, DiaryManifest};
 use crate::state::AppState;
@@ -197,36 +196,10 @@ pub fn cmd_inspect_diary_versions(
     state: State<'_, AppState>,
     event: Channel<DiaryVersionEvent>,
 ) -> Result<String, AppError> {
-    Ok(start_diary_version_task(
-        state.inner().clone(),
-        event,
-        DiaryVersionOperation::Inspect,
-    ))
+    Ok(start_diary_version_task(state.inner().clone(), event))
 }
 
-/// 批量升级当前存储中的旧版日记；单篇失败不会中止其他日记。
-/// # Arguments
-/// * `event` - 接收升级进度和最终报告的事件通道
-/// # Returns
-/// * `Result<String, AppError>` - 后台升级任务令牌，可通过 `cmd_cancel_task` 取消
-#[tauri::command]
-#[specta::specta]
-pub fn cmd_upgrade_legacy_diaries(
-    state: State<'_, AppState>,
-    event: Channel<DiaryVersionEvent>,
-) -> Result<String, AppError> {
-    Ok(start_diary_version_task(
-        state.inner().clone(),
-        event,
-        DiaryVersionOperation::Upgrade,
-    ))
-}
-
-fn start_diary_version_task(
-    state: AppState,
-    event: Channel<DiaryVersionEvent>,
-    operation: DiaryVersionOperation,
-) -> String {
+fn start_diary_version_task(state: AppState, event: Channel<DiaryVersionEvent>) -> String {
     let task_pool = state.task_pool();
     task_pool.spawn_cancelable(move |cancellation| async move {
         let _storage_guard = state.lock_storage_operation().await;
@@ -237,39 +210,19 @@ fn start_diary_version_task(
         };
         let store = state.diary_store();
         let event: Arc<dyn MessageSender<DiaryVersionEvent>> = Arc::new(event);
-        let result = match operation {
-            DiaryVersionOperation::Inspect => {
-                inspect_diary_versions(
-                    &state.crypto(),
-                    &*store,
-                    scope,
-                    event.clone(),
-                    &cancellation,
-                )
-                .await
-            }
-            DiaryVersionOperation::Upgrade => {
-                upgrade_legacy_diaries(
-                    &state.diary_cache(),
-                    &state.crypto(),
-                    &*store,
-                    scope,
-                    event.clone(),
-                    &cancellation,
-                )
-                .await
-            }
-        };
+        let result = inspect_diary_versions(
+            &state.crypto(),
+            &*store,
+            scope,
+            event.clone(),
+            &cancellation,
+        )
+        .await;
 
         let terminal = match result {
-            Ok(DiaryVersionRunResult::Completed(report)) => {
-                DiaryVersionEvent::Completed { operation, report }
-            }
-            Ok(DiaryVersionRunResult::Cancelled(report)) => {
-                DiaryVersionEvent::Cancelled { operation, report }
-            }
+            Ok(DiaryVersionRunResult::Completed(report)) => DiaryVersionEvent::Completed { report },
+            Ok(DiaryVersionRunResult::Cancelled(report)) => DiaryVersionEvent::Cancelled { report },
             Err(error) => DiaryVersionEvent::Error {
-                operation,
                 message: error.to_string(),
             },
         };

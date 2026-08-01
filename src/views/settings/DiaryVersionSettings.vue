@@ -23,7 +23,7 @@
       </q-card-section>
 
       <q-card-section v-if="running" class="q-pt-none">
-        <div class="operation-heading">{{ operationTitle }}</div>
+        <div class="operation-heading">正在检查日记版本…</div>
         <div class="dialog-description q-mt-xs">{{ progressText }}</div>
         <div v-if="display.currentDiaryId" class="current-diary ellipsis q-mt-sm">
           {{ display.currentDiaryId }}
@@ -90,8 +90,8 @@
           <span>全部日记均已使用当前数据格式。</span>
         </div>
         <div v-else-if="auditReport.legacyDiaries > 0" class="notice notice-warning">
-          <q-icon name="upgrade"/>
-          <span>发现 {{ auditReport.legacyDiaries }} 篇旧版日记，可显式批量升级。</span>
+          <q-icon name="warning_amber"/>
+          <span>发现 {{ auditReport.legacyDiaries }} 篇不受支持的旧版日记，请先排查数据来源。</span>
         </div>
         <div v-if="auditReport.newerDiaries > 0" class="notice notice-warning">
           <q-icon name="new_releases"/>
@@ -99,13 +99,7 @@
         </div>
         <div v-if="auditReport.failedDiaries > 0" class="notice notice-negative">
           <q-icon name="error_outline"/>
-          <span>{{ auditReport.failedDiaries }} 篇日记无法确认版本，请先排查后再移除旧版兼容代码。</span>
-        </div>
-        <div v-if="lastUpgradeReport" class="notice notice-neutral">
-          <q-icon name="published_with_changes"/>
-          <span>
-            上次升级成功 {{ lastUpgradeReport.upgradedDiaries }} 篇，失败 {{ lastUpgradeReport.failedDiaries }} 篇；以上为升级后的复查结果。
-          </span>
+          <span>{{ auditReport.failedDiaries }} 篇日记无法确认版本，请根据日记 ID 排查。</span>
         </div>
 
         <q-expansion-item
@@ -124,7 +118,7 @@
       <q-card-section v-else class="q-pt-none">
         <div class="notice notice-neutral">
           <q-icon name="info_outline"/>
-          <span>检查完成前不会自动迁移任何日记。检查结果仅保留在当前运行期间。</span>
+          <span>检查只读取日记版本，不修改任何数据。检查结果仅保留在当前运行期间。</span>
         </div>
       </q-card-section>
 
@@ -142,39 +136,16 @@
         <template v-else>
           <q-btn flat label="关闭" class="secondary-action" v-close-popup/>
           <q-btn
-            v-if="auditReport?.legacyDiaries"
-            outline
-            label="升级旧版日记"
-            color="primary"
-            @click="showUpgradeConfirm = true"
-          />
-          <q-btn
             unelevated
             :label="auditReport ? '重新检查' : '开始检查'"
             color="primary"
-            @click="runOperation('inspect')"
+            @click="runInspection"
           />
         </template>
       </q-card-actions>
     </q-card>
   </q-dialog>
 
-  <q-dialog v-model="showUpgradeConfirm" persistent>
-    <q-card class="confirm-dialog">
-      <q-card-section>
-        <div class="text-h6 dialog-title">升级旧版日记</div>
-        <div class="dialog-description q-mt-sm">
-          将逐篇迁移 {{ auditReport?.legacyDiaries ?? 0 }} 篇旧版日记到
-          V{{ auditReport?.currentVersion }}。
-          单篇失败不会中断其他日记；升级期间请勿关闭应用。
-        </div>
-      </q-card-section>
-      <q-card-actions align="right" class="q-px-md q-pb-md">
-        <q-btn flat label="取消" class="secondary-action" v-close-popup/>
-        <q-btn unelevated label="开始升级" color="primary" @click="confirmUpgrade"/>
-      </q-card-actions>
-    </q-card>
-  </q-dialog>
 </template>
 
 <script setup lang="ts">
@@ -183,7 +154,6 @@ import {useQuasar} from 'quasar';
 import {computed, onBeforeUnmount, ref, watch} from 'vue';
 import type {
   DiaryVersionEvent,
-  DiaryVersionOperation,
   DiaryVersionReport,
   DiaryVersionStorageScope,
 } from '../../bindings';
@@ -202,10 +172,8 @@ const props = defineProps<{
   remoteEnabled: boolean;
 }>();
 const showDialog = ref(false);
-const showUpgradeConfirm = ref(false);
 const display = ref(initialDiaryVersionDisplay());
 const auditReport = ref<DiaryVersionReport>();
-const lastUpgradeReport = ref<DiaryVersionReport>();
 const activeTaskToken = ref('');
 const cancelling = ref(false);
 let operationRevision = 0;
@@ -217,18 +185,13 @@ const allCurrent = computed(() => auditReport.value
 const currentVersionLabel = computed(() => auditReport.value
   ? ` V${auditReport.value.currentVersion}`
   : '当前数据格式');
-const operationTitle = computed(() => display.value.operation === 'upgrade'
-  ? '正在升级旧版日记…'
-  : lastUpgradeReport.value
-    ? '正在复查升级结果…'
-    : '正在检查日记版本…');
 const progressText = computed(() => display.value.total > 0
   ? `${display.value.processed} / ${display.value.total}`
   : '正在读取日记清单…');
 const outcomeText = computed(() => diaryVersionOutcomeText(display.value.currentOutcome));
 const entrySummary = computed(() => {
   const report = auditReport.value;
-  if (!report) return '检查全部日记是否已升级为当前格式';
+  if (!report) return '检查全部日记是否使用当前数据格式';
   if (isDiaryVersionReportCurrent(report)) return `已检查：${report.totalDiaries} 篇均为 V${report.currentVersion}`;
   const issues = [];
   if (report.legacyDiaries) issues.push(`${report.legacyDiaries} 篇旧版`);
@@ -241,11 +204,11 @@ function scopeText(scope: DiaryVersionStorageScope): string {
   return scope === 'cloud' ? '云端存储' : '本地存储';
 }
 
-async function runOperation(operation: DiaryVersionOperation) {
+async function runInspection() {
   if (running.value) return;
   const revision = ++operationRevision;
   const terminal = {received: false};
-  display.value = initialDiaryVersionDisplay(operation);
+  display.value = initialDiaryVersionDisplay(true);
   activeTaskToken.value = '';
   cancelling.value = false;
 
@@ -258,12 +221,7 @@ async function runOperation(operation: DiaryVersionOperation) {
       terminal.received = true;
       activeTaskToken.value = '';
       cancelling.value = false;
-      if (operation === 'inspect') {
-        auditReport.value = message.data.report;
-      } else {
-        lastUpgradeReport.value = message.data.report;
-        void runOperation('inspect');
-      }
+      auditReport.value = message.data.report;
     } else if (message.event === 'cancelled' || message.event === 'error') {
       terminal.received = true;
       activeTaskToken.value = '';
@@ -272,9 +230,7 @@ async function runOperation(operation: DiaryVersionOperation) {
   };
 
   try {
-    const token = operation === 'inspect'
-      ? await api.cmdInspectDiaryVersions(event)
-      : await api.cmdUpgradeLegacyDiaries(event);
+    const token = await api.cmdInspectDiaryVersions(event);
     if (revision === operationRevision && !terminal.received) {
       activeTaskToken.value = token;
     }
@@ -301,15 +257,8 @@ async function cancelOperation() {
   }
 }
 
-function confirmUpgrade() {
-  showUpgradeConfirm.value = false;
-  lastUpgradeReport.value = undefined;
-  void runOperation('upgrade');
-}
-
 watch(() => props.remoteEnabled, () => {
   auditReport.value = undefined;
-  lastUpgradeReport.value = undefined;
   if (!running.value) {
     display.value = initialDiaryVersionDisplay();
   }
@@ -326,8 +275,7 @@ onBeforeUnmount(() => {
 <style scoped lang="scss" src="./settingsSection.scss"></style>
 
 <style scoped lang="scss">
-.version-dialog,
-.confirm-dialog {
+.version-dialog {
   width: min(620px, calc(100vw - 24px));
   max-width: 620px;
   background: var(--pad-bg-color-100);

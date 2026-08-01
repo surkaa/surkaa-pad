@@ -1,13 +1,14 @@
 use crate::attachments::AttachmentMeta;
 use crate::cryptos::crypto_types::EncryptionAlgorithm;
 use crate::diaries::diary_content::{DiaryAttachmentCounts, DiaryContent};
+use crate::diaries::DiaryError;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use specta::Type;
 use std::collections::{HashMap, HashSet};
 
-const fn default_version() -> u32 {
-    1
-}
+/// 当前代码唯一支持的日记 Manifest 版本。
+pub const CURRENT_VERSION: u32 = 4;
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
@@ -20,8 +21,57 @@ pub struct DiaryManifest {
     #[specta(type = f64)]
     pub updated: i64,
     pub attachments: Vec<AttachmentMeta>, // 附件列表
-    #[serde(default = "default_version")]
     pub version: u32,
+}
+
+/// 解析 Manifest 的身份和版本元数据，不要求旧版或高版本符合当前结构。
+pub(crate) fn inspect_manifest_json(
+    requested_id: &str,
+    manifest_bytes: &[u8],
+) -> Result<(Value, u32), DiaryError> {
+    let json: Value = serde_json::from_slice(manifest_bytes)?;
+    let manifest_id = json
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DiaryError::InvalidManifest("Manifest diary id is missing".to_string()))?;
+    if manifest_id != requested_id {
+        return Err(DiaryError::InvalidManifest(format!(
+            "Manifest diary id {manifest_id} does not match requested id {requested_id}"
+        )));
+    }
+
+    // 历史 V1 没有 version 字段；这里只识别它，正常读取不再兼容它。
+    let version = match json.get("version") {
+        None => 1,
+        Some(Value::Number(number)) => number
+            .as_u64()
+            .and_then(|version| u32::try_from(version).ok())
+            .filter(|version| *version > 0)
+            .ok_or_else(|| {
+                DiaryError::InvalidManifest("Manifest version must be a positive u32".to_string())
+            })?,
+        Some(_) => {
+            return Err(DiaryError::InvalidManifest(
+                "Manifest version must be an integer".to_string(),
+            ));
+        }
+    };
+
+    Ok((json, version))
+}
+
+pub(crate) fn deserialize_current_manifest(
+    requested_id: &str,
+    manifest_bytes: &[u8],
+) -> Result<DiaryManifest, DiaryError> {
+    let (json, version) = inspect_manifest_json(requested_id, manifest_bytes)?;
+    if version != CURRENT_VERSION {
+        return Err(DiaryError::UnsupportedVersion {
+            found: version,
+            supported: CURRENT_VERSION,
+        });
+    }
+    Ok(serde_json::from_value(json)?)
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
@@ -113,7 +163,7 @@ pub enum AttachmentTypeFilter {
 
 #[cfg(test)]
 mod tests {
-    use super::{DiaryManifest, DiarySummary};
+    use super::{deserialize_current_manifest, DiaryManifest, DiarySummary, CURRENT_VERSION};
     use crate::attachments::AttachmentMeta;
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::diaries::diary_content::{DiaryAttachmentCounts, DiaryContent, DiaryContentNode};
@@ -206,5 +256,46 @@ mod tests {
                 file: 0,
             }
         );
+    }
+
+    #[test]
+    fn current_manifest_parser_requires_matching_id_and_exact_version() {
+        let manifest = DiaryManifest {
+            id: "current".to_string(),
+            algorithm: Gcm,
+            content: DiaryContent::default(),
+            created: 1,
+            updated: 1,
+            attachments: Vec::new(),
+            version: CURRENT_VERSION,
+        };
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        assert_eq!(
+            deserialize_current_manifest("current", &bytes)
+                .unwrap()
+                .version,
+            CURRENT_VERSION
+        );
+        assert!(matches!(
+            deserialize_current_manifest("other", &bytes),
+            Err(crate::diaries::DiaryError::InvalidManifest(message))
+                if message.contains("does not match")
+        ));
+
+        for (source, expected_version) in [
+            (serde_json::json!({"id": "legacy"}), 1),
+            (serde_json::json!({"id": "legacy", "version": 3}), 3),
+            (
+                serde_json::json!({"id": "legacy", "version": CURRENT_VERSION + 1}),
+                CURRENT_VERSION + 1,
+            ),
+        ] {
+            let bytes = serde_json::to_vec(&source).unwrap();
+            assert!(matches!(
+                deserialize_current_manifest("legacy", &bytes),
+                Err(crate::diaries::DiaryError::UnsupportedVersion { found, supported })
+                    if found == expected_version && supported == CURRENT_VERSION
+            ));
+        }
     }
 }

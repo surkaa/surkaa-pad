@@ -17,8 +17,6 @@ function report(overrides: Partial<DiaryVersionReport> = {}): DiaryVersionReport
     legacyDiaries: 0,
     newerDiaries: 0,
     failedDiaries: 0,
-    upgradedDiaries: 0,
-    versions: [{version: 4, count: 3}],
     failedDiaryIds: [],
     ...overrides,
   };
@@ -29,12 +27,11 @@ describe('diary version display', () => {
     let state = initialDiaryVersionDisplay();
     state = reduceDiaryVersionEvent(state, {
       event: 'started',
-      data: {operation: 'inspect', scope: 'cloud', total: 2},
+      data: {scope: 'cloud', total: 2},
     });
     state = reduceDiaryVersionEvent(state, {
       event: 'progress',
       data: {
-        operation: 'inspect',
         processed: 1,
         total: 2,
         diaryId: '123',
@@ -44,7 +41,6 @@ describe('diary version display', () => {
 
     expect(state).toMatchObject({
       phase: 'running',
-      operation: 'inspect',
       scope: 'cloud',
       processed: 1,
       total: 2,
@@ -55,16 +51,16 @@ describe('diary version display', () => {
     const completed = report({scope: 'cloud', totalDiaries: 2, currentDiaries: 1, legacyDiaries: 1});
     state = reduceDiaryVersionEvent(state, {
       event: 'completed',
-      data: {operation: 'inspect', report: completed},
+      data: {report: completed},
     });
     expect(state).toMatchObject({phase: 'completed', report: completed, currentDiaryId: ''});
   });
 
   it('keeps a partial report when cancellation is acknowledged', () => {
     const partial = report({totalDiaries: 10, processedDiaries: 4, currentDiaries: 4});
-    const state = reduceDiaryVersionEvent(initialDiaryVersionDisplay('upgrade'), {
+    const state = reduceDiaryVersionEvent(initialDiaryVersionDisplay(true), {
       event: 'cancelled',
-      data: {operation: 'upgrade', report: partial},
+      data: {report: partial},
     });
 
     expect(state.phase).toBe('cancelled');
@@ -82,7 +78,7 @@ describe('diary version display', () => {
   });
 
   it('applies command-level errors', () => {
-    const failed = withDiaryVersionError(initialDiaryVersionDisplay('inspect'), '读取失败');
-    expect(failed).toMatchObject({phase: 'failed', operation: 'inspect', error: '读取失败'});
+    const failed = withDiaryVersionError(initialDiaryVersionDisplay(true), '读取失败');
+    expect(failed).toMatchObject({phase: 'failed', error: '读取失败'});
   });
 });

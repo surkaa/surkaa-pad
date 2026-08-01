@@ -4,14 +4,13 @@ use crate::state::AppState;
 use crate::attachments::AttachmentMeta;
 use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
-use crate::diaries::diary_migration::{migrate_manifest_bytes, MigrationContext, CURRENT_VERSION};
+use crate::diaries::diary_migration::{migrate_manifest_bytes, MigrationContext};
 use crate::diaries::diary_store::DiaryStore;
-use crate::diaries::diary_types::DiarySummary;
+use crate::diaries::diary_types::{deserialize_current_manifest, DiarySummary, CURRENT_VERSION};
 use crate::diaries::{DiaryContent, DiaryError, DiaryManifest};
 use crate::utils::id_generate::generate_descending_id;
 use chrono::Utc;
 use dashmap::DashMap;
-use serde_json::from_slice;
 use std::sync::{Arc, LazyLock};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -103,21 +102,20 @@ pub(crate) async fn get_diary_locked(
 
     let manifest_bytes = crypto.decrypt(&encrypted_data)?;
 
-    // 迁移步骤可以先幂等迁移附件对象；只有全部成功后才发布新版 manifest。
+    // 迁移步骤可以先幂等处理关联对象；全部成功后才发布新版 Manifest。
     let migration_context = MigrationContext {
         diary_id: id,
         store,
     };
     if let Some(new_bytes) = migrate_manifest_bytes(&migration_context, &manifest_bytes).await? {
+        let manifest = deserialize_current_manifest(id, &new_bytes)?;
         let re_encrypted = crypto.encrypt(&new_bytes)?;
         let new_etag = store.upload_manifest(id, &re_encrypted).await?;
-        let manifest: DiaryManifest = from_slice(&new_bytes)?;
         cache.insert(id, manifest.clone(), new_etag);
         return Ok(manifest);
     }
 
-    // 反序列化 JSON
-    let manifest: DiaryManifest = from_slice(&manifest_bytes)?;
+    let manifest = deserialize_current_manifest(id, &manifest_bytes)?;
 
     // 更新内存缓存
     cache.insert(id, manifest.clone(), etag);
