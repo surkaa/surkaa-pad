@@ -65,8 +65,6 @@
           <span>当前 V{{ auditReport.currentVersion }}</span>
         </div>
 
-        <div class="version-breakdown">{{ formatDiaryVersionBreakdown(auditReport) }}</div>
-
         <div class="count-grid">
           <div class="count-card">
             <strong>{{ auditReport.currentDiaries }}</strong>
@@ -191,7 +189,6 @@ import type {
 import api from '../../utils/api';
 import {
   diaryVersionOutcomeText,
-  formatDiaryVersionBreakdown,
   initialDiaryVersionDisplay,
   isDiaryVersionReportCurrent,
   reduceDiaryVersionEvent,
@@ -368,11 +365,6 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 6px 14px;
   font-size: 0.78rem;
-}
-
-.version-breakdown {
-  color: var(--pad-text-color-300);
-  font-size: 0.9rem;
 }
 
 .count-grid {

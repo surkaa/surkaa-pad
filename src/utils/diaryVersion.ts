@@ -108,14 +108,6 @@ export function isDiaryVersionReportCurrent(report: DiaryVersionReport): boolean
     && report.failedDiaries === 0;
 }
 
-export function formatDiaryVersionBreakdown(report: DiaryVersionReport): string {
-  if (report.versions.length === 0) return '没有日记';
-  return [...report.versions]
-    .sort((left, right) => left.version - right.version)
-    .map(({version, count}) => `V${version} ${count} 篇`)
-    .join(' · ');
-}
-
 export function diaryVersionOutcomeText(outcome: DiaryVersionItemOutcome | null): string {
   switch (outcome) {
     case 'current':

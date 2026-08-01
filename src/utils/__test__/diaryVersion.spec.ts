@@ -1,7 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import type {DiaryVersionReport} from '../../bindings';
 import {
-  formatDiaryVersionBreakdown,
   initialDiaryVersionDisplay,
   isDiaryVersionReportCurrent,
   reduceDiaryVersionEvent,
@@ -82,12 +81,7 @@ describe('diary version display', () => {
     expect(isDiaryVersionReportCurrent(report({currentDiaries: 2, failedDiaries: 1}))).toBe(false);
   });
 
-  it('formats sorted version counts and command-level errors', () => {
-    expect(formatDiaryVersionBreakdown(report({
-      versions: [{version: 4, count: 2}, {version: 1, count: 1}, {version: 3, count: 4}],
-    }))).toBe('V1 1 篇 · V3 4 篇 · V4 2 篇');
-    expect(formatDiaryVersionBreakdown(report({versions: []}))).toBe('没有日记');
-
+  it('applies command-level errors', () => {
     const failed = withDiaryVersionError(initialDiaryVersionDisplay('inspect'), '读取失败');
     expect(failed).toMatchObject({phase: 'failed', operation: 'inspect', error: '读取失败'});
   });
