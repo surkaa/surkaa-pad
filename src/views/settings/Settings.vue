@@ -107,6 +107,7 @@
               v-if="isWindows"
               :refresh-revision="localStorageRefreshRevision"
           />
+          <DiaryVersionSettings :remote-enabled="remoteEnabled"/>
           <q-item clickable v-ripple @click="exportLogFile" class="settings-item">
             <q-item-section avatar class="settings-icon-section">
               <q-icon name="description"/>
@@ -225,6 +226,7 @@ import {useRemoteStorageSettings} from '../../composables/useRemoteStorageSettin
 import AttachmentSettings from './AttachmentSettings.vue';
 import AiSettings from './AiSettings.vue';
 import DisableRemoteStorageDialog from '../../components/DisableRemoteStorageDialog.vue';
+import DiaryVersionSettings from './DiaryVersionSettings.vue';
 import EditorShortcutSettings from './EditorShortcutSettings.vue';
 import LocalStorageSettings from './LocalStorageSettings.vue';
 
