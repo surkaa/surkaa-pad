@@ -32,6 +32,7 @@
         <q-linear-progress
           v-if="display.total > 0"
           rounded
+          instant-feedback
           size="8px"
           color="primary"
           :value="Math.min(display.processed / display.total, 1)"
