@@ -9,6 +9,7 @@ mod diary_search;
 pub mod diary_store;
 pub mod diary_sync;
 mod diary_types;
+mod diary_version;
 
 #[cfg(test)]
 mod diary_tests;

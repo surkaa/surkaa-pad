@@ -32,7 +32,8 @@ use crate::cryptos::crypto_command::{
 };
 use crate::diaries::diary_command::{
     cmd_delete_diary, cmd_get_diary_detail, cmd_get_diary_manifest, cmd_get_diary_summary,
-    cmd_page_diary_ids, cmd_save_diary, cmd_search_diaries, cmd_update_diary_content_only,
+    cmd_inspect_diary_versions, cmd_page_diary_ids, cmd_save_diary, cmd_search_diaries,
+    cmd_update_diary_content_only, cmd_upgrade_legacy_diaries,
 };
 use crate::local_storage::migration::{
     cmd_get_local_storage_info, cmd_get_local_storage_migration_status, cmd_migrate_local_storage,
@@ -103,6 +104,8 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_get_diary_detail,
             cmd_get_diary_manifest,
             cmd_search_diaries,
+            cmd_inspect_diary_versions,
+            cmd_upgrade_legacy_diaries,
             // 附件相关操作
             cmd_add_attachment,
             cmd_add_attachment_memory,
