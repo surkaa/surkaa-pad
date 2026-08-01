@@ -71,6 +71,41 @@
           </q-item-section>
         </q-item>
       </q-expansion-item>
+
+      <q-expansion-item group="shortcut-page">
+        <template #header>
+          <q-item-section avatar class="settings-icon-section">
+            <q-icon name="auto_awesome"/>
+          </q-item-section>
+          <q-item-section>
+            <q-item-label class="label-text text-weight-medium">AI 助手</q-item-label>
+            <q-item-label caption class="desc-text">{{ AI_ASSISTANT_SHORTCUT_ACTIONS.length }} 个操作</q-item-label>
+          </q-item-section>
+        </template>
+
+        <q-item
+          v-for="action in AI_ASSISTANT_SHORTCUT_ACTIONS"
+          :key="action"
+          class="settings-item shortcut-settings-item shortcut-action-item"
+        >
+          <q-item-section avatar class="settings-icon-section">
+            <q-icon name="keyboard"/>
+          </q-item-section>
+          <q-item-section>
+            <q-item-label class="label-text text-weight-medium">
+              {{ AI_ASSISTANT_SHORTCUT_LABELS[action] }}
+            </q-item-label>
+          </q-item-section>
+          <q-item-section side>
+            <ShortcutRecorder
+              :model-value="aiAssistantShortcuts[action]"
+              :label="AI_ASSISTANT_SHORTCUT_LABELS[action]"
+              @update:model-value="shortcut => updateAiAssistantShortcut(action, shortcut)"
+              @invalid="notifyInvalidShortcut"
+            />
+          </q-item-section>
+        </q-item>
+      </q-expansion-item>
     </q-list>
   </section>
 </template>
@@ -91,11 +126,17 @@ import {
   findDiaryListShortcutConflict,
   type DiaryListShortcutAction,
 } from '../../utils/diaryListShortcuts';
+import {
+  AI_ASSISTANT_SHORTCUT_ACTIONS,
+  AI_ASSISTANT_SHORTCUT_LABELS,
+  type AiAssistantShortcutAction,
+} from '../../utils/aiAssistantShortcuts';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
 const editorShortcuts = configStore.useTauriConfig('windows_editor_shortcuts');
 const diaryListShortcuts = configStore.useTauriConfig('windows_diary_list_shortcuts');
+const aiAssistantShortcuts = configStore.useTauriConfig('windows_ai_assistant_shortcuts');
 const editorShortcutIcons: Record<EditorShortcutAction, string> = {
   insertPhoto: 'image',
   insertAudio: 'audiotrack',
@@ -132,6 +173,10 @@ function updateDiaryListShortcut(action: DiaryListShortcutAction, shortcut: stri
     return;
   }
   diaryListShortcuts.value = {...diaryListShortcuts.value, [action]: shortcut};
+}
+
+function updateAiAssistantShortcut(action: AiAssistantShortcutAction, shortcut: string) {
+  aiAssistantShortcuts.value = {...aiAssistantShortcuts.value, [action]: shortcut};
 }
 
 function notifyInvalidShortcut() {

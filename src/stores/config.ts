@@ -14,6 +14,11 @@ import {
     normalizeDiaryListShortcutConfig,
     type DiaryListShortcutConfig,
 } from '../utils/diaryListShortcuts';
+import {
+    DEFAULT_WINDOWS_AI_ASSISTANT_SHORTCUTS,
+    normalizeAiAssistantShortcutConfig,
+    type AiAssistantShortcutConfig,
+} from '../utils/aiAssistantShortcuts';
 
 const STORAGE_PREFIX = 'config:';
 
@@ -34,6 +39,7 @@ type ConfigMap = {
     "pinned_diary_ids": string[]
     "windows_editor_shortcuts": EditorShortcutConfig;
     "windows_diary_list_shortcuts": DiaryListShortcutConfig;
+    "windows_ai_assistant_shortcuts": AiAssistantShortcutConfig;
 };
 const DEFAULT_CONFIG = {
     "app-theme": DEFAULT_THEME,
@@ -52,6 +58,7 @@ const DEFAULT_CONFIG = {
     "pinned_diary_ids": [],
     "windows_editor_shortcuts": {...DEFAULT_WINDOWS_EDITOR_SHORTCUTS},
     "windows_diary_list_shortcuts": {...DEFAULT_WINDOWS_DIARY_LIST_SHORTCUTS},
+    "windows_ai_assistant_shortcuts": {...DEFAULT_WINDOWS_AI_ASSISTANT_SHORTCUTS},
 } satisfies ConfigMap;
 
 type ConfigKey = keyof ConfigMap;
@@ -66,6 +73,9 @@ function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): Conf
     }
     if (key === 'windows_diary_list_shortcuts') {
         return normalizeDiaryListShortcutConfig(value) as ConfigMap[K];
+    }
+    if (key === 'windows_ai_assistant_shortcuts') {
+        return normalizeAiAssistantShortcutConfig(value) as ConfigMap[K];
     }
     return value as ConfigMap[K];
 }

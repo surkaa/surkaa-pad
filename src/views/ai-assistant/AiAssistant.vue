@@ -24,6 +24,8 @@ import {
 } from '../../utils/aiConfig';
 import api from '../../utils/api';
 import {formatError} from '../../utils/formatError';
+import {useConfigStore} from '../../stores/config';
+import {useAiAssistantShortcuts} from '../../composables/useAiAssistantShortcuts';
 
 interface AiExchange extends AiAgentDisplayState {
   id: number;
@@ -41,7 +43,10 @@ const suggestions = [
 
 const router = useRouter();
 const $q = useQuasar();
+const appConfigStore = useConfigStore();
+const shortcuts = appConfigStore.useTauriConfig('windows_ai_assistant_shortcuts');
 const scrollContainer = ref<HTMLElement | null>(null);
+const questionInput = ref<{focus: () => void} | null>(null);
 const config = ref<AiServiceConfig | null>(null);
 const configError = ref<string | null>(null);
 const loadingConfig = ref(true);
@@ -54,6 +59,10 @@ let pendingScrollFrame: number | null = null;
 let unmounting = false;
 
 defineOptions({name: 'AiAssistant'});
+
+useAiAssistantShortcuts(shortcuts, {
+  focusInput: () => questionInput.value?.focus(),
+});
 
 onActivated(refreshConfig);
 onBeforeUnmount(() => {
@@ -353,6 +362,7 @@ async function scrollToBottom() {
       </div>
       <div class="composer-row">
         <q-input
+          ref="questionInput"
           v-model="question"
           type="textarea"
           autogrow

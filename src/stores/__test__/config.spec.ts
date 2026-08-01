@@ -70,6 +70,14 @@ describe('config store', () => {
             })
         })
 
+        it('defaults the AI assistant input shortcut', async () => {
+            const store = useConfigStore()
+
+            await expect(store.getNormalConfig('windows_ai_assistant_shortcuts')).resolves.toEqual({
+                focusInput: 'Ctrl+Alt+KeyI',
+            })
+        })
+
         it('normalizes attachment upload concurrency to the supported range', async () => {
             const store = useConfigStore()
 
