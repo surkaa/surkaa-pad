@@ -201,6 +201,13 @@ export function isTerminalAiExchangeState(
   return state === 'completed' || state === 'failed' || state === 'cancelled';
 }
 
+export function shouldCollapseAiProcess(
+  state: AiAgentDisplayState,
+  message: AiAgentEvent,
+): boolean {
+  return message.event === 'answerDelta' && state.answer.length === 0;
+}
+
 export function formatAiResponseMeta(response: AiAgentResponse): string {
   if (!response.usage) return '';
   return `输入 ${response.usage.promptTokens} Token · 输出 ${response.usage.completionTokens} Token`;

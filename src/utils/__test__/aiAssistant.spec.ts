@@ -7,6 +7,7 @@ import {
   formatProcessDuration,
   initialAiAgentDisplayState,
   reduceAiAgentEvent,
+  shouldCollapseAiProcess,
   startAiQuestion,
 } from '../aiAssistant';
 import type {AiServiceConfig} from '../aiConfig';
@@ -209,6 +210,25 @@ describe('process formatting', () => {
     expect(formatProcessDuration(60_000)).toBe('1 分钟');
     expect(formatProcessDuration(65_000)).toBe('1 分 5 秒');
     expect(formatAiProcessSummary([])).toBe('处理完成');
+  });
+});
+
+describe('process visibility', () => {
+  it('collapses only when the first answer text arrives', () => {
+    const state = initialAiAgentDisplayState();
+
+    expect(shouldCollapseAiProcess(state, {
+      event: 'reasoningDelta',
+      data: {round: 1, delta: '思考中'},
+    })).toBe(false);
+    expect(shouldCollapseAiProcess(state, {
+      event: 'answerDelta',
+      data: '第一段正文',
+    })).toBe(true);
+    expect(shouldCollapseAiProcess({...state, answer: '已有正文'}, {
+      event: 'answerDelta',
+      data: '后续正文',
+    })).toBe(false);
   });
 });
 

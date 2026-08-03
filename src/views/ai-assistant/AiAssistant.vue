@@ -12,6 +12,7 @@ import {
   initialAiAgentDisplayState,
   isTerminalAiExchangeState,
   reduceAiAgentEvent,
+  shouldCollapseAiProcess,
   startAiQuestion,
   type AiAgentDisplayState,
   type AiExchangeState,
@@ -141,7 +142,10 @@ function handleAgentEvent(id: number, message: AiAgentEvent) {
   const exchange = findExchange(id);
   if (!exchange || isTerminalAiExchangeState(exchange.state)) return;
 
+  const shouldCollapseProcess = shouldCollapseAiProcess(exchange, message);
   Object.assign(exchange, reduceAiAgentEvent(exchange, message));
+  if (message.event === 'modelStarted') exchange.processExpanded = true;
+  if (shouldCollapseProcess) exchange.processExpanded = false;
   if (isTerminalAiExchangeState(exchange.state)) {
     finishExchange(exchange, exchange.state, exchange.error);
   }
@@ -320,17 +324,12 @@ async function scrollToBottom() {
                     <div class="process-step-content">
                       <div class="process-step-title">{{ step.title }}</div>
                       <div v-if="step.detail" class="process-step-detail">{{ step.detail }}</div>
-                      <details
+                      <div
                         v-if="step.reasoning"
-                        class="reasoning-details"
-                        :open="step.state === 'running'"
+                        class="reasoning-content ai-markdown"
+                        v-html="renderAiMarkdown(step.reasoning)"
                       >
-                        <summary>{{ step.state === 'running' ? '正在思考' : '查看思考过程' }}</summary>
-                        <div
-                          class="reasoning-content ai-markdown"
-                          v-html="renderAiMarkdown(step.reasoning)"
-                        ></div>
-                      </details>
+                      </div>
                     </div>
                     <div v-if="step.durationMs !== null" class="process-step-duration">
                       {{ formatProcessDuration(step.durationMs) }}
@@ -646,28 +645,11 @@ async function scrollToBottom() {
   overflow-wrap: anywhere;
 }
 
-.reasoning-details {
-  margin-top: 7px;
-  overflow: hidden;
-  border: 1px solid var(--pad-border-color-100);
-  border-radius: var(--pad-radius-sm);
-  background: var(--pad-bg-color-200);
-
-  summary {
-    padding: 6px 8px;
-    color: var(--pad-text-color-300);
-    font-size: 0.7rem;
-    cursor: pointer;
-    user-select: none;
-  }
-}
-
 .reasoning-content {
-  max-height: 220px;
-  overflow: auto;
-  padding: 7px 9px;
+  margin-top: 7px;
+  padding-left: 9px;
   color: var(--pad-text-color-300);
-  border-top: 1px solid var(--pad-border-color-100);
+  border-left: 2px solid var(--pad-border-color-200);
   font-size: 0.72rem;
   line-height: 1.55;
 }
