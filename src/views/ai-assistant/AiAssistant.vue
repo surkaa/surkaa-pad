@@ -304,38 +304,43 @@ async function scrollToBottom() {
                   :class="{'is-expanded': exchange.processExpanded}"
                 />
               </button>
-              <q-slide-transition>
-                <div v-show="exchange.processExpanded" class="process-steps">
-                  <div
-                    v-for="step in exchange.processSteps"
-                    :key="step.id"
-                    class="process-step"
-                    :class="`is-${step.state}`"
-                  >
-                    <div class="process-step-marker">
-                      <q-spinner
-                        v-if="step.state === 'running'"
-                        color="primary"
-                        size="15px"
-                      />
-                      <q-icon v-else :name="processStepIcon(step)"/>
-                    </div>
-                    <div class="process-step-content">
-                      <div class="process-step-title">{{ step.title }}</div>
-                      <div v-if="step.detail" class="process-step-detail">{{ step.detail }}</div>
-                      <div
-                        v-if="step.reasoning"
-                        class="reasoning-content ai-markdown"
-                        v-html="renderAiMarkdown(step.reasoning)"
-                      >
+              <div
+                class="process-collapse"
+                :class="{'is-expanded': exchange.processExpanded}"
+                :aria-hidden="!exchange.processExpanded"
+              >
+                <div class="process-collapse-inner">
+                  <div class="process-steps">
+                    <div
+                      v-for="step in exchange.processSteps"
+                      :key="step.id"
+                      class="process-step"
+                      :class="`is-${step.state}`"
+                    >
+                      <div class="process-step-marker">
+                        <q-spinner
+                          v-if="step.state === 'running'"
+                          color="primary"
+                          size="15px"
+                        />
+                        <q-icon v-else :name="processStepIcon(step)"/>
                       </div>
-                    </div>
-                    <div v-if="step.durationMs !== null" class="process-step-duration">
-                      {{ formatProcessDuration(step.durationMs) }}
+                      <div class="process-step-content">
+                        <div class="process-step-title">{{ step.title }}</div>
+                        <div v-if="step.detail" class="process-step-detail">{{ step.detail }}</div>
+                        <div
+                          v-if="step.reasoning"
+                          class="reasoning-content ai-markdown"
+                          v-html="renderAiMarkdown(step.reasoning)"
+                        ></div>
+                      </div>
+                      <div v-if="step.durationMs !== null" class="process-step-duration">
+                        {{ formatProcessDuration(step.durationMs) }}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </q-slide-transition>
+              </div>
             </div>
             <div
               v-if="exchange.answer"
@@ -586,6 +591,21 @@ async function scrollToBottom() {
   }
 }
 
+.process-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s cubic-bezier(.25, .8, .5, 1);
+
+  &.is-expanded {
+    grid-template-rows: 1fr;
+  }
+}
+
+.process-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .process-steps {
   padding: 2px 10px 9px;
   border-top: 1px solid var(--pad-border-color-100);
@@ -785,6 +805,13 @@ async function scrollToBottom() {
 
 @keyframes ai-cursor-blink {
   50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .process-collapse,
+  .process-expand-icon {
+    transition: none;
+  }
 }
 
 .composer-area {
