@@ -1,6 +1,6 @@
 use super::{
-    AiAssistantMessage, AiCompletionRequest, AiError, AiMessage, AiModelProvider, AiToolExecutor,
-    AiToolResult, AiUsage,
+    AiAssistantMessage, AiCompletionDelta, AiCompletionRequest, AiError, AiMessage,
+    AiModelProvider, AiToolExecutor, AiToolResult, AiUsage,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -67,6 +67,11 @@ pub enum AiAgentEvent {
         #[specta(rename = "elapsedMs", type = f64)]
         elapsed_ms: u64,
     },
+    ReasoningDelta {
+        #[specta(type = f64)]
+        round: usize,
+        delta: String,
+    },
     AnswerDelta(String),
     Completed(AiAgentResponse),
     Failed(String),
@@ -125,7 +130,12 @@ impl<'a> AiAgent<'a> {
                 .provider
                 .complete_stream(
                     AiCompletionRequest::new(model, messages.clone(), definitions.clone())?,
-                    &|delta| emit(AiAgentEvent::AnswerDelta(delta)),
+                    &|delta| match delta {
+                        AiCompletionDelta::Reasoning(delta) => {
+                            emit(AiAgentEvent::ReasoningDelta { round, delta })
+                        }
+                        AiCompletionDelta::Content(delta) => emit(AiAgentEvent::AnswerDelta(delta)),
+                    },
                 )
                 .await?;
             let tool_count = completion.message.tool_calls.len();
@@ -157,6 +167,7 @@ impl<'a> AiAgent<'a> {
 
             let tool_calls = assistant_message.tool_calls.clone();
             messages.push(AiMessage::Assistant(AiAssistantMessage {
+                reasoning_content: assistant_message.reasoning_content,
                 content: assistant_message.content,
                 tool_calls: tool_calls.clone(),
             }));

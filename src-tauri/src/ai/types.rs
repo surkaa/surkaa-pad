@@ -93,7 +93,14 @@ pub enum AiMessage {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AiCompletionDelta {
+    Reasoning(String),
+    Content(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AiAssistantMessage {
+    pub reasoning_content: Option<String>,
     pub content: Option<String>,
     pub tool_calls: Vec<AiToolCall>,
 }
@@ -250,6 +257,7 @@ mod tests {
             "model",
             vec![
                 AiMessage::Assistant(AiAssistantMessage {
+                    reasoning_content: Some("需要先查找日记".into()),
                     content: None,
                     tool_calls: vec![AiToolCall {
                         id: "call-1".into(),

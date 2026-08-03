@@ -12,6 +12,7 @@ export interface AiProcessStep {
   kind: AiProcessStepKind;
   title: string;
   detail: string | null;
+  reasoning: string;
   state: AiProcessStepState;
   durationMs: number | null;
 }
@@ -83,12 +84,27 @@ export function reduceAiAgentEvent(
           detail: message.data.round === 1
             ? '理解问题并判断需要读取哪些日记'
             : '根据已读取的日记继续分析',
+          reasoning: '',
           state: 'running',
           durationMs: null,
         }],
         status: message.data.round === 1
           ? 'AI 正在理解问题…'
           : 'AI 正在分析日记内容…',
+      };
+    case 'reasoningDelta':
+      if (state.state === 'canceling') return state;
+      return {
+        ...state,
+        processSteps: updateProcessStep(
+          state.processSteps,
+          modelStepId(message.data.round),
+          step => ({
+            ...step,
+            reasoning: step.reasoning + message.data.delta,
+          }),
+        ),
+        status: 'AI 正在思考…',
       };
     case 'modelCompleted':
       if (state.state === 'canceling') return state;
@@ -120,6 +136,7 @@ export function reduceAiAgentEvent(
           kind: 'tool',
           title: message.data.title,
           detail: message.data.detail,
+          reasoning: '',
           state: 'running',
           durationMs: null,
         }],

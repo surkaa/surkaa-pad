@@ -56,6 +56,16 @@ describe('reduceAiAgentEvent', () => {
       event: 'modelStarted',
       data: {round: 1},
     });
+    state = reduceAiAgentEvent(state, {
+      event: 'reasoningDelta',
+      data: {round: 1, delta: '先理解问题，'},
+    });
+    state = reduceAiAgentEvent(state, {
+      event: 'reasoningDelta',
+      data: {round: 1, delta: '再决定搜索。'},
+    });
+    expect(state.processSteps[0].reasoning).toBe('先理解问题，再决定搜索。');
+    expect(state.status).toBe('AI 正在思考…');
     state = reduceAiAgentEvent(state, {event: 'answerDelta', data: '我先查找'});
     expect(state.answer).toBe('我先查找');
 
@@ -74,6 +84,7 @@ describe('reduceAiAgentEvent', () => {
       state: 'completed',
       durationMs: 1200,
       detail: '决定执行 1 个日记操作',
+      reasoning: '先理解问题，再决定搜索。',
     });
 
     state = reduceAiAgentEvent(state, {

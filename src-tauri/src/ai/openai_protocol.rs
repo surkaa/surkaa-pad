@@ -1,6 +1,6 @@
 use super::{
-    AiAssistantMessage, AiCompletion, AiCompletionRequest, AiError, AiMessage, AiModel, AiToolCall,
-    AiToolDefinition, AiUsage,
+    AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiError, AiMessage,
+    AiModel, AiToolCall, AiToolDefinition, AiUsage,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -99,6 +99,8 @@ struct StreamOptions {
 struct ChatMessage {
     role: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tool_calls: Vec<RequestToolCall>,
@@ -113,6 +115,7 @@ impl From<&AiMessage> for ChatMessage {
             AiMessage::User(content) => Self::text("user", content),
             AiMessage::Assistant(message) => Self {
                 role: "assistant",
+                reasoning_content: message.reasoning_content.clone(),
                 content: message.content.clone(),
                 tool_calls: message
                     .tool_calls
@@ -123,6 +126,7 @@ impl From<&AiMessage> for ChatMessage {
             },
             AiMessage::Tool(result) => Self {
                 role: "tool",
+                reasoning_content: None,
                 content: Some(result.content.clone()),
                 tool_calls: Vec::new(),
                 tool_call_id: Some(result.tool_call_id.clone()),
@@ -135,6 +139,7 @@ impl ChatMessage {
     fn text(role: &'static str, content: &str) -> Self {
         Self {
             role,
+            reasoning_content: None,
             content: Some(content.to_owned()),
             tool_calls: Vec::new(),
             tool_call_id: None,
@@ -231,6 +236,8 @@ struct ChatChoice {
 #[derive(Deserialize)]
 struct ResponseAssistantMessage {
     #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default)]
     content: Option<String>,
     #[serde(default)]
     tool_calls: Vec<ResponseToolCall>,
@@ -264,6 +271,7 @@ impl TryFrom<ResponseAssistantMessage> for AiAssistantMessage {
         }
 
         Ok(Self {
+            reasoning_content: message.reasoning_content,
             content: message.content,
             tool_calls,
         })
@@ -355,6 +363,8 @@ struct StreamChoice {
 #[derive(Default, Deserialize)]
 struct StreamAssistantDelta {
     #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default)]
     content: Option<String>,
     #[serde(default)]
     tool_calls: Vec<StreamToolCallDelta>,
@@ -393,6 +403,7 @@ struct PartialToolCall {
 
 #[derive(Default)]
 pub(super) struct ChatCompletionAccumulator {
+    reasoning_content: String,
     content: String,
     tool_calls: BTreeMap<usize, PartialToolCall>,
     finish_reason: Option<String>,
@@ -401,22 +412,30 @@ pub(super) struct ChatCompletionAccumulator {
 }
 
 impl ChatCompletionAccumulator {
-    pub(super) fn push(&mut self, data: &str) -> Result<Vec<String>, AiError> {
+    pub(super) fn push(&mut self, data: &str) -> Result<Vec<AiCompletionDelta>, AiError> {
         let chunk: ChatCompletionChunk = serde_json::from_str(data)
             .map_err(|error| AiError::InvalidResponse(error.to_string()))?;
         if let Some(usage) = chunk.usage {
             self.usage = Some(usage.into());
         }
 
-        let mut content_deltas = Vec::new();
+        let mut deltas = Vec::new();
         for choice in chunk.choices {
             if choice.index != 0 {
                 continue;
             }
             self.saw_primary_choice = true;
+            if let Some(reasoning) = choice
+                .delta
+                .reasoning_content
+                .filter(|reasoning| !reasoning.is_empty())
+            {
+                self.reasoning_content.push_str(&reasoning);
+                deltas.push(AiCompletionDelta::Reasoning(reasoning));
+            }
             if let Some(content) = choice.delta.content.filter(|content| !content.is_empty()) {
                 self.content.push_str(&content);
-                content_deltas.push(content);
+                deltas.push(AiCompletionDelta::Content(content));
             }
             for call in choice.delta.tool_calls {
                 self.push_tool_call(call)?;
@@ -425,7 +444,7 @@ impl ChatCompletionAccumulator {
                 self.finish_reason = choice.finish_reason;
             }
         }
-        Ok(content_deltas)
+        Ok(deltas)
     }
 
     fn push_tool_call(&mut self, delta: StreamToolCallDelta) -> Result<(), AiError> {
@@ -505,6 +524,8 @@ impl ChatCompletionAccumulator {
         }
         Ok(AiCompletion {
             message: AiAssistantMessage {
+                reasoning_content: (!self.reasoning_content.trim().is_empty())
+                    .then_some(self.reasoning_content),
                 content,
                 tool_calls,
             },

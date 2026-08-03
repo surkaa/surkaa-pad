@@ -2,7 +2,8 @@ use super::openai_protocol::{
     ChatCompletionAccumulator, ChatCompletionRequest, ChatCompletionResponse, ModelListResponse,
 };
 use super::{
-    AiCompletion, AiCompletionRequest, AiError, AiModel, AiModelProvider, AiProviderConfig,
+    AiCompletion, AiCompletionDelta, AiCompletionRequest, AiError, AiModel, AiModelProvider,
+    AiProviderConfig,
 };
 use async_trait::async_trait;
 use eventsource_stream::{EventStreamError, Eventsource};
@@ -89,7 +90,7 @@ impl OpenAiCompatibleClient {
         &self,
         request: &AiCompletionRequest,
         enable_reasoning: bool,
-        on_delta: &(dyn Fn(String) -> Result<(), AiError> + Send + Sync),
+        on_delta: &(dyn Fn(AiCompletionDelta) -> Result<(), AiError> + Send + Sync),
     ) -> Result<AiCompletion, AiError> {
         let payload = ChatCompletionRequest::streaming(request, enable_reasoning);
         let request = self.authorize(
@@ -176,7 +177,7 @@ impl AiModelProvider for OpenAiCompatibleClient {
     async fn complete_stream(
         &self,
         request: AiCompletionRequest,
-        on_delta: &(dyn Fn(String) -> Result<(), AiError> + Send + Sync),
+        on_delta: &(dyn Fn(AiCompletionDelta) -> Result<(), AiError> + Send + Sync),
     ) -> Result<AiCompletion, AiError> {
         let model = request.model().to_owned();
         let enable_reasoning = self.reasoning_is_enabled_for(&model);

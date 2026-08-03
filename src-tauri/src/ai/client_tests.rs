@@ -1,7 +1,8 @@
 use super::client::MAX_MODELS_RESPONSE_BYTES;
 use super::{
-    AiAssistantMessage, AiCompletionRequest, AiError, AiMessage, AiModel, AiModelProvider,
-    AiProviderConfig, AiToolCall, AiToolDefinition, AiToolResult, AiUsage, OpenAiCompatibleClient,
+    AiAssistantMessage, AiCompletionDelta, AiCompletionRequest, AiError, AiMessage, AiModel,
+    AiModelProvider, AiProviderConfig, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
+    OpenAiCompatibleClient,
 };
 use serde_json::{json, Value};
 use std::sync::Mutex;
@@ -125,7 +126,7 @@ async fn rejects_oversized_model_list_before_reading_the_body() {
 async fn completes_text_chat_and_maps_usage() {
     let (base_url, captured_request) = spawn_json_response(
         200,
-        r#"{"choices":[{"message":{"role":"assistant","content":"找到 3 篇日记"},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":6,"total_tokens":26}}"#,
+        r#"{"choices":[{"message":{"role":"assistant","reasoning_content":"先检查日记列表","content":"找到 3 篇日记"},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":6,"total_tokens":26}}"#,
     )
     .await;
     let config = AiProviderConfig::new(&base_url, None).unwrap();
@@ -142,6 +143,10 @@ async fn completes_text_chat_and_maps_usage() {
 
     let completion = client.complete(request).await.unwrap();
 
+    assert_eq!(
+        completion.message.reasoning_content.as_deref(),
+        Some("先检查日记列表")
+    );
     assert_eq!(completion.message.content.as_deref(), Some("找到 3 篇日记"));
     assert!(completion.message.tool_calls.is_empty());
     assert_eq!(completion.finish_reason.as_deref(), Some("stop"));
@@ -169,7 +174,9 @@ async fn completes_text_chat_and_maps_usage() {
 #[tokio::test]
 async fn streams_text_deltas_and_maps_final_usage() {
     let body = concat!(
-        "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"找到 \"},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"reasoning_content\":\"先检查\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"日记列表\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"找到 \"},\"finish_reason\":null}]}\n\n",
         "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"3 篇日记\"},\"finish_reason\":\"stop\"}]}\n\n",
         "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":6,\"total_tokens\":26}}\n\n",
         "data: [DONE]\n\n",
@@ -183,17 +190,29 @@ async fn streams_text_deltas_and_maps_final_usage() {
         vec![],
     )
     .unwrap();
-    let received = Mutex::new(String::new());
+    let received = Mutex::new(Vec::new());
 
     let completion = client
         .complete_stream(request, &|delta| {
-            received.lock().unwrap().push_str(&delta);
+            received.lock().unwrap().push(delta);
             Ok(())
         })
         .await
         .unwrap();
 
-    assert_eq!(received.into_inner().unwrap(), "找到 3 篇日记");
+    assert_eq!(
+        received.into_inner().unwrap(),
+        vec![
+            AiCompletionDelta::Reasoning("先检查".into()),
+            AiCompletionDelta::Reasoning("日记列表".into()),
+            AiCompletionDelta::Content("找到 ".into()),
+            AiCompletionDelta::Content("3 篇日记".into()),
+        ]
+    );
+    assert_eq!(
+        completion.message.reasoning_content.as_deref(),
+        Some("先检查日记列表")
+    );
     assert_eq!(completion.message.content.as_deref(), Some("找到 3 篇日记"));
     assert_eq!(completion.finish_reason.as_deref(), Some("stop"));
     assert_eq!(
@@ -266,7 +285,9 @@ async fn silently_falls_back_for_streaming_models_without_reasoning_support() {
 
     let completion = client
         .complete_stream(request, &|delta| {
-            received.lock().unwrap().push_str(&delta);
+            if let AiCompletionDelta::Content(content) = delta {
+                received.lock().unwrap().push_str(&content);
+            }
             Ok(())
         })
         .await
@@ -384,6 +405,7 @@ async fn serializes_assistant_calls_and_tool_results_for_follow_up() {
         vec![
             AiMessage::User("查找旅行日记".into()),
             AiMessage::Assistant(AiAssistantMessage {
+                reasoning_content: Some("需要先搜索旅行日记".into()),
                 content: None,
                 tool_calls: vec![AiToolCall {
                     id: "call-1".into(),
@@ -404,6 +426,10 @@ async fn serializes_assistant_calls_and_tool_results_for_follow_up() {
 
     let body = captured_json_body(captured_request.await.unwrap());
     assert_eq!(body["messages"][1]["role"], "assistant");
+    assert_eq!(
+        body["messages"][1]["reasoning_content"],
+        "需要先搜索旅行日记"
+    );
     assert_eq!(body["messages"][1]["tool_calls"][0]["id"], "call-1");
     assert_eq!(
         body["messages"][1]["tool_calls"][0]["function"]["arguments"],

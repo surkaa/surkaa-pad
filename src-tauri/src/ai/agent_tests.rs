@@ -92,8 +92,18 @@ fn completion(
     tool_calls: Vec<AiToolCall>,
     usage: Option<AiUsage>,
 ) -> AiCompletion {
+    completion_with_reasoning(None, content, tool_calls, usage)
+}
+
+fn completion_with_reasoning(
+    reasoning_content: Option<&str>,
+    content: Option<&str>,
+    tool_calls: Vec<AiToolCall>,
+    usage: Option<AiUsage>,
+) -> AiCompletion {
     AiCompletion {
         message: AiAssistantMessage {
+            reasoning_content: reasoning_content.map(str::to_owned),
             content: content.map(str::to_owned),
             tool_calls,
         },
@@ -185,8 +195,13 @@ async fn executes_tools_and_feeds_results_back_to_the_model() {
 #[tokio::test]
 async fn streams_model_tool_and_answer_events_in_order() {
     let provider = FakeProvider::new(vec![
-        completion(None, vec![tool_call("call-1")], None),
-        completion(Some("最终回答"), vec![], None),
+        completion_with_reasoning(
+            Some("需要先读取日记"),
+            None,
+            vec![tool_call("call-1")],
+            None,
+        ),
+        completion_with_reasoning(Some("根据日记整理回答"), Some("最终回答"), vec![], None),
     ]);
     let tools = FakeTools::succeeding(json!({"content": "正文"}));
     let events = Mutex::new(Vec::new());
@@ -201,10 +216,17 @@ async fn streams_model_tool_and_answer_events_in_order() {
 
     assert_eq!(response.answer, "最终回答");
     let events = events.into_inner().unwrap();
-    assert_eq!(events.len(), 7);
+    assert_eq!(events.len(), 9);
     assert_eq!(events[0], AiAgentEvent::ModelStarted { round: 1 });
+    assert_eq!(
+        events[1],
+        AiAgentEvent::ReasoningDelta {
+            round: 1,
+            delta: "需要先读取日记".into(),
+        }
+    );
     assert!(matches!(
-        &events[1],
+        &events[2],
         AiAgentEvent::ModelCompleted {
             round: 1,
             tool_count: 1,
@@ -212,7 +234,7 @@ async fn streams_model_tool_and_answer_events_in_order() {
         }
     ));
     assert_eq!(
-        events[2],
+        events[3],
         AiAgentEvent::ToolStarted {
             operation_id: 1,
             round: 1,
@@ -221,7 +243,7 @@ async fn streams_model_tool_and_answer_events_in_order() {
         }
     );
     assert!(matches!(
-        &events[3],
+        &events[4],
         AiAgentEvent::ToolCompleted {
             operation_id: 1,
             summary,
@@ -229,15 +251,28 @@ async fn streams_model_tool_and_answer_events_in_order() {
             ..
         } if summary == "操作完成"
     ));
-    assert_eq!(events[4], AiAgentEvent::ModelStarted { round: 2 });
-    assert_eq!(events[5], AiAgentEvent::AnswerDelta("最终回答".into()));
+    assert_eq!(events[5], AiAgentEvent::ModelStarted { round: 2 });
+    assert_eq!(
+        events[6],
+        AiAgentEvent::ReasoningDelta {
+            round: 2,
+            delta: "根据日记整理回答".into(),
+        }
+    );
+    assert_eq!(events[7], AiAgentEvent::AnswerDelta("最终回答".into()));
     assert!(matches!(
-        &events[6],
+        &events[8],
         AiAgentEvent::ModelCompleted {
             round: 2,
             tool_count: 0,
             ..
         }
+    ));
+    let requests = provider.requests();
+    assert!(matches!(
+        &requests[1].messages()[2],
+        AiMessage::Assistant(message)
+            if message.reasoning_content.as_deref() == Some("需要先读取日记")
     ));
 }
 

@@ -673,7 +673,7 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 
 /** user-defined types **/
 
-export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "answerDelta"; data: string } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
+export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
 export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null }
 export type AiModel = { id: string; ownedBy: string | null }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }

@@ -320,6 +320,17 @@ async function scrollToBottom() {
                     <div class="process-step-content">
                       <div class="process-step-title">{{ step.title }}</div>
                       <div v-if="step.detail" class="process-step-detail">{{ step.detail }}</div>
+                      <details
+                        v-if="step.reasoning"
+                        class="reasoning-details"
+                        :open="step.state === 'running'"
+                      >
+                        <summary>{{ step.state === 'running' ? '正在思考' : '查看思考过程' }}</summary>
+                        <div
+                          class="reasoning-content ai-markdown"
+                          v-html="renderAiMarkdown(step.reasoning)"
+                        ></div>
+                      </details>
                     </div>
                     <div v-if="step.durationMs !== null" class="process-step-duration">
                       {{ formatProcessDuration(step.durationMs) }}
@@ -633,6 +644,32 @@ async function scrollToBottom() {
 .process-step-detail {
   margin-top: 2px;
   overflow-wrap: anywhere;
+}
+
+.reasoning-details {
+  margin-top: 7px;
+  overflow: hidden;
+  border: 1px solid var(--pad-border-color-100);
+  border-radius: var(--pad-radius-sm);
+  background: var(--pad-bg-color-200);
+
+  summary {
+    padding: 6px 8px;
+    color: var(--pad-text-color-300);
+    font-size: 0.7rem;
+    cursor: pointer;
+    user-select: none;
+  }
+}
+
+.reasoning-content {
+  max-height: 220px;
+  overflow: auto;
+  padding: 7px 9px;
+  color: var(--pad-text-color-300);
+  border-top: 1px solid var(--pad-border-color-100);
+  font-size: 0.72rem;
+  line-height: 1.55;
 }
 
 .process-step-duration {
