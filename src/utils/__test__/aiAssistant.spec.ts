@@ -6,6 +6,7 @@ import {
   formatAiProcessSummary,
   formatProcessDuration,
   initialAiAgentDisplayState,
+  nextAiProcessExpanded,
   reduceAiAgentEvent,
   shouldCollapseAiProcess,
   startAiQuestion,
@@ -229,6 +230,22 @@ describe('process visibility', () => {
       event: 'answerDelta',
       data: '后续正文',
     })).toBe(false);
+  });
+
+  it('does not reopen automatically in later model rounds', () => {
+    let state = initialAiAgentDisplayState();
+    let expanded = true;
+    const answerEvent = {event: 'answerDelta', data: '正文'} as const;
+
+    expanded = nextAiProcessExpanded(expanded, state, answerEvent);
+    state = reduceAiAgentEvent(state, answerEvent);
+    expect(expanded).toBe(false);
+
+    expanded = nextAiProcessExpanded(expanded, state, {
+      event: 'modelStarted',
+      data: {round: 2},
+    });
+    expect(expanded).toBe(false);
   });
 });
 

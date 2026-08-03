@@ -208,6 +208,14 @@ export function shouldCollapseAiProcess(
   return message.event === 'answerDelta' && state.answer.length === 0;
 }
 
+export function nextAiProcessExpanded(
+  expanded: boolean,
+  state: AiAgentDisplayState,
+  message: AiAgentEvent,
+): boolean {
+  return shouldCollapseAiProcess(state, message) ? false : expanded;
+}
+
 export function formatAiResponseMeta(response: AiAgentResponse): string {
   if (!response.usage) return '';
   return `输入 ${response.usage.promptTokens} Token · 输出 ${response.usage.completionTokens} Token`;

@@ -11,8 +11,8 @@ import {
   formatProcessDuration,
   initialAiAgentDisplayState,
   isTerminalAiExchangeState,
+  nextAiProcessExpanded,
   reduceAiAgentEvent,
-  shouldCollapseAiProcess,
   startAiQuestion,
   type AiAgentDisplayState,
   type AiExchangeState,
@@ -142,10 +142,9 @@ function handleAgentEvent(id: number, message: AiAgentEvent) {
   const exchange = findExchange(id);
   if (!exchange || isTerminalAiExchangeState(exchange.state)) return;
 
-  const shouldCollapseProcess = shouldCollapseAiProcess(exchange, message);
+  const processExpanded = nextAiProcessExpanded(exchange.processExpanded, exchange, message);
   Object.assign(exchange, reduceAiAgentEvent(exchange, message));
-  if (message.event === 'modelStarted') exchange.processExpanded = true;
-  if (shouldCollapseProcess) exchange.processExpanded = false;
+  exchange.processExpanded = processExpanded;
   if (isTerminalAiExchangeState(exchange.state)) {
     finishExchange(exchange, exchange.state, exchange.error);
   }
