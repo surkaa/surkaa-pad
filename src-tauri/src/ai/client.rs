@@ -9,7 +9,11 @@ use eventsource_stream::{EventStreamError, Eventsource};
 use futures_util::StreamExt;
 use reqwest::{Client, RequestBuilder, Response};
 use serde::Deserialize;
-use std::time::Duration;
+use std::{
+    collections::HashSet,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 const MODELS_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub(super) const MAX_MODELS_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
@@ -21,6 +25,7 @@ const MAX_ERROR_MESSAGE_CHARS: usize = 500;
 pub struct OpenAiCompatibleClient {
     http: Client,
     config: AiProviderConfig,
+    reasoning_unsupported_models: Arc<RwLock<HashSet<String>>>,
 }
 
 impl OpenAiCompatibleClient {
@@ -29,7 +34,11 @@ impl OpenAiCompatibleClient {
             .connect_timeout(Duration::from_secs(10))
             .build()
             .map_err(|error| AiError::RequestFailed(error.to_string()))?;
-        Ok(Self { http, config })
+        Ok(Self {
+            http,
+            config,
+            reasoning_unsupported_models: Arc::new(RwLock::new(HashSet::new())),
+        })
     }
 
     fn authorize(&self, request: RequestBuilder) -> RequestBuilder {
@@ -38,20 +47,28 @@ impl OpenAiCompatibleClient {
             None => request,
         }
     }
-}
 
-#[async_trait]
-impl AiModelProvider for OpenAiCompatibleClient {
-    async fn list_models(&self) -> Result<Vec<AiModel>, AiError> {
-        let request = self.authorize(self.http.get(self.config.models_url()));
-        let body = send_request(request, MODELS_REQUEST_TIMEOUT, MAX_MODELS_RESPONSE_BYTES).await?;
-        let response: ModelListResponse = serde_json::from_slice(&body)
-            .map_err(|error| AiError::InvalidResponse(error.to_string()))?;
-        response.into_models()
+    fn reasoning_is_enabled_for(&self, model: &str) -> bool {
+        !self
+            .reasoning_unsupported_models
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .contains(model)
     }
 
-    async fn complete(&self, request: AiCompletionRequest) -> Result<AiCompletion, AiError> {
-        let payload = ChatCompletionRequest::from(&request);
+    fn mark_reasoning_unsupported(&self, model: &str) {
+        self.reasoning_unsupported_models
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(model.to_owned());
+    }
+
+    async fn complete_once(
+        &self,
+        request: &AiCompletionRequest,
+        enable_reasoning: bool,
+    ) -> Result<AiCompletion, AiError> {
+        let payload = ChatCompletionRequest::new(request, enable_reasoning);
         let request = self.authorize(
             self.http
                 .post(self.config.chat_completions_url())
@@ -68,12 +85,13 @@ impl AiModelProvider for OpenAiCompatibleClient {
         response.try_into()
     }
 
-    async fn complete_stream(
+    async fn complete_stream_once(
         &self,
-        request: AiCompletionRequest,
+        request: &AiCompletionRequest,
+        enable_reasoning: bool,
         on_delta: &(dyn Fn(String) -> Result<(), AiError> + Send + Sync),
     ) -> Result<AiCompletion, AiError> {
-        let payload = ChatCompletionRequest::streaming(&request);
+        let payload = ChatCompletionRequest::streaming(request, enable_reasoning);
         let request = self.authorize(
             self.http
                 .post(self.config.chat_completions_url())
@@ -128,6 +146,64 @@ impl AiModelProvider for OpenAiCompatibleClient {
         }
         accumulator.finish()
     }
+}
+
+#[async_trait]
+impl AiModelProvider for OpenAiCompatibleClient {
+    async fn list_models(&self) -> Result<Vec<AiModel>, AiError> {
+        let request = self.authorize(self.http.get(self.config.models_url()));
+        let body = send_request(request, MODELS_REQUEST_TIMEOUT, MAX_MODELS_RESPONSE_BYTES).await?;
+        let response: ModelListResponse = serde_json::from_slice(&body)
+            .map_err(|error| AiError::InvalidResponse(error.to_string()))?;
+        response.into_models()
+    }
+
+    async fn complete(&self, request: AiCompletionRequest) -> Result<AiCompletion, AiError> {
+        let model = request.model().to_owned();
+        let enable_reasoning = self.reasoning_is_enabled_for(&model);
+        match self.complete_once(&request, enable_reasoning).await {
+            Err(error) if enable_reasoning && should_retry_without_reasoning(&error) => {
+                let result = self.complete_once(&request, false).await;
+                if result.is_ok() {
+                    self.mark_reasoning_unsupported(&model);
+                }
+                result
+            }
+            result => result,
+        }
+    }
+
+    async fn complete_stream(
+        &self,
+        request: AiCompletionRequest,
+        on_delta: &(dyn Fn(String) -> Result<(), AiError> + Send + Sync),
+    ) -> Result<AiCompletion, AiError> {
+        let model = request.model().to_owned();
+        let enable_reasoning = self.reasoning_is_enabled_for(&model);
+        match self
+            .complete_stream_once(&request, enable_reasoning, on_delta)
+            .await
+        {
+            Err(error) if enable_reasoning && should_retry_without_reasoning(&error) => {
+                let result = self.complete_stream_once(&request, false, on_delta).await;
+                if result.is_ok() {
+                    self.mark_reasoning_unsupported(&model);
+                }
+                result
+            }
+            result => result,
+        }
+    }
+}
+
+fn should_retry_without_reasoning(error: &AiError) -> bool {
+    matches!(
+        error,
+        AiError::HttpStatus {
+            status: 400 | 422,
+            ..
+        }
+    )
 }
 
 fn map_event_stream_error(error: EventStreamError<AiError>) -> AiError {

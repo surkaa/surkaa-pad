@@ -160,7 +160,8 @@ async fn completes_text_chat_and_maps_usage() {
             "messages": [
                 {"role": "system", "content": "你是日记助手"},
                 {"role": "user", "content": "最近写了什么？"}
-            ]
+            ],
+            "reasoning_effort": "medium"
         })
     );
 }
@@ -204,8 +205,83 @@ async fn streams_text_deltas_and_maps_final_usage() {
         })
     );
     let body = captured_json_body(captured_request.await.unwrap());
+    assert_eq!(body["reasoning_effort"], "medium");
     assert_eq!(body["stream"], true);
     assert_eq!(body["stream_options"]["include_usage"], true);
+}
+
+#[tokio::test]
+async fn silently_falls_back_and_remembers_models_without_reasoning_support() {
+    let completion_body =
+        r#"{"choices":[{"message":{"content":"普通回答"},"finish_reason":"stop"}]}"#;
+    let (base_url, captured_requests) = spawn_response_sequence(vec![
+        MockResponse::json(
+            400,
+            r#"{"error":{"message":"unknown field reasoning_effort"}}"#,
+        ),
+        MockResponse::json(200, completion_body),
+        MockResponse::json(200, completion_body),
+    ])
+    .await;
+    let config = AiProviderConfig::new(&base_url, None).unwrap();
+    let client = OpenAiCompatibleClient::new(config).unwrap();
+    let request =
+        AiCompletionRequest::new("plain-model", vec![AiMessage::User("测试".into())], vec![])
+            .unwrap();
+
+    client.complete(request.clone()).await.unwrap();
+    client.complete(request).await.unwrap();
+
+    let requests = captured_requests.await.unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        captured_json_body(requests[0].clone())["reasoning_effort"],
+        "medium"
+    );
+    assert!(captured_json_body(requests[1].clone())
+        .get("reasoning_effort")
+        .is_none());
+    assert!(captured_json_body(requests[2].clone())
+        .get("reasoning_effort")
+        .is_none());
+}
+
+#[tokio::test]
+async fn silently_falls_back_for_streaming_models_without_reasoning_support() {
+    let stream_body = concat!(
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"普通回答\"},\"finish_reason\":\"stop\"}]}\n\n",
+        "data: [DONE]\n\n",
+    );
+    let (base_url, captured_requests) = spawn_response_sequence(vec![
+        MockResponse::json(422, r#"{"error":{"message":"reasoning is not supported"}}"#),
+        MockResponse::sse(stream_body),
+    ])
+    .await;
+    let config = AiProviderConfig::new(&base_url, None).unwrap();
+    let client = OpenAiCompatibleClient::new(config).unwrap();
+    let request =
+        AiCompletionRequest::new("plain-model", vec![AiMessage::User("测试".into())], vec![])
+            .unwrap();
+    let received = Mutex::new(String::new());
+
+    let completion = client
+        .complete_stream(request, &|delta| {
+            received.lock().unwrap().push_str(&delta);
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(received.into_inner().unwrap(), "普通回答");
+    assert_eq!(completion.message.content.as_deref(), Some("普通回答"));
+    let requests = captured_requests.await.unwrap();
+    assert_eq!(
+        captured_json_body(requests[0].clone())["reasoning_effort"],
+        "medium"
+    );
+    assert!(captured_json_body(requests[1].clone())
+        .get("reasoning_effort")
+        .is_none());
 }
 
 #[tokio::test]
@@ -377,6 +453,52 @@ async fn accepts_json_object_tool_arguments_from_compatible_services() {
     );
 }
 
+struct MockResponse {
+    status: u16,
+    body: &'static str,
+    content_type: &'static str,
+}
+
+impl MockResponse {
+    fn json(status: u16, body: &'static str) -> Self {
+        Self {
+            status,
+            body,
+            content_type: "application/json",
+        }
+    }
+
+    fn sse(body: &'static str) -> Self {
+        Self {
+            status: 200,
+            body,
+            content_type: "text/event-stream",
+        }
+    }
+}
+
+async fn spawn_response_sequence(
+    responses: Vec<MockResponse>,
+) -> (String, oneshot::Receiver<Vec<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (request_sender, request_receiver) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let mut requests = Vec::with_capacity(responses.len());
+        for response in responses {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            requests.push(String::from_utf8(read_request(&mut socket).await).unwrap());
+            let response_text =
+                format_response(response.status, response.body, None, response.content_type);
+            socket.write_all(response_text.as_bytes()).await.unwrap();
+        }
+        let _ = request_sender.send(requests);
+    });
+
+    (format!("http://{address}/v1"), request_receiver)
+}
+
 async fn spawn_json_response(
     status: u16,
     body: &'static str,
@@ -411,19 +533,30 @@ async fn spawn_typed_response(
         let request = read_request(&mut socket).await;
         let _ = request_sender.send(String::from_utf8(request).unwrap());
 
-        let reason = match status {
-            200 => "OK",
-            401 => "Unauthorized",
-            _ => "Error",
-        };
-        let response = format!(
-            "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            declared_content_length.unwrap_or(body.len())
-        );
+        let response = format_response(status, body, declared_content_length, content_type);
         socket.write_all(response.as_bytes()).await.unwrap();
     });
 
     (format!("http://{address}/v1"), request_receiver)
+}
+
+fn format_response(
+    status: u16,
+    body: &str,
+    declared_content_length: Option<usize>,
+    content_type: &str,
+) -> String {
+    let reason = match status {
+        200 => "OK",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        422 => "Unprocessable Entity",
+        _ => "Error",
+    };
+    format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        declared_content_length.unwrap_or(body.len())
+    )
 }
 
 async fn read_request(socket: &mut tokio::net::TcpStream) -> Vec<u8> {

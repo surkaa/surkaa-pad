@@ -49,14 +49,22 @@ pub(super) struct ChatCompletionRequest {
     messages: Vec<ChatMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<ChatToolDefinition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<ReasoningEffort>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream_options: Option<StreamOptions>,
 }
 
-impl From<&AiCompletionRequest> for ChatCompletionRequest {
-    fn from(request: &AiCompletionRequest) -> Self {
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ReasoningEffort {
+    Medium,
+}
+
+impl ChatCompletionRequest {
+    pub(super) fn new(request: &AiCompletionRequest, enable_reasoning: bool) -> Self {
         Self {
             model: request.model().to_owned(),
             messages: request.messages().iter().map(ChatMessage::from).collect(),
@@ -65,20 +73,19 @@ impl From<&AiCompletionRequest> for ChatCompletionRequest {
                 .iter()
                 .map(ChatToolDefinition::from)
                 .collect(),
+            reasoning_effort: enable_reasoning.then_some(ReasoningEffort::Medium),
             stream: false,
             stream_options: None,
         }
     }
-}
 
-impl ChatCompletionRequest {
-    pub(super) fn streaming(request: &AiCompletionRequest) -> Self {
+    pub(super) fn streaming(request: &AiCompletionRequest, enable_reasoning: bool) -> Self {
         Self {
             stream: true,
             stream_options: Some(StreamOptions {
                 include_usage: true,
             }),
-            ..Self::from(request)
+            ..Self::new(request, enable_reasoning)
         }
     }
 }
