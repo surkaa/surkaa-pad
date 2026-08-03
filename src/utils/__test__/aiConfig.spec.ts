@@ -2,6 +2,7 @@ import {describe, expect, it, vi} from 'vitest';
 import {
   classifyAiEndpoint,
   clearAiServiceConfig,
+  isAiModelAvailable,
   loadAiServiceConfig,
   normalizeAiServiceConfig,
   saveAiServiceConfig,
@@ -85,5 +86,45 @@ describe('AI service config', () => {
 
     expect(current()).toBeNull();
     await expect(loadAiServiceConfig(storage, cipher)).resolves.toBeNull();
+  });
+
+  it('checks the configured model against the latest model list', async () => {
+    const listModels = vi.fn(async () => [
+      {id: 'model-1', ownedBy: null},
+      {id: 'model-2', ownedBy: 'provider'},
+    ]);
+    const config = {
+      baseUrl: 'https://example.com/v1',
+      apiKey: ' secret-key ',
+      model: 'model-2',
+    };
+
+    await expect(isAiModelAvailable(config, listModels)).resolves.toBe(true);
+    expect(listModels).toHaveBeenCalledWith('https://example.com/v1', 'secret-key');
+  });
+
+  it('reports a missing model and omits an empty API key', async () => {
+    const listModels = vi.fn(async () => [{id: 'other-model', ownedBy: null}]);
+    const config = {
+      baseUrl: 'http://localhost:11434/v1',
+      apiKey: '  ',
+      model: 'missing-model',
+    };
+
+    await expect(isAiModelAvailable(config, listModels)).resolves.toBe(false);
+    expect(listModels).toHaveBeenCalledWith('http://localhost:11434/v1', null);
+  });
+
+  it('preserves model-list request errors for the caller to display', async () => {
+    const requestError = new Error('service unavailable');
+    const listModels = vi.fn(async () => {
+      throw requestError;
+    });
+
+    await expect(isAiModelAvailable({
+      baseUrl: 'https://example.com/v1',
+      apiKey: '',
+      model: 'model-1',
+    }, listModels)).rejects.toBe(requestError);
   });
 });

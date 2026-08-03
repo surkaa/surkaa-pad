@@ -1,3 +1,4 @@
+import type {AiModel} from '../bindings';
 import {useConfigStore} from '../stores/config';
 import api from './api';
 
@@ -21,6 +22,8 @@ export interface AiConfigCipher {
   encrypt(plaintext: string): Promise<number[]>;
   decrypt(encrypted: number[]): Promise<string>;
 }
+
+export type AiModelLister = (baseUrl: string, apiKey: string | null) => Promise<AiModel[]>;
 
 export function normalizeAiServiceConfig(value: unknown): AiServiceConfig {
   if (!value || typeof value !== 'object') {
@@ -91,6 +94,14 @@ export async function clearAiServiceConfig(
   storage: AiConfigStorage = defaultStorage(),
 ): Promise<void> {
   await storage.remove();
+}
+
+export async function isAiModelAvailable(
+  config: AiServiceConfig,
+  listModels: AiModelLister = api.cmdListAiModels,
+): Promise<boolean> {
+  const models = await listModels(config.baseUrl, config.apiKey.trim() || null);
+  return models.some(model => model.id === config.model);
 }
 
 function defaultStorage(): AiConfigStorage {

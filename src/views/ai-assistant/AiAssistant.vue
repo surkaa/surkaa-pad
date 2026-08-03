@@ -20,6 +20,7 @@ import {
 } from '../../utils/aiAssistant';
 import {renderAiMarkdown} from '../../utils/aiMarkdown';
 import {
+  isAiModelAvailable,
   loadAiServiceConfig,
   type AiServiceConfig,
 } from '../../utils/aiConfig';
@@ -36,6 +37,8 @@ interface AiExchange extends AiAgentDisplayState {
   processExpanded: boolean;
 }
 
+type ModelCheckState = 'idle' | 'checking' | 'available' | 'unavailable' | 'failed';
+
 const suggestions = [
   '总结最近三篇日记',
   '最近一篇日记写了什么？',
@@ -51,13 +54,25 @@ const questionInput = ref<{focus: () => void} | null>(null);
 const config = ref<AiServiceConfig | null>(null);
 const configError = ref<string | null>(null);
 const loadingConfig = ref(true);
+const modelCheckState = ref<ModelCheckState>('idle');
+const modelCheckError = ref<string | null>(null);
 const question = ref('');
 const sending = ref(false);
 const exchanges = ref<AiExchange[]>([]);
 const isCanceling = computed(() => exchanges.value.some(exchange => exchange.state === 'canceling'));
+const modelReady = computed(() => !!config.value && modelCheckState.value === 'available');
+const modelLabel = computed(() => {
+  const model = config.value?.model;
+  if (!model) return '';
+  if (modelCheckState.value === 'checking') return `正在检查 ${model}…`;
+  if (modelCheckState.value === 'unavailable') return `${model} · 当前不可用`;
+  if (modelCheckState.value === 'failed') return `${model} · 无法验证`;
+  return `${model} · 每次提问独立处理`;
+});
 let nextExchangeId = 1;
 let pendingScrollFrame: number | null = null;
 let unmounting = false;
+let configRefreshId = 0;
 
 defineOptions({name: 'AiAssistant'});
 
@@ -72,21 +87,52 @@ onActivated(async () => {
 });
 onBeforeUnmount(() => {
   unmounting = true;
+  configRefreshId += 1;
   if (pendingScrollFrame !== null) cancelAnimationFrame(pendingScrollFrame);
   void cancelActiveQuestion(false);
 });
 
 async function refreshConfig() {
+  const refreshId = ++configRefreshId;
   loadingConfig.value = true;
   configError.value = null;
+  modelCheckState.value = 'idle';
+  modelCheckError.value = null;
   try {
-    config.value = await loadAiServiceConfig();
+    const loadedConfig = await loadAiServiceConfig();
+    if (refreshId !== configRefreshId) return;
+    config.value = loadedConfig;
+    loadingConfig.value = false;
+    if (loadedConfig) await checkModelAvailability(loadedConfig, refreshId);
   } catch (error) {
+    if (refreshId !== configRefreshId) return;
     config.value = null;
     configError.value = formatError(error);
   } finally {
-    loadingConfig.value = false;
+    if (refreshId === configRefreshId) loadingConfig.value = false;
   }
+}
+
+async function checkModelAvailability(
+  activeConfig: AiServiceConfig,
+  refreshId = ++configRefreshId,
+) {
+  modelCheckState.value = 'checking';
+  modelCheckError.value = null;
+  try {
+    const available = await isAiModelAvailable(activeConfig);
+    if (refreshId !== configRefreshId) return;
+    modelCheckState.value = available ? 'available' : 'unavailable';
+  } catch (error) {
+    if (refreshId !== configRefreshId) return;
+    modelCheckState.value = 'failed';
+    modelCheckError.value = formatError(error);
+  }
+}
+
+function retryModelCheck() {
+  const activeConfig = config.value;
+  if (activeConfig) void checkModelAvailability(activeConfig);
 }
 
 function openSettings() {
@@ -106,7 +152,7 @@ function handleComposerKeydown(event: KeyboardEvent) {
 async function submitQuestion() {
   const activeConfig = config.value;
   const prompt = question.value.trim();
-  if (!activeConfig || !prompt || sending.value) return;
+  if (!activeConfig || !modelReady.value || !prompt || sending.value) return;
 
   const exchange: AiExchange = {
     ...initialAiAgentDisplayState(),
@@ -246,9 +292,9 @@ async function scrollToBottom() {
         <h1>问问你的日记</h1>
         <p>AI Agent 可以按需搜索和读取日记文字，但不会修改任何内容，也无法理解图片或播放音视频。</p>
 
-        <div v-if="loadingConfig" class="config-loading">
+        <div v-if="loadingConfig || modelCheckState === 'checking'" class="config-loading">
           <q-spinner-dots color="primary" size="32px"/>
-          <span>正在读取 AI 配置</span>
+          <span>{{ loadingConfig ? '正在读取 AI 配置' : '正在检查所选模型' }}</span>
         </div>
         <q-banner v-else-if="!config" rounded class="config-banner">
           <div>{{ configError ? `读取 AI 配置失败：${configError}` : '尚未配置 AI 服务' }}</div>
@@ -256,7 +302,19 @@ async function scrollToBottom() {
             <q-btn flat color="primary" label="前往设置" @click="openSettings"/>
           </template>
         </q-banner>
-        <div v-else class="suggestions">
+        <q-banner v-else-if="modelCheckState === 'unavailable'" rounded class="config-banner">
+          <div>模型“{{ config.model }}”已不在服务提供的模型列表中，请重新选择。</div>
+          <template #action>
+            <q-btn flat color="primary" label="前往设置" @click="openSettings"/>
+          </template>
+        </q-banner>
+        <q-banner v-else-if="modelCheckState === 'failed'" rounded class="config-banner">
+          <div>检查模型失败：{{ modelCheckError }}</div>
+          <template #action>
+            <q-btn flat color="primary" label="重新检查" @click="retryModelCheck"/>
+          </template>
+        </q-banner>
+        <div v-else-if="modelReady" class="suggestions">
           <div class="suggestion-title">可以试着问</div>
           <q-btn
             v-for="suggestion in suggestions"
@@ -376,7 +434,30 @@ async function scrollToBottom() {
 
     <div class="composer-area">
       <div v-if="config" class="model-label">
-        {{ config.model }} · 每次提问独立处理
+        <q-spinner v-if="modelCheckState === 'checking'" color="primary" size="13px"/>
+        <q-icon
+          v-else-if="modelCheckState === 'unavailable' || modelCheckState === 'failed'"
+          name="warning_amber"
+        />
+        <span>{{ modelLabel }}</span>
+        <q-btn
+          v-if="modelCheckState === 'failed'"
+          flat
+          dense
+          no-caps
+          color="primary"
+          label="重试"
+          @click="retryModelCheck"
+        />
+        <q-btn
+          v-else-if="modelCheckState === 'unavailable'"
+          flat
+          dense
+          no-caps
+          color="primary"
+          label="重新选择"
+          @click="openSettings"
+        />
       </div>
       <div class="composer-row">
         <q-input
@@ -388,7 +469,7 @@ async function scrollToBottom() {
           dense
           rows="1"
           maxlength="4000"
-          :disable="!config || loadingConfig || sending"
+          :disable="!modelReady || sending"
           placeholder="输入想从日记中了解的问题"
           aria-label="向 AI 助手提问"
           class="question-input"
@@ -401,7 +482,7 @@ async function scrollToBottom() {
           :icon="sending ? 'stop' : 'send'"
           :aria-label="sending ? '停止生成' : '发送问题'"
           :loading="isCanceling"
-          :disable="sending ? isCanceling : !config || !question.trim()"
+          :disable="sending ? isCanceling : !modelReady || !question.trim()"
           @click="sending ? cancelActiveQuestion() : submitQuestion()"
         />
       </div>
@@ -853,8 +934,16 @@ async function scrollToBottom() {
 }
 
 .model-label {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   margin-bottom: 5px;
   text-align: left;
+
+  span {
+    flex: 1;
+  }
 }
 
 .privacy-hint {
