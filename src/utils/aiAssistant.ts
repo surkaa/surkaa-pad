@@ -26,13 +26,7 @@ export interface AiAgentDisplayState {
   processSteps: AiProcessStep[];
 }
 
-export type AiAgentRunner = (
-  event: Channel<AiAgentEvent>,
-  baseUrl: string,
-  apiKey: string | null,
-  model: string,
-  prompt: string,
-) => Promise<string>;
+export type AiAgentRunner = typeof api.cmdRunAiAgent;
 
 export async function startAiQuestion(
   config: AiServiceConfig,

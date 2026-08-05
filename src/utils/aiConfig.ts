@@ -1,4 +1,3 @@
-import type {AiModel} from '../bindings';
 import {useConfigStore} from '../stores/config';
 import api from './api';
 
@@ -23,7 +22,7 @@ export interface AiConfigCipher {
   decrypt(encrypted: number[]): Promise<string>;
 }
 
-export type AiModelLister = (baseUrl: string, apiKey: string | null) => Promise<AiModel[]>;
+export type AiModelLister = typeof api.cmdListAiModels;
 
 export function normalizeAiServiceConfig(value: unknown): AiServiceConfig {
   if (!value || typeof value !== 'object') {
