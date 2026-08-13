@@ -103,6 +103,7 @@
               />
             </q-item-section>
           </q-item>
+          <AttachmentCacheSettings v-if="remoteEnabled"/>
           <LocalStorageSettings
               v-if="isWindows"
               :refresh-revision="localStorageRefreshRevision"
@@ -226,6 +227,7 @@ import {formatError} from "../../utils/formatError.ts";
 import {biometricToggleAction} from "../../utils/biometricToggle.ts";
 import {useRemoteStorageSettings} from '../../composables/useRemoteStorageSettings';
 import AttachmentSettings from './AttachmentSettings.vue';
+import AttachmentCacheSettings from './AttachmentCacheSettings.vue';
 import AiSettings from './AiSettings.vue';
 import DisableRemoteStorageDialog from '../../components/DisableRemoteStorageDialog.vue';
 import DiaryVersionSettings from './DiaryVersionSettings.vue';

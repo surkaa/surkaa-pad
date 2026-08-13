@@ -170,6 +170,34 @@ async cmdGetStorageMode() : Promise<boolean> {
     return await TAURI_INVOKE("cmd_get_storage_mode");
 },
 /**
+ * 获取云同步模式下的本地附件缓存用量和容量上限。
+ * # Returns
+ * * `Result<AttachmentCacheInfo, AppError>` - 已缓存附件数量、总大小和容量上限
+ */
+async cmdGetAttachmentCacheInfo() : Promise<Result<AttachmentCacheInfo, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_attachment_cache_info") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 修改云同步模式下的本地附件缓存容量上限，并立即按 LRU 淘汰到新上限。
+ * # Arguments
+ * * `limit_bytes` - 缓存容量上限，允许范围为 1–100 GiB
+ * # Returns
+ * * `Result<AttachmentCacheInfo, AppError>` - 应用新上限后的缓存统计
+ */
+async cmdSetAttachmentCacheLimit(limitBytes: number) : Promise<Result<AttachmentCacheInfo, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_set_attachment_cache_limit", { limitBytes }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 将旧版前端保存的远程存储状态迁移到 Rust 配置。
  * # Arguments
  * * `legacy_enabled` - 旧版前端配置中的远程存储状态
@@ -679,6 +707,7 @@ export type AiModel = { id: string; ownedBy: string | null }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }
+export type AttachmentCacheInfo = { cachedFiles: number; cachedBytes: number; limitBytes: number }
 export type AttachmentMeta = { 
 /**
  * 稳定附件 ID，同时作为存储对象 key 的末段。

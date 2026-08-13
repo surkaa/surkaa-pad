@@ -219,6 +219,19 @@ body {
     color: var(--pad-primary-dark) !important;
 }
 
+.pad-attachment-cache-menu {
+    background-color: var(--pad-bg-color-200) !important;
+    color: var(--pad-text-color-200) !important;
+}
+
+.pad-attachment-cache-menu .q-item {
+    color: var(--pad-text-color-200) !important;
+}
+
+.pad-attachment-cache-menu .q-item--active {
+    color: var(--pad-primary-dark) !important;
+}
+
 .pad-ai-model-menu {
     background-color: var(--pad-bg-color-200) !important;
     color: var(--pad-text-color-200) !important;
