@@ -371,41 +371,84 @@ defineExpose({
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--pad-warning-color) 22%, transparent);
   }
 
-  ul[data-type='taskList'] {
-    margin: 0.75em 0;
+}
+</style>
+
+<style lang="scss">
+.tiptap-wrapper {
+  .ProseMirror ul[data-type='taskList'] {
+    margin: 0.65em 0;
     padding: 0;
     list-style: none;
 
     li[data-type='taskItem'] {
       display: flex;
       align-items: flex-start;
-      gap: 9px;
-      margin: 5px 0;
+      gap: 10px;
+      min-height: 28px;
+      margin: 3px 0;
 
       > label {
+        position: relative;
         flex: none;
-        display: flex;
-        align-items: center;
-        margin-top: 0.18em;
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 24px;
         cursor: pointer;
         user-select: none;
 
         input[type='checkbox'] {
-          width: 18px;
-          height: 18px;
+          position: absolute;
+          width: 20px;
+          height: 20px;
           margin: 0;
-          accent-color: var(--pad-primary-color);
+          opacity: 0;
           cursor: pointer;
         }
 
         span {
-          display: none;
+          display: grid;
+          place-items: center;
+          box-sizing: border-box;
+          width: 19px;
+          height: 19px;
+          border: 1.5px solid var(--pad-border-color-300);
+          border-radius: 6px;
+          background: var(--pad-bg-color-100);
+          transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+        }
+
+        input[type='checkbox']:checked + span {
+          border-color: var(--pad-primary-color);
+          background: var(--pad-primary-color);
+        }
+
+        input[type='checkbox']:checked + span::after {
+          content: '';
+          width: 9px;
+          height: 5px;
+          margin-top: -2px;
+          border-bottom: 2px solid var(--pad-on-primary-color);
+          border-left: 2px solid var(--pad-on-primary-color);
+          transform: rotate(-45deg);
+        }
+
+        input[type='checkbox']:focus-visible + span {
+          outline: 2px solid color-mix(in srgb, var(--pad-primary-color) 45%, transparent);
+          outline-offset: 2px;
+        }
+
+        &:active span {
+          transform: scale(0.9);
         }
       }
 
       > div {
         flex: 1;
         min-width: 0;
+        padding: 1px 0 3px;
+        line-height: 1.45;
 
         > p {
           margin: 0;
@@ -419,11 +462,7 @@ defineExpose({
       }
     }
   }
-}
-</style>
 
-<style lang="scss">
-.tiptap-wrapper {
   img[data-id] {
     cursor: pointer;
     min-height: 50px;
