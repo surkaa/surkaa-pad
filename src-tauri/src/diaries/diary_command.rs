@@ -40,10 +40,10 @@ pub async fn cmd_save_diary(
 /// * `Result<(), AppError>` - 成功时已删除日记及其全部附件
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), AppError> {
+pub async fn cmd_delete_diary(state: State<'_, AppState>, id: f64) -> Result<(), AppError> {
     let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
-    Ok(delete_diary(&state.diary_cache(), &*store, id).await?)
+    Ok(delete_diary(&state.diary_cache(), &*store, checked_diary_id(id)?).await?)
 }
 
 /// 更新日记的内容
@@ -56,11 +56,12 @@ pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<()
 #[specta::specta]
 pub async fn cmd_update_diary_content_only(
     state: State<'_, AppState>,
-    id: &str,
+    id: f64,
     new_content: DiaryContent,
 ) -> Result<DiarySummary, AppError> {
     let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
+    let id = checked_diary_id(id)?;
     Ok(update_diary_content_only(
         &state.diary_cache(),
         &state.crypto(),
@@ -81,10 +82,11 @@ pub async fn cmd_update_diary_content_only(
 pub async fn cmd_page_diary_ids(
     state: State<'_, AppState>,
     next_token: NextToken,
-) -> Result<(Vec<String>, NextToken), AppError> {
+) -> Result<(Vec<f64>, NextToken), AppError> {
     let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
-    Ok(page_diary_ids(&*store, next_token).await?)
+    let (ids, next) = page_diary_ids(&*store, next_token).await?;
+    Ok((ids.into_iter().map(|id| id as f64).collect(), next))
 }
 
 /// 获取日记摘要
@@ -96,11 +98,17 @@ pub async fn cmd_page_diary_ids(
 #[specta::specta]
 pub async fn cmd_get_diary_summary(
     state: State<'_, AppState>,
-    id: &str,
+    id: f64,
 ) -> Result<DiarySummary, AppError> {
     let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
-    Ok(get_diary_summary(&state.diary_cache(), &state.crypto(), &*store, id).await?)
+    Ok(get_diary_summary(
+        &state.diary_cache(),
+        &state.crypto(),
+        &*store,
+        checked_diary_id(id)?,
+    )
+    .await?)
 }
 
 /// 获取日记完整详情
@@ -112,7 +120,7 @@ pub async fn cmd_get_diary_summary(
 #[specta::specta]
 pub async fn cmd_get_diary_detail(
     state: State<'_, AppState>,
-    id: &str,
+    id: f64,
 ) -> Result<DiaryDetail, AppError> {
     let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
@@ -121,7 +129,7 @@ pub async fn cmd_get_diary_detail(
         &state.crypto(),
         &*store,
         &state.attachment_server(),
-        id,
+        checked_diary_id(id)?,
     )
     .await?)
 }
@@ -135,11 +143,17 @@ pub async fn cmd_get_diary_detail(
 #[specta::specta]
 pub async fn cmd_get_diary_manifest(
     state: State<'_, AppState>,
-    id: &str,
+    id: f64,
 ) -> Result<DiaryManifest, AppError> {
     let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
-    Ok(get_diary(&state.diary_cache(), &state.crypto(), &*store, id).await?)
+    Ok(get_diary(
+        &state.diary_cache(),
+        &state.crypto(),
+        &*store,
+        checked_diary_id(id)?,
+    )
+    .await?)
 }
 
 /// 搜索日记
@@ -227,5 +241,12 @@ fn start_diary_version_task(state: AppState, event: Channel<DiaryVersionEvent>) 
             },
         };
         let _ = event.send(terminal);
+    })
+}
+
+pub(crate) fn checked_diary_id(id: f64) -> Result<u64, AppError> {
+    crate::utils::id_generate::checked_u64_from_f64(id).ok_or_else(|| AppError {
+        error_type: "diary".into(),
+        message: "无效的日记 ID".into(),
     })
 }

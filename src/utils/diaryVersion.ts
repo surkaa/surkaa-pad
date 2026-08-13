@@ -12,7 +12,7 @@ export interface DiaryVersionDisplayState {
   scope: DiaryVersionStorageScope | null;
   processed: number;
   total: number;
-  currentDiaryId: string;
+  currentDiaryId: number;
   currentOutcome: DiaryVersionItemOutcome | null;
   report: DiaryVersionReport | null;
   error: string;
@@ -24,7 +24,7 @@ export function initialDiaryVersionDisplay(running = false): DiaryVersionDisplay
     scope: null,
     processed: 0,
     total: 0,
-    currentDiaryId: '',
+    currentDiaryId: 0,
     currentOutcome: null,
     report: null,
     error: '',
@@ -38,7 +38,7 @@ export function withDiaryVersionError(
   return {
     ...state,
     phase: 'failed',
-    currentDiaryId: '',
+    currentDiaryId: 0,
     currentOutcome: null,
     error,
   };
@@ -82,7 +82,7 @@ function terminalState(
     scope: report.scope,
     processed: report.processedDiaries,
     total: report.totalDiaries,
-    currentDiaryId: '',
+    currentDiaryId: 0,
     currentOutcome: null,
     report,
     error: '',

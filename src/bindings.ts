@@ -271,7 +271,7 @@ async cmdSaveDiary(content: DiaryContent) : Promise<Result<[DiarySummary, DiaryC
  * # Returns
  * * `Result<DiarySummary, AppError>` - 成功时返回更新后的日记摘要
  */
-async cmdUpdateDiaryContentOnly(id: string, newContent: DiaryContent) : Promise<Result<DiarySummary, AppError>> {
+async cmdUpdateDiaryContentOnly(id: number, newContent: DiaryContent) : Promise<Result<DiarySummary, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_update_diary_content_only", { id, newContent }) };
 } catch (e) {
@@ -286,7 +286,7 @@ async cmdUpdateDiaryContentOnly(id: string, newContent: DiaryContent) : Promise<
  * # Returns
  * * `Result<(), AppError>` - 成功时已删除日记及其全部附件
  */
-async cmdDeleteDiary(id: string) : Promise<Result<null, AppError>> {
+async cmdDeleteDiary(id: number) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_delete_diary", { id }) };
 } catch (e) {
@@ -301,7 +301,7 @@ async cmdDeleteDiary(id: string) : Promise<Result<null, AppError>> {
  * # Returns
  * * `Result<(Vec<String>, NextToken), AppError>` - 日记 ID 列表和下一页令牌
  */
-async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], string | null], AppError>> {
+async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[number[], string | null], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_page_diary_ids", { nextToken }) };
 } catch (e) {
@@ -316,7 +316,7 @@ async cmdPageDiaryIds(nextToken: string | null) : Promise<Result<[string[], stri
  * # Returns
  * * `Result<DiarySummary, AppError>` - 成功时返回日记摘要
  */
-async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, AppError>> {
+async cmdGetDiarySummary(id: number) : Promise<Result<DiarySummary, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_summary", { id }) };
 } catch (e) {
@@ -331,7 +331,7 @@ async cmdGetDiarySummary(id: string) : Promise<Result<DiarySummary, AppError>> {
  * # Returns
  * * `Result<DiaryDetail, AppError>` - 日记摘要、正文、附件元数据和附件 ID 到本地 HTTP URL 的映射
  */
-async cmdGetDiaryDetail(id: string) : Promise<Result<DiaryDetail, AppError>> {
+async cmdGetDiaryDetail(id: number) : Promise<Result<DiaryDetail, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_detail", { id }) };
 } catch (e) {
@@ -346,7 +346,7 @@ async cmdGetDiaryDetail(id: string) : Promise<Result<DiaryDetail, AppError>> {
  * # Returns
  * * `Result<DiaryManifest, AppError>` - 包含版本、算法、正文和附件元数据的完整 Manifest
  */
-async cmdGetDiaryManifest(id: string) : Promise<Result<DiaryManifest, AppError>> {
+async cmdGetDiaryManifest(id: number) : Promise<Result<DiaryManifest, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_get_diary_manifest", { id }) };
 } catch (e) {
@@ -399,7 +399,7 @@ async cmdInspectDiaryVersions(event: TAURI_CHANNEL<DiaryVersionEvent>) : Promise
  * # Returns
  * * `Result<String, AppError>` - 后台上传任务令牌，可用于取消任务
  */
-async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, accessStr: string, encrypted: boolean, originalFilename: string | null) : Promise<Result<string, AppError>> {
+async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: number, accessStr: string, encrypted: boolean, originalFilename: string | null) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment", { event, id, accessStr, encrypted, originalFilename }) };
 } catch (e) {
@@ -418,7 +418,7 @@ async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string,
  * # Returns
  * * `Result<String, AppError>` - 后台上传任务令牌，可用于取消任务
  */
-async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, data: number[], mimetype: string, encrypted: boolean) : Promise<Result<string, AppError>> {
+async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: number, data: number[], mimetype: string, encrypted: boolean) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_add_attachment_memory", { event, id, data, mimetype, encrypted }) };
 } catch (e) {
@@ -434,7 +434,7 @@ async cmdAddAttachmentMemory(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: s
  * # Returns
  * * `Result<(), AppError>` - 成功时已删除附件引用和存储对象
  */
-async cmdDeleteAttachment(id: string, attachmentId: string) : Promise<Result<null, AppError>> {
+async cmdDeleteAttachment(id: number, attachmentId: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_delete_attachment", { id, attachmentId }) };
 } catch (e) {
@@ -451,7 +451,7 @@ async cmdDeleteAttachment(id: string, attachmentId: string) : Promise<Result<nul
  * # Returns
  * * `Result<String, AppError>` - Android 上返回后台上传任务令牌，其他平台返回不支持错误
  */
-async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, encrypted: boolean) : Promise<Result<string, AppError>> {
+async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: number, encrypted: boolean) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_add_image_attachment_from_camera", { event, id, encrypted }) };
 } catch (e) {
@@ -468,7 +468,7 @@ async cmdAddImageAttachmentFromCamera(event: TAURI_CHANNEL<AttachmentProcessEven
  * # Returns
  * * `Result<String, AppError>` - 后台处理任务令牌，可用于取消任务
  */
-async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
+async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: number, attachmentId: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_toggle_attachment_encryption", { event, id, attachmentId }) };
 } catch (e) {
@@ -486,7 +486,7 @@ async cmdToggleAttachmentEncryption(event: TAURI_CHANNEL<AttachmentProcessEvent>
  * # Returns
  * * `Result<String, AppError>` - 后台处理任务令牌，可用于取消任务
  */
-async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string, rotation: number) : Promise<Result<string, AppError>> {
+async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: number, attachmentId: string, rotation: number) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_rotate_image_attachment", { event, id, attachmentId, rotation }) };
 } catch (e) {
@@ -503,7 +503,7 @@ async cmdRotateImageAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
  * # Returns
  * * `Result<String, AppError>` - 后台缓存任务令牌，可用于取消任务
  */
-async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
+async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: number, attachmentId: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_caching_attachment", { event, id, attachmentId }) };
 } catch (e) {
@@ -520,7 +520,7 @@ async cmdCachingAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: str
  * # Returns
  * * `Result<String, AppError>` - 选定保存位置后返回后台保存任务令牌
  */
-async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
+async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: number, attachmentId: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_save_decrypt_attachment", { event, id, attachmentId }) };
 } catch (e) {
@@ -537,7 +537,7 @@ async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
  * # Returns
  * * `Result<(), AppError>` - 成功时已更新 Manifest 中的展示文件名
  */
-async cmdUpdateAttachmentFilename(id: string, attachmentId: string, newFilename: string) : Promise<Result<null, AppError>> {
+async cmdUpdateAttachmentFilename(id: number, attachmentId: string, newFilename: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_update_attachment_filename", { id, attachmentId, newFilename }) };
 } catch (e) {
@@ -556,7 +556,7 @@ async cmdUpdateAttachmentFilename(id: string, attachmentId: string, newFilename:
  * # Returns
  * * `Result<ChunkedUploadStartResult, AppError>` - 上传会话令牌、附件 ID、去重后的文件名和加密 nonce
  */
-async cmdStartChunkedUpload(id: string, filename: string, mimetype: string, encrypted: boolean, totalSize: number) : Promise<Result<ChunkedUploadStartResult, AppError>> {
+async cmdStartChunkedUpload(id: number, filename: string, mimetype: string, encrypted: boolean, totalSize: number) : Promise<Result<ChunkedUploadStartResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("cmd_start_chunked_upload", { id, filename, mimetype, encrypted, totalSize }) };
 } catch (e) {
@@ -716,8 +716,8 @@ export type DiaryContentNode = { type: "markdown"; text: string } | { type: "ima
  * 仅在进入日记编辑页后加载的完整详情。
  */
 export type DiaryDetail = { summary: DiarySummary; manifestSize: number; content: DiaryContent; attachments: AttachmentMeta[]; attachmentUrls: Partial<{ [key in string]: string }> }
-export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: DiaryContent; created: number; updated: number; attachments: AttachmentMeta[]; version: number }
-export type DiarySummary = { id: string; created: number; updated: number; 
+export type DiaryManifest = { id: number; algorithm: EncryptionAlgorithm; content: DiaryContent; created: number; updated: number; attachments: AttachmentMeta[]; version: number }
+export type DiarySummary = { id: number; created: number; updated: number; 
 /**
  * 日记标题，取自正文的第一行
  */
@@ -738,9 +738,9 @@ attachmentCounts: DiaryAttachmentCounts;
  * 正文节点中各类加密附件的数量
  */
 encryptedAttachmentCounts: DiaryAttachmentCounts }
-export type DiaryVersionEvent = { event: "started"; data: { scope: DiaryVersionStorageScope; total: number } } | { event: "progress"; data: { processed: number; total: number; diaryId: string; outcome: DiaryVersionItemOutcome } } | { event: "completed"; data: { report: DiaryVersionReport } } | { event: "cancelled"; data: { report: DiaryVersionReport } } | { event: "error"; data: { message: string } }
+export type DiaryVersionEvent = { event: "started"; data: { scope: DiaryVersionStorageScope; total: number } } | { event: "progress"; data: { processed: number; total: number; diaryId: number; outcome: DiaryVersionItemOutcome } } | { event: "completed"; data: { report: DiaryVersionReport } } | { event: "cancelled"; data: { report: DiaryVersionReport } } | { event: "error"; data: { message: string } }
 export type DiaryVersionItemOutcome = "current" | "legacy" | "newer" | "failed"
-export type DiaryVersionReport = { scope: DiaryVersionStorageScope; currentVersion: number; totalDiaries: number; processedDiaries: number; currentDiaries: number; legacyDiaries: number; newerDiaries: number; failedDiaries: number; failedDiaryIds: string[] }
+export type DiaryVersionReport = { scope: DiaryVersionStorageScope; currentVersion: number; totalDiaries: number; processedDiaries: number; currentDiaries: number; legacyDiaries: number; newerDiaries: number; failedDiaries: number; failedDiaryIds: number[] }
 export type DiaryVersionStorageScope = "local" | "cloud"
 export type DisableRemoteStoragePlan = { localStoragePath: string; remoteFiles: number; remoteBytes: number; skippedFiles: number; skippedBytes: number; downloadFiles: number; downloadBytes: number; availableBytes: number; hasSufficientSpace: boolean }
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
@@ -750,7 +750,7 @@ export type LocalStorageMigrationEvent = { event: "preparing"; data: { sourcePat
 export type LocalStorageMigrationPhase = "preparing" | "copying" | "verifying" | "switching" | "cleaning"
 export type LocalStorageMigrationPlan = { sourcePath: string; targetPath: string; totalFiles: number; totalBytes: number; availableBytes: number; requiredBytes: number; fastMove: boolean }
 export type LocalStorageMigrationStatus = { legacyMigrationRequired: boolean; migrationPending: boolean; unavailablePath: string | null; unavailableReason: string | null }
-export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
+export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: number } | { event: "finished" } | { event: "error"; data: string }
 export type SyncDirection = "upload" | "download"
 export type SyncPhase = "preparing" | "attachments" | "manifests"
 export type SyncProgressEvent = { event: "preparing"; data: { direction: SyncDirection } } | { event: "started"; data: { direction: SyncDirection; totalFiles: number; totalBytes: number; skippedFiles: number } } | { event: "progress"; data: { direction: SyncDirection; phase: SyncPhase; currentFile: string; currentFileIndex: number; totalFiles: number; currentFileBytes: number; currentFileSize: number; transferredBytes: number; totalBytes: number } } | { event: "completed"; data: { direction: SyncDirection; transferredFiles: number; skippedFiles: number; transferredBytes: number } } | { event: "error"; data: { direction: SyncDirection; phase: SyncPhase; currentFile: string | null; message: string } }

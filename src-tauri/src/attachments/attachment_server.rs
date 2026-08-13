@@ -42,7 +42,7 @@ impl AttachmentServerHandle {
         }
     }
 
-    pub fn url(&self, diary_id: &str, attachment_id: &str) -> String {
+    pub fn url(&self, diary_id: u64, attachment_id: &str) -> String {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -51,7 +51,7 @@ impl AttachmentServerHandle {
             "{}/{}/{}/{}?t={}",
             self.origin,
             self.token,
-            urlencoding::encode(diary_id),
+            urlencoding::encode(&diary_id.to_string()),
             urlencoding::encode(attachment_id),
             timestamp
         )
@@ -245,6 +245,9 @@ async fn process_attachment(
     let id = urlencoding::decode(encoded_id)
         .map_err(|_| ServerError::BadRequest("Invalid URL encoding in diary id"))?
         .into_owned();
+    let id = id
+        .parse::<u64>()
+        .map_err(|_| ServerError::BadRequest("Diary id in URL must be a number"))?;
     let attachment_id = urlencoding::decode(encoded_attachment_id)
         .map_err(|_| ServerError::BadRequest("Invalid URL encoding in attachment id"))?
         .into_owned();
@@ -254,9 +257,9 @@ async fn process_attachment(
     let cache = state.diary_cache();
     let crypto = state.crypto();
     let store = state.diary_store();
-    let diary = match cache.get(&id) {
+    let diary = match cache.get(id) {
         Some((diary, _)) => diary,
-        None => get_diary(&cache, &crypto, &*store, &id).await?,
+        None => get_diary(&cache, &crypto, &*store, id).await?,
     };
     let attachment = diary
         .attachments
@@ -280,7 +283,7 @@ async fn process_attachment(
     // 普通 GET 继续直接下载，避免图片加载额外增加一次远端 HEAD。
     let mut file_size = if raw_range.is_some() || request.method() == Method::HEAD {
         store
-            .get_attachment_size(&id, &attachment_id, attachment.etag.as_deref())
+            .get_attachment_size(id, &attachment_id, attachment.etag.as_deref())
             .await?
     } else {
         attachment.size
@@ -307,7 +310,7 @@ async fn process_attachment(
     }
 
     let stream = store
-        .download_attachment(&id, &attachment_id, range, attachment.etag.as_deref())
+        .download_attachment(id, &attachment_id, range, attachment.etag.as_deref())
         .await?;
     let start = range.map(|(start, _)| start).unwrap_or(0);
     let stream = if attachment.encrypted {
@@ -415,7 +418,7 @@ mod tests {
     }
 
     async fn start_test_server(
-        id: &str,
+        id: u64,
         filename: &str,
         mimetype: &str,
         plaintext: &[u8],
@@ -433,7 +436,7 @@ mod tests {
     }
 
     async fn start_test_server_with_declared_size(
-        id: &str,
+        id: u64,
         filename: &str,
         mimetype: &str,
         plaintext: &[u8],
@@ -467,7 +470,7 @@ mod tests {
         state.diary_cache().insert(
             id,
             DiaryManifest {
-                id: id.to_string(),
+                id,
                 algorithm: Gcm,
                 content: DiaryContent::default(),
                 created: 0,
@@ -501,9 +504,9 @@ mod tests {
         let (listener, handle) = bind_attachment_server().unwrap();
         drop(listener);
 
-        let url = handle.url("diary id", "中文 image #1.jpg");
+        let url = handle.url(8_215_021_834_823, "中文 image #1.jpg");
         assert!(url.starts_with("http://127.0.0.1:"));
-        assert!(url.contains("/diary%20id/"));
+        assert!(url.contains("/8215021834823/"));
         assert!(url.contains("%E4%B8%AD%E6%96%87%20image%20%231.jpg"));
         assert!(!url.contains("test-token"));
     }
@@ -532,8 +535,8 @@ mod tests {
     #[tokio::test]
     async fn serves_plain_attachment_and_head_metadata() {
         let data = b"plain attachment payload";
-        let server = start_test_server("diary-1", "photo one.jpg", "image/jpeg", data, false).await;
-        let url = server.handle.url("diary-1", "photo one.jpg");
+        let server = start_test_server(101, "photo one.jpg", "image/jpeg", data, false).await;
+        let url = server.handle.url(101, "photo one.jpg");
         let client = reqwest::Client::new();
 
         let response = client.get(&url).send().await.unwrap();
@@ -550,12 +553,12 @@ mod tests {
     #[tokio::test]
     async fn attachment_request_waits_for_storage_mode_transition() {
         let data = b"mode-stable attachment";
-        let server = start_test_server("diary-gate", "file.txt", "text/plain", data, false).await;
+        let server = start_test_server(102, "file.txt", "text/plain", data, false).await;
         let transition_guard = server
             .state
             .try_lock_storage_mode_change()
             .expect("应能开始存储模式切换");
-        let url = server.handle.url("diary-gate", "file.txt");
+        let url = server.handle.url(102, "file.txt");
         let mut request = tokio::spawn(async move { reqwest::get(url).await });
 
         assert!(
@@ -578,8 +581,8 @@ mod tests {
         let data: Vec<u8> = (0..(MAX_CHUNK_SIZE * 2 + 97))
             .map(|index| (index % 251) as u8)
             .collect();
-        let server = start_test_server("diary-2", "video.mp4", "video/mp4", &data, true).await;
-        let url = server.handle.url("diary-2", "video.mp4");
+        let server = start_test_server(103, "video.mp4", "video/mp4", &data, true).await;
+        let url = server.handle.url(103, "video.mp4");
         let start = 12_345_u64;
 
         let response = reqwest::Client::new()
@@ -606,7 +609,7 @@ mod tests {
     async fn serves_legacy_attachment_when_manifest_size_is_sixteen_bytes_too_large() {
         let data = b"legacy encrypted attachment payload";
         let server = start_test_server_with_declared_size(
-            "legacy-diary",
+            104,
             "legacy-audio.webm",
             "audio/webm",
             data,
@@ -614,7 +617,7 @@ mod tests {
             data.len() as u64 + 16,
         )
         .await;
-        let url = server.handle.url("legacy-diary", "legacy-audio.webm");
+        let url = server.handle.url(104, "legacy-audio.webm");
         let client = reqwest::Client::new();
 
         let response = client.get(&url).send().await.unwrap();
@@ -652,8 +655,8 @@ mod tests {
     #[tokio::test]
     async fn rejects_invalid_token_and_unsatisfiable_range() {
         let data = b"short";
-        let server = start_test_server("diary-3", "audio.mp3", "audio/mpeg", data, true).await;
-        let valid_url = server.handle.url("diary-3", "audio.mp3");
+        let server = start_test_server(105, "audio.mp3", "audio/mpeg", data, true).await;
+        let valid_url = server.handle.url(105, "audio.mp3");
         let invalid_url = valid_url.replacen(server.handle.token.as_ref(), "wrong-token", 1);
         let client = reqwest::Client::new();
 

@@ -34,11 +34,11 @@ mod tests {
             .expect("未能保存日记");
 
         assert_eq!(content.searchable_text(), initial_content);
-        assert!(!summary.id.is_empty());
-        let id = summary.id.clone();
+        assert!(summary.id > 0);
+        let id = summary.id;
 
         // 测试读取 - 验证远端拉取并写入缓存
-        let fetched_manifest = get_diary(&cache, &crypto, &store, &id)
+        let fetched_manifest = get_diary(&cache, &crypto, &store, id)
             .await
             .expect("远程获取日记失败");
 
@@ -51,14 +51,14 @@ mod tests {
         // 测试更新
         let updated_content = "Updated content for testing.";
         let updated_summary =
-            update_diary_content_only(&cache, &crypto, &store, &id, updated_content)
+            update_diary_content_only(&cache, &crypto, &store, id, updated_content)
                 .await
                 .expect("未能更新日记");
 
         assert!(updated_summary.updated > summary.updated);
 
         // 测试再次读取 - 验证缓存失效/更新机制
-        let refetched_manifest = get_diary(&cache, &crypto, &store, &id)
+        let refetched_manifest = get_diary(&cache, &crypto, &store, id)
             .await
             .expect("未能重新获取更新的日记");
 
@@ -74,7 +74,7 @@ mod tests {
         ] {
             store
                 .upload_attachment(
-                    &id,
+                    id,
                     attachment_id,
                     data.len() as u64,
                     "application/octet-stream",
@@ -85,12 +85,12 @@ mod tests {
         }
 
         // 测试删除
-        delete_diary(&cache, &store, &id)
+        delete_diary(&cache, &store, id)
             .await
             .expect("删除日记失败");
 
         // 验证删除有效性
-        let not_found_result = get_diary(&cache, &crypto, &store, &id).await;
+        let not_found_result = get_diary(&cache, &crypto, &store, id).await;
         assert!(not_found_result.is_err(), "删除后日记不应被检索");
         let (remaining_objects, next_token) = client
             .list(&format!("{id}/"), None)
@@ -99,9 +99,9 @@ mod tests {
         assert!(remaining_objects.is_empty(), "删除后不应残留日记附件");
         assert!(next_token.is_none());
         for key in [
-            remote_manifest_key(&id),
-            remote_attachments_key(&id, "att-one"),
-            remote_attachments_key(&id, "att-two"),
+            remote_manifest_key(id),
+            remote_attachments_key(id, "att-one"),
+            remote_attachments_key(id, "att-two"),
         ] {
             assert!(
                 los.get(&key).await.unwrap().is_none(),
@@ -128,8 +128,8 @@ mod tests {
         let (summary, _) = save_diary(&cache, &crypto, &store, content1)
             .await
             .expect("保存日记失败");
-        let id = summary.id.clone();
-        let object_key = remote_manifest_key(&id);
+        let id = summary.id;
+        let object_key = remote_manifest_key(id);
 
         // 获取 OSS 上的 etag
         let metadata = client
@@ -147,7 +147,7 @@ mod tests {
         // 模拟外部直接修改 OSS 上的日记内容（绕过更新接口）
         // 构造一个新的 manifest，内容不同，id 相同
         let modified_manifest = DiaryManifest {
-            id: id.clone(),
+            id,
             algorithm: Gcm,
             content: "Modified content after external update.".into(),
             created: summary.created,
@@ -169,7 +169,7 @@ mod tests {
         let cache2 = DiaryMemoryCache::new();
 
         // 再次获取日记，此时应因本地缓存 etag 不匹配而重新下载
-        let fetched = get_diary(&cache2, &crypto, &store, &id)
+        let fetched = get_diary(&cache2, &crypto, &store, id)
             .await
             .expect("获取日记失败");
         assert_eq!(
@@ -194,7 +194,7 @@ mod tests {
         );
 
         // 测试删除日记时本地缓存是否被清理
-        delete_diary(&cache2, &store, &id)
+        delete_diary(&cache2, &store, id)
             .await
             .expect("删除日记失败");
         let cached_after_delete = los.get(&object_key).await.expect("检查缓存失败");
@@ -264,7 +264,7 @@ mod diary_list_tests {
             "远程日记列表应按反向时间戳 ID 升序排列，即最新日记在前"
         );
         for id in all_ids.clone() {
-            let summary = get_diary_summary(&cache, &crypto, &store, &id)
+            let summary = get_diary_summary(&cache, &crypto, &store, id)
                 .await
                 .expect("无法获取日记摘要");
             assert_eq!(summary.title, title);
@@ -273,7 +273,7 @@ mod diary_list_tests {
                 &crypto,
                 &store,
                 &crate::attachments::AttachmentServerHandle::for_test(),
-                &id,
+                id,
             )
             .await
             .expect("无法获取日记内容");
@@ -310,7 +310,7 @@ mod diary_search_tests {
         or: bool,
         attachment_types: Vec<AttachmentTypeFilter>,
         attachment_or: bool,
-    ) -> (Vec<DiarySummary>, Vec<String>) {
+    ) -> (Vec<DiarySummary>, Vec<u64>) {
         // 创建事件监听器
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SearchDiariesEvent>();
         let event_sender = Arc::new(tx);
@@ -400,10 +400,10 @@ mod diary_search_tests {
 
         // 元数据中的 MIME 类型故意与正文节点冲突，附件筛选应以正文节点语义为准。
         for (id, mimetype) in [
-            (&first.id, "audio/mpeg"),
-            (&second.id, "video/mp4"),
-            (&third.id, "image/jpeg"),
-            (&fourth.id, "application/octet-stream"),
+            (first.id, "audio/mpeg"),
+            (second.id, "video/mp4"),
+            (third.id, "image/jpeg"),
+            (fourth.id, "application/octet-stream"),
         ] {
             update_diary_attachment(
                 &cache,
@@ -428,7 +428,7 @@ mod diary_search_tests {
             &cache,
             &crypto,
             &store,
-            &second.id,
+            second.id,
             AttachmentMeta {
                 id: "att-2".to_string(),
                 filename: "2".to_string(),

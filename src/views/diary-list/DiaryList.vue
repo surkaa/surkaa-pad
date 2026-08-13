@@ -72,8 +72,8 @@ useDiaryListShortcuts(diaryListShortcuts, {
 });
 
 const sortedDiaryIds = computed(() => {
-  const pinned: string[] = [];
-  const unpinned: string[] = [];
+  const pinned: number[] = [];
+  const unpinned: number[] = [];
 
   // 遍历当前的 diaryIds，按是否置顶分发到两个数组中
   diaryIds.value.forEach(id => {
@@ -104,7 +104,7 @@ watch(pinnedDiaryIds, (newPinnedIds) => {
 }, { immediate: true });
 
 // 获取单个日记的摘要
-async function loadDiarySummer(id: string) {
+async function loadDiarySummer(id: number) {
   try {
     const summary = await api.cmdGetDiarySummary(id);
     dataStore.insertNewDiary(summary);
@@ -166,7 +166,7 @@ async function onLoad(_index: number, done: (stop?: boolean) => void) {
 }
 
 // 供子组件触发的视口加载回调
-function handleCardVisible(id: string) {
+function handleCardVisible(id: number) {
   // 只有当数据为 null (占位态) 时才发请求
   if (diarySummaries.value[id] === null) {
     loadDiarySummer(id).then();

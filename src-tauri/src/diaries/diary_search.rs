@@ -46,7 +46,7 @@ pub async fn search_diaries(
                 let keywords = keywords.clone();
                 let attachment_types = attachment_types.clone();
                 async move {
-                    let diary = get_diary(cache, crypto, store, &id).await?;
+                    let diary = get_diary(cache, crypto, store, id).await?;
 
                     // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词
                     let keyword_matches = diary.content.matches_keywords(&keywords, keyword_or);

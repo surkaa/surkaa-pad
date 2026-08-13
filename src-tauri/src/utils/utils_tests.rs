@@ -6,13 +6,10 @@ mod id_generate_tests {
     use std::collections::HashSet;
 
     #[test]
-    fn preserves_existing_fixed_width_descending_format() {
-        assert_eq!(generate_descending_id_with_timestamp(0), "9999999999999");
-        assert_eq!(generate_descending_id_with_timestamp(1), "9999999999998");
-        assert_eq!(
-            generate_descending_id_with_timestamp(1_750_000_000_000).len(),
-            13
-        );
+    fn preserves_existing_descending_id_semantics() {
+        assert_eq!(generate_descending_id_with_timestamp(0), 9_999_999_999_999);
+        assert_eq!(generate_descending_id_with_timestamp(1), 9_999_999_999_998);
+        assert!(generate_descending_id_with_timestamp(1_750_000_000_000) < 9_999_999_999_999);
     }
 
     #[test]

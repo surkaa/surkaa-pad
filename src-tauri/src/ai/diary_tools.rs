@@ -44,7 +44,7 @@ impl DiaryReadTools {
                 .await
                 .map_err(|error| execution_failed(LIST_DIARIES_TOOL, error))?;
             for id in ids {
-                let diary = get_diary(&cache, &crypto, &*store, &id)
+                let diary = get_diary(&cache, &crypto, &*store, id)
                     .await
                     .map_err(|error| execution_failed(LIST_DIARIES_TOOL, error))?;
                 summaries.push(DiaryToolSummary::from_manifest(&diary));
@@ -79,7 +79,7 @@ impl DiaryReadTools {
                 .await
                 .map_err(|error| execution_failed(SEARCH_DIARIES_TOOL, error))?;
             for id in ids {
-                let diary = get_diary(&cache, &crypto, &*store, &id)
+                let diary = get_diary(&cache, &crypto, &*store, id)
                     .await
                     .map_err(|error| execution_failed(SEARCH_DIARIES_TOOL, error))?;
                 if diary.content.matches_keywords(&keywords, false) {
@@ -98,7 +98,7 @@ impl DiaryReadTools {
         Ok(json!({"query": query, "diaries": summaries}))
     }
 
-    async fn read_diary(&self, diary_id: &str) -> Result<Value, AiToolError> {
+    async fn read_diary(&self, diary_id: u64) -> Result<Value, AiToolError> {
         let _storage_guard = self.state.lock_storage_operation().await;
         let store = self.state.diary_store();
         let diary = get_diary(
@@ -147,11 +147,11 @@ impl AiToolExecutor for DiaryReadTools {
                 parameters: json!({
                     "type": "object",
                     "properties": {
-                        "diaryId": {
-                            "type": "string",
-                            "description": "由日记列表或搜索工具返回的数字日记 ID",
-                            "pattern": "^[0-9]+$"
-                        }
+                    "diaryId": {
+                        "type": "integer",
+                        "description": "由日记列表或搜索工具返回的数字日记 ID",
+                        "minimum": 0
+                    }
                     },
                     "required": ["diaryId"],
                     "additionalProperties": false
@@ -182,9 +182,7 @@ impl AiToolExecutor for DiaryReadTools {
                 "读取日记",
                 call.arguments
                     .get("diaryId")
-                    .and_then(Value::as_str)
-                    .map(compact_tool_display)
-                    .filter(|id| !id.is_empty())
+                    .and_then(Value::as_u64)
                     .map(|id| format!("日记 {id}")),
             ),
             _ => AiToolCallDisplay::new("执行未知日记操作", None),
@@ -230,11 +228,7 @@ impl AiToolExecutor for DiaryReadTools {
             }
             READ_DIARY_TOOL => {
                 let args: ReadArgs = parse_arguments(call)?;
-                let diary_id = args.diary_id.trim();
-                if diary_id.is_empty() || !diary_id.bytes().all(|byte| byte.is_ascii_digit()) {
-                    return Err(invalid_arguments(call, "diaryId 必须是非空数字 ID"));
-                }
-                self.read_diary(diary_id).await
+                self.read_diary(args.diary_id).await
             }
             _ => Err(AiToolError::UnknownTool(call.name.clone())),
         }
@@ -264,13 +258,13 @@ struct SearchArgs {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReadArgs {
-    diary_id: String,
+    diary_id: u64,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DiaryToolSummary {
-    id: String,
+    id: u64,
     title: String,
     created_at: String,
     updated_at: String,

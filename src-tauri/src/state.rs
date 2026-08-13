@@ -24,7 +24,7 @@ pub struct AppState {
     local_object_store: LocalObjectStore,
     task_pool: TaskPool,
     chunked_uploads: Arc<DashMap<String, Arc<Mutex<ChunkedUploadState>>>>,
-    filename_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>>,
+    filename_allocators: Arc<DashMap<u64, Arc<Mutex<HashSet<String>>>>>,
     attachment_server: AttachmentServerHandle,
     /// 是否启用远程存储
     remote_enabled: Arc<AtomicBool>,
@@ -92,7 +92,7 @@ impl AppState {
         self.storage_mode_gate.clone().try_write_owned().ok()
     }
 
-    pub fn filename_allocators(&self) -> Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>> {
+    pub fn filename_allocators(&self) -> Arc<DashMap<u64, Arc<Mutex<HashSet<String>>>>> {
         self.filename_allocators.clone()
     }
 
@@ -100,7 +100,7 @@ impl AppState {
         self.attachment_server.clone()
     }
 
-    pub fn attachment_url(&self, diary_id: &str, attachment_id: &str) -> String {
+    pub fn attachment_url(&self, diary_id: u64, attachment_id: &str) -> String {
         self.attachment_server.url(diary_id, attachment_id)
     }
 

@@ -8,7 +8,7 @@ import {getDiaryLeaveBlocker} from '../utils/diaryLeave';
 import {formatError} from '../utils/formatError';
 
 interface UseDiaryLeaveGuardOptions {
-  diaryId: Ref<string>;
+  diaryId: Ref<number>;
   unusedAttachments: Readonly<Ref<AttachmentMeta[]>>;
   isDeletingDiary: Readonly<Ref<boolean>>;
   hasActiveUploads: Readonly<Ref<boolean>>;

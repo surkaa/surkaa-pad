@@ -4,7 +4,7 @@ use tokio::sync::OwnedRwLockReadGuard;
 
 /// 分片上传的中间状态，存储在 AppState 的 DashMap 中
 pub struct ChunkedUploadState {
-    pub diary_id: String,
+    pub diary_id: u64,
     pub attachment_id: String,
     pub filename: String,
     pub mimetype: String,

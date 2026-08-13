@@ -42,7 +42,7 @@ import api from '../../utils/api';
 import {copyTextToClipboard} from '../../utils/clipboard';
 import {formatError} from '../../utils/formatError';
 
-const props = defineProps<{modelValue: boolean; diaryId: string}>();
+const props = defineProps<{modelValue: boolean; diaryId: number}>();
 const emit = defineEmits<{(event: 'update:modelValue', value: boolean): void}>();
 const $q = useQuasar();
 const manifestSource = ref('');

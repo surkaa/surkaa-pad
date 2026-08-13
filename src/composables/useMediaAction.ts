@@ -28,7 +28,7 @@ const AUDIO_TYPES = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
 const VIDEO_TYPES = ['mp4', 'avi', 'mov', 'mkv', 'webm'];
 
 export function useMediaAction(
-    diaryId: Ref<string>,
+    diaryId: Ref<number>,
     editorDomRef: Ref<HTMLElement | undefined>,
     showPanel: Ref<boolean>,
     editorContentRef: Ref<InstanceType<typeof TiptapEditor> | undefined>
@@ -142,10 +142,10 @@ export function useMediaAction(
     async function performAttachmentOperation<Args extends any[]>(
         attachmentId: string,
         operationName: string,
-        apiCall: (event: Channel<AttachmentProcessEvent>, diaryId: string, attachmentId: string, ...args: Args) => Promise<string>,
+        apiCall: (event: Channel<AttachmentProcessEvent>, diaryId: number, attachmentId: string, ...args: Args) => Promise<string>,
         ...apiArgs: Args
     ) {
-        if (!diaryId.value.trim() || !attachmentId.trim()) {
+        if (!diaryId.value || !attachmentId.trim()) {
             $q.notify({type: 'negative', message: `无法获取日记ID或附件ID，无法执行${operationName}`});
             return;
         }

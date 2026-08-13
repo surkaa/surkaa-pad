@@ -5,7 +5,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct DiaryMemoryCache {
     /// key: diary id, value: (manifest, etag)
-    diaries: Arc<DashMap<String, Arc<(DiaryManifest, String)>>>,
+    diaries: Arc<DashMap<u64, Arc<(DiaryManifest, String)>>>,
 }
 
 impl DiaryMemoryCache {
@@ -15,15 +15,15 @@ impl DiaryMemoryCache {
         }
     }
 
-    pub fn get(&self, id: &str) -> Option<(DiaryManifest, String)> {
-        self.diaries.get(id).map(|diary| diary.as_ref().clone())
+    pub fn get(&self, id: u64) -> Option<(DiaryManifest, String)> {
+        self.diaries.get(&id).map(|diary| diary.as_ref().clone())
     }
 
-    pub fn insert(&self, id: &str, diary: DiaryManifest, etag: String) {
-        self.diaries.insert(id.to_string(), Arc::new((diary, etag)));
+    pub fn insert(&self, id: u64, diary: DiaryManifest, etag: String) {
+        self.diaries.insert(id, Arc::new((diary, etag)));
     }
 
-    pub fn remove(&self, id: &str) {
-        self.diaries.remove(id);
+    pub fn remove(&self, id: u64) {
+        self.diaries.remove(&id);
     }
 }

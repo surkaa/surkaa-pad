@@ -16,7 +16,7 @@ pub type AttachmentUploadProgressCallback = Arc<dyn Fn(AttachmentUploadProgress)
 
 const ATTACHMENT_UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
-fn attachment_backup_key(id: &str, filename: &str) -> String {
+fn attachment_backup_key(id: u64, filename: &str) -> String {
     format!("{id}/.attachment-transaction/{filename}")
 }
 
@@ -163,7 +163,7 @@ async fn upload_stream_to_session(
     session.take().finish().await
 }
 
-fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: &str) -> (Vec<String>, String) {
+fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: u64) -> (Vec<String>, String) {
     let prefix = format!("{id}/");
     let manifest_key = remote_manifest_key(id);
     let mut attachment_keys: Vec<String> = keys
@@ -174,7 +174,7 @@ fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: &str) -> (Vec<S
     (attachment_keys, manifest_key)
 }
 
-async fn delete_local_diary_files(los: &LocalObjectStore, id: &str) -> Result<(), DiaryError> {
+async fn delete_local_diary_files(los: &LocalObjectStore, id: u64) -> Result<(), DiaryError> {
     let entries = match los.get_all().await {
         Ok(entries) => entries,
         // 尚未产生任何本地缓存时，LOS 目录可能还没有创建；删除应保持幂等。
@@ -197,25 +197,25 @@ async fn delete_local_diary_files(los: &LocalObjectStore, id: &str) -> Result<()
 #[async_trait]
 pub trait DiaryStore: Send + Sync {
     /// 上传/保存加密的 manifest 数据，返回 etag
-    async fn upload_manifest(&self, id: &str, data: &[u8]) -> Result<String, DiaryError>;
+    async fn upload_manifest(&self, id: u64, data: &[u8]) -> Result<String, DiaryError>;
     /// 下载/读取加密的 manifest 数据，返回 (数据, etag)
-    async fn download_manifest(&self, id: &str) -> Result<(Vec<u8>, String), DiaryError>;
+    async fn download_manifest(&self, id: u64) -> Result<(Vec<u8>, String), DiaryError>;
     /// 获取 manifest 的元数据（etag），用于缓存校验。不存在时返回 Ok(None)
-    async fn get_manifest_etag(&self, id: &str) -> Result<Option<String>, DiaryError>;
+    async fn get_manifest_etag(&self, id: u64) -> Result<Option<String>, DiaryError>;
     /// 获取加密 manifest 对象的真实字节数。
-    async fn get_manifest_size(&self, id: &str) -> Result<u64, DiaryError>;
+    async fn get_manifest_size(&self, id: u64) -> Result<u64, DiaryError>;
     /// 删除日记（manifest + 所有附件）
-    async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError>;
+    async fn delete_diary_all(&self, id: u64) -> Result<(), DiaryError>;
     /// 列出日记 ID（分页）
     async fn list_diary_ids(
         &self,
         next_token: NextToken,
-    ) -> Result<(Vec<String>, NextToken), DiaryError>;
+    ) -> Result<(Vec<u64>, NextToken), DiaryError>;
     /// 上传附件（有界流式），返回 etag
     #[cfg(test)]
     async fn upload_attachment(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         size: u64,
         mimetype: &str,
@@ -234,7 +234,7 @@ pub trait DiaryStore: Send + Sync {
     /// 上传附件并在存储确认分片后报告进度。
     async fn upload_attachment_with_progress(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         size: u64,
         mimetype: &str,
@@ -256,7 +256,7 @@ pub trait DiaryStore: Send + Sync {
     /// 创建附件分片写入会话；会话负责当前存储模式下的落盘、远端上传与回滚。
     async fn begin_attachment_upload(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         size: u64,
         mimetype: &str,
@@ -264,7 +264,7 @@ pub trait DiaryStore: Send + Sync {
     /// 获取附件流，支持 Range 请求
     async fn download_attachment(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         range: Option<(u64, u64)>,
         known_etag: Option<&str>,
@@ -272,30 +272,30 @@ pub trait DiaryStore: Send + Sync {
     /// 获取附件对象的真实字节数。Range/HEAD 响应不能依赖可能有误的历史 Manifest size。
     async fn get_attachment_size(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         known_etag: Option<&str>,
     ) -> Result<u64, DiaryError>;
     /// 将完整附件缓存到本地；已经命中有效缓存时直接成功。
     async fn cache_attachment(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         progress: StoreProgressCallback,
     ) -> Result<(), DiaryError>;
     /// 删除附件
-    async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError>;
+    async fn delete_attachment(&self, id: u64, filename: &str) -> Result<(), DiaryError>;
     /// 覆盖附件前创建临时备份，供 Manifest 发布失败时回滚。
-    async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError>;
+    async fn create_attachment_backup(&self, id: u64, filename: &str) -> Result<(), DiaryError>;
     /// 使用临时备份恢复附件。
     async fn restore_attachment_backup(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         mimetype: &str,
     ) -> Result<(), DiaryError>;
     /// 删除附件临时备份。
-    async fn delete_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError>;
+    async fn delete_attachment_backup(&self, id: u64, filename: &str) -> Result<(), DiaryError>;
 }
 
 // =============================================================================
@@ -314,26 +314,26 @@ impl LocalStore {
 
 #[async_trait]
 impl DiaryStore for LocalStore {
-    async fn upload_manifest(&self, id: &str, data: &[u8]) -> Result<String, DiaryError> {
+    async fn upload_manifest(&self, id: u64, data: &[u8]) -> Result<String, DiaryError> {
         let key = remote_manifest_key(id);
         self.los.save_bytes(&key, data).await?;
         let etag = format!("{:X}", md5::compute(data));
         Ok(etag)
     }
 
-    async fn download_manifest(&self, id: &str) -> Result<(Vec<u8>, String), DiaryError> {
+    async fn download_manifest(&self, id: u64) -> Result<(Vec<u8>, String), DiaryError> {
         let key = remote_manifest_key(id);
         let etag = self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
         let data = self.los.get_data(&key).await?;
         Ok((data, etag))
     }
 
-    async fn get_manifest_etag(&self, id: &str) -> Result<Option<String>, DiaryError> {
+    async fn get_manifest_etag(&self, id: u64) -> Result<Option<String>, DiaryError> {
         let key = remote_manifest_key(id);
         Ok(self.los.get(&key).await?)
     }
 
-    async fn get_manifest_size(&self, id: &str) -> Result<u64, DiaryError> {
+    async fn get_manifest_size(&self, id: u64) -> Result<u64, DiaryError> {
         let key = remote_manifest_key(id);
         self.los
             .get_size(&key)
@@ -341,16 +341,16 @@ impl DiaryStore for LocalStore {
             .ok_or(CacheError::NotFound.into())
     }
 
-    async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
+    async fn delete_diary_all(&self, id: u64) -> Result<(), DiaryError> {
         delete_local_diary_files(&self.los, id).await
     }
 
     async fn list_diary_ids(
         &self,
         next_token: NextToken,
-    ) -> Result<(Vec<String>, NextToken), DiaryError> {
+    ) -> Result<(Vec<u64>, NextToken), DiaryError> {
         let all = self.los.get_all().await?;
-        let mut ids: Vec<String> = all
+        let mut ids: Vec<u64> = all
             .into_iter()
             .filter_map(|(key, _)| diary_id_from_manifest_key(&key))
             .collect();
@@ -373,7 +373,7 @@ impl DiaryStore for LocalStore {
 
     async fn begin_attachment_upload(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         size: u64,
         _mimetype: &str,
@@ -386,7 +386,7 @@ impl DiaryStore for LocalStore {
 
     async fn download_attachment(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         range: Option<(u64, u64)>,
         _known_etag: Option<&str>,
@@ -397,7 +397,7 @@ impl DiaryStore for LocalStore {
 
     async fn get_attachment_size(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         _known_etag: Option<&str>,
     ) -> Result<u64, DiaryError> {
@@ -410,7 +410,7 @@ impl DiaryStore for LocalStore {
 
     async fn cache_attachment(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         progress: StoreProgressCallback,
     ) -> Result<(), DiaryError> {
@@ -420,13 +420,13 @@ impl DiaryStore for LocalStore {
         Ok(())
     }
 
-    async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+    async fn delete_attachment(&self, id: u64, filename: &str) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
         self.los.delete(&key).await?;
         Ok(())
     }
 
-    async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+    async fn create_attachment_backup(&self, id: u64, filename: &str) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
         let backup_key = attachment_backup_key(id, filename);
         let etag = self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
@@ -439,7 +439,7 @@ impl DiaryStore for LocalStore {
 
     async fn restore_attachment_backup(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         _mimetype: &str,
     ) -> Result<(), DiaryError> {
@@ -455,7 +455,7 @@ impl DiaryStore for LocalStore {
         Ok(())
     }
 
-    async fn delete_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+    async fn delete_attachment_backup(&self, id: u64, filename: &str) -> Result<(), DiaryError> {
         self.los
             .delete(&attachment_backup_key(id, filename))
             .await?;
@@ -480,14 +480,14 @@ impl RemoteStore {
 
 #[async_trait]
 impl DiaryStore for RemoteStore {
-    async fn upload_manifest(&self, id: &str, data: &[u8]) -> Result<String, DiaryError> {
+    async fn upload_manifest(&self, id: u64, data: &[u8]) -> Result<String, DiaryError> {
         let key = remote_manifest_key(id);
         let etag = self.client.upload_bytes(&key, data).await?;
         let _ = self.los.save_bytes(&key, data).await;
         Ok(etag)
     }
 
-    async fn download_manifest(&self, id: &str) -> Result<(Vec<u8>, String), DiaryError> {
+    async fn download_manifest(&self, id: u64) -> Result<(Vec<u8>, String), DiaryError> {
         let key = remote_manifest_key(id);
         // 优先检查本地缓存
         if let Some(cached_etag) = self.los.get(&key).await? {
@@ -505,13 +505,13 @@ impl DiaryStore for RemoteStore {
         Ok((data, etag))
     }
 
-    async fn get_manifest_etag(&self, id: &str) -> Result<Option<String>, DiaryError> {
+    async fn get_manifest_etag(&self, id: u64) -> Result<Option<String>, DiaryError> {
         let key = remote_manifest_key(id);
         let metadata = self.client.get_metadata(&key).await?;
         Ok(metadata.etag)
     }
 
-    async fn get_manifest_size(&self, id: &str) -> Result<u64, DiaryError> {
+    async fn get_manifest_size(&self, id: u64) -> Result<u64, DiaryError> {
         let key = remote_manifest_key(id);
         self.client
             .get_metadata(&key)
@@ -524,7 +524,7 @@ impl DiaryStore for RemoteStore {
             })
     }
 
-    async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
+    async fn delete_diary_all(&self, id: u64) -> Result<(), DiaryError> {
         let prefix = format!("{id}/");
         let keys = self.client.list_all_keys(&prefix).await?;
         let (attachment_keys, manifest_key) = diary_object_keys(keys, id);
@@ -540,9 +540,9 @@ impl DiaryStore for RemoteStore {
     async fn list_diary_ids(
         &self,
         next_token: NextToken,
-    ) -> Result<(Vec<String>, NextToken), DiaryError> {
+    ) -> Result<(Vec<u64>, NextToken), DiaryError> {
         let (objects, nt) = self.client.list("", next_token).await?;
-        let ids: Vec<String> = objects
+        let ids: Vec<u64> = objects
             .into_iter()
             .filter_map(|obj| diary_id_from_manifest_key(&obj.key))
             .collect();
@@ -551,7 +551,7 @@ impl DiaryStore for RemoteStore {
 
     async fn begin_attachment_upload(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         size: u64,
         mimetype: &str,
@@ -571,7 +571,7 @@ impl DiaryStore for RemoteStore {
 
     async fn download_attachment(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         range: Option<(u64, u64)>,
         known_etag: Option<&str>,
@@ -595,7 +595,7 @@ impl DiaryStore for RemoteStore {
 
     async fn get_attachment_size(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         known_etag: Option<&str>,
     ) -> Result<u64, DiaryError> {
@@ -639,7 +639,7 @@ impl DiaryStore for RemoteStore {
 
     async fn cache_attachment(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         progress: StoreProgressCallback,
     ) -> Result<(), DiaryError> {
@@ -673,14 +673,14 @@ impl DiaryStore for RemoteStore {
         Ok(())
     }
 
-    async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+    async fn delete_attachment(&self, id: u64, filename: &str) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
         self.client.delete(&key).await?;
         let _ = self.los.delete(&key).await;
         Ok(())
     }
 
-    async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+    async fn create_attachment_backup(&self, id: u64, filename: &str) -> Result<(), DiaryError> {
         self.cache_attachment(id, filename, Arc::new(|_| {}))
             .await?;
         let key = remote_attachments_key(id, filename);
@@ -695,7 +695,7 @@ impl DiaryStore for RemoteStore {
 
     async fn restore_attachment_backup(
         &self,
-        id: &str,
+        id: u64,
         filename: &str,
         mimetype: &str,
     ) -> Result<(), DiaryError> {
@@ -715,7 +715,7 @@ impl DiaryStore for RemoteStore {
         Ok(())
     }
 
-    async fn delete_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+    async fn delete_attachment_backup(&self, id: u64, filename: &str) -> Result<(), DiaryError> {
         self.los
             .delete(&attachment_backup_key(id, filename))
             .await?;
@@ -835,23 +835,20 @@ mod tests {
         let (store, _los, _td) = make_local_store();
         let data = b"encrypted manifest data";
 
-        let etag = store.upload_manifest("test-id-1", data).await.unwrap();
+        let etag = store.upload_manifest(1, data).await.unwrap();
         assert!(!etag.is_empty());
 
-        let (downloaded, returned_etag) = store.download_manifest("test-id-1").await.unwrap();
+        let (downloaded, returned_etag) = store.download_manifest(1).await.unwrap();
         assert_eq!(downloaded, data);
         assert_eq!(returned_etag, etag);
-        assert_eq!(
-            store.get_manifest_size("test-id-1").await.unwrap(),
-            data.len() as u64
-        );
+        assert_eq!(store.get_manifest_size(1).await.unwrap(), data.len() as u64);
     }
 
     #[tokio::test]
     async fn test_local_store_get_missing_manifest_size() {
         let (store, _los, _td) = make_local_store();
 
-        assert!(store.get_manifest_size("nonexistent").await.is_err());
+        assert!(store.get_manifest_size(999).await.is_err());
     }
 
     #[tokio::test]
@@ -859,13 +856,13 @@ mod tests {
         let (store, _los, _td) = make_local_store();
 
         // 不存在时返回 None
-        let etag = store.get_manifest_etag("nonexistent").await.unwrap();
+        let etag = store.get_manifest_etag(999).await.unwrap();
         assert!(etag.is_none());
 
         // 上传后返回 Some(etag)
         let data = b"test data";
-        let uploaded_etag = store.upload_manifest("test-id", data).await.unwrap();
-        let etag = store.get_manifest_etag("test-id").await.unwrap();
+        let uploaded_etag = store.upload_manifest(2, data).await.unwrap();
+        let etag = store.get_manifest_etag(2).await.unwrap();
         assert_eq!(etag, Some(uploaded_etag));
     }
 
@@ -874,13 +871,10 @@ mod tests {
         let (store, _los, _td) = make_local_store();
 
         // 上传 manifest 和附件
-        store
-            .upload_manifest("del-test", b"manifest data")
-            .await
-            .unwrap();
+        store.upload_manifest(3, b"manifest data").await.unwrap();
         store
             .upload_attachment(
-                "del-test",
+                3,
                 "att1.txt",
                 5,
                 "text/plain",
@@ -890,7 +884,7 @@ mod tests {
             .unwrap();
         store
             .upload_attachment(
-                "del-test",
+                3,
                 "att2.txt",
                 5,
                 "text/plain",
@@ -900,26 +894,26 @@ mod tests {
             .unwrap();
 
         // 验证存在
-        assert!(store.get_manifest_etag("del-test").await.unwrap().is_some());
+        assert!(store.get_manifest_etag(3).await.unwrap().is_some());
 
         // 删除
-        store.delete_diary_all("del-test").await.unwrap();
+        store.delete_diary_all(3).await.unwrap();
 
         // 验证全部清除
-        assert!(store.get_manifest_etag("del-test").await.unwrap().is_none());
+        assert!(store.get_manifest_etag(3).await.unwrap().is_none());
         assert!(store
-            .download_attachment("del-test", "att1.txt", None, None)
+            .download_attachment(3, "att1.txt", None, None)
             .await
             .is_err());
         assert!(store
-            .download_attachment("del-test", "att2.txt", None, None)
+            .download_attachment(3, "att2.txt", None, None)
             .await
             .is_err());
     }
 
     #[test]
     fn diary_delete_plan_scopes_prefix_and_keeps_manifest_separate() {
-        let id = "1234567890123";
+        let id: u64 = 1_234_567_890_123;
         let manifest = remote_manifest_key(id);
         let (attachments, manifest_key) = diary_object_keys(
             vec![
@@ -945,7 +939,7 @@ mod tests {
         let los = LocalObjectStore::new(temp_dir.path().join("missing"));
         let store = LocalStore::new(los);
 
-        store.delete_diary_all("missing-diary").await.unwrap();
+        store.delete_diary_all(4).await.unwrap();
     }
 
     #[tokio::test]
@@ -956,7 +950,7 @@ mod tests {
         let store = LocalStore::new(LocalObjectStore::new(cache_file));
 
         assert!(matches!(
-            store.delete_diary_all("diary").await,
+            store.delete_diary_all(5).await,
             Err(DiaryError::Cache(CacheError::Io(_)))
         ));
     }
@@ -974,9 +968,9 @@ mod tests {
         let oldest = generate_descending_id_with_timestamp(1_700_000_000_000);
         let middle = generate_descending_id_with_timestamp(1_700_000_001_000);
         let newest = generate_descending_id_with_timestamp(1_700_000_002_000);
-        store.upload_manifest(&middle, b"diary2").await.unwrap();
-        store.upload_manifest(&oldest, b"diary1").await.unwrap();
-        store.upload_manifest(&newest, b"diary3").await.unwrap();
+        store.upload_manifest(middle, b"diary2").await.unwrap();
+        store.upload_manifest(oldest, b"diary1").await.unwrap();
+        store.upload_manifest(newest, b"diary3").await.unwrap();
 
         let (ids, next) = store.list_diary_ids(None).await.unwrap();
         assert_eq!(ids, vec![newest, middle, oldest]);
@@ -991,7 +985,7 @@ mod tests {
         let mut expected = Vec::new();
         for i in 0..55 {
             let id = generate_descending_id_with_timestamp(1_700_000_000_000 + i);
-            store.upload_manifest(&id, b"data").await.unwrap();
+            store.upload_manifest(id, b"data").await.unwrap();
             expected.push(id);
         }
         expected.sort();
@@ -1014,7 +1008,7 @@ mod tests {
 
         let etag = store
             .upload_attachment(
-                "diary1",
+                6,
                 "photo.jpg",
                 data.len() as u64,
                 "image/jpeg",
@@ -1025,7 +1019,7 @@ mod tests {
         assert!(!etag.is_empty());
 
         let stream = store
-            .download_attachment("diary1", "photo.jpg", None, None)
+            .download_attachment(6, "photo.jpg", None, None)
             .await
             .unwrap();
         let downloaded = crate::stream::collect_data(stream).await.unwrap();
@@ -1038,13 +1032,13 @@ mod tests {
         let progress_values = Arc::new(Mutex::new(Vec::new()));
 
         let missing_result = store
-            .cache_attachment("diary1", "missing.txt", Arc::new(|_| {}))
+            .cache_attachment(6, "missing.txt", Arc::new(|_| {}))
             .await;
         assert!(missing_result.is_err());
 
         store
             .upload_attachment(
-                "diary1",
+                6,
                 "cached.txt",
                 4,
                 "text/plain",
@@ -1056,7 +1050,7 @@ mod tests {
         let captured_progress = progress_values.clone();
         store
             .cache_attachment(
-                "diary1",
+                6,
                 "cached.txt",
                 Arc::new(move |progress| {
                     captured_progress.lock().unwrap().push(progress);
@@ -1074,7 +1068,7 @@ mod tests {
 
         store
             .upload_attachment(
-                "diary1",
+                6,
                 "file.txt",
                 4,
                 "text/plain",
@@ -1085,16 +1079,16 @@ mod tests {
 
         // 确认存在
         assert!(store
-            .download_attachment("diary1", "file.txt", None, None)
+            .download_attachment(6, "file.txt", None, None)
             .await
             .is_ok());
 
         // 删除
-        store.delete_attachment("diary1", "file.txt").await.unwrap();
+        store.delete_attachment(6, "file.txt").await.unwrap();
 
         // 确认不存在
         assert!(store
-            .download_attachment("diary1", "file.txt", None, None)
+            .download_attachment(6, "file.txt", None, None)
             .await
             .is_err());
     }
@@ -1111,9 +1105,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(content.searchable_text(), "Hello, local world!");
-        assert!(!summary.id.is_empty());
+        assert!(summary.id > 0);
 
-        let manifest = get_diary(&cache, &crypto, &store, &summary.id)
+        let manifest = get_diary(&cache, &crypto, &store, summary.id)
             .await
             .unwrap();
         assert_eq!(manifest.content.searchable_text(), "Hello, local world!");
@@ -1125,7 +1119,7 @@ mod tests {
         let cache = DiaryMemoryCache::new();
         let crypto = make_crypto();
         let (store, _los, _td) = make_local_store();
-        let diary_id = "legacy-v3";
+        let diary_id = 7u64;
         let legacy = serde_json::json!({"id": diary_id, "version": 3});
         let encrypted = crypto
             .encrypt(&serde_json::to_vec(&legacy).unwrap())
@@ -1136,7 +1130,7 @@ mod tests {
             get_diary(&cache, &crypto, &store, diary_id).await,
             Err(DiaryError::UnsupportedVersion {
                 found: 3,
-                supported: 4
+                supported: 5
             })
         ));
 
@@ -1156,12 +1150,12 @@ mod tests {
             .unwrap();
 
         let updated =
-            update_diary_content_only(&cache, &crypto, &store, &summary.id, "updated content")
+            update_diary_content_only(&cache, &crypto, &store, summary.id, "updated content")
                 .await
                 .unwrap();
         assert!(updated.updated >= summary.updated);
 
-        let manifest = get_diary(&cache, &crypto, &store, &summary.id)
+        let manifest = get_diary(&cache, &crypto, &store, summary.id)
             .await
             .unwrap();
         assert_eq!(manifest.content.searchable_text(), "updated content");
@@ -1176,16 +1170,16 @@ mod tests {
         let (summary, _) = save_diary(&cache, &crypto, &store, "to be deleted")
             .await
             .unwrap();
-        let id = summary.id.clone();
+        let id = summary.id;
 
         // 确认存在
-        assert!(get_diary(&cache, &crypto, &store, &id).await.is_ok());
+        assert!(get_diary(&cache, &crypto, &store, id).await.is_ok());
 
         // 删除
-        delete_diary(&cache, &store, &id).await.unwrap();
+        delete_diary(&cache, &store, id).await.unwrap();
 
         // 确认不存在
-        assert!(get_diary(&cache, &crypto, &store, &id).await.is_err());
+        assert!(get_diary(&cache, &crypto, &store, id).await.is_err());
     }
 
     #[tokio::test]
@@ -1196,15 +1190,15 @@ mod tests {
         let (summary, _) = save_diary(&cache, &crypto, &store, "serialized delete")
             .await
             .unwrap();
-        let guard = lock_diary_operation(&summary.id).await;
+        let guard = lock_diary_operation(summary.id).await;
 
         let (started_tx, started_rx) = oneshot::channel();
         let task_cache = cache.clone();
-        let task_id = summary.id.clone();
+        let task_id = summary.id;
         let deletion = tokio::spawn(async move {
             let _ = started_tx.send(());
             let task_store = LocalStore::new(los);
-            delete_diary(&task_cache, &task_store, &task_id).await
+            delete_diary(&task_cache, &task_store, task_id).await
         });
 
         started_rx.await.unwrap();
@@ -1241,7 +1235,7 @@ mod tests {
         let crypto = make_crypto();
         let (store, _los, _td) = make_local_store();
 
-        let result = get_diary(&cache, &crypto, &store, "nonexistent-id").await;
+        let result = get_diary(&cache, &crypto, &store, 998).await;
         assert!(result.is_err());
     }
 
@@ -1273,16 +1267,13 @@ mod tests {
         // 用第一个 store 实例写入
         {
             let store = LocalStore::new(los.clone());
-            store
-                .upload_manifest("persist-test", b"persistent data")
-                .await
-                .unwrap();
+            store.upload_manifest(8, b"persistent data").await.unwrap();
         }
 
         // 用第二个 store 实例读取（模拟应用重启）
         {
             let store = LocalStore::new(los.clone());
-            let (data, _etag) = store.download_manifest("persist-test").await.unwrap();
+            let (data, _etag) = store.download_manifest(8).await.unwrap();
             assert_eq!(data, b"persistent data");
         }
     }
@@ -1292,8 +1283,8 @@ mod tests {
     #[tokio::test]
     async fn test_local_store_empty_manifest() {
         let (store, _los, _td) = make_local_store();
-        let etag = store.upload_manifest("empty", b"").await.unwrap();
-        let (data, _) = store.download_manifest("empty").await.unwrap();
+        let etag = store.upload_manifest(9, b"").await.unwrap();
+        let (data, _) = store.download_manifest(9).await.unwrap();
         assert!(data.is_empty());
         assert!(!etag.is_empty());
     }
@@ -1302,16 +1293,10 @@ mod tests {
     async fn test_local_store_overwrite_manifest() {
         let (store, _los, _td) = make_local_store();
 
-        store
-            .upload_manifest("overwrite", b"version 1")
-            .await
-            .unwrap();
-        store
-            .upload_manifest("overwrite", b"version 2")
-            .await
-            .unwrap();
+        store.upload_manifest(10, b"version 1").await.unwrap();
+        store.upload_manifest(10, b"version 2").await.unwrap();
 
-        let (data, _) = store.download_manifest("overwrite").await.unwrap();
+        let (data, _) = store.download_manifest(10).await.unwrap();
         assert_eq!(data, b"version 2");
     }
 
@@ -1322,7 +1307,7 @@ mod tests {
 
         store
             .upload_attachment(
-                "diary1",
+                6,
                 "range-test",
                 data.len() as u64,
                 "application/octet-stream",
@@ -1333,7 +1318,7 @@ mod tests {
 
         // 请求 range [4, 8]
         let stream = store
-            .download_attachment("diary1", "range-test", Some((4, 8)), None)
+            .download_attachment(6, "range-test", Some((4, 8)), None)
             .await
             .unwrap();
         let downloaded = crate::stream::collect_data(stream).await.unwrap();
@@ -1349,12 +1334,12 @@ mod tests {
 
         // 在 LocalStore 中创建数据
         local_store
-            .upload_manifest("migrate-1", b"manifest data")
+            .upload_manifest(11, b"manifest data")
             .await
             .unwrap();
         local_store
             .upload_attachment(
-                "migrate-1",
+                11,
                 "att.txt",
                 4,
                 "text/plain",
@@ -1364,11 +1349,11 @@ mod tests {
             .unwrap();
 
         // 模拟从 LocalStore 读取（同步到云端的第一步）
-        let (manifest, _etag) = local_store.download_manifest("migrate-1").await.unwrap();
+        let (manifest, _etag) = local_store.download_manifest(11).await.unwrap();
         assert_eq!(manifest, b"manifest data");
 
         let att_stream = local_store
-            .download_attachment("migrate-1", "att.txt", None, None)
+            .download_attachment(11, "att.txt", None, None)
             .await
             .unwrap();
         let att_data = crate::stream::collect_data(att_stream).await.unwrap();

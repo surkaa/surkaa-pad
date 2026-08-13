@@ -49,13 +49,13 @@ mod tests {
             Ok::<_, Error>(Bytes::from_static(b"pending attachment"))
         }));
         let upload_state = state.clone();
-        let diary_id = summary.id.clone();
+        let diary_id = summary.id;
         let upload = tokio::spawn(async move {
             let (event, _rx) = tokio::sync::mpsc::unbounded_channel();
             add_attachment_with_result(
                 &upload_state,
                 Arc::new(event),
-                &diary_id,
+                diary_id,
                 false,
                 18,
                 "text/plain".to_string(),
@@ -69,7 +69,7 @@ mod tests {
             .await
             .expect("upload stream was not polled");
         let store = state.diary_store();
-        delete_diary(&state.diary_cache(), &*store, &summary.id)
+        delete_diary(&state.diary_cache(), &*store, summary.id)
             .await
             .unwrap();
         release_tx.send(()).unwrap();
@@ -88,7 +88,7 @@ mod tests {
 
         store
             .upload_attachment(
-                "diary",
+                1,
                 "attachment",
                 old_data.len() as u64,
                 "text/plain",
@@ -97,12 +97,12 @@ mod tests {
             .await
             .unwrap();
         store
-            .create_attachment_backup("diary", "attachment")
+            .create_attachment_backup(1, "attachment")
             .await
             .unwrap();
         store
             .upload_attachment(
-                "diary",
+                1,
                 "attachment",
                 replacement.len() as u64,
                 "text/plain",
@@ -112,7 +112,7 @@ mod tests {
             .unwrap();
 
         let result =
-            finish_attachment_replacement(&store, "diary", "attachment", "text/plain", || async {
+            finish_attachment_replacement(&store, 1, "attachment", "text/plain", || async {
                 Err(crate::attachments::AttachmentError::InvalidOperation(
                     "manifest publish failed".to_string(),
                 ))
@@ -121,12 +121,12 @@ mod tests {
 
         assert!(result.is_err());
         let stream = store
-            .download_attachment("diary", "attachment", None, None)
+            .download_attachment(1, "attachment", None, None)
             .await
             .unwrap();
         assert_eq!(collect_data(stream).await.unwrap(), old_data);
         assert!(store
-            .restore_attachment_backup("diary", "attachment", "text/plain")
+            .restore_attachment_backup(1, "attachment", "text/plain")
             .await
             .is_err());
     }
@@ -140,7 +140,7 @@ mod tests {
 
         store
             .upload_attachment(
-                "diary",
+                1,
                 "attachment",
                 old_data.len() as u64,
                 "text/plain",
@@ -149,12 +149,12 @@ mod tests {
             .await
             .unwrap();
         store
-            .create_attachment_backup("diary", "attachment")
+            .create_attachment_backup(1, "attachment")
             .await
             .unwrap();
         store
             .upload_attachment(
-                "diary",
+                1,
                 "attachment",
                 replacement.len() as u64,
                 "text/plain",
@@ -165,7 +165,7 @@ mod tests {
 
         let error = rollback_attachment_replacement(
             &store,
-            "diary",
+            1,
             "attachment",
             "text/plain",
             crate::attachments::AttachmentError::InvalidOperation(
@@ -176,12 +176,12 @@ mod tests {
 
         assert!(error.to_string().contains("upload finalization failed"));
         let stream = store
-            .download_attachment("diary", "attachment", None, None)
+            .download_attachment(1, "attachment", None, None)
             .await
             .unwrap();
         assert_eq!(collect_data(stream).await.unwrap(), old_data);
         assert!(store
-            .restore_attachment_backup("diary", "attachment", "text/plain")
+            .restore_attachment_backup(1, "attachment", "text/plain")
             .await
             .is_err());
     }
@@ -197,7 +197,7 @@ mod tests {
 
         store
             .upload_attachment(
-                "diary",
+                1,
                 "attachment",
                 old_data.len() as u64,
                 "text/plain",
@@ -206,12 +206,12 @@ mod tests {
             .await
             .unwrap();
         store
-            .create_attachment_backup("diary", "attachment")
+            .create_attachment_backup(1, "attachment")
             .await
             .unwrap();
         store
             .upload_attachment(
-                "diary",
+                1,
                 "attachment",
                 replacement.len() as u64,
                 "text/plain",
@@ -222,7 +222,7 @@ mod tests {
 
         rollback_attachment_replacement(
             &store,
-            "diary",
+            1,
             "attachment",
             "text/plain",
             crate::attachments::AttachmentError::InvalidOperation(
@@ -232,12 +232,12 @@ mod tests {
         .await;
 
         let stream = store
-            .download_attachment("diary", "attachment", None, None)
+            .download_attachment(1, "attachment", None, None)
             .await
             .unwrap();
         assert_eq!(collect_data(stream).await.unwrap(), old_data);
         assert!(store
-            .restore_attachment_backup("diary", "attachment", "text/plain")
+            .restore_attachment_backup(1, "attachment", "text/plain")
             .await
             .is_err());
     }
@@ -267,7 +267,7 @@ mod tests {
         // 2. 核心测试: 并发添加附件
         for i in 0..concurrency_level {
             let state = state.clone();
-            let id_clone = diary_id.clone();
+            let id_clone = diary_id;
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
 
             // 构造 Mock 数据流 (需替换为项目实际的 ByteStream 构造方式)
@@ -279,7 +279,7 @@ mod tests {
                 let result = add_attachment_with_result(
                     &state,
                     Arc::new(tx),
-                    &id_clone,
+                    id_clone,
                     false,
                     size,
                     "text/plain".to_string(),
@@ -301,7 +301,7 @@ mod tests {
 
         // 3. 断言: 验证写一致性与防覆盖
         let store = RemoteStore::new(los.clone(), client.clone());
-        let manifest = get_diary(&cache, &crypto, &store, &diary_id)
+        let manifest = get_diary(&cache, &crypto, &store, diary_id)
             .await
             .expect("重新获取日记清单失败");
 
@@ -343,17 +343,11 @@ mod tests {
             let crypto_clone = crypto.clone();
             let los_clone = los.clone();
             let client_clone = client.clone();
-            let id_clone = diary_id.clone();
+            let id_clone = diary_id;
             del_tasks.push(tokio::spawn(async move {
                 let store = RemoteStore::new(los_clone, client_clone);
-                delete_attachment(
-                    &cache_clone,
-                    &crypto_clone,
-                    &store,
-                    &id_clone,
-                    attachment_id,
-                )
-                .await
+                delete_attachment(&cache_clone, &crypto_clone, &store, id_clone, attachment_id)
+                    .await
             }));
         }
 
@@ -365,7 +359,7 @@ mod tests {
 
         // 5. 断言: 验证并发删一致性
         let store = RemoteStore::new(los.clone(), client.clone());
-        let final_manifest = get_diary(&cache, &crypto, &store, &diary_id)
+        let final_manifest = get_diary(&cache, &crypto, &store, diary_id)
             .await
             .expect("最终获取日记清单失败");
 
@@ -403,7 +397,7 @@ mod tests {
         add_attachment(
             &state,
             Arc::new(tx),
-            &diary_id,
+            diary_id,
             false, // 初始不加密
             size,
             "text/plain".to_string(),
@@ -412,7 +406,7 @@ mod tests {
         )
         .await;
 
-        let attachment_id = get_diary(&cache, &crypto, &store, &diary_id)
+        let attachment_id = get_diary(&cache, &crypto, &store, diary_id)
             .await
             .unwrap()
             .attachments[0]
@@ -421,29 +415,29 @@ mod tests {
 
         // 切换为加密状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, attachment_id.clone()).await;
+        toggle_attachment_encryption(&state, Arc::new(tx), diary_id, attachment_id.clone()).await;
 
         // 验证元数据是否已更新为加密
         let store = RemoteStore::new(los.clone(), client.clone());
-        let diary_encrypted = get_diary(&cache, &crypto, &store, &diary_id).await.unwrap();
+        let diary_encrypted = get_diary(&cache, &crypto, &store, diary_id).await.unwrap();
         let meta_enc = diary_encrypted.attachments.first().unwrap();
         assert!(meta_enc.encrypted, "附件应该是加密状态");
         assert!(!meta_enc.nonce.is_empty(), "加密状态下 nonce 不应为空");
 
         // 切换回明文状态
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        toggle_attachment_encryption(&state, Arc::new(tx), &diary_id, attachment_id.clone()).await;
+        toggle_attachment_encryption(&state, Arc::new(tx), diary_id, attachment_id.clone()).await;
 
         // 检查数据是否还原
         let store = RemoteStore::new(los.clone(), client.clone());
-        let diary_decrypted = get_diary(&cache, &crypto, &store, &diary_id).await.unwrap();
+        let diary_decrypted = get_diary(&cache, &crypto, &store, diary_id).await.unwrap();
         let meta_dec = diary_decrypted.attachments.first().unwrap();
         assert!(!meta_dec.encrypted, "附件应该是明文状态");
         assert!(meta_dec.nonce.is_empty(), "明文状态下 nonce 应该为空");
 
         // 下载并检查内容是否依然正确
         let (down_stream, _) = client
-            .download(&remote_attachments_key(&diary_id, &attachment_id), None)
+            .download(&remote_attachments_key(diary_id, &attachment_id), None)
             .await
             .unwrap();
         let downloaded_bytes = collect_data(down_stream).await.expect("收集失败");
@@ -484,7 +478,7 @@ mod tests {
         add_attachment(
             &state,
             Arc::new(tx),
-            &diary_id,
+            diary_id,
             true, // 测试加密状态下的旋转
             original_size,
             "image/png".to_string(),
@@ -493,7 +487,7 @@ mod tests {
         )
         .await;
 
-        let attachment_id = get_diary(&cache, &crypto, &store, &diary_id)
+        let attachment_id = get_diary(&cache, &crypto, &store, diary_id)
             .await
             .unwrap()
             .attachments[0]
@@ -507,7 +501,7 @@ mod tests {
         rotate_image_attachment(
             &state,
             event_sender,
-            &diary_id,
+            diary_id,
             attachment_id.clone(),
             90, // 顺时针 90
         )
@@ -537,13 +531,13 @@ mod tests {
 
         // 验证数据确实被修改（下载并检查）
         let (raw_stream, _) = client
-            .download(&remote_attachments_key(&diary_id, &attachment_id), None)
+            .download(&remote_attachments_key(diary_id, &attachment_id), None)
             .await
             .unwrap();
 
         // 解密
         let store = RemoteStore::new(los.clone(), client.clone());
-        let diary = get_diary(&cache, &crypto, &store, &diary_id).await.unwrap();
+        let diary = get_diary(&cache, &crypto, &store, diary_id).await.unwrap();
         let meta = diary.attachments.first().unwrap();
         let dec_stream = crypto
             .decrypt_streaming(raw_stream, &meta.nonce, 0)
@@ -585,7 +579,7 @@ mod tests {
         add_attachment(
             &state,
             Arc::new(tx),
-            &diary_id,
+            diary_id,
             false,
             size,
             "text/plain".to_string(),
@@ -603,7 +597,7 @@ mod tests {
         }
         assert!(!attachment_id.is_empty(), "附件上传未完成");
 
-        let key = remote_attachments_key(&diary_id, &attachment_id);
+        let key = remote_attachments_key(diary_id, &attachment_id);
 
         // 验证缓存是否存在以及数据内容
         let cached = los.get(&key).await.unwrap();
@@ -617,7 +611,7 @@ mod tests {
 
         let (cache_tx, mut cache_rx) =
             tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        caching_attachment(&store, Arc::new(cache_tx), &diary_id, &attachment_id).await;
+        caching_attachment(&store, Arc::new(cache_tx), diary_id, &attachment_id).await;
 
         let mut started_count = 0;
         let mut completed_count = 0;
@@ -647,7 +641,7 @@ mod tests {
 
         // 触发 toggle_attachment_encryption，验证缓存是否被正确替换
         let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<AttachmentProcessEvent>();
-        toggle_attachment_encryption(&state, Arc::new(tx2), &diary_id, attachment_id.clone()).await;
+        toggle_attachment_encryption(&state, Arc::new(tx2), diary_id, attachment_id.clone()).await;
 
         while let Some(event) = rx2.recv().await {
             if let AttachmentProcessEvent::Completed(_, _) = event {
@@ -664,7 +658,7 @@ mod tests {
 
         // 删除附件，验证缓存被清空
         let store = RemoteStore::new(los.clone(), client.clone());
-        delete_attachment(&cache, &crypto, &store, &diary_id, attachment_id)
+        delete_attachment(&cache, &crypto, &store, diary_id, attachment_id)
             .await
             .unwrap();
         let cached_after_delete = los.get(&key).await.unwrap();
@@ -697,7 +691,7 @@ mod tests {
         add_attachment(
             &state,
             Arc::new(tx),
-            &diary_id,
+            diary_id,
             false,
             size,
             "text/plain".to_string(),
@@ -721,7 +715,7 @@ mod tests {
         // 更名
         update_attachment_filename(
             &state,
-            &diary_id,
+            diary_id,
             attachment.id.clone(),
             new_filename.to_string(),
         )
@@ -729,14 +723,14 @@ mod tests {
         .expect("附件更名失败");
         // 检查
         let store = RemoteStore::new(los.clone(), client.clone());
-        let diary = get_diary(&cache, &crypto, &store, &diary_id)
+        let diary = get_diary(&cache, &crypto, &store, diary_id)
             .await
             .expect("获取日记失败");
         let meta = diary.attachments.first().unwrap();
         assert_eq!(meta.filename, new_filename, "附件更名后元数据未更新");
         assert_eq!(meta.id, attachment.id, "重命名不应改变附件 ID");
         let (stream, _) = client
-            .download(&remote_attachments_key(&diary_id, &attachment.id), None)
+            .download(&remote_attachments_key(diary_id, &attachment.id), None)
             .await
             .expect("重命名后原附件 ID 对象应该仍然存在");
         assert_eq!(collect_data(stream).await.unwrap(), raw_data);

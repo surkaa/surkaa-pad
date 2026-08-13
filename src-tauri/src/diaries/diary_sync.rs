@@ -115,7 +115,7 @@ struct SyncObjectEntry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SyncItem {
     key: String,
-    diary_id: String,
+    diary_id: u64,
     etag: Option<String>,
     size: u64,
     kind: SyncItemKind,
@@ -509,7 +509,7 @@ fn build_plan(
     }
 }
 
-fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
+fn classify_storage_key(key: &str) -> Option<(SyncItemKind, u64)> {
     if let Some(id) = diary_id_from_manifest_key(key) {
         return Some((SyncItemKind::Manifest, id));
     }
@@ -520,7 +520,7 @@ fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
     if id.is_empty() || filename.is_empty() || filename.contains('/') {
         return None;
     }
-    Some((SyncItemKind::Attachment, id.to_string()))
+    Some((SyncItemKind::Attachment, id.parse().ok()?))
 }
 
 fn etag_options_match(source: Option<&str>, target: Option<&Option<String>>) -> bool {
@@ -768,15 +768,16 @@ mod tests {
     }
 
     #[test]
-    fn storage_key_classification_rejects_unrelated_paths() {
+    fn storage_key_classification_parses_numeric_ids() {
         assert_eq!(
             classify_storage_key("123/manifest.enc"),
-            Some((SyncItemKind::Manifest, "123".to_string()))
+            Some((SyncItemKind::Manifest, 123))
         );
         assert_eq!(
-            classify_storage_key("id/photo.jpg"),
-            Some((SyncItemKind::Attachment, "id".to_string()))
+            classify_storage_key("123/photo.jpg"),
+            Some((SyncItemKind::Attachment, 123))
         );
+        assert_eq!(classify_storage_key("id/photo.jpg"), None);
         assert_eq!(classify_storage_key("invalid"), None);
         assert_eq!(classify_storage_key("id/manifest.enc"), None);
         assert_eq!(
@@ -844,12 +845,12 @@ mod tests {
         let (client, guard) = TestOssGuard::new(client).await;
         let source_dir = tempfile::tempdir().expect("source temp dir");
         let source_los = LocalObjectStore::new(source_dir.path().to_path_buf());
-        let diary_id = "1234567890123";
+        let diary_id: u64 = 1_234_567_890_123;
         let attachment_key = format!("{diary_id}/large.bin");
         let manifest_key = remote_manifest_key(diary_id);
         let attachment = vec![0x5a; 256 * 1024];
         let manifest = DiaryManifest {
-            id: diary_id.to_string(),
+            id: diary_id,
             algorithm: Gcm,
             content: DiaryContent::from_editor_text("同步测试标题\n正文"),
             created: 1,

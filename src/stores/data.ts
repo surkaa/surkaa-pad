@@ -4,13 +4,13 @@ import {AttachmentMeta, DiarySummary} from "../bindings.ts";
 import {useConfigStore} from "./config.ts";
 
 export const useDataStore = defineStore('data', () => {
-    const diaryIds = ref<string[]>([]);
-    const diarySummaries = ref<Record<string, DiarySummary | null>>({});
+    const diaryIds = ref<number[]>([]);
+    const diarySummaries = ref<Record<number, DiarySummary | null>>({});
     const diaryListRevision = ref(0);
     const pinnedDiaryIds = useConfigStore().useTauriConfig('pinned_diary_ids');
 
-    // 当前正在编辑的日记ID，空字符串表示新建
-    const currentId = ref<string>("");
+    // 当前正在编辑的日记ID，0 表示新建
+    const currentId = ref<number>(0);
     const currentDiaryAttachments = ref<AttachmentMeta[]>([]);
     const currentDiaryAttachmentUrlMap = ref<Record<string, string>>({});
 
@@ -29,7 +29,7 @@ export const useDataStore = defineStore('data', () => {
         }
     }
 
-    function deleteSummary(diaryId: string) {
+    function deleteSummary(diaryId: number) {
         delete diarySummaries.value[diaryId];
         const index = diaryIds.value.indexOf(diaryId);
         if (index !== -1) {
@@ -42,7 +42,7 @@ export const useDataStore = defineStore('data', () => {
         }
     }
 
-    function updateAttachment(diaryId: string, newMeta: AttachmentMeta) {
+    function updateAttachment(diaryId: number, newMeta: AttachmentMeta) {
         if (diaryId === currentId.value) {
             const attachmentIndex = currentDiaryAttachments.value.findIndex(att => att.id === newMeta.id);
             if (attachmentIndex !== -1) {
@@ -55,7 +55,7 @@ export const useDataStore = defineStore('data', () => {
         }
     }
 
-    function updateAttachmentFilename(diaryId: string, attachmentId: string, newFilename: string) {
+    function updateAttachmentFilename(diaryId: number, attachmentId: string, newFilename: string) {
         if (diaryId === currentId.value) {
             const attachmentIndex = currentDiaryAttachments.value.findIndex(att => att.id === attachmentId);
             if (attachmentIndex !== -1) {
@@ -64,7 +64,7 @@ export const useDataStore = defineStore('data', () => {
         }
     }
 
-    function deleteAttachment(diaryId: string, attachmentIds: string[]) {
+    function deleteAttachment(diaryId: number, attachmentIds: string[]) {
         if (diaryId === currentId.value) {
             const previousCount = currentDiaryAttachments.value.length;
             currentDiaryAttachments.value = currentDiaryAttachments.value.filter(
@@ -79,7 +79,7 @@ export const useDataStore = defineStore('data', () => {
     function invalidateDiaryList() {
         diaryIds.value = [];
         diarySummaries.value = {};
-        currentId.value = '';
+        currentId.value = 0;
         currentDiaryAttachments.value = [];
         currentDiaryAttachmentUrlMap.value = {};
         diaryListRevision.value += 1;

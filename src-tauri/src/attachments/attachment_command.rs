@@ -34,7 +34,7 @@ pub fn cmd_add_attachment(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
-    id: String,
+    id: f64,
     access_str: String,
     encrypted: bool,
     original_filename: Option<String>,
@@ -54,11 +54,17 @@ pub fn cmd_add_attachment(
     let stream = file_to_stream(file);
     let task_pool = state.task_pool();
     let state = state.inner().clone();
+    let Ok(id) = crate::diaries::diary_command::checked_diary_id(id) else {
+        return Err(AppError {
+            error_type: "diary".into(),
+            message: "无效的日记 ID".into(),
+        });
+    };
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         add_attachment_cancelable(
             &state,
             Arc::new(event),
-            &id,
+            id,
             encrypted,
             size,
             mimetype,
@@ -84,7 +90,7 @@ pub fn cmd_add_attachment(
 pub fn cmd_add_attachment_memory(
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
-    id: String,
+    id: f64,
     data: Vec<u8>,
     mimetype: String,
     encrypted: bool,
@@ -101,11 +107,12 @@ pub fn cmd_add_attachment_memory(
     let stream = create_mock_stream(data, len);
     let task_pool = state.task_pool();
     let state = state.inner().clone();
+    let id = crate::diaries::diary_command::checked_diary_id(id)?;
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         add_attachment_cancelable(
             &state,
             Arc::new(event),
-            &id,
+            id,
             encrypted,
             len as u64,
             mimetype,
@@ -127,11 +134,12 @@ pub fn cmd_add_attachment_memory(
 #[specta::specta]
 pub async fn cmd_delete_attachment(
     state: State<'_, AppState>,
-    id: &str,
+    id: f64,
     attachment_id: String,
 ) -> Result<(), AppError> {
     let _storage_guard = state.lock_storage_operation().await;
     let store = state.diary_store();
+    let id = crate::diaries::diary_command::checked_diary_id(id)?;
     Ok(delete_attachment(
         &state.diary_cache(),
         &state.crypto(),
@@ -155,11 +163,12 @@ pub async fn cmd_add_image_attachment_from_camera(
     app: AppHandle,
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
-    id: String,
+    id: f64,
     encrypted: bool,
 ) -> Result<String, AppError> {
     #[cfg(target_os = "android")]
     {
+        let id = crate::diaries::diary_command::checked_diary_id(id)?;
         use base64::engine::general_purpose::STANDARD;
         use base64::Engine;
         use tauri_plugin_native_camera::NativeCameraExt;
@@ -182,7 +191,7 @@ pub async fn cmd_add_image_attachment_from_camera(
             add_attachment_cancelable(
                 &state,
                 Arc::new(event),
-                &id,
+                id,
                 encrypted,
                 len as u64,
                 MIMETYPE.to_string(),
@@ -216,17 +225,18 @@ pub async fn cmd_add_image_attachment_from_camera(
 pub fn cmd_toggle_attachment_encryption(
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
-    id: String,
+    id: f64,
     attachment_id: String,
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
     let state = state.inner().clone();
+    let id = crate::diaries::diary_command::checked_diary_id(id)?;
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         let _storage_guard = state.lock_storage_operation().await;
         toggle_attachment_encryption_cancelable(
             &state,
             Arc::new(event),
-            &id,
+            id,
             attachment_id,
             &cancellation,
         )
@@ -247,18 +257,19 @@ pub fn cmd_toggle_attachment_encryption(
 pub fn cmd_rotate_image_attachment(
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
-    id: String,
+    id: f64,
     attachment_id: String,
     rotation: i32,
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
     let state = state.inner().clone();
+    let id = crate::diaries::diary_command::checked_diary_id(id)?;
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         let _storage_guard = state.lock_storage_operation().await;
         rotate_image_attachment_cancelable(
             &state,
             Arc::new(event),
-            &id,
+            id,
             attachment_id,
             rotation,
             &cancellation,
@@ -279,15 +290,16 @@ pub fn cmd_rotate_image_attachment(
 pub fn cmd_caching_attachment(
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
-    id: String,
+    id: f64,
     attachment_id: String,
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
     let state = state.inner().clone();
+    let id = crate::diaries::diary_command::checked_diary_id(id)?;
     Ok(task_pool.spawn(async move {
         let _storage_guard = state.lock_storage_operation().await;
         let store = state.diary_store();
-        caching_attachment(&*store, Arc::new(event), &id, &attachment_id).await;
+        caching_attachment(&*store, Arc::new(event), id, &attachment_id).await;
     }))
 }
 
@@ -304,13 +316,14 @@ pub async fn cmd_save_decrypt_attachment(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     event: Channel<AttachmentProcessEvent>,
-    id: String,
+    id: f64,
     attachment_id: String,
 ) -> Result<String, AppError> {
+    let id = crate::diaries::diary_command::checked_diary_id(id)?;
     let attachment = {
         let _storage_guard = state.lock_storage_operation().await;
         let store = state.diary_store();
-        let diary = get_diary(&state.diary_cache(), &state.crypto(), &*store, &id).await?;
+        let diary = get_diary(&state.diary_cache(), &state.crypto(), &*store, id).await?;
         diary
             .attachments
             .iter()
@@ -348,15 +361,7 @@ pub async fn cmd_save_decrypt_attachment(
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
         let _storage_guard = state.lock_storage_operation().await;
-        save_decrypt_attachment(
-            &state,
-            Arc::new(event),
-            &id,
-            attachment_id,
-            attachment,
-            file,
-        )
-        .await;
+        save_decrypt_attachment(&state, Arc::new(event), id, attachment_id, attachment, file).await;
     }))
 }
 
@@ -371,10 +376,11 @@ pub async fn cmd_save_decrypt_attachment(
 #[specta::specta]
 pub async fn cmd_update_attachment_filename(
     state: State<'_, AppState>,
-    id: String,
+    id: f64,
     attachment_id: String,
     new_filename: String,
 ) -> Result<(), AppError> {
     let _storage_guard = state.lock_storage_operation().await;
-    Ok(update_attachment_filename(&state, &id, attachment_id, new_filename).await?)
+    let id = crate::diaries::diary_command::checked_diary_id(id)?;
+    Ok(update_attachment_filename(&state, id, attachment_id, new_filename).await?)
 }

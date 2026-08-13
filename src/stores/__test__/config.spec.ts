@@ -167,10 +167,19 @@ describe('config store', () => {
             expect(await store.getNormalConfig('encrypted_oss_config')).toEqual([1, 2, 3])
         })
 
-        it('saves and retrieves string array', async () => {
+       it('saves and retrieves numeric diary id array', async () => {
+           const store = useConfigStore()
+           await store.saveNormalConfig('pinned_diary_ids', [123, 456])
+           expect(await store.getNormalConfig('pinned_diary_ids')).toEqual([123, 456])
+       })
+
+        it('normalizes legacy string diary ids to numbers on read', async () => {
+            localStorage.setItem(
+                STORAGE_PREFIX + 'pinned_diary_ids',
+                JSON.stringify(['8215021834823', '999', 'not-a-number']),
+            )
             const store = useConfigStore()
-            await store.saveNormalConfig('pinned_diary_ids', ['a', 'b'])
-            expect(await store.getNormalConfig('pinned_diary_ids')).toEqual(['a', 'b'])
+            expect(await store.getNormalConfig('pinned_diary_ids')).toEqual([8215021834823, 999])
         })
 
         it('persists across store instances', async () => {

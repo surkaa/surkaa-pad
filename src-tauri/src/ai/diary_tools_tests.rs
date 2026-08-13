@@ -52,7 +52,7 @@ fn describes_tool_calls_and_results_without_exposing_raw_payloads() {
         "找到 2 篇日记"
     );
 
-    let read = tool_call(READ_DIARY_TOOL, json!({"diaryId": "123"}));
+    let read = tool_call(READ_DIARY_TOOL, json!({"diaryId": 123}));
     let read_display = tools.describe_call(&read);
     assert_eq!(read_display.title, "读取日记");
     assert_eq!(read_display.detail.as_deref(), Some("日记 123"));
@@ -91,7 +91,7 @@ async fn rejects_unknown_tools_and_invalid_arguments_without_reading_storage() {
 
     assert_eq!(
         tools
-            .execute(&tool_call("delete_diary", json!({"diaryId": "1"})))
+            .execute(&tool_call("delete_diary", json!({"diaryId": 1})))
             .await,
         Err(AiToolError::UnknownTool("delete_diary".into()))
     );
@@ -172,7 +172,7 @@ async fn lists_searches_and_reads_real_local_diaries() {
 #[test]
 fn renders_attachment_placeholders_without_storage_details() {
     let manifest = DiaryManifest {
-        id: "1".into(),
+        id: 1,
         algorithm: Gcm,
         content: DiaryContent {
             nodes: vec![
@@ -196,7 +196,7 @@ fn renders_attachment_placeholders_without_storage_details() {
             algorithm: Gcm,
             etag: Some("private-etag".into()),
         }],
-        version: 4,
+        version: 5,
     };
 
     let value = serde_json::to_value(DiaryToolDocument::from_manifest(&manifest)).unwrap();
@@ -212,7 +212,7 @@ fn renders_attachment_placeholders_without_storage_details() {
 fn truncates_long_diary_content_on_character_boundaries() {
     let text = "日".repeat(MAX_DIARY_CONTENT_CHARS + 1);
     let manifest = DiaryManifest {
-        id: "1".into(),
+        id: 1,
         algorithm: Gcm,
         content: DiaryContent {
             nodes: vec![DiaryContentNode::Markdown { text }],
@@ -220,7 +220,7 @@ fn truncates_long_diary_content_on_character_boundaries() {
         created: 1,
         updated: 2,
         attachments: vec![],
-        version: 4,
+        version: 5,
     };
 
     let document = DiaryToolDocument::from_manifest(&manifest);
@@ -232,7 +232,7 @@ fn truncates_long_diary_content_on_character_boundaries() {
 #[test]
 fn truncates_long_summary_titles() {
     let manifest = DiaryManifest {
-        id: "1".into(),
+        id: 1,
         algorithm: Gcm,
         content: DiaryContent {
             nodes: vec![DiaryContentNode::Markdown {
@@ -242,7 +242,7 @@ fn truncates_long_summary_titles() {
         created: 1,
         updated: 2,
         attachments: vec![],
-        version: 4,
+        version: 5,
     };
 
     let summary = DiaryToolSummary::from_manifest(&manifest);

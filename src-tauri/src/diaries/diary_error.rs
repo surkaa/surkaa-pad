@@ -5,9 +5,6 @@ pub enum DiaryError {
     #[error("JSON serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
-    #[error("Diary ID is empty")]
-    EmptyId,
-
     #[error("Attachment not found: {0}")]
     AttachmentNotFound(String),
 

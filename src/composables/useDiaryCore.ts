@@ -37,7 +37,7 @@ export function useDiaryCore() {
     // 标记是否已经完成初次加载，避免将后端的初次赋值误认为用户的输入
     const isInitialLoaded = ref(false);
 
-    const isNew = computed(() => currentId.value.trim() === "");
+    const isNew = computed(() => currentId.value === 0);
 
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
     const AUTO_SAVE_DELAY = 1000;

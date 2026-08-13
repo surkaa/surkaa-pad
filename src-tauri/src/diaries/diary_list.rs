@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub async fn page_diary_ids(
     store: &dyn DiaryStore,
     next_token: NextToken,
-) -> Result<(Vec<String>, NextToken), DiaryError> {
+) -> Result<(Vec<u64>, NextToken), DiaryError> {
     store.list_diary_ids(next_token).await
 }
 
@@ -18,7 +18,7 @@ pub async fn get_diary_summary(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
 ) -> Result<DiarySummary, DiaryError> {
     let diary = get_diary(cache, crypto, store, id).await?;
     Ok(DiarySummary::from_manifest(&diary))
@@ -29,7 +29,7 @@ pub async fn get_diary_detail(
     crypto: &Crypto,
     store: &dyn DiaryStore,
     attachment_server: &AttachmentServerHandle,
-    id: &str,
+    id: u64,
 ) -> Result<DiaryDetail, DiaryError> {
     let diary = get_diary(cache, crypto, store, id).await?;
     let manifest_size = store.get_manifest_size(id).await?;

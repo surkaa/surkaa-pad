@@ -1,20 +1,20 @@
 /// 日记主文件在云存储中的路径
-pub fn remote_manifest_key(diary_id: &str) -> String {
-    format!("{}/manifest.enc", diary_id)
+pub fn remote_manifest_key(diary_id: u64) -> String {
+    format!("{diary_id}/manifest.enc")
 }
 
 /// 将日记主文件的key解析出日记ID
-pub fn diary_id_from_manifest_key(key: &str) -> Option<String> {
+pub fn diary_id_from_manifest_key(key: &str) -> Option<u64> {
     let diary_id = key.strip_suffix("/manifest.enc")?;
     if diary_id.is_empty() || !diary_id.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    Some(diary_id.to_string())
+    diary_id.parse().ok()
 }
 
 /// 日记附件在云存储中的路径
-pub fn remote_attachments_key(diary_id: &str, attachment_filename: &str) -> String {
-    format!("{}/{}", diary_id, attachment_filename)
+pub fn remote_attachments_key(diary_id: u64, attachment_filename: &str) -> String {
+    format!("{diary_id}/{attachment_filename}")
 }
 
 #[cfg(test)]
@@ -26,7 +26,7 @@ mod tests {
     fn parses_top_level_numeric_manifest_key() {
         assert_eq!(
             diary_id_from_manifest_key("8215021834823/manifest.enc"),
-            Some("8215021834823".to_string())
+            Some(8_215_021_834_823)
         );
     }
 

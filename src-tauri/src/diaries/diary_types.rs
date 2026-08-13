@@ -8,12 +8,13 @@ use specta::Type;
 use std::collections::{HashMap, HashSet};
 
 /// 当前代码唯一支持的日记 Manifest 版本。
-pub const CURRENT_VERSION: u32 = 4;
+pub const CURRENT_VERSION: u32 = 5;
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
 pub struct DiaryManifest {
-    pub id: String,
+    #[specta(type = f64)]
+    pub id: u64,
     pub algorithm: EncryptionAlgorithm, // 加密算法名称
     pub content: DiaryContent,
     #[specta(type = f64)]
@@ -26,14 +27,13 @@ pub struct DiaryManifest {
 
 /// 解析 Manifest 的身份和版本元数据，不要求旧版或高版本符合当前结构。
 pub(crate) fn inspect_manifest_json(
-    requested_id: &str,
+    requested_id: u64,
     manifest_bytes: &[u8],
 ) -> Result<(Value, u32), DiaryError> {
     let json: Value = serde_json::from_slice(manifest_bytes)?;
-    let manifest_id = json
-        .get("id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| DiaryError::InvalidManifest("Manifest diary id is missing".to_string()))?;
+    let manifest_id = json.get("id").and_then(parse_manifest_id).ok_or_else(|| {
+        DiaryError::InvalidManifest("Manifest diary id is missing or invalid".to_string())
+    })?;
     if manifest_id != requested_id {
         return Err(DiaryError::InvalidManifest(format!(
             "Manifest diary id {manifest_id} does not match requested id {requested_id}"
@@ -60,8 +60,16 @@ pub(crate) fn inspect_manifest_json(
     Ok((json, version))
 }
 
+fn parse_manifest_id(value: &Value) -> Option<u64> {
+    match value {
+        Value::String(text) => text.parse().ok(),
+        Value::Number(number) => number.as_u64(),
+        _ => None,
+    }
+}
+
 pub(crate) fn deserialize_current_manifest(
-    requested_id: &str,
+    requested_id: u64,
     manifest_bytes: &[u8],
 ) -> Result<DiaryManifest, DiaryError> {
     let (json, version) = inspect_manifest_json(requested_id, manifest_bytes)?;
@@ -77,7 +85,8 @@ pub(crate) fn deserialize_current_manifest(
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DiarySummary {
-    pub id: String,
+    #[specta(type = f64)]
+    pub id: u64,
     #[specta(type = f64)]
     pub created: i64,
     #[specta(type = f64)]
@@ -114,7 +123,7 @@ impl DiarySummary {
             .attachment_counts_for_ids(&encrypted_attachment_ids);
 
         Self {
-            id: manifest.id.clone(),
+            id: manifest.id,
             created: manifest.created,
             updated: manifest.updated,
             title,
@@ -147,7 +156,7 @@ pub struct DiaryDetail {
 )]
 pub enum SearchDiariesEvent {
     Match(DiarySummary),
-    Unmatch(String),
+    Unmatch(#[specta(type = f64)] u64),
     Finished,
     Error(String),
 }
@@ -171,7 +180,7 @@ mod tests {
     #[test]
     fn summary_counts_content_nodes_instead_of_attachment_metadata() {
         let manifest = DiaryManifest {
-            id: "diary-1".to_string(),
+            id: 1,
             algorithm: Gcm,
             content: DiaryContent {
                 nodes: vec![
@@ -229,7 +238,7 @@ mod tests {
         assert!(serialized.get("attachments").is_none());
 
         let full_manifest = serde_json::to_value(&manifest).expect("serialize manifest");
-        assert_eq!(full_manifest["id"], "diary-1");
+        assert_eq!(full_manifest["id"], 1);
         assert_eq!(full_manifest["version"], 4);
         assert_eq!(full_manifest["algorithm"], "AES256-GCM_v1");
         assert_eq!(
@@ -261,7 +270,7 @@ mod tests {
     #[test]
     fn current_manifest_parser_requires_matching_id_and_exact_version() {
         let manifest = DiaryManifest {
-            id: "current".to_string(),
+            id: 1,
             algorithm: Gcm,
             content: DiaryContent::default(),
             created: 1,
@@ -271,28 +280,26 @@ mod tests {
         };
         let bytes = serde_json::to_vec(&manifest).unwrap();
         assert_eq!(
-            deserialize_current_manifest("current", &bytes)
-                .unwrap()
-                .version,
+            deserialize_current_manifest(1, &bytes).unwrap().version,
             CURRENT_VERSION
         );
         assert!(matches!(
-            deserialize_current_manifest("other", &bytes),
+            deserialize_current_manifest(2, &bytes),
             Err(crate::diaries::DiaryError::InvalidManifest(message))
                 if message.contains("does not match")
         ));
 
         for (source, expected_version) in [
-            (serde_json::json!({"id": "legacy"}), 1),
-            (serde_json::json!({"id": "legacy", "version": 3}), 3),
+            (serde_json::json!({"id": 1}), 1),
+            (serde_json::json!({"id": 1, "version": 3}), 3),
             (
-                serde_json::json!({"id": "legacy", "version": CURRENT_VERSION + 1}),
+                serde_json::json!({"id": 1, "version": CURRENT_VERSION + 1}),
                 CURRENT_VERSION + 1,
             ),
         ] {
             let bytes = serde_json::to_vec(&source).unwrap();
             assert!(matches!(
-                deserialize_current_manifest("legacy", &bytes),
+                deserialize_current_manifest(1, &bytes),
                 Err(crate::diaries::DiaryError::UnsupportedVersion { found, supported })
                     if found == expected_version && supported == CURRENT_VERSION
             ));

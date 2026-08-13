@@ -318,7 +318,7 @@ mod tests {
         let data = b"hello chunked world";
         let mut session = store
             .begin_attachment_upload(
-                "diary",
+                1,
                 "attachment",
                 data.len() as u64,
                 "application/octet-stream",
@@ -340,8 +340,8 @@ mod tests {
         let etag = session.finish().await.unwrap();
 
         assert_eq!(etag, format!("{:X}", md5::compute(data)));
-        assert_eq!(los.get("diary/attachment").await.unwrap(), Some(etag));
-        assert_eq!(los.get_data("diary/attachment").await.unwrap(), data);
+        assert_eq!(los.get("1/attachment").await.unwrap(), Some(etag));
+        assert_eq!(los.get_data("1/attachment").await.unwrap(), data);
     }
 
     #[tokio::test]
@@ -350,14 +350,14 @@ mod tests {
         let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
         let store = LocalStore::new(los.clone());
         let mut session = store
-            .begin_attachment_upload("diary", "attachment", 5, "application/octet-stream")
+            .begin_attachment_upload(1, "attachment", 5, "application/octet-stream")
             .await
             .unwrap();
         session.write_chunk(b"123".to_vec()).await.unwrap();
 
         assert!(session.finish().await.is_err());
-        assert!(los.get("diary/attachment").await.unwrap().is_none());
-        assert!(std::fs::read_dir(temp_dir.path().join("diary"))
+        assert!(los.get("1/attachment").await.unwrap().is_none());
+        assert!(std::fs::read_dir(temp_dir.path().join("1"))
             .unwrap()
             .next()
             .is_none());
@@ -369,14 +369,14 @@ mod tests {
         let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
         let store = LocalStore::new(los.clone());
         let mut session = store
-            .begin_attachment_upload("diary", "attachment", 5, "application/octet-stream")
+            .begin_attachment_upload(1, "attachment", 5, "application/octet-stream")
             .await
             .unwrap();
         session.write_chunk(b"123".to_vec()).await.unwrap();
 
         session.abort().await.unwrap();
 
-        assert!(los.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("1/attachment").await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -385,13 +385,13 @@ mod tests {
         let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
         let store = LocalStore::new(los.clone());
         let mut session = store
-            .begin_attachment_upload("diary", "attachment", 2, "application/octet-stream")
+            .begin_attachment_upload(1, "attachment", 2, "application/octet-stream")
             .await
             .unwrap();
 
         assert!(session.write_chunk(b"123".to_vec()).await.is_err());
         assert!(session.abort().await.is_ok());
-        assert!(los.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("1/attachment").await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -405,7 +405,7 @@ mod tests {
 
         let etag = store
             .upload_attachment_with_progress(
-                "diary",
+                1,
                 "attachment",
                 data.len() as u64,
                 "application/octet-stream",
@@ -419,7 +419,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(etag, format!("{:X}", md5::compute(&data)));
-        assert_eq!(los.get_data("diary/attachment").await.unwrap(), data);
+        assert_eq!(los.get_data("1/attachment").await.unwrap(), data);
         let progress = progress_values.lock().unwrap();
         assert!(matches!(
             progress.last(),
@@ -441,16 +441,10 @@ mod tests {
         ]));
 
         assert!(store
-            .upload_attachment(
-                "diary",
-                "attachment",
-                10,
-                "application/octet-stream",
-                stream,
-            )
+            .upload_attachment(1, "attachment", 10, "application/octet-stream", stream,)
             .await
             .is_err());
-        assert!(los.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("1/attachment").await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -464,7 +458,7 @@ mod tests {
 
         let result = store
             .upload_attachment_with_progress(
-                "diary",
+                1,
                 "attachment",
                 data.len() as u64,
                 "application/octet-stream",
@@ -484,8 +478,8 @@ mod tests {
             result,
             Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
         ));
-        assert!(los.get("diary/attachment").await.unwrap().is_none());
-        assert!(std::fs::read_dir(temp_dir.path().join("diary"))
+        assert!(los.get("1/attachment").await.unwrap().is_none());
+        assert!(std::fs::read_dir(temp_dir.path().join("1"))
             .unwrap()
             .next()
             .is_none());
@@ -501,7 +495,7 @@ mod tests {
 
         let result = store
             .upload_attachment_with_progress(
-                "diary",
+                1,
                 "attachment",
                 3,
                 "application/octet-stream",
@@ -521,7 +515,7 @@ mod tests {
             result,
             Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
         ));
-        assert!(los.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("1/attachment").await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -535,12 +529,7 @@ mod tests {
         let second_chunk = b"last chunk".to_vec();
         let total_size = (first_chunk.len() + second_chunk.len()) as u64;
         let mut session = store
-            .begin_attachment_upload(
-                "diary",
-                "attachment",
-                total_size,
-                "application/octet-stream",
-            )
+            .begin_attachment_upload(1, "attachment", total_size, "application/octet-stream")
             .await
             .unwrap();
 
@@ -548,15 +537,15 @@ mod tests {
         assert_eq!(session.write_chunk(second_chunk).await.unwrap().0, 2);
         let etag = session.finish().await.unwrap();
 
-        let metadata = client.get_metadata("diary/attachment").await.unwrap();
+        let metadata = client.get_metadata("1/attachment").await.unwrap();
         assert_eq!(metadata.content_length, Some(total_size));
         assert_eq!(metadata.etag.as_deref(), Some(etag.as_str()));
         assert_eq!(
-            los.get("diary/attachment").await.unwrap().as_deref(),
+            los.get("1/attachment").await.unwrap().as_deref(),
             Some(etag.as_str())
         );
         assert_eq!(
-            los.get_data("diary/attachment").await.unwrap().len() as u64,
+            los.get_data("1/attachment").await.unwrap().len() as u64,
             total_size
         );
         guard.cleanup().await;
@@ -570,17 +559,17 @@ mod tests {
         let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
         let store = RemoteStore::new(los.clone(), client.clone());
         let mut session = store
-            .begin_attachment_upload("diary", "attachment", 3, "application/octet-stream")
+            .begin_attachment_upload(1, "attachment", 3, "application/octet-stream")
             .await
             .unwrap();
         session.write_chunk(b"123".to_vec()).await.unwrap();
         let uploads = wait_for_multipart_upload_count(&client, 1).await;
-        assert_eq!(uploads[0].0, "diary/attachment");
+        assert_eq!(uploads[0].0, "1/attachment");
 
         session.abort().await.unwrap();
 
         wait_for_multipart_upload_count(&client, 0).await;
-        assert!(los.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("1/attachment").await.unwrap().is_none());
         let (objects, _) = client.list("", None).await.unwrap();
         assert!(objects.is_empty());
         guard.cleanup().await;
@@ -607,7 +596,7 @@ mod tests {
         let task_token = task_pool.spawn_cancelable(move |cancellation| async move {
             let result = store
                 .upload_attachment_with_progress(
-                    "diary",
+                    1,
                     "attachment",
                     8 * 1024 * 1024 + 1,
                     "application/octet-stream",
@@ -634,7 +623,7 @@ mod tests {
             .expect("首个远端分片上传超时")
             .expect("上传任务未报告首个远端分片");
         let uploads = wait_for_multipart_upload_count(&client, 1).await;
-        assert_eq!(uploads[0].0, "diary/attachment");
+        assert_eq!(uploads[0].0, "1/attachment");
 
         assert!(task_pool.cancel(&task_token).await);
         let result = timeout(Duration::from_secs(30), result_rx)
@@ -646,7 +635,7 @@ mod tests {
             Err(DiaryError::AttachmentUpload(message)) if message.contains("已取消")
         ));
         wait_for_multipart_upload_count(&client, 0).await;
-        assert!(los.get("diary/attachment").await.unwrap().is_none());
+        assert!(los.get("1/attachment").await.unwrap().is_none());
         let (objects, _) = client.list("", None).await.unwrap();
         assert!(objects.is_empty());
         guard.cleanup().await;

@@ -7,7 +7,7 @@ import { formatError } from '../utils/formatError'
 
 type AttachmentRenamedCallback = (newFilename: string) => void
 
-export function useDiaryAttachmentRename(diaryId: Ref<string>) {
+export function useDiaryAttachmentRename(diaryId: Ref<number>) {
   const $q = useQuasar()
   const dataStore = useDataStore()
   const showRenameDialog = ref(false)

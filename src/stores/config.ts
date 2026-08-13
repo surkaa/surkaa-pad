@@ -36,7 +36,7 @@ type ConfigMap = {
     "encrypt_video_attachments": boolean;
     "encrypt_file_attachments": boolean;
     "attachment_upload_concurrency": number;
-    "pinned_diary_ids": string[]
+    "pinned_diary_ids": number[]
     "windows_editor_shortcuts": EditorShortcutConfig;
     "windows_diary_list_shortcuts": DiaryListShortcutConfig;
     "windows_ai_assistant_shortcuts": AiAssistantShortcutConfig;
@@ -68,6 +68,9 @@ function storageKey(key: ConfigKey): string {
 }
 
 function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): ConfigMap[K] {
+    if (key === 'pinned_diary_ids') {
+        return normalizePinnedDiaryIds(value) as ConfigMap[K];
+    }
     if (key === 'attachment_upload_concurrency') {
         return normalizeUploadConcurrency(value) as ConfigMap[K];
     }
@@ -78,6 +81,28 @@ function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): Conf
         return normalizeAiAssistantShortcutConfig(value) as ConfigMap[K];
     }
     return value as ConfigMap[K];
+}
+
+/**
+ * 置顶日记 ID 在旧版本中以字符串数组持久化；日记主键改为数字后统一归一化为 number[]，
+ * 避免旧 localStorage 数据与新的 number ID 比较时永远不相等。
+ */
+function normalizePinnedDiaryIds(value: unknown): number[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    const ids: number[] = [];
+    for (const item of value) {
+        const parsed = typeof item === 'number'
+            ? item
+            : typeof item === 'string' && item.trim() !== ''
+                ? Number(item)
+                : NaN;
+        if (Number.isFinite(parsed) && Number.isInteger(parsed) && parsed >= 0) {
+            ids.push(parsed);
+        }
+    }
+    return ids;
 }
 
 function readFromStorage<K extends ConfigKey>(key: K): ConfigMap[K] {

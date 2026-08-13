@@ -17,7 +17,7 @@ function attachment(id = 'att-1'): AttachmentMeta {
   }
 }
 
-function summary(id = '123'): DiarySummary {
+function summary(id = 123): DiarySummary {
   return {
     id,
     created: 1,
@@ -38,9 +38,9 @@ describe('data store diary list invalidation', () => {
 
   it('clears stale list state and advances its revision', () => {
     const store = useDataStore()
-    store.diaryIds.push('123')
-    store.diarySummaries['123'] = null
-    store.currentId = '123'
+    store.diaryIds.push(123)
+    store.diarySummaries[123] = null
+    store.currentId = 123
     store.currentDiaryAttachments = [attachment()]
     store.currentDiaryAttachmentUrlMap = {'att-1': 'local-url'}
     const revision = store.diaryListRevision
@@ -49,7 +49,7 @@ describe('data store diary list invalidation', () => {
 
     expect(store.diaryIds).toEqual([])
     expect(store.diarySummaries).toEqual({})
-    expect(store.currentId).toBe('')
+    expect(store.currentId).toBe(0)
     expect(store.currentDiaryAttachments).toEqual([])
     expect(store.currentDiaryAttachmentUrlMap).toEqual({})
     expect(store.diaryListRevision).toBe(revision + 1)
@@ -57,20 +57,20 @@ describe('data store diary list invalidation', () => {
 
   it('updates only the opened diary attachment details and keeps the summary count lightweight', () => {
     const store = useDataStore()
-    store.currentId = '123'
-    store.diarySummaries['123'] = summary()
+    store.currentId = 123
+    store.diarySummaries[123] = summary()
 
-    store.updateAttachment('123', attachment())
-    store.updateAttachment('123', {...attachment(), size: 2})
-    store.updateAttachmentFilename('123', 'att-1', 'renamed.txt')
+    store.updateAttachment(123, attachment())
+    store.updateAttachment(123, {...attachment(), size: 2})
+    store.updateAttachmentFilename(123, 'att-1', 'renamed.txt')
 
     expect(store.currentDiaryAttachments).toHaveLength(1)
     expect(store.currentDiaryAttachments[0]).toMatchObject({filename: 'renamed.txt', size: 2})
-    expect(store.diarySummaries['123']?.attachmentCount).toBe(1)
+    expect(store.diarySummaries[123]?.attachmentCount).toBe(1)
 
-    store.deleteAttachment('123', ['att-1'])
+    store.deleteAttachment(123, ['att-1'])
 
     expect(store.currentDiaryAttachments).toEqual([])
-    expect(store.diarySummaries['123']?.attachmentCount).toBe(0)
+    expect(store.diarySummaries[123]?.attachmentCount).toBe(0)
   })
 })

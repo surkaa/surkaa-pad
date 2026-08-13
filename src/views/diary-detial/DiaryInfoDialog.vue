@@ -61,7 +61,7 @@ import {attachmentGroupIcon, groupAttachmentsByMimeType} from '../../utils/attac
 const props = defineProps<{
   modelValue: boolean;
   diary?: DiarySummary;
-  diaryId: string;
+  diaryId: number;
   attachments: AttachmentMeta[];
   manifestSize?: number;
 }>();

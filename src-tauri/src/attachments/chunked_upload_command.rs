@@ -29,7 +29,7 @@ use tauri_plugin_log::log;
 #[specta::specta]
 pub async fn cmd_start_chunked_upload(
     state: State<'_, AppState>,
-    id: String,
+    id: f64,
     filename: String,
     mimetype: String,
     encrypted: bool,
@@ -54,6 +54,7 @@ pub async fn cmd_start_chunked_upload(
 
     let storage_mode_guard = state.lock_storage_operation().await;
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
+    let id = crate::diaries::diary_command::checked_diary_id(id)?;
 
     let attachment_id = generate_attachment_id()?;
     let (cipher, nonce) = if encrypted {
@@ -62,7 +63,7 @@ pub async fn cmd_start_chunked_upload(
     } else {
         (None, None)
     };
-    let diary = get_diary(&cache, &crypto, &*store, &id)
+    let diary = get_diary(&cache, &crypto, &*store, id)
         .await
         .map_err(|e| AppError {
             error_type: "attachment".into(),
@@ -73,11 +74,7 @@ pub async fn cmd_start_chunked_upload(
         .iter()
         .map(|attachment| attachment.filename.clone())
         .collect();
-    let filename_allocator = state
-        .filename_allocators()
-        .entry(id.clone())
-        .or_default()
-        .clone();
+    let filename_allocator = state.filename_allocators().entry(id).or_default().clone();
     let filename = {
         let mut pending_filenames = filename_allocator.lock().await;
         let combined = existing_filenames
@@ -89,7 +86,7 @@ pub async fn cmd_start_chunked_upload(
         filename
     };
     let session = match store
-        .begin_attachment_upload(&id, &attachment_id, total_size, &mimetype)
+        .begin_attachment_upload(id, &attachment_id, total_size, &mimetype)
         .await
     {
         Ok(session) => session,
@@ -102,7 +99,7 @@ pub async fn cmd_start_chunked_upload(
         }
     };
 
-    let upload_token = generate_descending_id();
+    let upload_token = generate_descending_id().to_string();
     let upload_state = ChunkedUploadState {
         diary_id: id,
         attachment_id: attachment_id.clone(),
@@ -190,7 +187,7 @@ pub async fn cmd_upload_chunk(
         Ok(chunk) => chunk,
         Err(error) => {
             let session = upload.session.take();
-            let diary_id = upload.diary_id.clone();
+            let diary_id = upload.diary_id;
             let filename = upload.filename.clone();
             drop(upload);
             uploads.remove(&upload_token);
@@ -206,7 +203,7 @@ pub async fn cmd_upload_chunk(
     };
     if chunk.0 != part_number {
         let session = upload.session.take();
-        let diary_id = upload.diary_id.clone();
+        let diary_id = upload.diary_id;
         let filename = upload.filename.clone();
         drop(upload);
         uploads.remove(&upload_token);
@@ -258,7 +255,7 @@ pub async fn cmd_finish_chunked_upload(
 
     let filename_allocator = state
         .filename_allocators()
-        .entry(upload.diary_id.clone())
+        .entry(upload.diary_id)
         .or_default()
         .clone();
     let session = upload.session.take().ok_or_else(|| AppError {
@@ -299,14 +296,14 @@ pub async fn cmd_finish_chunked_upload(
         &cache,
         &crypto,
         &*upload.store,
-        &upload.diary_id,
+        upload.diary_id,
         attachment.clone(),
     )
     .await;
     if let Err(error) = manifest_result {
         let rollback = upload
             .store
-            .delete_attachment(&upload.diary_id, &attachment.id)
+            .delete_attachment(upload.diary_id, &attachment.id)
             .await;
         let message = match rollback {
             Ok(()) => error.to_string(),
@@ -318,7 +315,7 @@ pub async fn cmd_finish_chunked_upload(
         });
     }
 
-    let url = state.attachment_url(&upload.diary_id, &attachment.id);
+    let url = state.attachment_url(upload.diary_id, &attachment.id);
     Ok(ChunkedUploadFinishResult { attachment, url })
 }
 
@@ -347,14 +344,14 @@ pub async fn cmd_abort_chunked_upload(
         message: "分片上传会话已经结束".into(),
     })?;
     let abort_result = session.abort().await;
-    release_filename(&state, upload.diary_id.clone(), &upload.filename).await;
+    release_filename(&state, upload.diary_id, &upload.filename).await;
     abort_result.map_err(|error| AppError {
         error_type: "chunked_upload".into(),
         message: error.to_string(),
     })
 }
 
-async fn release_filename(state: &AppState, diary_id: String, filename: &str) {
+async fn release_filename(state: &AppState, diary_id: u64, filename: &str) {
     let filename_allocator = state
         .filename_allocators()
         .entry(diary_id)

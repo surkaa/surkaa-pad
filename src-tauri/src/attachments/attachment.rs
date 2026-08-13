@@ -118,7 +118,7 @@ pub fn deduplicate_filename(desired: &str, existing: &HashSet<String>) -> String
 pub(crate) async fn add_attachment_with_result(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     encrypted: bool,
     size: u64,
     mimetype: String,
@@ -144,7 +144,7 @@ pub(crate) async fn add_attachment_with_result(
 async fn add_attachment_with_result_cancelable(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     encrypted: bool,
     size: u64,
     mimetype: String,
@@ -158,11 +158,7 @@ async fn add_attachment_with_result_cancelable(
     let upload_progress = attachment_upload_progress(event.clone());
 
     let logic = async move {
-        let str_alloc_state = state
-            .filename_allocators()
-            .entry(id.to_string())
-            .or_default()
-            .clone();
+        let str_alloc_state = state.filename_allocators().entry(id).or_default().clone();
         let diary = get_diary(&cache, &crypto, &*store, id)
             .await
             .map_err(|e| AttachmentError::InvalidOperation(e.to_string()))?;
@@ -260,7 +256,7 @@ async fn add_attachment_with_result_cancelable(
 pub async fn add_attachment(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     encrypted: bool,
     size: u64,
     mimetype: String,
@@ -286,7 +282,7 @@ pub async fn add_attachment(
 pub async fn add_attachment_cancelable(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     encrypted: bool,
     size: u64,
     mimetype: String,
@@ -321,7 +317,7 @@ pub async fn delete_attachment(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
     attachment_id: String,
 ) -> Result<(), AttachmentError> {
     let guard = lock_diary_operation(id).await;
@@ -340,7 +336,7 @@ pub async fn delete_attachment(
 pub async fn toggle_attachment_encryption(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     attachment_id: String,
 ) {
     let cancellation = CancellationToken::new();
@@ -350,7 +346,7 @@ pub async fn toggle_attachment_encryption(
 pub async fn toggle_attachment_encryption_cancelable(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     attachment_id: String,
     cancellation: &CancellationToken,
 ) {
@@ -454,7 +450,7 @@ pub async fn toggle_attachment_encryption_cancelable(
 
 pub(crate) async fn finish_attachment_replacement<F, Fut>(
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
     attachment_id: &str,
     mimetype: &str,
     publish_manifest: F,
@@ -481,7 +477,7 @@ where
 
 pub(crate) async fn rollback_attachment_replacement(
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
     attachment_id: &str,
     mimetype: &str,
     primary_error: AttachmentError,
@@ -505,7 +501,7 @@ pub(crate) async fn rollback_attachment_replacement(
 pub async fn rotate_image_attachment(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     attachment_id: String,
     rotation: i32,
 ) {
@@ -517,7 +513,7 @@ pub async fn rotate_image_attachment(
 pub async fn rotate_image_attachment_cancelable(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     attachment_id: String,
     rotation: i32,
     cancellation: &CancellationToken,
@@ -649,7 +645,7 @@ pub async fn rotate_image_attachment_cancelable(
 pub async fn caching_attachment(
     store: &dyn DiaryStore,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     attachment_id: &str,
 ) {
     let _ = event.send(AttachmentProcessEvent::Started);
@@ -679,7 +675,7 @@ pub async fn caching_attachment(
 pub async fn save_decrypt_attachment(
     state: &AppState,
     event: Arc<dyn MessageSender<AttachmentProcessEvent>>,
-    id: &str,
+    id: u64,
     attachment_id: String,
     attachment: AttachmentMeta,
     mut file: File,
@@ -727,7 +723,7 @@ pub async fn save_decrypt_attachment(
 
 pub async fn update_attachment_filename(
     state: &AppState,
-    id: &str,
+    id: u64,
     attachment_id: String,
     new_filename: String,
 ) -> Result<(), AttachmentError> {

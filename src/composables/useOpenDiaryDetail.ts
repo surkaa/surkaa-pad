@@ -7,12 +7,12 @@ export function useOpenDiaryDetail() {
     const {currentDiaryAttachments, currentDiaryAttachmentUrlMap, currentId} = storeToRefs(useDataStore());
 
     // 绑定到列表项点击
-    async function openDiary(id?: string, highlightKeyword = '') {
+    async function openDiary(id?: number, highlightKeyword = '') {
         currentDiaryAttachmentUrlMap.value = {};
         currentDiaryAttachments.value = [];
         if (!id) {
             // 新建日记
-            currentId.value = "";
+            currentId.value = 0;
             await router.push({name: 'DiaryDetail'});
             return;
         }

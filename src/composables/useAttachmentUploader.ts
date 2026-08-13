@@ -58,7 +58,7 @@ function isCancellationRequested(task: UploadTask): boolean {
   return task.status === 'canceling' || task.status === 'canceled';
 }
 
-export function useAttachmentUploader(diaryId: Ref<string>) {
+export function useAttachmentUploader(diaryId: Ref<number>) {
   const $q = useQuasar();
   const dataStore = useDataStore();
   const taskControllers = new Map<string, TaskController>();

@@ -34,7 +34,7 @@ describe('diary version display', () => {
       data: {
         processed: 1,
         total: 2,
-        diaryId: '123',
+        diaryId: 123,
         outcome: 'legacy',
       },
     });
@@ -44,7 +44,7 @@ describe('diary version display', () => {
       scope: 'cloud',
       processed: 1,
       total: 2,
-      currentDiaryId: '123',
+      currentDiaryId: 123,
       currentOutcome: 'legacy',
     });
 
@@ -53,7 +53,7 @@ describe('diary version display', () => {
       event: 'completed',
       data: {report: completed},
     });
-    expect(state).toMatchObject({phase: 'completed', report: completed, currentDiaryId: ''});
+    expect(state).toMatchObject({phase: 'completed', report: completed, currentDiaryId: 0});
   });
 
   it('keeps a partial report when cancellation is acknowledged', () => {

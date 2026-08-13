@@ -15,15 +15,15 @@ use std::sync::{Arc, LazyLock};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 /// 每篇日记的操作互斥锁，串行化读取迁移、更新和删除，避免删除后又写回 manifest。
-static MANIFEST_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
+static MANIFEST_LOCKS: LazyLock<DashMap<u64, Arc<Mutex<()>>>> = LazyLock::new(DashMap::new);
 
 pub(crate) struct DiaryOperationGuard {
     _guard: OwnedMutexGuard<()>,
 }
 
-pub(crate) async fn lock_diary_operation(id: &str) -> DiaryOperationGuard {
+pub(crate) async fn lock_diary_operation(id: u64) -> DiaryOperationGuard {
     let lock = MANIFEST_LOCKS
-        .entry(id.to_string())
+        .entry(id)
         .or_insert_with(|| Arc::new(Mutex::new(())))
         .clone();
     DiaryOperationGuard {
@@ -41,7 +41,7 @@ pub async fn save_diary<C: Into<DiaryContent>>(
     let id = generate_descending_id();
     // 创建一个简单的 manifest
     let manifest = DiaryManifest {
-        id: id.clone(),
+        id,
         algorithm: Gcm,
         content: content.clone(),
         created: Utc::now().timestamp_millis(),
@@ -57,10 +57,10 @@ pub async fn save_diary<C: Into<DiaryContent>>(
     let encrypted_manifest = crypto.encrypt(&manifest_json)?;
 
     // 上传到存储（LocalStore 写入 LOS，RemoteStore 写入 OSS + LOS 写透）
-    let etag = store.upload_manifest(&id, &encrypted_manifest).await?;
+    let etag = store.upload_manifest(id, &encrypted_manifest).await?;
 
     // 保存到内存缓存中
-    cache.insert(&id, manifest.clone(), etag);
+    cache.insert(id, manifest.clone(), etag);
 
     Ok((DiarySummary::from_manifest(&manifest), content))
 }
@@ -70,7 +70,7 @@ pub async fn get_diary(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
 ) -> Result<DiaryManifest, DiaryError> {
     let guard = lock_diary_operation(id).await;
     get_diary_locked(cache, crypto, store, id, &guard).await
@@ -80,13 +80,9 @@ pub(crate) async fn get_diary_locked(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
     _guard: &DiaryOperationGuard,
 ) -> Result<DiaryManifest, DiaryError> {
-    if id.is_empty() {
-        return Err(DiaryError::EmptyId);
-    }
-
     // 获取远程 etag 用于缓存校验
     let remote_etag = store.get_manifest_etag(id).await?;
 
@@ -126,7 +122,7 @@ pub(crate) async fn get_diary_locked(
 pub async fn delete_diary(
     cache: &DiaryMemoryCache,
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
 ) -> Result<(), DiaryError> {
     let _guard = lock_diary_operation(id).await;
     store.delete_diary_all(id).await?;
@@ -150,12 +146,10 @@ async fn update_diary(
     let encrypted_manifest = crypto.encrypt(&manifest_json)?;
 
     // 上传到存储，覆盖原有的 manifest
-    let etag = store
-        .upload_manifest(&diary.id, &encrypted_manifest)
-        .await?;
+    let etag = store.upload_manifest(diary.id, &encrypted_manifest).await?;
 
     // 更新缓存
-    cache.insert(&diary.id, diary.clone(), etag);
+    cache.insert(diary.id, diary.clone(), etag);
 
     Ok(())
 }
@@ -164,7 +158,7 @@ pub async fn update_diary_content_only<C: Into<DiaryContent>>(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
     new_content: C,
 ) -> Result<DiarySummary, DiaryError> {
     let guard = lock_diary_operation(id).await;
@@ -184,7 +178,7 @@ pub async fn update_diary_attachment(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
     new_attachment: AttachmentMeta,
 ) -> Result<(), DiaryError> {
     let guard = lock_diary_operation(id).await;
@@ -195,7 +189,7 @@ pub(crate) async fn update_diary_attachment_locked(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
     new_attachment: AttachmentMeta,
     guard: &DiaryOperationGuard,
 ) -> Result<(), DiaryError> {
@@ -217,7 +211,7 @@ pub(crate) async fn update_diary_attachment_locked(
 
 pub async fn update_diary_attachment_filename(
     state: &AppState,
-    id: &str,
+    id: u64,
     attachment_id: String,
     new_filename: String,
 ) -> Result<(), DiaryError> {
@@ -245,7 +239,7 @@ pub(crate) async fn delete_diary_attachment_locked(
     cache: &DiaryMemoryCache,
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    id: &str,
+    id: u64,
     attachment_id: &str,
     guard: &DiaryOperationGuard,
 ) -> Result<(), DiaryError> {

@@ -116,7 +116,7 @@ fn tool_call(id: &str) -> AiToolCall {
     AiToolCall {
         id: id.into(),
         name: "read_diary".into(),
-        arguments: json!({"diaryId": "123"}),
+        arguments: json!({"diaryId": 123}),
     }
 }
 

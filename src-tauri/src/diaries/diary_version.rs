@@ -40,7 +40,8 @@ pub struct DiaryVersionReport {
     pub legacy_diaries: u32,
     pub newer_diaries: u32,
     pub failed_diaries: u32,
-    pub failed_diary_ids: Vec<String>,
+    #[specta(type = Vec<f64>)]
+    pub failed_diary_ids: Vec<u64>,
 }
 
 impl DiaryVersionReport {
@@ -69,11 +70,11 @@ impl DiaryVersionReport {
         }
     }
 
-    fn record_failure(&mut self, diary_id: &str) {
+    fn record_failure(&mut self, diary_id: u64) {
         self.processed_diaries = self.processed_diaries.saturating_add(1);
         self.failed_diaries = self.failed_diaries.saturating_add(1);
         if self.failed_diary_ids.len() < FAILED_DIARY_ID_LIMIT {
-            self.failed_diary_ids.push(diary_id.to_string());
+            self.failed_diary_ids.push(diary_id);
         }
     }
 }
@@ -93,8 +94,8 @@ pub enum DiaryVersionEvent {
     Progress {
         processed: u32,
         total: u32,
-        #[specta(rename = "diaryId")]
-        diary_id: String,
+        #[specta(rename = "diaryId", type = f64)]
+        diary_id: u64,
         outcome: DiaryVersionItemOutcome,
     },
     Completed {
@@ -135,7 +136,7 @@ pub(crate) async fn inspect_diary_versions(
             return Ok(DiaryVersionRunResult::Cancelled(report));
         }
 
-        let outcome = match inspect_diary_version(crypto, store, &diary_id).await {
+        let outcome = match inspect_diary_version(crypto, store, diary_id).await {
             Ok(version) => {
                 report.record_version(version);
                 if version < CURRENT_VERSION {
@@ -148,7 +149,7 @@ pub(crate) async fn inspect_diary_versions(
             }
             Err(error) => {
                 log::warn!("日记版本检查失败: diary={diary_id}, error={error}");
-                report.record_failure(&diary_id);
+                report.record_failure(diary_id);
                 DiaryVersionItemOutcome::Failed
             }
         };
@@ -167,7 +168,7 @@ pub(crate) async fn inspect_diary_versions(
 async fn collect_diary_ids(
     store: &dyn DiaryStore,
     cancellation: &CancellationToken,
-) -> Result<Vec<String>, DiaryError> {
+) -> Result<Vec<u64>, DiaryError> {
     let mut diary_ids = Vec::new();
     let mut next_token: NextToken = None;
     loop {
@@ -187,7 +188,7 @@ async fn collect_diary_ids(
 async fn inspect_diary_version(
     crypto: &Crypto,
     store: &dyn DiaryStore,
-    diary_id: &str,
+    diary_id: u64,
 ) -> Result<u32, DiaryError> {
     let _guard = lock_diary_operation(diary_id).await;
     let (encrypted_manifest, _) = store.download_manifest(diary_id).await?;
@@ -227,9 +228,9 @@ mod tests {
         crypto
     }
 
-    fn current_manifest(id: &str) -> DiaryManifest {
+    fn current_manifest(id: u64) -> DiaryManifest {
         DiaryManifest {
-            id: id.to_string(),
+            id,
             algorithm: Gcm,
             content: DiaryContent::default(),
             created: 1,
@@ -239,7 +240,7 @@ mod tests {
         }
     }
 
-    async fn upload_json(store: &LocalStore, crypto: &Crypto, id: &str, json: serde_json::Value) {
+    async fn upload_json(store: &LocalStore, crypto: &Crypto, id: u64, json: serde_json::Value) {
         let encrypted = crypto
             .encrypt(&serde_json::to_vec(&json).expect("serialize fixture"))
             .expect("encrypt fixture");
@@ -266,29 +267,29 @@ mod tests {
         upload_json(
             &store,
             &crypto,
-            "100",
-            serde_json::to_value(current_manifest("100")).unwrap(),
+            100,
+            serde_json::to_value(current_manifest(100)).unwrap(),
         )
         .await;
         upload_json(
             &store,
             &crypto,
-            "200",
-            serde_json::json!({"id":"200","version":3}),
+            200,
+            serde_json::json!({"id":200,"version":3}),
         )
         .await;
         upload_json(
             &store,
             &crypto,
-            "300",
-            serde_json::json!({"id":"300","version":CURRENT_VERSION + 1}),
+            300,
+            serde_json::json!({"id":300,"version":CURRENT_VERSION + 1}),
         )
         .await;
         upload_json(
             &store,
             &crypto,
-            "400",
-            serde_json::json!({"id":"400","version":CURRENT_VERSION}),
+            400,
+            serde_json::json!({"id":400,"version":CURRENT_VERSION}),
         )
         .await;
 
@@ -311,11 +312,11 @@ mod tests {
         assert_eq!(report.legacy_diaries, 1);
         assert_eq!(report.newer_diaries, 1);
         assert_eq!(report.failed_diaries, 1);
-        assert_eq!(report.failed_diary_ids, vec!["400"]);
+        assert_eq!(report.failed_diary_ids, vec![400]);
 
-        let (encrypted, _) = store.download_manifest("200").await.unwrap();
+        let (encrypted, _) = store.download_manifest(200).await.unwrap();
         let raw = crypto.decrypt(&encrypted).unwrap();
-        assert_eq!(inspect_manifest_json("200", &raw).unwrap().1, 3);
+        assert_eq!(inspect_manifest_json(200, &raw).unwrap().1, 3);
     }
 
     #[tokio::test]
@@ -324,12 +325,12 @@ mod tests {
         let store = LocalStore::new(LocalObjectStore::new(temp_dir.path().to_path_buf()));
         let crypto = make_crypto();
         for index in 0..51 {
-            let id = format!("{index:013}");
+            let id = index as u64;
             upload_json(
                 &store,
                 &crypto,
-                &id,
-                serde_json::to_value(current_manifest(&id)).unwrap(),
+                id,
+                serde_json::to_value(current_manifest(id)).unwrap(),
             )
             .await;
         }
