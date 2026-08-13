@@ -10,6 +10,7 @@ export type UploadTaskStatus =
   | 'error';
 
 export type UploadTaskPhase = 'preparing' | 'transferring' | 'finalizing';
+export type AttachmentTransferDirection = 'upload' | 'download';
 
 export interface UploadTask {
   id: string;
@@ -17,22 +18,32 @@ export interface UploadTask {
   progress: number;
   status: UploadTaskStatus;
   phase: UploadTaskPhase;
+  direction: AttachmentTransferDirection;
   error?: string;
 }
 
-export function createUploadTask(id: string, filename: string): UploadTask {
+export function createUploadTask(
+  id: string,
+  filename: string,
+  direction: AttachmentTransferDirection = 'upload',
+): UploadTask {
   return {
     id,
     filename,
     progress: 0,
     status: 'pending',
     phase: 'preparing',
+    direction,
   };
 }
 
-export function createQueuedUploadTask(id: string, filename: string): UploadTask {
+export function createQueuedUploadTask(
+  id: string,
+  filename: string,
+  direction: AttachmentTransferDirection = 'upload',
+): UploadTask {
   return {
-    ...createUploadTask(id, filename),
+    ...createUploadTask(id, filename, direction),
     status: 'queued',
   };
 }
@@ -106,12 +117,17 @@ export function markUploadTaskFailed(task: UploadTask, error: unknown): void {
 }
 
 export function uploadTaskStatusText(task: UploadTask): string {
+  const isDownload = task.direction === 'download';
   if (task.status === 'completed') return '已完成';
   if (task.status === 'canceled') return '已取消';
   if (task.status === 'canceling') return '正在取消';
-  if (task.status === 'error') return task.error ? `失败：${task.error}` : '上传失败';
-  if (task.phase === 'finalizing') return '正在完成：提交附件并保存日记';
-  if (task.status === 'queued') return '等待上传';
+  if (task.status === 'error') {
+    return task.error ? `失败：${task.error}` : (isDownload ? '下载失败' : '上传失败');
+  }
+  if (task.phase === 'finalizing') {
+    return isDownload ? '正在完成：写入本地缓存' : '正在完成：提交附件并保存日记';
+  }
+  if (task.status === 'queued') return isDownload ? '等待下载' : '等待上传';
   if (task.status === 'pending') return '准备中';
-  return `上传中 ${Math.round(task.progress * 100)}%`;
+  return `${isDownload ? '下载' : '上传'}中 ${Math.round(task.progress * 100)}%`;
 }

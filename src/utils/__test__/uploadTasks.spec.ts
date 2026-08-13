@@ -18,6 +18,22 @@ describe('upload task domain model', () => {
     expect(uploadTaskStatusText(task)).toBe('等待上传');
   });
 
+  it('uses download wording for attachment cache tasks', () => {
+    const task = createUploadTask('download', 'archive.zip', 'download');
+
+    expect(uploadTaskStatusText(task)).toBe('准备中');
+    applyUploadTaskEvent(task, {event: 'started'});
+    applyUploadTaskEvent(task, {event: 'progress', data: 42});
+    expect(uploadTaskStatusText(task)).toBe('下载中 42%');
+    applyUploadTaskEvent(task, {event: 'finalizing'});
+    expect(uploadTaskStatusText(task)).toBe('正在完成：写入本地缓存');
+
+    const queued = createQueuedUploadTask('queued-download', 'video.mp4', 'download');
+    expect(uploadTaskStatusText(queued)).toBe('等待下载');
+    queued.status = 'error';
+    expect(uploadTaskStatusText(queued)).toBe('下载失败');
+  });
+
   it('tracks transfer and finalization progress', () => {
     const task = createUploadTask('task-1', 'video.mp4');
 

@@ -269,7 +269,7 @@ export function useMediaAction(
             for (const attachmentId of attachmentIds) {
                 const filename = currentDiaryAttachments.value
                     .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
-                const key = createTask(filename);
+                const key = createTask(filename, false, 'download');
                 const event = createUploadChannel(key);
                 try {
                     const cancelToken = await api.cmdCachingAttachment(event, diaryId.value, attachmentId);

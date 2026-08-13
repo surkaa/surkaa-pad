@@ -13,6 +13,7 @@ import {
   hasActiveUploadTasks,
   isUploadTaskTerminal,
   markUploadTaskFailed,
+  type AttachmentTransferDirection,
   type UploadTask,
 } from '../utils/uploadTasks';
 
@@ -69,11 +70,15 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
   const hasActiveUploads = computed(() => hasActiveUploadTasks(uploadTasks.value));
   const allUploadsSettled = computed(() => !hasActiveUploads.value);
 
-  function createTask(filename: string, queued = false) {
+  function createTask(
+    filename: string,
+    queued = false,
+    direction: AttachmentTransferDirection = 'upload',
+  ) {
     const key = uuidv4();
     uploadTaskMap.value[key] = queued
-      ? createQueuedUploadTask(key, filename)
-      : createUploadTask(key, filename);
+      ? createQueuedUploadTask(key, filename, direction)
+      : createUploadTask(key, filename, direction);
     taskControllers.set(key, createTaskController());
     return key;
   }
