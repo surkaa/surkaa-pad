@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::caches::{AttachmentCacheManager, ChunkedSaveHandle, LocalObjectStore};
 use crate::diaries::DiaryError;
-use crate::object::{ObjectError, OssClient};
+use crate::object::OssClient;
 
 #[async_trait]
 pub trait AttachmentUploadSession: Send {
@@ -142,11 +142,22 @@ impl RemoteAttachmentUpload {
         mimetype: String,
     ) -> Result<Self, DiaryError> {
         let upload_id = client.initiate_multipart_upload(&key, &mimetype).await?;
-        let handle = match los.begin_chunked_save(&key).await {
-            Ok(handle) => handle,
+        let handle = match attachment_cache.reserve(&key, expected_size).await {
+            Ok(()) => match los.begin_chunked_save(&key).await {
+                Ok(handle) => Some(handle),
+                Err(error) => {
+                    attachment_cache.cancel_reservation(&key).await;
+                    tauri_plugin_log::log::warn!(
+                        "无法创建本地附件缓存，继续仅上传云端: key={key}, error={error}"
+                    );
+                    None
+                }
+            },
             Err(error) => {
-                let _ = client.abort_multipart_upload(&key, &upload_id).await;
-                return Err(error.into());
+                tauri_plugin_log::log::info!(
+                    "附件不写入本地缓存，继续仅上传云端: key={key}, size={expected_size}, error={error}"
+                );
+                None
             }
         };
         Ok(Self {
@@ -156,7 +167,7 @@ impl RemoteAttachmentUpload {
             key,
             mimetype,
             upload_id,
-            handle: Some(handle),
+            handle,
             parts: Vec::new(),
             expected_size,
             written_size: 0,
@@ -169,6 +180,7 @@ impl RemoteAttachmentUpload {
         if let Some(handle) = self.handle.take() {
             handle.abort().await;
         }
+        self.attachment_cache.cancel_reservation(&self.key).await;
         if self.multipart_active {
             self.multipart_active = false;
             self.client
@@ -211,12 +223,17 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
                 return Err(self.abort_with_error(error).await);
             }
         };
-        let handle = self
-            .handle
-            .as_ref()
-            .ok_or_else(|| invalid_upload("附件上传会话已经结束"))?;
-        if let Err(error) = handle.write_chunk(&data).await {
-            return Err(self.abort_with_error(error.into()).await);
+        if let Some(handle) = self.handle.as_ref() {
+            if let Err(error) = handle.write_chunk(&data).await {
+                if let Some(handle) = self.handle.take() {
+                    handle.abort().await;
+                }
+                self.attachment_cache.cancel_reservation(&self.key).await;
+                tauri_plugin_log::log::warn!(
+                    "写入本地附件缓存失败，继续仅上传云端: key={}, error={error}",
+                    self.key
+                );
+            }
         }
 
         let part_number = self.next_part_number;
@@ -274,26 +291,24 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
             }
         };
 
-        let handle = self
-            .handle
-            .take()
-            .ok_or_else(|| invalid_upload("附件上传会话已经结束"))?;
-        if let Err(cache_error) = handle.finalize(&etag).await {
-            let local_rollback = self.los.delete(&self.key).await;
-            let remote_rollback = self.client.delete(&self.key).await;
-            if let Err(rollback_error) = remote_rollback {
-                return Err(DiaryError::Object(ObjectError::OperationFailed(format!(
-                    "本地附件固化失败：{cache_error}；远端回滚失败：{rollback_error}"
-                ))));
+        if let Some(handle) = self.handle.take() {
+            if let Err(cache_error) = handle.finalize(&etag).await {
+                self.attachment_cache.cancel_reservation(&self.key).await;
+                let _ = self.los.delete(&self.key).await;
+                tauri_plugin_log::log::warn!(
+                    "云端附件上传成功，但本地缓存固化失败: key={}, error={cache_error}",
+                    self.key
+                );
+            } else if let Err(error) = self
+                .attachment_cache
+                .commit(&self.key, self.expected_size)
+                .await
+            {
+                tauri_plugin_log::log::warn!(
+                    "云端附件上传成功，但登记本地缓存失败: key={}, error={error}",
+                    self.key
+                );
             }
-            local_rollback?;
-            return Err(cache_error.into());
-        }
-        if let Err(error) = self.attachment_cache.register_existing(&self.key).await {
-            tauri_plugin_log::log::warn!(
-                "云端附件上传成功，但登记本地缓存失败: key={}, error={error}",
-                self.key
-            );
         }
         Ok(etag)
     }
@@ -306,6 +321,8 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app_config::{AppConfig, AppConfigStore};
+    use crate::caches::AttachmentCacheManager;
     use crate::diaries::diary_store::{AttachmentUploadOptions, AttachmentUploadProgress};
     use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
     use crate::stream::ByteStream;
@@ -581,6 +598,41 @@ mod tests {
             .path()
             .join(".attachment-cache-index.json")
             .exists());
+        guard.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn remote_session_keeps_successful_upload_when_attachment_exceeds_cache_limit() {
+        let client = OssClient::from_env();
+        let (client, guard) = TestOssGuard::new(client).await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let attachment_cache = AttachmentCacheManager::new(
+            los.clone(),
+            AppConfigStore::in_memory(AppConfig::with_attachment_cache_limit_bytes(4)),
+        );
+        let store =
+            RemoteStore::with_attachment_cache(los.clone(), client.clone(), attachment_cache);
+        let data = b"larger than cache limit";
+
+        let etag = store
+            .upload_attachment(
+                "8215021834823",
+                "att-large",
+                data.len() as u64,
+                "application/octet-stream",
+                crate::stream::create_mock_stream(data.to_vec(), data.len()),
+            )
+            .await
+            .unwrap();
+
+        let metadata = client
+            .get_metadata("8215021834823/att-large")
+            .await
+            .unwrap();
+        assert_eq!(metadata.etag.as_deref(), Some(etag.as_str()));
+        assert_eq!(metadata.content_length, Some(data.len() as u64));
+        assert!(los.get("8215021834823/att-large").await.unwrap().is_none());
         guard.cleanup().await;
     }
 
