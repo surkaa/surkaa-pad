@@ -122,6 +122,8 @@
           </q-item>
         </q-list>
         </section>
+
+        <AboutSettings/>
       </div>
     </div>
 
@@ -229,6 +231,7 @@ import DisableRemoteStorageDialog from '../../components/DisableRemoteStorageDia
 import DiaryVersionSettings from './DiaryVersionSettings.vue';
 import EditorShortcutSettings from './EditorShortcutSettings.vue';
 import LocalStorageSettings from './LocalStorageSettings.vue';
+import AboutSettings from './AboutSettings.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
