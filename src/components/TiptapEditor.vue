@@ -74,8 +74,15 @@ const editor = useEditor({
     Placeholder.configure({
       placeholder: '开始记录...',
     }),
-    TaskList,
+    TaskList.configure({
+      HTMLAttributes: {
+        class: 'editor-task-list',
+      },
+    }),
     TaskItem.configure({
+      HTMLAttributes: {
+        class: 'editor-task-item',
+      },
       a11y: {
         checkboxLabel: (node, checked) => `${checked ? '取消完成' : '标记完成'}：${node.textContent || '待办事项'}`,
       },
@@ -376,12 +383,12 @@ defineExpose({
 
 <style lang="scss">
 .tiptap-wrapper {
-  .ProseMirror ul[data-type='taskList'] {
+  .ProseMirror .editor-task-list {
     margin: 0.65em 0;
     padding: 0;
     list-style: none;
 
-    li[data-type='taskItem'] {
+    .editor-task-item {
       display: flex;
       align-items: flex-start;
       gap: 10px;

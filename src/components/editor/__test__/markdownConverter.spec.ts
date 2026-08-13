@@ -176,8 +176,15 @@ describe('markdownToHtml', () => {
   })
 
   it('loads task-list Markdown into the Tiptap task extensions', () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
     const editor = new Editor({
-      extensions: [StarterKit, TaskList, TaskItem],
+      element,
+      extensions: [
+        StarterKit,
+        TaskList.configure({HTMLAttributes: {class: 'editor-task-list'}}),
+        TaskItem.configure({HTMLAttributes: {class: 'editor-task-item'}}),
+      ],
       content: markdownToHtml('- [ ] 写日记\n- [x] 整理附件'),
     })
 
@@ -188,8 +195,12 @@ describe('markdownToHtml', () => {
         {type: 'taskItem', attrs: {checked: true}},
       ],
     })
+    expect(element.querySelector('ul.editor-task-list')).not.toBeNull()
+    expect(element.querySelectorAll('li.editor-task-item')).toHaveLength(2)
+    expect(element.querySelector('li.editor-task-item > label > input[type="checkbox"]')).not.toBeNull()
     expect(htmlToMarkdown(editor.getHTML())).toBe('- [ ] 写日记\n- [x] 整理附件')
     editor.destroy()
+    element.remove()
   })
 })
 
