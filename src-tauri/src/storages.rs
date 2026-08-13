@@ -17,9 +17,27 @@ pub fn remote_attachments_key(diary_id: &str, attachment_filename: &str) -> Stri
     format!("{}/{}", diary_id, attachment_filename)
 }
 
+/// 判断 key 是否为当前日记存储结构中的一级附件对象。
+///
+/// 只接受 `<数字日记 ID>/<附件文件名>`，排除 Manifest 和事务备份等内部对象。
+pub fn is_diary_attachment_key(key: &str) -> bool {
+    let mut parts = key.split('/');
+    let Some(diary_id) = parts.next() else {
+        return false;
+    };
+    let Some(filename) = parts.next() else {
+        return false;
+    };
+    parts.next().is_none()
+        && !diary_id.is_empty()
+        && diary_id.bytes().all(|byte| byte.is_ascii_digit())
+        && !filename.is_empty()
+        && filename != "manifest.enc"
+}
+
 #[cfg(test)]
 mod tests {
-    use super::diary_id_from_manifest_key;
+    use super::{diary_id_from_manifest_key, is_diary_attachment_key};
     use std::path::PathBuf;
 
     #[test]
@@ -41,6 +59,22 @@ mod tests {
             "manifest.enc",
         ] {
             assert_eq!(diary_id_from_manifest_key(key), None, "key={key}");
+        }
+    }
+
+    #[test]
+    fn recognizes_only_top_level_numeric_diary_attachments() {
+        assert!(is_diary_attachment_key(
+            "8215021834823/att-9e66f2d29a25c611ba34b2dabfbd5c19"
+        ));
+        for key in [
+            "8215021834823/manifest.enc",
+            "8215021834823/.attachment-transaction/att-1",
+            "rust-tests/run/8215021834823/att-1",
+            "abc/att-1",
+            "8215021834823/",
+        ] {
+            assert!(!is_diary_attachment_key(key), "key={key}");
         }
     }
 

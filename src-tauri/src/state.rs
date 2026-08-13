@@ -3,7 +3,7 @@ use crate::app_config::AppConfig;
 use crate::app_config::{AppConfigError, AppConfigStore};
 use crate::attachments::chunked_upload::ChunkedUploadState;
 use crate::attachments::AttachmentServerHandle;
-use crate::caches::{DiaryMemoryCache, LocalObjectStore};
+use crate::caches::{AttachmentCacheManager, DiaryMemoryCache, LocalObjectStore};
 use crate::cryptos::Crypto;
 use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
 use crate::local_storage::LocalStorageManager;
@@ -22,6 +22,7 @@ pub struct AppState {
     oss_client: OssClient,
     diary_cache: DiaryMemoryCache,
     local_object_store: LocalObjectStore,
+    attachment_cache: AttachmentCacheManager,
     task_pool: TaskPool,
     chunked_uploads: Arc<DashMap<String, Arc<Mutex<ChunkedUploadState>>>>,
     filename_allocators: Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>>,
@@ -43,11 +44,14 @@ impl AppState {
         let crypto = Crypto::new();
         let diary_cache = DiaryMemoryCache::new();
         let local_object_store = LocalObjectStore::new(path);
+        let attachment_cache =
+            AttachmentCacheManager::new(local_object_store.clone(), app_config.clone());
         let task_pool = TaskPool::new();
         Self {
             crypto,
             oss_client: OssClient::new(),
             local_object_store,
+            attachment_cache,
             diary_cache,
             task_pool,
             chunked_uploads: Arc::new(DashMap::new()),
@@ -74,6 +78,10 @@ impl AppState {
 
     pub fn local_object_store(&self) -> LocalObjectStore {
         self.local_object_store.clone()
+    }
+
+    pub fn attachment_cache(&self) -> AttachmentCacheManager {
+        self.attachment_cache.clone()
     }
 
     pub fn task_pool(&self) -> TaskPool {
@@ -129,6 +137,18 @@ impl AppState {
         self.app_config.set_remote_enabled(enabled)
     }
 
+    pub fn attachment_cache_limit_bytes(&self) -> u64 {
+        self.app_config.current().attachment_cache_limit_bytes()
+    }
+
+    pub fn persist_attachment_cache_limit_bytes(
+        &self,
+        limit_bytes: u64,
+    ) -> Result<(), AppConfigError> {
+        self.app_config
+            .set_attachment_cache_limit_bytes(limit_bytes)
+    }
+
     pub fn local_storage(&self) -> LocalStorageManager {
         self.local_storage.clone()
     }
@@ -136,9 +156,10 @@ impl AppState {
     /// 根据当前存储模式构造 DiaryStore
     pub fn diary_store(&self) -> Box<dyn DiaryStore> {
         if self.remote_enabled.load(Ordering::Relaxed) {
-            Box::new(RemoteStore::new(
+            Box::new(RemoteStore::with_attachment_cache(
                 self.local_object_store.clone(),
                 self.oss_client.clone(),
+                self.attachment_cache.clone(),
             ))
         } else {
             Box::new(LocalStore::new(self.local_object_store.clone()))
@@ -172,11 +193,14 @@ impl AppState {
             local_object_store.root().to_path_buf(),
             local_object_store.root().to_path_buf(),
         );
+        let attachment_cache =
+            AttachmentCacheManager::new(local_object_store.clone(), app_config.clone());
         Self {
             crypto,
             oss_client,
             diary_cache: DiaryMemoryCache::new(),
             local_object_store,
+            attachment_cache,
             task_pool: TaskPool::new(),
             chunked_uploads: Arc::new(DashMap::new()),
             filename_allocators: Arc::new(DashMap::new()),

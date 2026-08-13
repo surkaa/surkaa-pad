@@ -136,6 +136,7 @@ pub struct LocalObjectEntry {
     pub key: String,
     pub etag: String,
     pub size: u64,
+    pub modified_at_ms: u64,
 }
 
 impl LocalObjectStore {
@@ -421,10 +422,22 @@ impl LocalObjectStore {
                     if etag_path.exists() {
                         if let Ok(etag) = tokio::fs::read_to_string(&etag_path).await {
                             let size = tokio::fs::metadata(&path).await?.len();
+                            let modified_at_ms = tokio::fs::metadata(&path)
+                                .await?
+                                .modified()
+                                .ok()
+                                .and_then(|value| {
+                                    value
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .ok()
+                                        .map(|duration| duration.as_millis() as u64)
+                                })
+                                .unwrap_or_default();
                             results.push(LocalObjectEntry {
                                 key: key.to_string(),
                                 etag: etag.trim().to_string(),
                                 size,
+                                modified_at_ms,
                             });
                         }
                     }

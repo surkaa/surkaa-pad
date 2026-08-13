@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::caches::{ChunkedSaveHandle, LocalObjectStore};
+use crate::caches::{AttachmentCacheManager, ChunkedSaveHandle, LocalObjectStore};
 use crate::diaries::DiaryError;
 use crate::object::{ObjectError, OssClient};
 
@@ -119,6 +119,7 @@ impl AttachmentUploadSession for LocalAttachmentUpload {
 
 pub(crate) struct RemoteAttachmentUpload {
     los: LocalObjectStore,
+    attachment_cache: AttachmentCacheManager,
     client: OssClient,
     key: String,
     mimetype: String,
@@ -134,6 +135,7 @@ pub(crate) struct RemoteAttachmentUpload {
 impl RemoteAttachmentUpload {
     pub(crate) async fn begin(
         los: LocalObjectStore,
+        attachment_cache: AttachmentCacheManager,
         client: OssClient,
         key: String,
         expected_size: u64,
@@ -149,6 +151,7 @@ impl RemoteAttachmentUpload {
         };
         Ok(Self {
             los,
+            attachment_cache,
             client,
             key,
             mimetype,
@@ -285,6 +288,12 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
             }
             local_rollback?;
             return Err(cache_error.into());
+        }
+        if let Err(error) = self.attachment_cache.register_existing(&self.key).await {
+            tauri_plugin_log::log::warn!(
+                "云端附件上传成功，但登记本地缓存失败: key={}, error={error}",
+                self.key
+            );
         }
         Ok(etag)
     }

@@ -7,7 +7,12 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use thiserror::Error;
 
 pub const APP_CONFIG_FILENAME: &str = "app-state.json";
+pub const DEFAULT_ATTACHMENT_CACHE_LIMIT_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 const APP_CONFIG_VERSION: u32 = 1;
+
+fn default_attachment_cache_limit_bytes() -> u64 {
+    DEFAULT_ATTACHMENT_CACHE_LIMIT_BYTES
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -71,6 +76,11 @@ pub struct AppConfig {
     local_storage_location: LocalStorageLocation,
     #[serde(rename = "remoteEnabled", default)]
     remote_enabled: Option<bool>,
+    #[serde(
+        rename = "attachmentCacheLimitBytes",
+        default = "default_attachment_cache_limit_bytes"
+    )]
+    attachment_cache_limit_bytes: u64,
     #[serde(rename = "pendingLocalStorageMigration", default)]
     pending_local_storage_migration: Option<PendingLocalStorageMigration>,
 }
@@ -81,6 +91,7 @@ impl Default for AppConfig {
             version: APP_CONFIG_VERSION,
             local_storage_location: LocalStorageLocation::Default,
             remote_enabled: None,
+            attachment_cache_limit_bytes: DEFAULT_ATTACHMENT_CACHE_LIMIT_BYTES,
             pending_local_storage_migration: None,
         }
     }
@@ -95,6 +106,10 @@ impl AppConfig {
         self.remote_enabled
     }
 
+    pub fn attachment_cache_limit_bytes(&self) -> u64 {
+        self.attachment_cache_limit_bytes
+    }
+
     pub fn pending_local_storage_migration(&self) -> Option<&PendingLocalStorageMigration> {
         self.pending_local_storage_migration.as_ref()
     }
@@ -103,6 +118,14 @@ impl AppConfig {
     pub fn with_local_storage_location(location: LocalStorageLocation) -> Self {
         Self {
             local_storage_location: location,
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_attachment_cache_limit_bytes(limit_bytes: u64) -> Self {
+        Self {
+            attachment_cache_limit_bytes: limit_bytes,
             ..Self::default()
         }
     }
@@ -165,6 +188,12 @@ impl AppConfigStore {
     pub fn set_remote_enabled(&self, enabled: bool) -> Result<(), AppConfigError> {
         let mut next = self.current();
         next.remote_enabled = Some(enabled);
+        self.save(next)
+    }
+
+    pub fn set_attachment_cache_limit_bytes(&self, limit_bytes: u64) -> Result<(), AppConfigError> {
+        let mut next = self.current();
+        next.attachment_cache_limit_bytes = limit_bytes;
         self.save(next)
     }
 
@@ -332,6 +361,32 @@ mod tests {
 
         let reloaded = AppConfigStore::load(path).unwrap();
         assert_eq!(reloaded.current().remote_enabled(), Some(false));
+    }
+
+    #[test]
+    fn missing_cache_limit_uses_default_and_updates_persistently() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join(APP_CONFIG_FILENAME);
+        fs::write(
+            &path,
+            br#"{"version":1,"localStorageLocation":{"type":"default"}}"#,
+        )
+        .unwrap();
+
+        let store = AppConfigStore::load(path.clone()).unwrap();
+        assert_eq!(
+            store.current().attachment_cache_limit_bytes(),
+            DEFAULT_ATTACHMENT_CACHE_LIMIT_BYTES
+        );
+
+        store
+            .set_attachment_cache_limit_bytes(5 * 1024 * 1024 * 1024)
+            .unwrap();
+        let reloaded = AppConfigStore::load(path).unwrap();
+        assert_eq!(
+            reloaded.current().attachment_cache_limit_bytes(),
+            5 * 1024 * 1024 * 1024
+        );
     }
 
     #[test]

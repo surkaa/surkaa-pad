@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 
-use crate::caches::{CacheError, LocalObjectStore};
+#[cfg(test)]
+use crate::app_config::{AppConfig, AppConfigStore};
+use crate::caches::{AttachmentCacheManager, CacheError, LocalObjectStore};
 use crate::diaries::attachment_upload::{LocalAttachmentUpload, RemoteAttachmentUpload};
 use crate::diaries::{AttachmentUploadSession, DiaryError};
 use crate::object::{NextToken, ObjectError, OssClient};
@@ -470,11 +472,44 @@ impl DiaryStore for LocalStore {
 pub struct RemoteStore {
     los: LocalObjectStore,
     client: OssClient,
+    attachment_cache: AttachmentCacheManager,
 }
 
 impl RemoteStore {
+    #[cfg(test)]
     pub fn new(los: LocalObjectStore, client: OssClient) -> Self {
-        Self { los, client }
+        let attachment_cache = AttachmentCacheManager::new(
+            los.clone(),
+            AppConfigStore::in_memory(AppConfig::default()),
+        );
+        Self::with_attachment_cache(los, client, attachment_cache)
+    }
+
+    pub fn with_attachment_cache(
+        los: LocalObjectStore,
+        client: OssClient,
+        attachment_cache: AttachmentCacheManager,
+    ) -> Self {
+        Self {
+            los,
+            client,
+            attachment_cache,
+        }
+    }
+
+    async fn touch_cached_attachment(&self, key: &str) {
+        if let Err(error) = self.attachment_cache.touch(key).await {
+            tauri_plugin_log::log::warn!("更新附件缓存访问时间失败: key={key}, error={error}");
+        }
+    }
+
+    async fn remove_cached_attachment(&self, key: &str) {
+        if let Err(error) = self.los.delete(key).await {
+            tauri_plugin_log::log::warn!("删除失效附件缓存失败: key={key}, error={error}");
+        }
+        if let Err(error) = self.attachment_cache.forget(key).await {
+            tauri_plugin_log::log::warn!("移除附件缓存索引失败: key={key}, error={error}");
+        }
     }
 }
 
@@ -534,7 +569,9 @@ impl DiaryStore for RemoteStore {
 
         // 远端是权威来源；远端完整删除后再清理本地副本。缓存清理失败也要
         // 返回错误，使用户可以重试，避免切换本地模式后旧日记重新出现。
-        delete_local_diary_files(&self.los, id).await
+        delete_local_diary_files(&self.los, id).await?;
+        self.attachment_cache.forget_diary(id).await?;
+        Ok(())
     }
 
     async fn list_diary_ids(
@@ -560,6 +597,7 @@ impl DiaryStore for RemoteStore {
         Ok(Box::new(
             RemoteAttachmentUpload::begin(
                 self.los.clone(),
+                self.attachment_cache.clone(),
                 self.client.clone(),
                 key,
                 size,
@@ -580,13 +618,15 @@ impl DiaryStore for RemoteStore {
         if let Some(cached_etag) = self.los.get(&key).await? {
             // 已知 etag 匹配，直接使用缓存
             if known_etag.is_some_and(|k| k == cached_etag) {
+                self.touch_cached_attachment(&key).await;
                 return Ok(self.los.get_stream(&key, range).await?);
             }
             let metadata = self.client.get_metadata(&key).await?;
             if metadata.etag.as_deref() == Some(&cached_etag) {
+                self.touch_cached_attachment(&key).await;
                 return Ok(self.los.get_stream(&key, range).await?);
             } else {
-                let _ = self.los.delete(&key).await;
+                self.remove_cached_attachment(&key).await;
             }
         }
         let (stream, _) = self.client.download(&key, range).await?;
@@ -617,7 +657,7 @@ impl DiaryStore for RemoteStore {
                     return Ok(size);
                 }
             } else {
-                let _ = self.los.delete(&key).await;
+                self.remove_cached_attachment(&key).await;
             }
             return metadata.content_length.ok_or_else(|| {
                 DiaryError::Object(ObjectError::OperationFailed(format!(
@@ -657,18 +697,26 @@ impl DiaryStore for RemoteStore {
             .await?
             .is_some_and(|cached_etag| etags_match(&cached_etag, &remote_etag))
         {
+            self.touch_cached_attachment(&key).await;
             progress(100);
             return Ok(());
         }
 
         let (stream, size) = self.client.download(&key, None).await?;
+        self.attachment_cache.reserve(&key, size).await?;
         let progress_for_stream = progress.clone();
         let tracked_stream = tracker_stream(size, stream, move |percent| {
             progress_for_stream(percent);
         });
-        self.los
+        if let Err(error) = self
+            .los
             .save_stream_with_etag(&key, &remote_etag, tracked_stream)
-            .await?;
+            .await
+        {
+            self.attachment_cache.cancel_reservation(&key).await;
+            return Err(error.into());
+        }
+        self.attachment_cache.commit(&key, size).await?;
         progress(100);
         Ok(())
     }
@@ -677,6 +725,7 @@ impl DiaryStore for RemoteStore {
         let key = remote_attachments_key(id, filename);
         self.client.delete(&key).await?;
         let _ = self.los.delete(&key).await;
+        self.attachment_cache.forget(&key).await?;
         Ok(())
     }
 
@@ -712,6 +761,11 @@ impl DiaryStore for RemoteStore {
         self.los
             .save_stream_with_etag(&key, &remote_etag, cache_stream)
             .await?;
+        if let Err(error) = self.attachment_cache.register_existing(&key).await {
+            tauri_plugin_log::log::warn!(
+                "远端附件恢复成功，但登记本地缓存失败: key={key}, error={error}"
+            );
+        }
         Ok(())
     }
 

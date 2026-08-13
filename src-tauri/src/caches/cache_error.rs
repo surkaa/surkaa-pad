@@ -25,6 +25,23 @@ pub enum CacheError {
 
     #[error("Path error: {0}")]
     PathError(String),
+
+    #[error("Cache metadata error: {0}")]
+    Metadata(String),
+
+    #[error("Attachment size {required_bytes} exceeds local cache limit {limit_bytes}")]
+    CapacityExceeded {
+        required_bytes: u64,
+        limit_bytes: u64,
+    },
+
+    #[error(
+        "Unable to free enough local cache space for {required_bytes} bytes within limit {limit_bytes}"
+    )]
+    InsufficientEvictableCapacity {
+        required_bytes: u64,
+        limit_bytes: u64,
+    },
 }
 
 impl From<CacheError> for crate::error::AppError {

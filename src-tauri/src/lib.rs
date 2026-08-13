@@ -40,9 +40,9 @@ use crate::local_storage::migration::{
     cmd_open_local_storage, cmd_plan_local_storage_migration,
 };
 use crate::object::object_command::{
-    cmd_disable_remote_storage, cmd_enable_remote_storage, cmd_get_storage_mode,
-    cmd_init_oss_client, cmd_migrate_legacy_remote_enabled, cmd_plan_disable_remote_storage,
-    cmd_restore_remote_storage,
+    cmd_disable_remote_storage, cmd_enable_remote_storage, cmd_get_attachment_cache_info,
+    cmd_get_storage_mode, cmd_init_oss_client, cmd_migrate_legacy_remote_enabled,
+    cmd_plan_disable_remote_storage, cmd_restore_remote_storage, cmd_set_attachment_cache_limit,
 };
 use crate::state::AppState;
 use crate::tasks::task_command::cmd_cancel_task;
@@ -86,6 +86,8 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_plan_disable_remote_storage,
             cmd_disable_remote_storage,
             cmd_get_storage_mode,
+            cmd_get_attachment_cache_info,
+            cmd_set_attachment_cache_limit,
             cmd_migrate_legacy_remote_enabled,
             cmd_restore_remote_storage,
             // 本地存储位置管理

@@ -1,3 +1,4 @@
+use crate::caches::AttachmentCacheStats;
 use crate::diaries::diary_sync::{
     inspect_cloud_to_local, sync_cloud_to_local, sync_local_to_cloud, SyncDirection, SyncPhase,
     SyncProgressEvent,
@@ -34,6 +35,29 @@ pub struct DisableRemoteStoragePlan {
     pub available_bytes: u64,
     #[specta(rename = "hasSufficientSpace")]
     pub has_sufficient_space: bool,
+}
+
+const MIN_ATTACHMENT_CACHE_LIMIT_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_ATTACHMENT_CACHE_LIMIT_BYTES: u64 = 100 * 1024 * 1024 * 1024;
+
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentCacheInfo {
+    pub cached_files: u32,
+    #[specta(type = f64)]
+    pub cached_bytes: u64,
+    #[specta(type = f64)]
+    pub limit_bytes: u64,
+}
+
+impl From<AttachmentCacheStats> for AttachmentCacheInfo {
+    fn from(value: AttachmentCacheStats) -> Self {
+        Self {
+            cached_files: value.cached_files,
+            cached_bytes: value.cached_bytes,
+            limit_bytes: value.limit_bytes,
+        }
+    }
 }
 
 /// 初始化 OSS 客户端
@@ -139,6 +163,9 @@ pub async fn cmd_enable_remote_storage(
     // 3. 持久化配置后再启用运行时远程存储
     state.persist_remote_enabled(true)?;
     state.set_remote_enabled(true);
+    if let Err(error) = state.attachment_cache().activate().await {
+        log::warn!("[remote] attachment cache activation failed: {error}");
+    }
     let _ = event.send(SyncProgressEvent::Completed {
         direction,
         transferred_files: summary.transferred_files,
@@ -266,6 +293,9 @@ pub async fn cmd_disable_remote_storage(
     // 2. 先持久化配置，再设置运行时远程存储禁用
     state.persist_remote_enabled(false)?;
     state.set_remote_enabled(false);
+    if let Err(error) = state.attachment_cache().deactivate().await {
+        log::warn!("[remote] failed to remove attachment cache index: {error}");
+    }
 
     // 3. 重置 OSS 客户端
     state.oss_client().reset();
@@ -288,6 +318,68 @@ pub fn cmd_get_storage_mode(state: State<'_, AppState>) -> bool {
     state
         .configured_remote_enabled()
         .unwrap_or_else(|| state.is_remote_enabled())
+}
+
+/// 获取云同步模式下的本地附件缓存用量和容量上限。
+/// # Returns
+/// * `Result<AttachmentCacheInfo, AppError>` - 已缓存附件数量、总大小和容量上限
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_get_attachment_cache_info(
+    state: State<'_, AppState>,
+) -> Result<AttachmentCacheInfo, AppError> {
+    if !state.is_remote_enabled() {
+        return Err(AppError {
+            error_type: "storage_mode".into(),
+            message: "只有启用云同步后才能管理本地附件缓存".into(),
+        });
+    }
+    Ok(state.attachment_cache().enforce_limit().await?.into())
+}
+
+/// 修改云同步模式下的本地附件缓存容量上限，并立即按 LRU 淘汰到新上限。
+/// # Arguments
+/// * `limit_bytes` - 缓存容量上限，允许范围为 1–100 GiB
+/// # Returns
+/// * `Result<AttachmentCacheInfo, AppError>` - 应用新上限后的缓存统计
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_set_attachment_cache_limit(
+    state: State<'_, AppState>,
+    limit_bytes: f64,
+) -> Result<AttachmentCacheInfo, AppError> {
+    if !state.is_remote_enabled() {
+        return Err(AppError {
+            error_type: "storage_mode".into(),
+            message: "只有启用云同步后才能修改本地附件缓存上限".into(),
+        });
+    }
+    if !limit_bytes.is_finite()
+        || limit_bytes.fract() != 0.0
+        || limit_bytes < MIN_ATTACHMENT_CACHE_LIMIT_BYTES as f64
+        || limit_bytes > MAX_ATTACHMENT_CACHE_LIMIT_BYTES as f64
+    {
+        return Err(AppError {
+            error_type: "cache_limit".into(),
+            message: "本地附件缓存上限必须在 1–100 GB 之间".into(),
+        });
+    }
+    let limit_bytes = limit_bytes as u64;
+
+    let previous_limit = state.attachment_cache_limit_bytes();
+    state.persist_attachment_cache_limit_bytes(limit_bytes)?;
+    match state.attachment_cache().enforce_limit().await {
+        Ok(stats) => Ok(stats.into()),
+        Err(error) => {
+            if let Err(rollback_error) = state.persist_attachment_cache_limit_bytes(previous_limit)
+            {
+                log::error!(
+                    "[cache] failed to restore cache limit after enforcement error: {rollback_error}"
+                );
+            }
+            Err(error.into())
+        }
+    }
 }
 
 /// 将旧版前端保存的远程存储状态迁移到 Rust 配置。
@@ -324,6 +416,13 @@ pub async fn cmd_restore_remote_storage(state: State<'_, AppState>) -> Result<bo
         });
     }
     state.set_remote_enabled(enabled);
+    if enabled {
+        if let Err(error) = state.attachment_cache().activate().await {
+            log::warn!("[remote] attachment cache restore failed: {error}");
+        }
+    } else if let Err(error) = state.attachment_cache().deactivate().await {
+        log::warn!("[remote] failed to remove inactive attachment cache index: {error}");
+    }
     log::info!("[remote] runtime storage mode restored: remote={enabled}");
     Ok(enabled)
 }

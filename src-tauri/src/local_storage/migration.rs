@@ -269,6 +269,7 @@ async fn migrate_local_storage(
     let _transition_guard = state
         .try_lock_storage_mode_change()
         .ok_or(LocalStorageMigrationError::Busy)?;
+    let remote_enabled = state.is_remote_enabled();
     execute_migration(
         state.local_object_store(),
         state.local_storage(),
@@ -276,7 +277,15 @@ async fn migrate_local_storage(
         base_path,
         true,
     )
-    .await
+    .await?;
+    // AppState 中的 LOS 实例仍指向旧目录，迁移完成后应用会立即重启。
+    // 先清空旧实例的内存索引，避免重启前误把访问记录写回已迁走的目录。
+    if remote_enabled {
+        if let Err(error) = state.attachment_cache().deactivate().await {
+            log::warn!("[local storage] failed to reset old attachment cache state: {error}");
+        }
+    }
+    Ok(())
 }
 
 async fn execute_migration(
