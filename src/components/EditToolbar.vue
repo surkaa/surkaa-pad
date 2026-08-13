@@ -53,6 +53,15 @@ const emit = defineEmits([
             <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 1 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 1 }).run()">H1</button>
             <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 2 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 2 }).run()">H2</button>
             <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 3 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 3 }).run()">H3</button>
+            <button
+              class="tool-btn"
+              :class="{ 'is-active': editor.isActive('taskList') }"
+              title="待办列表"
+              aria-label="切换待办列表"
+              @click.stop="editor.chain().focus().toggleTaskList().run()"
+            >
+              <q-icon name="checklist" size="20px"/>
+            </button>
             <div class="divider"></div>
           </template>
           <button class="tool-btn" @click.stop="emit('undo')">↺</button>

@@ -1,5 +1,9 @@
 // @vitest-environment happy-dom
 import {describe, expect, it} from 'vitest'
+import {Editor} from '@tiptap/vue-3'
+import StarterKit from '@tiptap/starter-kit'
+import TaskItem from '@tiptap/extension-task-item'
+import TaskList from '@tiptap/extension-task-list'
 import {
   diaryContentToHtml,
   diaryContentToSource,
@@ -48,6 +52,15 @@ describe('htmlToMarkdown', () => {
       .toBe('- a\n- b')
     expect(htmlToMarkdown('<ol><li><p>a</p></li><li><p>b</p></li></ol>'))
       .toBe('1. a\n2. b')
+  })
+
+  it('converts rendered Tiptap task lists to Markdown', () => {
+    expect(htmlToMarkdown(
+      '<ul data-type="taskList">'
+      + '<li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span></span></label><div><p>未完成</p></div></li>'
+      + '<li data-type="taskItem" data-checked="true"><label><input type="checkbox" checked><span></span></label><div><p><strong>已完成</strong></p></div></li>'
+      + '</ul>',
+    )).toBe('- [ ] 未完成\n- [x] **已完成**')
   })
 
   it('converts a multiline quote', () => {
@@ -126,6 +139,21 @@ describe('markdownToHtml', () => {
       .toBe('<pre><code>&lt;script&gt;</code></pre>')
   })
 
+  it('converts checked and unchecked task lists', () => {
+    expect(markdownToHtml('- [ ] 未完成\n- [x] **已完成**'))
+      .toBe(
+        '<ul data-type="taskList">'
+        + '<li data-type="taskItem" data-checked="false"><p>未完成</p></li>'
+        + '<li data-type="taskItem" data-checked="true"><p><strong>已完成</strong></p></li>'
+        + '</ul>',
+      )
+  })
+
+  it('keeps ordinary bullet lists separate from task lists', () => {
+    expect(markdownToHtml('- ordinary\n- [ ] task-looking text'))
+      .toBe('<ul><li><p>ordinary</p></li><li><p>[ ] task-looking text</p></li></ul>')
+  })
+
   it('treats legacy-looking attachment markers as literal text', () => {
     expect(markdownToHtml('before [[IMG:att-fake]] after'))
       .toBe('<p>before [[IMG:att-fake]] after</p>')
@@ -140,6 +168,28 @@ describe('markdownToHtml', () => {
   it('round-trips formatted Markdown text through HTML', () => {
     const markdown = 'hello **world** and *friend*'
     expect(htmlToMarkdown(markdownToHtml(markdown))).toBe(markdown)
+  })
+
+  it('round-trips task-list Markdown through HTML', () => {
+    const markdown = '- [ ] 写日记\n- [x] 整理 **附件**'
+    expect(htmlToMarkdown(markdownToHtml(markdown))).toBe(markdown)
+  })
+
+  it('loads task-list Markdown into the Tiptap task extensions', () => {
+    const editor = new Editor({
+      extensions: [StarterKit, TaskList, TaskItem],
+      content: markdownToHtml('- [ ] 写日记\n- [x] 整理附件'),
+    })
+
+    expect(editor.getJSON().content?.[0]).toMatchObject({
+      type: 'taskList',
+      content: [
+        {type: 'taskItem', attrs: {checked: false}},
+        {type: 'taskItem', attrs: {checked: true}},
+      ],
+    })
+    expect(htmlToMarkdown(editor.getHTML())).toBe('- [ ] 写日记\n- [x] 整理附件')
+    editor.destroy()
   })
 })
 

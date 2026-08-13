@@ -177,6 +177,17 @@ function walkBlocks(parent: Node, out: string[]): void {
       }
       case 'UL':
       case 'OL': {
+        if (tag === 'UL' && isTaskList(element)) {
+          const items: string[] = []
+          for (const listItem of element.children) {
+            if (!isTaskItem(listItem)) continue
+            const checked = listItem.getAttribute('data-checked') === 'true'
+              || (listItem.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked
+            items.push(`- [${checked ? 'x' : ' '}] ${serializeTaskItem(listItem)}`.trimEnd())
+          }
+          if (items.length) out.push(items.join('\n'))
+          break
+        }
         const items: string[] = []
         for (const listItem of element.children) {
           if (listItem.tagName.toUpperCase() !== 'LI') continue
@@ -281,6 +292,14 @@ export function markdownToHtml(markdown: string): string {
       continue
     }
 
+    const taskItems = parseTaskListItems(trimmed)
+    if (taskItems) {
+      htmlBlocks.push('<ul data-type="taskList">' + taskItems.map(item =>
+        `<li data-type="taskItem" data-checked="${item.checked}"><p>${processInline(item.text)}</p></li>`
+      ).join('') + '</ul>')
+      continue
+    }
+
     if (/^- .+/.test(trimmed)) {
       const items = trimmed.split('\n').filter(line => line.startsWith('- '))
       htmlBlocks.push('<ul>' + items.map(item =>
@@ -301,6 +320,31 @@ export function markdownToHtml(markdown: string): string {
   }
 
   return htmlBlocks.join('') || '<p></p>'
+}
+
+function isTaskList(element: HTMLElement): boolean {
+  return element.dataset.type === 'taskList'
+    || Array.from(element.children).some(isTaskItem)
+}
+
+function isTaskItem(element: Element): element is HTMLElement {
+  return element.tagName.toUpperCase() === 'LI'
+    && (element as HTMLElement).dataset.type === 'taskItem'
+}
+
+function serializeTaskItem(element: HTMLElement): string {
+  const content = Array.from(element.children).find(child => child.tagName.toUpperCase() === 'DIV')
+  return serializeInline(content || element).trim()
+}
+
+function parseTaskListItems(markdown: string): Array<{checked: boolean; text: string}> | null {
+  const lines = markdown.split('\n')
+  const items = lines.map(line => line.match(/^- \[([ xX])\](?:\s+(.*))?$/))
+  if (items.some(item => !item)) return null
+  return items.map(item => ({
+    checked: item![1].toLowerCase() === 'x',
+    text: item![2] || '',
+  }))
 }
 
 function processInline(text: string): string {

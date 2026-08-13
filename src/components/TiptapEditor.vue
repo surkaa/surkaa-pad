@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import TaskItem from '@tiptap/extension-task-item'
+import TaskList from '@tiptap/extension-task-list'
 import { useScroll, useStorage } from '@vueuse/core'
 import { platform } from '@tauri-apps/plugin-os'
 import type { AttachmentMeta, DiaryContent, DiarySummary } from '../bindings'
@@ -71,6 +73,12 @@ const editor = useEditor({
     }),
     Placeholder.configure({
       placeholder: '开始记录...',
+    }),
+    TaskList,
+    TaskItem.configure({
+      a11y: {
+        checkboxLabel: (node, checked) => `${checked ? '取消完成' : '标记完成'}：${node.textContent || '待办事项'}`,
+      },
     }),
     ImageNode,
     VideoNode,
@@ -361,6 +369,55 @@ defineExpose({
     border-radius: 2px;
     background-color: color-mix(in srgb, var(--pad-warning-color) 45%, transparent);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--pad-warning-color) 22%, transparent);
+  }
+
+  ul[data-type='taskList'] {
+    margin: 0.75em 0;
+    padding: 0;
+    list-style: none;
+
+    li[data-type='taskItem'] {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      margin: 5px 0;
+
+      > label {
+        flex: none;
+        display: flex;
+        align-items: center;
+        margin-top: 0.18em;
+        cursor: pointer;
+        user-select: none;
+
+        input[type='checkbox'] {
+          width: 18px;
+          height: 18px;
+          margin: 0;
+          accent-color: var(--pad-primary-color);
+          cursor: pointer;
+        }
+
+        span {
+          display: none;
+        }
+      }
+
+      > div {
+        flex: 1;
+        min-width: 0;
+
+        > p {
+          margin: 0;
+        }
+      }
+
+      &[data-checked='true'] > div {
+        color: var(--pad-text-color-400);
+        text-decoration: line-through;
+        text-decoration-color: var(--pad-text-color-400);
+      }
+    }
   }
 }
 </style>
