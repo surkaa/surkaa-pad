@@ -322,7 +322,7 @@ impl AttachmentUploadSession for RemoteAttachmentUpload {
 mod tests {
     use super::*;
     use crate::app_config::{AppConfig, AppConfigStore};
-    use crate::caches::AttachmentCacheManager;
+    use crate::caches::{AttachmentCacheManager, CacheError};
     use crate::diaries::diary_store::{AttachmentUploadOptions, AttachmentUploadProgress};
     use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
     use crate::stream::ByteStream;
@@ -602,15 +602,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remote_session_keeps_successful_upload_when_attachment_exceeds_cache_limit() {
+    async fn remote_session_keeps_successful_upload_when_attachment_exceeds_per_file_cache_limit() {
         let client = OssClient::from_env();
         let (client, guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().unwrap();
         let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
-        let attachment_cache = AttachmentCacheManager::new(
-            los.clone(),
-            AppConfigStore::in_memory(AppConfig::with_attachment_cache_limit_bytes(4)),
-        );
+        let config = AppConfigStore::in_memory(AppConfig::with_attachment_cache_limit_bytes(100));
+        config.set_attachment_cache_max_file_size_bytes(4).unwrap();
+        let attachment_cache = AttachmentCacheManager::new(los.clone(), config);
         let store =
             RemoteStore::with_attachment_cache(los.clone(), client.clone(), attachment_cache);
         let data = b"larger than cache limit";
@@ -632,6 +631,19 @@ mod tests {
             .unwrap();
         assert_eq!(metadata.etag.as_deref(), Some(etag.as_str()));
         assert_eq!(metadata.content_length, Some(data.len() as u64));
+        assert!(los.get("8215021834823/att-large").await.unwrap().is_none());
+
+        let error = store
+            .cache_attachment("8215021834823", "att-large", Arc::new(|_| {}))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            DiaryError::Cache(CacheError::AttachmentTooLarge {
+                attachment_bytes,
+                limit_bytes: 4,
+            }) if attachment_bytes == data.len() as u64
+        ));
         assert!(los.get("8215021834823/att-large").await.unwrap().is_none());
         guard.cleanup().await;
     }

@@ -8,10 +8,15 @@ use thiserror::Error;
 
 pub const APP_CONFIG_FILENAME: &str = "app-state.json";
 pub const DEFAULT_ATTACHMENT_CACHE_LIMIT_BYTES: u64 = 10 * 1024 * 1024 * 1024;
+pub const DEFAULT_ATTACHMENT_CACHE_MAX_FILE_SIZE_BYTES: u64 = 100 * 1024 * 1024;
 const APP_CONFIG_VERSION: u32 = 1;
 
 fn default_attachment_cache_limit_bytes() -> u64 {
     DEFAULT_ATTACHMENT_CACHE_LIMIT_BYTES
+}
+
+fn default_attachment_cache_max_file_size_bytes() -> u64 {
+    DEFAULT_ATTACHMENT_CACHE_MAX_FILE_SIZE_BYTES
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +86,11 @@ pub struct AppConfig {
         default = "default_attachment_cache_limit_bytes"
     )]
     attachment_cache_limit_bytes: u64,
+    #[serde(
+        rename = "attachmentCacheMaxFileSizeBytes",
+        default = "default_attachment_cache_max_file_size_bytes"
+    )]
+    attachment_cache_max_file_size_bytes: u64,
     #[serde(rename = "pendingLocalStorageMigration", default)]
     pending_local_storage_migration: Option<PendingLocalStorageMigration>,
 }
@@ -92,6 +102,7 @@ impl Default for AppConfig {
             local_storage_location: LocalStorageLocation::Default,
             remote_enabled: None,
             attachment_cache_limit_bytes: DEFAULT_ATTACHMENT_CACHE_LIMIT_BYTES,
+            attachment_cache_max_file_size_bytes: DEFAULT_ATTACHMENT_CACHE_MAX_FILE_SIZE_BYTES,
             pending_local_storage_migration: None,
         }
     }
@@ -108,6 +119,10 @@ impl AppConfig {
 
     pub fn attachment_cache_limit_bytes(&self) -> u64 {
         self.attachment_cache_limit_bytes
+    }
+
+    pub fn attachment_cache_max_file_size_bytes(&self) -> u64 {
+        self.attachment_cache_max_file_size_bytes
     }
 
     pub fn pending_local_storage_migration(&self) -> Option<&PendingLocalStorageMigration> {
@@ -194,6 +209,15 @@ impl AppConfigStore {
     pub fn set_attachment_cache_limit_bytes(&self, limit_bytes: u64) -> Result<(), AppConfigError> {
         let mut next = self.current();
         next.attachment_cache_limit_bytes = limit_bytes;
+        self.save(next)
+    }
+
+    pub fn set_attachment_cache_max_file_size_bytes(
+        &self,
+        limit_bytes: u64,
+    ) -> Result<(), AppConfigError> {
+        let mut next = self.current();
+        next.attachment_cache_max_file_size_bytes = limit_bytes;
         self.save(next)
     }
 
@@ -386,6 +410,32 @@ mod tests {
         assert_eq!(
             reloaded.current().attachment_cache_limit_bytes(),
             5 * 1024 * 1024 * 1024
+        );
+    }
+
+    #[test]
+    fn missing_attachment_cache_file_limit_uses_default_and_updates_persistently() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join(APP_CONFIG_FILENAME);
+        fs::write(
+            &path,
+            br#"{"version":1,"localStorageLocation":{"type":"default"}}"#,
+        )
+        .unwrap();
+
+        let store = AppConfigStore::load(path.clone()).unwrap();
+        assert_eq!(
+            store.current().attachment_cache_max_file_size_bytes(),
+            DEFAULT_ATTACHMENT_CACHE_MAX_FILE_SIZE_BYTES
+        );
+
+        store
+            .set_attachment_cache_max_file_size_bytes(500 * 1024 * 1024)
+            .unwrap();
+        let reloaded = AppConfigStore::load(path).unwrap();
+        assert_eq!(
+            reloaded.current().attachment_cache_max_file_size_bytes(),
+            500 * 1024 * 1024
         );
     }
 

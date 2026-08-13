@@ -149,6 +149,20 @@ impl AppState {
             .set_attachment_cache_limit_bytes(limit_bytes)
     }
 
+    pub fn attachment_cache_max_file_size_bytes(&self) -> u64 {
+        self.app_config
+            .current()
+            .attachment_cache_max_file_size_bytes()
+    }
+
+    pub fn persist_attachment_cache_max_file_size_bytes(
+        &self,
+        limit_bytes: u64,
+    ) -> Result<(), AppConfigError> {
+        self.app_config
+            .set_attachment_cache_max_file_size_bytes(limit_bytes)
+    }
+
     pub fn local_storage(&self) -> LocalStorageManager {
         self.local_storage.clone()
     }

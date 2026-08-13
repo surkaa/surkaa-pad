@@ -687,6 +687,15 @@ impl DiaryStore for RemoteStore {
     ) -> Result<(), DiaryError> {
         let key = remote_attachments_key(id, filename);
         let metadata = self.client.get_metadata(&key).await?;
+        let size = metadata.content_length.ok_or_else(|| {
+            DiaryError::Object(ObjectError::OperationFailed(format!(
+                "附件缺少 Content-Length: {key}"
+            )))
+        })?;
+        if let Err(error) = self.attachment_cache.ensure_file_cacheable(size) {
+            self.remove_cached_attachment(&key).await;
+            return Err(error.into());
+        }
         let remote_etag = metadata.etag.ok_or_else(|| {
             DiaryError::Object(ObjectError::OperationFailed(format!(
                 "附件缺少 ETag: {key}"
@@ -704,8 +713,20 @@ impl DiaryStore for RemoteStore {
             return Ok(());
         }
 
-        let (stream, size) = self.client.download(&key, None).await?;
         self.attachment_cache.reserve(&key, size).await?;
+        let (stream, downloaded_size) = match self.client.download(&key, None).await {
+            Ok(download) => download,
+            Err(error) => {
+                self.attachment_cache.cancel_reservation(&key).await;
+                return Err(error.into());
+            }
+        };
+        if downloaded_size != size {
+            self.attachment_cache.cancel_reservation(&key).await;
+            return Err(DiaryError::Object(ObjectError::OperationFailed(format!(
+                "附件大小在下载前后发生变化: key={key}, expected={size}, actual={downloaded_size}"
+            ))));
+        }
         let progress_for_stream = progress.clone();
         let tracked_stream = tracker_stream(size, stream, move |percent| {
             progress_for_stream(percent);
@@ -732,14 +753,27 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
-        self.cache_attachment(id, filename, Arc::new(|_| {}))
-            .await?;
         let key = remote_attachments_key(id, filename);
         let backup_key = attachment_backup_key(id, filename);
-        let etag = self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
-        let stream = self.los.get_stream(&key, None).await?;
+        let metadata = self.client.get_metadata(&key).await?;
+        let remote_etag = metadata.etag.ok_or_else(|| {
+            DiaryError::Object(ObjectError::OperationFailed(format!(
+                "附件缺少 ETag: {key}"
+            )))
+        })?;
+        let stream = if self
+            .los
+            .get(&key)
+            .await?
+            .is_some_and(|cached_etag| etags_match(&cached_etag, &remote_etag))
+        {
+            self.touch_cached_attachment(&key).await;
+            self.los.get_stream(&key, None).await?
+        } else {
+            self.client.download(&key, None).await?.0
+        };
         self.los
-            .save_stream_with_etag(&backup_key, &etag, stream)
+            .save_stream_with_etag(&backup_key, &remote_etag, stream)
             .await?;
         Ok(())
     }
@@ -759,14 +793,29 @@ impl DiaryStore for RemoteStore {
             .ok_or(CacheError::NotFound)?;
         let stream = self.los.get_stream(&backup_key, None).await?;
         let remote_etag = self.client.upload(&key, size, stream, mimetype).await?;
-        let cache_stream = self.los.get_stream(&backup_key, None).await?;
-        self.los
-            .save_stream_with_etag(&key, &remote_etag, cache_stream)
-            .await?;
-        if let Err(error) = self.attachment_cache.register_existing(&key).await {
-            tauri_plugin_log::log::warn!(
-                "远端附件恢复成功，但登记本地缓存失败: key={key}, error={error}"
-            );
+        match self.attachment_cache.reserve(&key, size).await {
+            Ok(()) => {
+                let cache_stream = self.los.get_stream(&backup_key, None).await?;
+                if let Err(error) = self
+                    .los
+                    .save_stream_with_etag(&key, &remote_etag, cache_stream)
+                    .await
+                {
+                    self.attachment_cache.cancel_reservation(&key).await;
+                    tauri_plugin_log::log::warn!(
+                        "远端附件恢复成功，但写入本地缓存失败: key={key}, error={error}"
+                    );
+                } else if let Err(error) = self.attachment_cache.commit(&key, size).await {
+                    tauri_plugin_log::log::warn!(
+                        "远端附件恢复成功，但登记本地缓存失败: key={key}, error={error}"
+                    );
+                }
+            }
+            Err(error) => {
+                tauri_plugin_log::log::info!(
+                    "远端附件恢复成功，不保留本地缓存: key={key}, size={size}, error={error}"
+                );
+            }
         }
         Ok(())
     }

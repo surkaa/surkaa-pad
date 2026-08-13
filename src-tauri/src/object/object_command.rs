@@ -39,6 +39,8 @@ pub struct DisableRemoteStoragePlan {
 
 const MIN_ATTACHMENT_CACHE_LIMIT_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_ATTACHMENT_CACHE_LIMIT_BYTES: u64 = 100 * 1024 * 1024 * 1024;
+const MIN_ATTACHMENT_CACHE_FILE_SIZE_BYTES: u64 = 1024 * 1024;
+const MAX_ATTACHMENT_CACHE_FILE_SIZE_BYTES: u64 = 100 * 1024 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +50,8 @@ pub struct AttachmentCacheInfo {
     pub cached_bytes: u64,
     #[specta(type = f64)]
     pub limit_bytes: u64,
+    #[specta(type = f64)]
+    pub max_file_size_bytes: u64,
 }
 
 impl From<AttachmentCacheStats> for AttachmentCacheInfo {
@@ -56,6 +60,7 @@ impl From<AttachmentCacheStats> for AttachmentCacheInfo {
             cached_files: value.cached_files,
             cached_bytes: value.cached_bytes,
             limit_bytes: value.limit_bytes,
+            max_file_size_bytes: value.max_file_size_bytes,
         }
     }
 }
@@ -376,6 +381,50 @@ pub async fn cmd_set_attachment_cache_limit(
                 log::error!(
                     "[cache] failed to restore cache limit after enforcement error: {rollback_error}"
                 );
+            }
+            Err(error.into())
+        }
+    }
+}
+
+/// 修改云同步模式下单个附件允许写入本地缓存的大小上限。
+/// 超过上限的附件仍会正常上传和读取，但不会保留本地副本。
+/// # Arguments
+/// * `limit_bytes` - 单个附件缓存上限，允许范围为 1 MiB–100 GiB
+/// # Returns
+/// * `Result<AttachmentCacheInfo, AppError>` - 应用新上限并清理超限附件后的缓存统计
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_set_attachment_cache_max_file_size(
+    state: State<'_, AppState>,
+    limit_bytes: f64,
+) -> Result<AttachmentCacheInfo, AppError> {
+    if !state.is_remote_enabled() {
+        return Err(AppError {
+            error_type: "storage_mode".into(),
+            message: "只有启用云同步后才能修改单个附件缓存上限".into(),
+        });
+    }
+    if !limit_bytes.is_finite()
+        || limit_bytes.fract() != 0.0
+        || limit_bytes < MIN_ATTACHMENT_CACHE_FILE_SIZE_BYTES as f64
+        || limit_bytes > MAX_ATTACHMENT_CACHE_FILE_SIZE_BYTES as f64
+    {
+        return Err(AppError {
+            error_type: "cache_limit".into(),
+            message: "单个附件缓存上限必须在 1 MB–100 GB 之间".into(),
+        });
+    }
+    let limit_bytes = limit_bytes as u64;
+    let previous_limit = state.attachment_cache_max_file_size_bytes();
+    state.persist_attachment_cache_max_file_size_bytes(limit_bytes)?;
+    match state.attachment_cache().enforce_limit().await {
+        Ok(stats) => Ok(stats.into()),
+        Err(error) => {
+            if let Err(rollback_error) =
+                state.persist_attachment_cache_max_file_size_bytes(previous_limit)
+            {
+                log::error!("[cache] failed to restore per-file cache limit: {rollback_error}");
             }
             Err(error.into())
         }

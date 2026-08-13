@@ -17,6 +17,7 @@ pub struct AttachmentCacheStats {
     pub cached_files: u32,
     pub cached_bytes: u64,
     pub limit_bytes: u64,
+    pub max_file_size_bytes: u64,
 }
 
 #[derive(Clone)]
@@ -68,11 +69,12 @@ impl AttachmentCacheManager {
         state.loaded = false;
         state.reservations.clear();
         self.ensure_loaded(&mut state).await?;
+        self.evict_oversized(&mut state).await?;
         let limit_bytes = self.limit_bytes();
         self.evict_until_fits(&mut state, None, 0, limit_bytes)
             .await?;
         self.persist(&mut state).await?;
-        Ok(stats(&state.index, limit_bytes))
+        Ok(stats(&state.index, limit_bytes, self.max_file_size_bytes()))
     }
 
     /// 本地模式下附件不是缓存，清除索引但不删除任何对象。
@@ -88,11 +90,12 @@ impl AttachmentCacheManager {
     pub async fn enforce_limit(&self) -> Result<AttachmentCacheStats, CacheError> {
         let mut state = self.state.lock().await;
         self.ensure_loaded(&mut state).await?;
+        self.evict_oversized(&mut state).await?;
         let limit_bytes = self.limit_bytes();
         self.evict_until_fits(&mut state, None, 0, limit_bytes)
             .await?;
         self.persist(&mut state).await?;
-        Ok(stats(&state.index, limit_bytes))
+        Ok(stats(&state.index, limit_bytes, self.max_file_size_bytes()))
     }
 
     /// 为即将写入的附件预留容量。预留期间不会把同一对象当作可淘汰候选。
@@ -100,6 +103,7 @@ impl AttachmentCacheManager {
         if !is_diary_attachment_key(key) {
             return Ok(());
         }
+        self.ensure_file_cacheable(size)?;
         let mut state = self.state.lock().await;
         self.ensure_loaded(&mut state).await?;
         let limit_bytes = self.limit_bytes();
@@ -129,6 +133,12 @@ impl AttachmentCacheManager {
         let mut state = self.state.lock().await;
         self.ensure_loaded(&mut state).await?;
         state.reservations.remove(key);
+        if let Err(error) = self.ensure_file_cacheable(actual_size) {
+            self.los.delete(key).await?;
+            state.index.entries.remove(key);
+            self.persist(&mut state).await?;
+            return Err(error);
+        }
         let limit_bytes = self.limit_bytes();
         if actual_size > limit_bytes {
             self.los.delete(key).await?;
@@ -166,6 +176,18 @@ impl AttachmentCacheManager {
         self.state.lock().await.reservations.remove(key);
     }
 
+    /// 检查附件是否允许保留为本地缓存，不涉及总容量预留或淘汰。
+    pub fn ensure_file_cacheable(&self, size: u64) -> Result<(), CacheError> {
+        let limit_bytes = self.max_file_size_bytes();
+        if size > limit_bytes {
+            return Err(CacheError::AttachmentTooLarge {
+                attachment_bytes: size,
+                limit_bytes,
+            });
+        }
+        Ok(())
+    }
+
     /// 登记已经写入 LOS 的云端附件。附件大于上限时只移除本地副本。
     pub async fn register_existing(&self, key: &str) -> Result<bool, CacheError> {
         if !is_diary_attachment_key(key) {
@@ -176,6 +198,12 @@ impl AttachmentCacheManager {
         };
         let mut state = self.state.lock().await;
         self.ensure_loaded(&mut state).await?;
+        if self.ensure_file_cacheable(size).is_err() {
+            self.los.delete(key).await?;
+            state.index.entries.remove(key);
+            self.persist(&mut state).await?;
+            return Ok(false);
+        }
         let limit_bytes = self.limit_bytes();
         if size > limit_bytes {
             self.los.delete(key).await?;
@@ -372,6 +400,25 @@ impl AttachmentCacheManager {
         Ok(())
     }
 
+    async fn evict_oversized(&self, state: &mut CacheState) -> Result<(), CacheError> {
+        let max_file_size_bytes = self.max_file_size_bytes();
+        let oversized = state
+            .index
+            .entries
+            .iter()
+            .filter(|(_, entry)| entry.size > max_file_size_bytes)
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in oversized {
+            self.los.delete(&key).await?;
+            state.index.entries.remove(&key);
+            tauri_plugin_log::log::info!(
+                "附件缓存超过单文件上限并被移除: key={key}, limit={max_file_size_bytes}"
+            );
+        }
+        Ok(())
+    }
+
     async fn persist(&self, state: &mut CacheState) -> Result<(), CacheError> {
         let path = self.index_path();
         if let Some(parent) = path.parent() {
@@ -391,16 +438,23 @@ impl AttachmentCacheManager {
         self.app_config.current().attachment_cache_limit_bytes()
     }
 
+    fn max_file_size_bytes(&self) -> u64 {
+        self.app_config
+            .current()
+            .attachment_cache_max_file_size_bytes()
+    }
+
     fn index_path(&self) -> PathBuf {
         self.los.root().join(CACHE_INDEX_FILENAME)
     }
 }
 
-fn stats(index: &CacheIndex, limit_bytes: u64) -> AttachmentCacheStats {
+fn stats(index: &CacheIndex, limit_bytes: u64, max_file_size_bytes: u64) -> AttachmentCacheStats {
     AttachmentCacheStats {
         cached_files: index.entries.len().try_into().unwrap_or(u32::MAX),
         cached_bytes: index_size(index),
         limit_bytes,
+        max_file_size_bytes,
     }
 }
 
@@ -441,6 +495,21 @@ mod tests {
         let los = LocalObjectStore::new(root.to_path_buf());
         let config =
             AppConfigStore::in_memory(AppConfig::with_attachment_cache_limit_bytes(limit_bytes));
+        AttachmentCacheManager::new(los, config)
+    }
+
+    fn manager_with_limits(
+        root: &std::path::Path,
+        total_limit_bytes: u64,
+        max_file_size_bytes: u64,
+    ) -> AttachmentCacheManager {
+        let los = LocalObjectStore::new(root.to_path_buf());
+        let config = AppConfigStore::in_memory(AppConfig::with_attachment_cache_limit_bytes(
+            total_limit_bytes,
+        ));
+        config
+            .set_attachment_cache_max_file_size_bytes(max_file_size_bytes)
+            .unwrap();
         AttachmentCacheManager::new(los, config)
     }
 
@@ -532,6 +601,42 @@ mod tests {
             })
         ));
         assert!(los.get("100/att-a").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn attachment_above_per_file_limit_is_not_cached() {
+        let temp = tempfile::tempdir().unwrap();
+        let los = LocalObjectStore::new(temp.path().to_path_buf());
+        let manager = manager_with_limits(temp.path(), 20, 5);
+
+        assert!(matches!(
+            manager.reserve("100/att-large", 6).await,
+            Err(CacheError::AttachmentTooLarge {
+                attachment_bytes: 6,
+                limit_bytes: 5
+            })
+        ));
+        assert!(los.get("100/att-large").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn lowering_per_file_limit_removes_existing_oversized_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        let los = LocalObjectStore::new(temp.path().to_path_buf());
+        save(&los, "100/att-small", 4).await;
+        save(&los, "100/att-large", 6).await;
+        let manager = manager_with_limits(temp.path(), 20, 10);
+        assert_eq!(manager.activate().await.unwrap().cached_files, 2);
+
+        manager
+            .app_config
+            .set_attachment_cache_max_file_size_bytes(5)
+            .unwrap();
+        let stats = manager.enforce_limit().await.unwrap();
+
+        assert_eq!(stats.cached_files, 1);
+        assert!(los.get("100/att-small").await.unwrap().is_some());
+        assert!(los.get("100/att-large").await.unwrap().is_none());
     }
 
     #[tokio::test]

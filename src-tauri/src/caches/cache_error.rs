@@ -36,12 +36,34 @@ pub enum CacheError {
     },
 
     #[error(
+        "附件大小 {attachment_display} 超过单个附件缓存上限 {limit_display}，请在设置中调高后重试",
+        attachment_display = display_size(*attachment_bytes),
+        limit_display = display_size(*limit_bytes)
+    )]
+    AttachmentTooLarge {
+        attachment_bytes: u64,
+        limit_bytes: u64,
+    },
+
+    #[error(
         "Unable to free enough local cache space for {required_bytes} bytes within limit {limit_bytes}"
     )]
     InsufficientEvictableCapacity {
         required_bytes: u64,
         limit_bytes: u64,
     },
+}
+
+fn display_size(bytes: u64) -> String {
+    const MIB: u64 = 1024 * 1024;
+    const GIB: u64 = 1024 * MIB;
+    if bytes >= GIB {
+        format!("{:.2} GB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.2} MB", bytes as f64 / MIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 impl From<CacheError> for crate::error::AppError {

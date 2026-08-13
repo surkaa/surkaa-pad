@@ -1,12 +1,13 @@
 #[cfg(test)]
 mod tests {
+    use crate::app_config::{AppConfig, AppConfigStore};
     use crate::attachments::attachment::{
         add_attachment, add_attachment_with_result, caching_attachment, delete_attachment,
         finish_attachment_replacement, rollback_attachment_replacement, rotate_image_attachment,
         toggle_attachment_encryption, update_attachment_filename,
     };
     use crate::attachments::attachment_types::AttachmentProcessEvent;
-    use crate::caches::{DiaryMemoryCache, LocalObjectStore};
+    use crate::caches::{AttachmentCacheManager, DiaryMemoryCache, LocalObjectStore};
     use crate::cryptos::Crypto;
     use crate::diaries::diary_store::{DiaryStore, LocalStore, RemoteStore};
     use crate::diaries::{delete_diary, get_diary, save_diary};
@@ -191,13 +192,18 @@ mod tests {
         let client = OssClient::from_env();
         let (client, _guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
-        let store = RemoteStore::new(LocalObjectStore::new(temp_dir.path().to_path_buf()), client);
+        let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        let config = AppConfigStore::in_memory(AppConfig::with_attachment_cache_limit_bytes(100));
+        config.set_attachment_cache_max_file_size_bytes(4).unwrap();
+        let attachment_cache = AttachmentCacheManager::new(los.clone(), config);
+        let store = RemoteStore::with_attachment_cache(los.clone(), client, attachment_cache);
+        let diary_id = "8215021834823";
         let old_data = b"old remote attachment".to_vec();
         let replacement = b"new remote attachment".to_vec();
 
         store
             .upload_attachment(
-                "diary",
+                diary_id,
                 "attachment",
                 old_data.len() as u64,
                 "text/plain",
@@ -205,13 +211,18 @@ mod tests {
             )
             .await
             .unwrap();
+        assert!(los
+            .get(&remote_attachments_key(diary_id, "attachment"))
+            .await
+            .unwrap()
+            .is_none());
         store
-            .create_attachment_backup("diary", "attachment")
+            .create_attachment_backup(diary_id, "attachment")
             .await
             .unwrap();
         store
             .upload_attachment(
-                "diary",
+                diary_id,
                 "attachment",
                 replacement.len() as u64,
                 "text/plain",
@@ -222,7 +233,7 @@ mod tests {
 
         rollback_attachment_replacement(
             &store,
-            "diary",
+            diary_id,
             "attachment",
             "text/plain",
             crate::attachments::AttachmentError::InvalidOperation(
@@ -232,12 +243,17 @@ mod tests {
         .await;
 
         let stream = store
-            .download_attachment("diary", "attachment", None, None)
+            .download_attachment(diary_id, "attachment", None, None)
             .await
             .unwrap();
         assert_eq!(collect_data(stream).await.unwrap(), old_data);
+        assert!(los
+            .get(&remote_attachments_key(diary_id, "attachment"))
+            .await
+            .unwrap()
+            .is_none());
         assert!(store
-            .restore_attachment_backup("diary", "attachment", "text/plain")
+            .restore_attachment_backup(diary_id, "attachment", "text/plain")
             .await
             .is_err());
     }

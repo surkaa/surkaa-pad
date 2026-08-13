@@ -11,6 +11,8 @@ import {storeToRefs} from "pinia";
 import TiptapEditor from "../components/TiptapEditor.vue";
 import api from "../utils/api.ts";
 import {formatError} from "../utils/formatError.ts";
+import {formatBytes} from '../utils/format';
+import {partitionAttachmentsByCacheLimit} from '../utils/attachmentCache';
 import {batchUploadAll, promisifyUpload} from "../utils/batchUpload";
 import {
     attachmentNodeKindFromMimeType,
@@ -260,13 +262,33 @@ export function useMediaAction(
         insertFile: async () => genericBatchUpload(attachmentEncryptionByKind.file.value),
         cachingAttachment: async (attachmentIds: string[]) => {
             if (!attachmentIds.length) return;
+            let cacheableAttachmentIds = attachmentIds;
+            try {
+                const cacheInfo = await api.cmdGetAttachmentCacheInfo();
+                const partition = partitionAttachmentsByCacheLimit(
+                    attachmentIds,
+                    currentDiaryAttachments.value,
+                    cacheInfo.maxFileSizeBytes,
+                );
+                cacheableAttachmentIds = partition.cacheableIds;
+                if (partition.oversizedIds.length) {
+                    $q.notify({
+                        type: 'warning',
+                        message: `${partition.oversizedIds.length} 个附件超过单个附件缓存上限（${formatBytes(cacheInfo.maxFileSizeBytes)}），已跳过；请在设置中调高后重试`,
+                    });
+                }
+            } catch (error) {
+                // 本地模式没有缓存配置，仍沿用原有操作；远端会由后端再次校验。
+                console.debug('未读取单个附件缓存上限，将交由后端校验:', error);
+            }
+            if (!cacheableAttachmentIds.length) return;
             if (!resetUploadTasks()) {
                 showUploadDialog.value = true;
                 $q.notify({type: 'warning', message: '请先等待当前文件处理完成或取消任务'});
                 return;
             }
             showUploadDialog.value = true;
-            for (const attachmentId of attachmentIds) {
+            for (const attachmentId of cacheableAttachmentIds) {
                 const filename = currentDiaryAttachments.value
                     .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
                 const key = createTask(filename, false, 'download');
