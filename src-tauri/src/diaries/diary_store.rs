@@ -618,13 +618,15 @@ impl DiaryStore for RemoteStore {
         if let Some(cached_etag) = self.los.get(&key).await? {
             // 已知 etag 匹配，直接使用缓存
             if known_etag.is_some_and(|k| k == cached_etag) {
+                let stream = self.los.get_stream(&key, range).await?;
                 self.touch_cached_attachment(&key).await;
-                return Ok(self.los.get_stream(&key, range).await?);
+                return Ok(stream);
             }
             let metadata = self.client.get_metadata(&key).await?;
             if metadata.etag.as_deref() == Some(&cached_etag) {
+                let stream = self.los.get_stream(&key, range).await?;
                 self.touch_cached_attachment(&key).await;
-                return Ok(self.los.get_stream(&key, range).await?);
+                return Ok(stream);
             } else {
                 self.remove_cached_attachment(&key).await;
             }

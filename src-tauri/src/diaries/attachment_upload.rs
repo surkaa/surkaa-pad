@@ -545,7 +545,7 @@ mod tests {
         let total_size = (first_chunk.len() + second_chunk.len()) as u64;
         let mut session = store
             .begin_attachment_upload(
-                "diary",
+                "8215021834823",
                 "attachment",
                 total_size,
                 "application/octet-stream",
@@ -557,17 +557,30 @@ mod tests {
         assert_eq!(session.write_chunk(second_chunk).await.unwrap().0, 2);
         let etag = session.finish().await.unwrap();
 
-        let metadata = client.get_metadata("diary/attachment").await.unwrap();
+        let metadata = client
+            .get_metadata("8215021834823/attachment")
+            .await
+            .unwrap();
         assert_eq!(metadata.content_length, Some(total_size));
         assert_eq!(metadata.etag.as_deref(), Some(etag.as_str()));
         assert_eq!(
-            los.get("diary/attachment").await.unwrap().as_deref(),
+            los.get("8215021834823/attachment")
+                .await
+                .unwrap()
+                .as_deref(),
             Some(etag.as_str())
         );
         assert_eq!(
-            los.get_data("diary/attachment").await.unwrap().len() as u64,
+            los.get_data("8215021834823/attachment")
+                .await
+                .unwrap()
+                .len() as u64,
             total_size
         );
+        assert!(temp_dir
+            .path()
+            .join(".attachment-cache-index.json")
+            .exists());
         guard.cleanup().await;
     }
 
