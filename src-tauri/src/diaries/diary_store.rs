@@ -6,8 +6,12 @@ use crate::caches::{AttachmentCacheManager, CacheError, LocalObjectStore};
 use crate::diaries::attachment_upload::{LocalAttachmentUpload, RemoteAttachmentUpload};
 use crate::diaries::{AttachmentUploadSession, DiaryError};
 use crate::object::{NextToken, ObjectError, OssClient};
-use crate::storages::{diary_id_from_manifest_key, remote_attachments_key, remote_manifest_key};
+use crate::storages::{
+    diary_id_from_common_prefix, diary_id_from_manifest_key, remote_attachments_key,
+    remote_manifest_key,
+};
 use crate::stream::{tracker_stream, ByteStream};
+use futures_util::StreamExt;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio_util::io::StreamReader;
@@ -578,10 +582,26 @@ impl DiaryStore for RemoteStore {
         &self,
         next_token: NextToken,
     ) -> Result<(Vec<String>, NextToken), DiaryError> {
-        let (objects, nt) = self.client.list("", next_token).await?;
-        let ids: Vec<String> = objects
+        let (prefixes, nt) = self.client.list_common_prefixes("", next_token).await?;
+        let candidate_ids: Vec<String> = prefixes
             .into_iter()
-            .filter_map(|obj| diary_id_from_manifest_key(&obj.key))
+            .filter_map(|prefix| diary_id_from_common_prefix(&prefix))
+            .collect();
+
+        // 一级目录也可能只残留附件。并发确认 manifest 存在，避免把孤立目录
+        // 暴露成日记，同时保持 ListObjectsV2 返回的字典序。
+        let checks = futures_util::stream::iter(candidate_ids.into_iter().map(|id| async move {
+            let exists = self.client.object_exists(&remote_manifest_key(&id)).await?;
+            Ok::<_, DiaryError>(exists.then_some(id))
+        }))
+        .buffered(10)
+        .collect::<Vec<_>>()
+        .await;
+        let ids = checks
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .collect();
         Ok((ids, nt))
     }
@@ -842,6 +862,7 @@ mod tests {
         delete_diary, get_diary, lock_diary_operation, save_diary, update_diary_content_only,
     };
     use crate::stream::create_mock_stream;
+    use crate::test_utils::TestOssGuard;
     use crate::utils::id_generate::generate_descending_id_with_timestamp;
     use async_trait::async_trait;
     use bytes::Bytes;
@@ -1108,6 +1129,64 @@ mod tests {
         let (second_page, next) = store.list_diary_ids(next).await.unwrap();
         assert_eq!(second_page, expected[50..]);
         assert!(next.is_none());
+    }
+
+    #[tokio::test]
+    async fn remote_store_lists_diary_prefixes_without_expanding_attachments() {
+        let client = OssClient::from_env();
+        let (client, guard) = TestOssGuard::new(client).await;
+        let expected_ids: Vec<String> = (0..12)
+            .map(|index| format!("8215000000{index:03}"))
+            .collect();
+        let attachment_heavy_diary = &expected_ids[0];
+        let orphan = "8215999999999";
+
+        for id in &expected_ids {
+            client
+                .upload_bytes(&remote_manifest_key(id), b"manifest")
+                .await
+                .unwrap();
+        }
+        // 数量超过调试构建的 max_keys=10；使用 delimiter 后这些附件不应
+        // 占据日记目录的分页位置。
+        for index in 0..15 {
+            client
+                .upload_bytes(
+                    &format!("{attachment_heavy_diary}/att-{index:02}"),
+                    b"attachment",
+                )
+                .await
+                .unwrap();
+        }
+        // 只有附件的数字目录不能被当成日记。
+        client
+            .upload_bytes(&format!("{orphan}/att-orphan"), b"attachment")
+            .await
+            .unwrap();
+        // 非日记一级目录也必须被忽略。
+        client
+            .upload_bytes("ai/session/meta.enc", b"metadata")
+            .await
+            .unwrap();
+
+        let (los, _temp_dir) = make_los();
+        let store = RemoteStore::new(los, client);
+        let mut ids = Vec::new();
+        let mut next_token = None;
+        let mut page_count = 0;
+        loop {
+            let (page, next) = store.list_diary_ids(next_token).await.unwrap();
+            ids.extend(page);
+            page_count += 1;
+            let Some(next) = next else {
+                break;
+            };
+            next_token = Some(next);
+        }
+
+        assert_eq!(page_count, 2, "测试数据应强制触发 delimiter 分页");
+        assert_eq!(ids, expected_ids);
+        guard.cleanup().await;
     }
 
     // ==================== LocalStore 附件操作 ====================

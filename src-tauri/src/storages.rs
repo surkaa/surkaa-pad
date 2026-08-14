@@ -12,6 +12,15 @@ pub fn diary_id_from_manifest_key(key: &str) -> Option<String> {
     Some(diary_id.to_string())
 }
 
+/// 将对象存储返回的一级目录前缀解析为日记 ID。
+pub fn diary_id_from_common_prefix(prefix: &str) -> Option<String> {
+    let diary_id = prefix.strip_suffix('/')?;
+    if diary_id.is_empty() || !diary_id.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some(diary_id.to_string())
+}
+
 /// 日记附件在云存储中的路径
 pub fn remote_attachments_key(diary_id: &str, attachment_filename: &str) -> String {
     format!("{}/{}", diary_id, attachment_filename)
@@ -37,7 +46,7 @@ pub fn is_diary_attachment_key(key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{diary_id_from_manifest_key, is_diary_attachment_key};
+    use super::{diary_id_from_common_prefix, diary_id_from_manifest_key, is_diary_attachment_key};
     use std::path::PathBuf;
 
     #[test]
@@ -59,6 +68,23 @@ mod tests {
             "manifest.enc",
         ] {
             assert_eq!(diary_id_from_manifest_key(key), None, "key={key}");
+        }
+    }
+
+    #[test]
+    fn parses_only_top_level_numeric_common_prefixes() {
+        assert_eq!(
+            diary_id_from_common_prefix("8215021834823/"),
+            Some("8215021834823".to_string())
+        );
+        for prefix in [
+            "8215021834823",
+            "abc/",
+            "diaries/8215021834823/",
+            "rust-tests/",
+            "/",
+        ] {
+            assert_eq!(diary_id_from_common_prefix(prefix), None, "prefix={prefix}");
         }
     }
 

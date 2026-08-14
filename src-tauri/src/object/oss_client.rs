@@ -11,6 +11,7 @@ use tokio::io::AsyncReadExt;
 use tokio_util::io::StreamReader;
 
 const STREAM_UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
+const COMMON_PREFIX_PAGE_SIZE: usize = if cfg!(debug_assertions) { 10 } else { 50 };
 
 fn oss_config_diagnostics(endpoint: &str, akid: &str, sakey: &str, bucket: &str) -> String {
     format!(
@@ -433,6 +434,23 @@ impl OssClient {
         })
     }
 
+    /// 判断对象是否存在；只有明确的 404 会返回 false，其他异常仍向上传递。
+    pub async fn object_exists(&self, key: &str) -> Result<bool, ObjectError> {
+        let bucket = self.inner()?;
+        let key = self.physical_key(key);
+        let (_, status) = bucket
+            .head_object(&key)
+            .await
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        match status {
+            200..=299 => Ok(true),
+            404 => Ok(false),
+            _ => Err(ObjectError::OperationFailed(format!(
+                "HEAD failed: HTTP {status}"
+            ))),
+        }
+    }
+
     /// https://help.aliyun.com/zh/oss/developer-reference/listobjects-v2
     pub async fn list(
         &self,
@@ -468,6 +486,40 @@ impl OssClient {
             .collect();
 
         Ok((objects, next_token))
+    }
+
+    /// 使用 `/` 分隔符列出指定前缀下的直接子目录，不展开目录内对象。
+    pub async fn list_common_prefixes(
+        &self,
+        prefix: &str,
+        next_token: NextToken,
+    ) -> Result<(Vec<String>, NextToken), ObjectError> {
+        let bucket = self.inner()?;
+        let physical_prefix = self.physical_key(prefix);
+        log::info!(
+            "[oss list prefixes] prefix={:?}, token={:?}",
+            physical_prefix,
+            next_token
+        );
+        let (result, _) = bucket
+            .list_page(
+                physical_prefix,
+                Some("/".to_string()),
+                next_token,
+                None,
+                Some(COMMON_PREFIX_PAGE_SIZE),
+            )
+            .await
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+
+        let next_token = result.next_continuation_token.clone();
+        let prefixes = result
+            .common_prefixes
+            .unwrap_or_default()
+            .into_iter()
+            .map(|prefix| self.logical_key(prefix.prefix))
+            .collect();
+        Ok((prefixes, next_token))
     }
 
     pub async fn download(
