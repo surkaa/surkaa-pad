@@ -116,6 +116,12 @@ export function markUploadTaskFailed(task: UploadTask, error: unknown): void {
   task.error = String(error);
 }
 
+export function isUploadTaskProgressIndeterminate(task: UploadTask): boolean {
+  if (task.status !== 'uploading') return false;
+  return task.phase === 'finalizing'
+    || (task.phase === 'transferring' && task.progress === 0);
+}
+
 export function uploadTaskStatusText(task: UploadTask): string {
   const isDownload = task.direction === 'download';
   if (task.status === 'completed') return '已完成';
@@ -125,7 +131,7 @@ export function uploadTaskStatusText(task: UploadTask): string {
     return task.error ? `失败：${task.error}` : (isDownload ? '下载失败' : '上传失败');
   }
   if (task.phase === 'finalizing') {
-    return isDownload ? '正在完成：写入本地缓存' : '正在完成：提交附件并保存日记';
+    return isDownload ? '即将完成：写入本地缓存' : '即将完成：提交附件并保存日记';
   }
   if (task.status === 'queued') return isDownload ? '等待下载' : '等待上传';
   if (task.status === 'pending') return '准备中';

@@ -4,6 +4,7 @@ import {
   createQueuedUploadTask,
   createUploadTask,
   hasActiveUploadTasks,
+  isUploadTaskProgressIndeterminate,
   isUploadTaskTerminal,
   markUploadTaskFailed,
   uploadTasksDialogTitle,
@@ -26,7 +27,7 @@ describe('upload task domain model', () => {
     applyUploadTaskEvent(task, {event: 'progress', data: 42});
     expect(uploadTaskStatusText(task)).toBe('下载中 42%');
     applyUploadTaskEvent(task, {event: 'finalizing'});
-    expect(uploadTaskStatusText(task)).toBe('正在完成：写入本地缓存');
+    expect(uploadTaskStatusText(task)).toBe('即将完成：写入本地缓存');
 
     const queued = createQueuedUploadTask('queued-download', 'video.mp4', 'download');
     expect(uploadTaskStatusText(queued)).toBe('等待下载');
@@ -38,14 +39,19 @@ describe('upload task domain model', () => {
     const task = createUploadTask('task-1', 'video.mp4');
 
     expect(applyUploadTaskEvent(task, {event: 'started'})).toBe(true);
+    expect(isUploadTaskProgressIndeterminate(task)).toBe(true);
     expect(applyUploadTaskEvent(task, {event: 'progress', data: 58})).toBe(true);
     expect(task).toMatchObject({status: 'uploading', phase: 'transferring', progress: 0.58});
+    expect(isUploadTaskProgressIndeterminate(task)).toBe(false);
 
     applyUploadTaskEvent(task, {event: 'finalizing'});
     expect(task).toMatchObject({phase: 'finalizing', progress: 0.99});
+    expect(isUploadTaskProgressIndeterminate(task)).toBe(true);
+    expect(uploadTaskStatusText(task)).toBe('即将完成：提交附件并保存日记');
 
     applyUploadTaskEvent(task, {event: 'completedWithoutData'});
     expect(task).toMatchObject({status: 'completed', progress: 1});
+    expect(isUploadTaskProgressIndeterminate(task)).toBe(false);
     expect(isUploadTaskTerminal(task)).toBe(true);
   });
 

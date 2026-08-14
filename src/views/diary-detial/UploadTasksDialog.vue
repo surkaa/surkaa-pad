@@ -21,7 +21,7 @@
               </q-item-label>
               <q-linear-progress
                 :value="task.progress"
-                :indeterminate="task.phase === 'finalizing' && task.status === 'uploading'"
+                :indeterminate="isUploadTaskProgressIndeterminate(task)"
                 :color="task.status === 'error' ? 'negative' : (task.status === 'canceled' ? 'grey' : 'primary')"
                 class="q-mt-sm"
                 :animation-speed="200"
@@ -62,6 +62,7 @@
 import {computed} from 'vue';
 import {
   hasActiveUploadTasks,
+  isUploadTaskProgressIndeterminate,
   isUploadTaskTerminal,
   type UploadTask,
   uploadTasksDialogTitle,
