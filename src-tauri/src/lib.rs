@@ -59,6 +59,15 @@ fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let local_storage =
         local_storage::LocalStorageManager::new(app_config.clone(), paths.app_local_data_dir()?);
     let los_path = local_storage.startup_root();
+    let layout_migration = storage_layout_migration::migrate_legacy_local_object_layout(&los_path)?;
+    if layout_migration != storage_layout_migration::LocalLayoutMigrationResult::default() {
+        tauri_plugin_log::log::info!(
+            "[storage layout] local migration completed: migrated={}, recovered={}, deduplicated={}",
+            layout_migration.migrated,
+            layout_migration.recovered,
+            layout_migration.deduplicated
+        );
+    }
     let (listener, attachment_server) = bind_attachment_server()?;
     tauri_plugin_log::log::info!("[startup] attachment server bound");
     let state = AppState::new(los_path, attachment_server, app_config, local_storage);

@@ -1,7 +1,11 @@
 use crate::object::{ObjectError, OssClient};
 use crate::object_locations::{LegacyObjectLocations, ObjectLocations, StoredObject};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+const LOCAL_DATA_SUFFIX: &str = ".data";
+const LOCAL_ETAG_SUFFIX: &str = ".md5";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LayoutObjectEntry {
@@ -96,6 +100,251 @@ pub enum LayoutMigrationError {
     },
     #[error("清理后仍存在 {0} 个旧布局对象")]
     CleanupIncomplete(usize),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LocalLayoutMigrationResult {
+    pub migrated: usize,
+    pub recovered: usize,
+    pub deduplicated: usize,
+}
+
+#[derive(Debug, Error)]
+pub enum LocalLayoutMigrationError {
+    #[error("本地对象布局迁移 I/O 失败: path={path}, error={source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("新旧本地对象内容冲突: {source_key} -> {target_key}")]
+    Conflict {
+        source_key: String,
+        target_key: String,
+    },
+    #[error("发现不完整的旧本地对象，无法自动迁移: {0}")]
+    IncompleteLegacyObject(String),
+    #[error("本地对象路径不是有效 UTF-8: {0}")]
+    InvalidPath(PathBuf),
+}
+
+/// 将同一个 LOS 目录中的旧日记 Key 一次性移动到当前固定布局。
+///
+/// 只使用同文件系统内的重命名，不复制对象内容；重复执行是幂等的，并能恢复
+/// `.data` 已移动但 `.md5` 尚未移动（或相反）的中断状态。
+pub fn migrate_legacy_local_object_layout(
+    root: &Path,
+) -> Result<LocalLayoutMigrationResult, LocalLayoutMigrationError> {
+    let keys = collect_legacy_local_keys(root)?;
+    let mut result = LocalLayoutMigrationResult::default();
+    for source_key in keys {
+        let object = LegacyObjectLocations::parse(&source_key)
+            .expect("collect_legacy_local_keys 只返回可解析的旧 Key");
+        let target_key = ObjectLocations::key(&object);
+        match migrate_local_object(root, &source_key, &target_key)? {
+            LocalObjectMoveOutcome::Migrated => result.migrated += 1,
+            LocalObjectMoveOutcome::Recovered => result.recovered += 1,
+            LocalObjectMoveOutcome::Deduplicated => result.deduplicated += 1,
+        }
+    }
+    Ok(result)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LocalObjectMoveOutcome {
+    Migrated,
+    Recovered,
+    Deduplicated,
+}
+
+fn migrate_local_object(
+    root: &Path,
+    source_key: &str,
+    target_key: &str,
+) -> Result<LocalObjectMoveOutcome, LocalLayoutMigrationError> {
+    let (source_data, source_etag) = local_object_paths(root, source_key);
+    let (target_data, target_etag) = local_object_paths(root, target_key);
+    let source_state = (source_data.exists(), source_etag.exists());
+    let target_state = (target_data.exists(), target_etag.exists());
+
+    match (source_state, target_state) {
+        ((true, true), (false, false)) => {
+            create_parent(&target_data)?;
+            rename(&source_data, &target_data)?;
+            rename(&source_etag, &target_etag)?;
+            remove_empty_source_directories(&source_data, root);
+            Ok(LocalObjectMoveOutcome::Migrated)
+        }
+        ((false, true), (true, false)) => {
+            create_parent(&target_etag)?;
+            rename(&source_etag, &target_etag)?;
+            remove_empty_source_directories(&source_data, root);
+            Ok(LocalObjectMoveOutcome::Recovered)
+        }
+        ((true, false), (false, true)) => {
+            create_parent(&target_data)?;
+            rename(&source_data, &target_data)?;
+            remove_empty_source_directories(&source_data, root);
+            Ok(LocalObjectMoveOutcome::Recovered)
+        }
+        ((true, true), (true, true)) => {
+            if !local_objects_match(&source_data, &source_etag, &target_data, &target_etag)? {
+                return Err(LocalLayoutMigrationError::Conflict {
+                    source_key: source_key.to_string(),
+                    target_key: target_key.to_string(),
+                });
+            }
+            remove_file(&source_data)?;
+            remove_file(&source_etag)?;
+            remove_empty_source_directories(&source_data, root);
+            Ok(LocalObjectMoveOutcome::Deduplicated)
+        }
+        ((false, true), (true, true)) => {
+            if read_etag(&source_etag)?.eq_ignore_ascii_case(&read_etag(&target_etag)?) {
+                remove_file(&source_etag)?;
+                remove_empty_source_directories(&source_data, root);
+                Ok(LocalObjectMoveOutcome::Recovered)
+            } else {
+                Err(LocalLayoutMigrationError::Conflict {
+                    source_key: source_key.to_string(),
+                    target_key: target_key.to_string(),
+                })
+            }
+        }
+        ((true, false), (true, true)) => {
+            if file_size(&source_data)? == file_size(&target_data)? {
+                remove_file(&source_data)?;
+                remove_empty_source_directories(&source_data, root);
+                Ok(LocalObjectMoveOutcome::Recovered)
+            } else {
+                Err(LocalLayoutMigrationError::Conflict {
+                    source_key: source_key.to_string(),
+                    target_key: target_key.to_string(),
+                })
+            }
+        }
+        ((false, false), _) => unreachable!("旧 Key 必须至少存在一个物理文件"),
+        _ => Err(LocalLayoutMigrationError::IncompleteLegacyObject(
+            source_key.to_string(),
+        )),
+    }
+}
+
+fn collect_legacy_local_keys(root: &Path) -> Result<BTreeSet<String>, LocalLayoutMigrationError> {
+    if !root.exists() {
+        return Ok(BTreeSet::new());
+    }
+    let mut keys = BTreeSet::new();
+    let mut directories = vec![root.to_path_buf()];
+    while let Some(directory) = directories.pop() {
+        for entry in
+            std::fs::read_dir(&directory).map_err(|source| LocalLayoutMigrationError::Io {
+                path: directory.clone(),
+                source,
+            })?
+        {
+            let entry = entry.map_err(|source| LocalLayoutMigrationError::Io {
+                path: directory.clone(),
+                source,
+            })?;
+            let path = entry.path();
+            let file_type = entry
+                .file_type()
+                .map_err(|source| LocalLayoutMigrationError::Io {
+                    path: path.clone(),
+                    source,
+                })?;
+            if file_type.is_dir() {
+                directories.push(path);
+                continue;
+            }
+            let relative = path
+                .strip_prefix(root)
+                .expect("枚举路径必须位于 LOS 根目录");
+            let relative = relative
+                .components()
+                .map(|component| component.as_os_str().to_str())
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| LocalLayoutMigrationError::InvalidPath(path.clone()))?
+                .join("/");
+            let key = relative
+                .strip_suffix(LOCAL_DATA_SUFFIX)
+                .or_else(|| relative.strip_suffix(LOCAL_ETAG_SUFFIX));
+            if let Some(key) = key.filter(|key| LegacyObjectLocations::parse(key).is_some()) {
+                keys.insert(key.to_string());
+            }
+        }
+    }
+    Ok(keys)
+}
+
+fn local_object_paths(root: &Path, key: &str) -> (PathBuf, PathBuf) {
+    (
+        root.join(format!("{key}{LOCAL_DATA_SUFFIX}")),
+        root.join(format!("{key}{LOCAL_ETAG_SUFFIX}")),
+    )
+}
+
+fn local_objects_match(
+    source_data: &Path,
+    source_etag: &Path,
+    target_data: &Path,
+    target_etag: &Path,
+) -> Result<bool, LocalLayoutMigrationError> {
+    Ok(file_size(source_data)? == file_size(target_data)?
+        && read_etag(source_etag)?.eq_ignore_ascii_case(&read_etag(target_etag)?))
+}
+
+fn file_size(path: &Path) -> Result<u64, LocalLayoutMigrationError> {
+    std::fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .map_err(|source| LocalLayoutMigrationError::Io {
+            path: path.to_path_buf(),
+            source,
+        })
+}
+
+fn read_etag(path: &Path) -> Result<String, LocalLayoutMigrationError> {
+    std::fs::read_to_string(path)
+        .map(|etag| etag.trim().trim_matches('"').to_string())
+        .map_err(|source| LocalLayoutMigrationError::Io {
+            path: path.to_path_buf(),
+            source,
+        })
+}
+
+fn create_parent(path: &Path) -> Result<(), LocalLayoutMigrationError> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(parent).map_err(|source| LocalLayoutMigrationError::Io {
+        path: parent.to_path_buf(),
+        source,
+    })
+}
+
+fn rename(source_path: &Path, target_path: &Path) -> Result<(), LocalLayoutMigrationError> {
+    std::fs::rename(source_path, target_path).map_err(|source| LocalLayoutMigrationError::Io {
+        path: source_path.to_path_buf(),
+        source,
+    })
+}
+
+fn remove_file(path: &Path) -> Result<(), LocalLayoutMigrationError> {
+    std::fs::remove_file(path).map_err(|source| LocalLayoutMigrationError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn remove_empty_source_directories(source_data: &Path, root: &Path) {
+    let mut directory = source_data.parent();
+    while let Some(path) = directory {
+        if path == root || std::fs::remove_dir(path).is_err() {
+            break;
+        }
+        directory = path.parent();
+    }
 }
 
 pub async fn load_layout_migration_plan(
@@ -342,6 +591,7 @@ fn normalize_etag(etag: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::caches::LocalObjectStore;
     use crate::test_utils::TestOssGuard;
 
     fn entry(key: &str, size: u64, etag: Option<&str>) -> LayoutObjectEntry {
@@ -498,5 +748,106 @@ mod tests {
             b"unrelated"
         );
         guard.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn local_layout_migration_moves_objects_without_touching_unrelated_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let los = LocalObjectStore::new(temp.path().to_path_buf());
+        let legacy_manifest = "123/manifest.enc";
+        let legacy_attachment = "123/att-1";
+        let unrelated = "ai/sessions/1/meta.enc";
+        los.save_bytes(legacy_manifest, b"manifest").await.unwrap();
+        los.save_bytes(legacy_attachment, b"attachment")
+            .await
+            .unwrap();
+        los.save_bytes(unrelated, b"unrelated").await.unwrap();
+
+        let result = migrate_legacy_local_object_layout(temp.path()).unwrap();
+
+        assert_eq!(
+            result,
+            LocalLayoutMigrationResult {
+                migrated: 2,
+                recovered: 0,
+                deduplicated: 0,
+            }
+        );
+        for (source, expected) in [
+            (legacy_manifest, b"manifest".as_slice()),
+            (legacy_attachment, b"attachment".as_slice()),
+        ] {
+            assert!(los.get(source).await.unwrap().is_none());
+            let target = ObjectLocations::key(&LegacyObjectLocations::parse(source).unwrap());
+            assert_eq!(los.get_data(&target).await.unwrap(), expected);
+        }
+        assert_eq!(los.get_data(unrelated).await.unwrap(), b"unrelated");
+        assert_eq!(
+            migrate_legacy_local_object_layout(temp.path()).unwrap(),
+            LocalLayoutMigrationResult::default()
+        );
+    }
+
+    #[test]
+    fn local_layout_migration_recovers_each_interrupted_rename_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let first_source = "123/att-1";
+        let first_target = ObjectLocations::diary_attachment("123", "att-1");
+        let (first_source_data, first_source_etag) = local_object_paths(temp.path(), first_source);
+        let (first_target_data, first_target_etag) = local_object_paths(temp.path(), &first_target);
+        create_parent(&first_source_etag).unwrap();
+        create_parent(&first_target_data).unwrap();
+        std::fs::write(&first_source_etag, "etag-1").unwrap();
+        std::fs::write(&first_target_data, b"data-1").unwrap();
+        assert!(!first_source_data.exists());
+        assert!(!first_target_etag.exists());
+
+        let second_source = "456/att-2";
+        let second_target = ObjectLocations::diary_attachment("456", "att-2");
+        let (second_source_data, second_source_etag) =
+            local_object_paths(temp.path(), second_source);
+        let (second_target_data, second_target_etag) =
+            local_object_paths(temp.path(), &second_target);
+        create_parent(&second_source_data).unwrap();
+        create_parent(&second_target_etag).unwrap();
+        std::fs::write(&second_source_data, b"data-2").unwrap();
+        std::fs::write(&second_target_etag, "etag-2").unwrap();
+        assert!(!second_source_etag.exists());
+        assert!(!second_target_data.exists());
+
+        let result = migrate_legacy_local_object_layout(temp.path()).unwrap();
+
+        assert_eq!(result.recovered, 2);
+        assert_eq!(std::fs::read(first_target_data).unwrap(), b"data-1");
+        assert_eq!(read_etag(&first_target_etag).unwrap(), "etag-1");
+        assert_eq!(std::fs::read(second_target_data).unwrap(), b"data-2");
+        assert_eq!(read_etag(&second_target_etag).unwrap(), "etag-2");
+    }
+
+    #[tokio::test]
+    async fn local_layout_migration_deduplicates_equal_targets_and_rejects_conflicts() {
+        let temp = tempfile::tempdir().unwrap();
+        let los = LocalObjectStore::new(temp.path().to_path_buf());
+        let equal_source = "123/att-equal";
+        let equal_target = ObjectLocations::diary_attachment("123", "att-equal");
+        los.save_bytes(equal_source, b"same").await.unwrap();
+        los.save_bytes(&equal_target, b"same").await.unwrap();
+
+        let result = migrate_legacy_local_object_layout(temp.path()).unwrap();
+        assert_eq!(result.deduplicated, 1);
+        assert!(los.get(equal_source).await.unwrap().is_none());
+        assert_eq!(los.get_data(&equal_target).await.unwrap(), b"same");
+
+        let conflict_source = "456/att-conflict";
+        let conflict_target = ObjectLocations::diary_attachment("456", "att-conflict");
+        los.save_bytes(conflict_source, b"source").await.unwrap();
+        los.save_bytes(&conflict_target, b"target").await.unwrap();
+
+        assert!(matches!(
+            migrate_legacy_local_object_layout(temp.path()),
+            Err(LocalLayoutMigrationError::Conflict { .. })
+        ));
+        assert_eq!(los.get_data(conflict_source).await.unwrap(), b"source");
+        assert_eq!(los.get_data(&conflict_target).await.unwrap(), b"target");
     }
 }
