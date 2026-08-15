@@ -1,6 +1,6 @@
 use crate::app_config::AppConfigStore;
 use crate::caches::{CacheError, LocalObjectStore};
-use crate::storages::is_diary_attachment_key;
+use crate::object_locations::ObjectLocations;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -100,7 +100,7 @@ impl AttachmentCacheManager {
 
     /// 为即将写入的附件预留容量。预留期间不会把同一对象当作可淘汰候选。
     pub async fn reserve(&self, key: &str, size: u64) -> Result<(), CacheError> {
-        if !is_diary_attachment_key(key) {
+        if !ObjectLocations::is_diary_attachment(key) {
             return Ok(());
         }
         self.ensure_file_cacheable(size)?;
@@ -127,7 +127,7 @@ impl AttachmentCacheManager {
     }
 
     pub async fn commit(&self, key: &str, actual_size: u64) -> Result<(), CacheError> {
-        if !is_diary_attachment_key(key) {
+        if !ObjectLocations::is_diary_attachment(key) {
             return Ok(());
         }
         let mut state = self.state.lock().await;
@@ -170,7 +170,7 @@ impl AttachmentCacheManager {
     }
 
     pub async fn cancel_reservation(&self, key: &str) {
-        if !is_diary_attachment_key(key) {
+        if !ObjectLocations::is_diary_attachment(key) {
             return;
         }
         self.state.lock().await.reservations.remove(key);
@@ -190,7 +190,7 @@ impl AttachmentCacheManager {
 
     /// 登记已经写入 LOS 的云端附件。附件大于上限时只移除本地副本。
     pub async fn register_existing(&self, key: &str) -> Result<bool, CacheError> {
-        if !is_diary_attachment_key(key) {
+        if !ObjectLocations::is_diary_attachment(key) {
             return Ok(true);
         }
         let Some(size) = self.los.get_size(key).await? else {
@@ -233,7 +233,7 @@ impl AttachmentCacheManager {
     }
 
     pub async fn touch(&self, key: &str) -> Result<(), CacheError> {
-        if !is_diary_attachment_key(key) {
+        if !ObjectLocations::is_diary_attachment(key) {
             return Ok(());
         }
         let mut state = self.state.lock().await;
@@ -250,7 +250,7 @@ impl AttachmentCacheManager {
     }
 
     pub async fn forget(&self, key: &str) -> Result<(), CacheError> {
-        if !is_diary_attachment_key(key) {
+        if !ObjectLocations::is_diary_attachment(key) {
             return Ok(());
         }
         let mut state = self.state.lock().await;
@@ -265,15 +265,14 @@ impl AttachmentCacheManager {
     pub async fn forget_diary(&self, diary_id: &str) -> Result<(), CacheError> {
         let mut state = self.state.lock().await;
         self.ensure_loaded(&mut state).await?;
-        let prefix = format!("{diary_id}/");
         state
             .reservations
-            .retain(|key, _| !key.starts_with(&prefix));
+            .retain(|key, _| !ObjectLocations::is_diary_attachment_for(key, diary_id));
         let previous_len = state.index.entries.len();
         state
             .index
             .entries
-            .retain(|key, _| !key.starts_with(&prefix));
+            .retain(|key, _| !ObjectLocations::is_diary_attachment_for(key, diary_id));
         if state.index.entries.len() != previous_len {
             self.persist(&mut state).await?;
         }
@@ -294,7 +293,7 @@ impl AttachmentCacheManager {
         let mut actual_keys = HashSet::new();
         for entry in local_entries
             .into_iter()
-            .filter(|entry| is_diary_attachment_key(&entry.key))
+            .filter(|entry| ObjectLocations::is_diary_attachment(&entry.key))
         {
             actual_keys.insert(entry.key.clone());
             state
@@ -517,14 +516,18 @@ mod tests {
         los.save_bytes(key, &vec![7; size]).await.unwrap();
     }
 
-    async fn write_index(root: &std::path::Path, entries: &[(&str, u64, u64)]) {
+    fn attachment(name: &str) -> String {
+        ObjectLocations::diary_attachment("100", name)
+    }
+
+    async fn write_index(root: &std::path::Path, entries: &[(String, u64, u64)]) {
         let index = CacheIndex {
             version: CACHE_INDEX_VERSION,
             entries: entries
                 .iter()
                 .map(|(key, size, accessed)| {
                     (
-                        (*key).to_string(),
+                        key.clone(),
                         CacheEntry {
                             size: *size,
                             last_accessed_at_ms: *accessed,
@@ -545,62 +548,67 @@ mod tests {
     async fn activation_evicts_oldest_attachment_but_preserves_non_cache_objects() {
         let temp = tempfile::tempdir().unwrap();
         let los = LocalObjectStore::new(temp.path().to_path_buf());
-        save(&los, "100/att-old", 4).await;
-        save(&los, "100/att-new", 4).await;
-        save(&los, "100/manifest.enc", 12).await;
-        save(&los, "100/.attachment-transaction/att-backup", 6).await;
-        write_index(temp.path(), &[("100/att-old", 4, 1), ("100/att-new", 4, 2)]).await;
+        let old = attachment("att-old");
+        let new = attachment("att-new");
+        let manifest = ObjectLocations::diary_manifest("100");
+        let backup = ObjectLocations::diary_attachment_backup("100", "att-backup");
+        save(&los, &old, 4).await;
+        save(&los, &new, 4).await;
+        save(&los, &manifest, 12).await;
+        save(&los, &backup, 6).await;
+        write_index(temp.path(), &[(old.clone(), 4, 1), (new.clone(), 4, 2)]).await;
 
         let stats = manager(temp.path(), 5).activate().await.unwrap();
 
         assert_eq!(stats.cached_files, 1);
         assert_eq!(stats.cached_bytes, 4);
-        assert!(los.get("100/att-old").await.unwrap().is_none());
-        assert!(los.get("100/att-new").await.unwrap().is_some());
-        assert!(los.get("100/manifest.enc").await.unwrap().is_some());
-        assert!(los
-            .get("100/.attachment-transaction/att-backup")
-            .await
-            .unwrap()
-            .is_some());
+        assert!(los.get(&old).await.unwrap().is_none());
+        assert!(los.get(&new).await.unwrap().is_some());
+        assert!(los.get(&manifest).await.unwrap().is_some());
+        assert!(los.get(&backup).await.unwrap().is_some());
     }
 
     #[tokio::test]
     async fn recent_access_changes_the_next_eviction_candidate() {
         let temp = tempfile::tempdir().unwrap();
         let los = LocalObjectStore::new(temp.path().to_path_buf());
-        save(&los, "100/att-a", 4).await;
-        save(&los, "100/att-b", 4).await;
-        write_index(temp.path(), &[("100/att-a", 4, 1), ("100/att-b", 4, 2)]).await;
+        let a = attachment("att-a");
+        let b = attachment("att-b");
+        let c = attachment("att-c");
+        save(&los, &a, 4).await;
+        save(&los, &b, 4).await;
+        write_index(temp.path(), &[(a.clone(), 4, 1), (b.clone(), 4, 2)]).await;
         let manager = manager(temp.path(), 8);
         manager.activate().await.unwrap();
-        manager.touch("100/att-a").await.unwrap();
+        manager.touch(&a).await.unwrap();
 
-        manager.reserve("100/att-c", 4).await.unwrap();
-        save(&los, "100/att-c", 4).await;
-        manager.commit("100/att-c", 4).await.unwrap();
+        manager.reserve(&c, 4).await.unwrap();
+        save(&los, &c, 4).await;
+        manager.commit(&c, 4).await.unwrap();
 
-        assert!(los.get("100/att-a").await.unwrap().is_some());
-        assert!(los.get("100/att-b").await.unwrap().is_none());
-        assert!(los.get("100/att-c").await.unwrap().is_some());
+        assert!(los.get(&a).await.unwrap().is_some());
+        assert!(los.get(&b).await.unwrap().is_none());
+        assert!(los.get(&c).await.unwrap().is_some());
     }
 
     #[tokio::test]
     async fn oversized_attachment_is_rejected_without_evicting_existing_cache() {
         let temp = tempfile::tempdir().unwrap();
         let los = LocalObjectStore::new(temp.path().to_path_buf());
-        save(&los, "100/att-a", 4).await;
+        let a = attachment("att-a");
+        let too_large = attachment("too-large");
+        save(&los, &a, 4).await;
         let manager = manager(temp.path(), 5);
         manager.activate().await.unwrap();
 
         assert!(matches!(
-            manager.reserve("100/too-large", 6).await,
+            manager.reserve(&too_large, 6).await,
             Err(CacheError::CapacityExceeded {
                 required_bytes: 6,
                 limit_bytes: 5
             })
         ));
-        assert!(los.get("100/att-a").await.unwrap().is_some());
+        assert!(los.get(&a).await.unwrap().is_some());
     }
 
     #[tokio::test]
@@ -609,22 +617,25 @@ mod tests {
         let los = LocalObjectStore::new(temp.path().to_path_buf());
         let manager = manager_with_limits(temp.path(), 20, 5);
 
+        let large = attachment("att-large");
         assert!(matches!(
-            manager.reserve("100/att-large", 6).await,
+            manager.reserve(&large, 6).await,
             Err(CacheError::AttachmentTooLarge {
                 attachment_bytes: 6,
                 limit_bytes: 5
             })
         ));
-        assert!(los.get("100/att-large").await.unwrap().is_none());
+        assert!(los.get(&large).await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn lowering_per_file_limit_removes_existing_oversized_cache() {
         let temp = tempfile::tempdir().unwrap();
         let los = LocalObjectStore::new(temp.path().to_path_buf());
-        save(&los, "100/att-small", 4).await;
-        save(&los, "100/att-large", 6).await;
+        let small = attachment("att-small");
+        let large = attachment("att-large");
+        save(&los, &small, 4).await;
+        save(&los, &large, 6).await;
         let manager = manager_with_limits(temp.path(), 20, 10);
         assert_eq!(manager.activate().await.unwrap().cached_files, 2);
 
@@ -635,15 +646,16 @@ mod tests {
         let stats = manager.enforce_limit().await.unwrap();
 
         assert_eq!(stats.cached_files, 1);
-        assert!(los.get("100/att-small").await.unwrap().is_some());
-        assert!(los.get("100/att-large").await.unwrap().is_none());
+        assert!(los.get(&small).await.unwrap().is_some());
+        assert!(los.get(&large).await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn corrupt_index_is_rebuilt_from_existing_attachments() {
         let temp = tempfile::tempdir().unwrap();
         let los = LocalObjectStore::new(temp.path().to_path_buf());
-        save(&los, "100/att-a", 3).await;
+        let a = attachment("att-a");
+        save(&los, &a, 3).await;
         tokio::fs::write(temp.path().join(CACHE_INDEX_FILENAME), b"not-json")
             .await
             .unwrap();
@@ -658,34 +670,37 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        assert!(rebuilt.entries.contains_key("100/att-a"));
+        assert!(rebuilt.entries.contains_key(&a));
     }
 
     #[tokio::test]
     async fn oversized_uploaded_copy_is_removed_without_touching_other_cache() {
         let temp = tempfile::tempdir().unwrap();
         let los = LocalObjectStore::new(temp.path().to_path_buf());
-        save(&los, "100/att-a", 4).await;
+        let a = attachment("att-a");
+        let large = attachment("att-large");
+        save(&los, &a, 4).await;
         let manager = manager(temp.path(), 5);
         manager.activate().await.unwrap();
-        save(&los, "100/att-large", 6).await;
+        save(&los, &large, 6).await;
 
-        assert!(!manager.register_existing("100/att-large").await.unwrap());
-        assert!(los.get("100/att-a").await.unwrap().is_some());
-        assert!(los.get("100/att-large").await.unwrap().is_none());
+        assert!(!manager.register_existing(&large).await.unwrap());
+        assert!(los.get(&a).await.unwrap().is_some());
+        assert!(los.get(&large).await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn deactivation_keeps_files_and_removes_only_the_index() {
         let temp = tempfile::tempdir().unwrap();
         let los = LocalObjectStore::new(temp.path().to_path_buf());
-        save(&los, "100/att-a", 4).await;
+        let a = attachment("att-a");
+        save(&los, &a, 4).await;
         let manager = manager(temp.path(), 5);
         manager.activate().await.unwrap();
 
         manager.deactivate().await.unwrap();
 
-        assert!(los.get("100/att-a").await.unwrap().is_some());
+        assert!(los.get(&a).await.unwrap().is_some());
         assert!(!temp.path().join(CACHE_INDEX_FILENAME).exists());
     }
 }

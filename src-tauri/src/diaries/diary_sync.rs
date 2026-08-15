@@ -1,7 +1,7 @@
 use crate::caches::{LocalObjectEntry, LocalObjectStore};
 use crate::local_storage::{available_space_for, required_space_with_margin};
 use crate::object::{Object, OssClient};
-use crate::storages::diary_id_from_manifest_key;
+use crate::object_locations::{ObjectLocations, StoredObject};
 use crate::stream::ByteStream;
 use crate::utils::message_sender::MessageSender;
 use futures_util::StreamExt;
@@ -510,17 +510,13 @@ fn build_plan(
 }
 
 fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
-    if let Some(id) = diary_id_from_manifest_key(key) {
-        return Some((SyncItemKind::Manifest, id));
+    match ObjectLocations::parse(key)? {
+        StoredObject::DiaryManifest { diary_id } => Some((SyncItemKind::Manifest, diary_id)),
+        StoredObject::DiaryAttachment { diary_id, .. } => {
+            Some((SyncItemKind::Attachment, diary_id))
+        }
+        StoredObject::DiaryAttachmentBackup { .. } => None,
     }
-    if key.ends_with("/manifest.enc") {
-        return None;
-    }
-    let (id, filename) = key.split_once('/')?;
-    if id.is_empty() || filename.is_empty() || filename.contains('/') {
-        return None;
-    }
-    Some((SyncItemKind::Attachment, id.to_string()))
 }
 
 fn etag_options_match(source: Option<&str>, target: Option<&Option<String>>) -> bool {
@@ -638,29 +634,37 @@ mod tests {
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
     use crate::diaries::{DiaryContent, DiaryManifest};
-    use crate::storages::remote_manifest_key;
+    use crate::object_locations::ObjectLocations;
     use crate::stream::collect_data;
     use crate::test_utils::TestOssGuard;
     use tokio::sync::mpsc::unbounded_channel;
 
-    fn entry(key: &str, etag: Option<&str>, size: u64) -> SyncObjectEntry {
+    fn entry(key: impl Into<String>, etag: Option<&str>, size: u64) -> SyncObjectEntry {
         SyncObjectEntry {
-            key: key.to_string(),
+            key: key.into(),
             etag: etag.map(str::to_string),
             size,
         }
     }
 
+    fn manifest(id: &str) -> String {
+        ObjectLocations::diary_manifest(id)
+    }
+
+    fn attachment(id: &str, name: &str) -> String {
+        ObjectLocations::diary_attachment(id, name)
+    }
+
     #[test]
     fn plan_skips_matching_etags_and_counts_transfer_bytes() {
         let source = vec![
-            entry("123/manifest.enc", Some("MANIFEST"), 10),
-            entry("123/photo.jpg", Some("PHOTO"), 1_000),
+            entry(manifest("123"), Some("MANIFEST"), 10),
+            entry(attachment("123", "photo.jpg"), Some("PHOTO"), 1_000),
             entry("invalid", Some("IGNORED"), 99),
         ];
         let target = HashMap::from([
-            ("123/manifest.enc".to_string(), Some("manifest".to_string())),
-            ("123/photo.jpg".to_string(), Some("OLD".to_string())),
+            (manifest("123"), Some("manifest".to_string())),
+            (attachment("123", "photo.jpg"), Some("OLD".to_string())),
         ]);
 
         let plan = build_plan(source, &target);
@@ -669,7 +673,7 @@ mod tests {
         assert_eq!(plan.skipped_bytes, 10);
         assert_eq!(plan.total_bytes, 1_000);
         assert_eq!(plan.items.len(), 1);
-        assert_eq!(plan.items[0].key, "123/photo.jpg");
+        assert_eq!(plan.items[0].key, attachment("123", "photo.jpg"));
         assert_eq!(
             plan.stats(),
             CloudToLocalSyncStats {
@@ -686,8 +690,8 @@ mod tests {
     #[test]
     fn empty_local_source_does_not_touch_existing_remote_objects() {
         let remote = HashMap::from([
-            ("123/manifest.enc".to_string(), Some("MANIFEST".to_string())),
-            ("123/photo.jpg".to_string(), Some("PHOTO".to_string())),
+            (manifest("123"), Some("MANIFEST".to_string())),
+            (attachment("123", "photo.jpg"), Some("PHOTO".to_string())),
         ]);
 
         let plan = build_plan(Vec::new(), &remote);
@@ -701,26 +705,26 @@ mod tests {
     #[test]
     fn plan_orders_attachments_before_manifests() {
         let source = vec![
-            entry("200/manifest.enc", Some("1"), 1),
-            entry("100/manifest.enc", Some("2"), 1),
-            entry("200/2.jpg", Some("3"), 1),
-            entry("100/1.jpg", Some("4"), 1),
+            entry(manifest("200"), Some("1"), 1),
+            entry(manifest("100"), Some("2"), 1),
+            entry(attachment("200", "2.jpg"), Some("3"), 1),
+            entry(attachment("100", "1.jpg"), Some("4"), 1),
         ];
 
         let plan = build_plan(source, &HashMap::new());
         let keys = plan
             .items
             .iter()
-            .map(|item| item.key.as_str())
+            .map(|item| item.key.clone())
             .collect::<Vec<_>>();
 
         assert_eq!(
             keys,
             [
-                "100/1.jpg",
-                "200/2.jpg",
-                "100/manifest.enc",
-                "200/manifest.enc"
+                attachment("100", "1.jpg"),
+                attachment("200", "2.jpg"),
+                manifest("100"),
+                manifest("200")
             ]
         );
     }
@@ -728,13 +732,13 @@ mod tests {
     #[test]
     fn plan_treats_missing_or_changed_target_as_transfer() {
         let source = vec![
-            entry("123/manifest.enc", Some("MANIFEST"), 10),
-            entry("123/a.jpg", Some("A"), 5),
-            entry("123/b.jpg", None, 7),
+            entry(manifest("123"), Some("MANIFEST"), 10),
+            entry(attachment("123", "a.jpg"), Some("A"), 5),
+            entry(attachment("123", "b.jpg"), None, 7),
         ];
         let target = HashMap::from([
-            ("123/manifest.enc".to_string(), Some("MANIFEST".to_string())),
-            ("123/a.jpg".to_string(), Some("B".to_string())),
+            (manifest("123"), Some("MANIFEST".to_string())),
+            (attachment("123", "a.jpg"), Some("B".to_string())),
         ]);
 
         let plan = build_plan(source, &target);
@@ -748,20 +752,20 @@ mod tests {
     #[test]
     fn plan_ignores_attachments_without_source_manifest() {
         let source = vec![
-            entry("123/manifest.enc", Some("MANIFEST"), 10),
-            entry("123/photo.jpg", Some("PHOTO"), 20),
-            entry("orphan/photo.jpg", Some("ORPHAN_PHOTO"), 30),
-            entry("orphan/audio.mp3", Some("ORPHAN_AUDIO"), 40),
+            entry(manifest("123"), Some("MANIFEST"), 10),
+            entry(attachment("123", "photo.jpg"), Some("PHOTO"), 20),
+            entry(attachment("456", "photo.jpg"), Some("ORPHAN_PHOTO"), 30),
+            entry(attachment("456", "audio.mp3"), Some("ORPHAN_AUDIO"), 40),
         ];
 
         let plan = build_plan(source, &HashMap::new());
         let keys = plan
             .items
             .iter()
-            .map(|item| item.key.as_str())
+            .map(|item| item.key.clone())
             .collect::<Vec<_>>();
 
-        assert_eq!(keys, ["123/photo.jpg", "123/manifest.enc"]);
+        assert_eq!(keys, [attachment("123", "photo.jpg"), manifest("123")]);
         assert_eq!(plan.total_bytes, 30);
         assert_eq!(plan.skipped_files, 0);
         assert_eq!(plan.stats().remote_bytes, 30);
@@ -770,21 +774,28 @@ mod tests {
     #[test]
     fn storage_key_classification_rejects_unrelated_paths() {
         assert_eq!(
-            classify_storage_key("123/manifest.enc"),
+            classify_storage_key(&manifest("123")),
             Some((SyncItemKind::Manifest, "123".to_string()))
         );
         assert_eq!(
-            classify_storage_key("id/photo.jpg"),
-            Some((SyncItemKind::Attachment, "id".to_string()))
+            classify_storage_key(&attachment("123", "photo.jpg")),
+            Some((SyncItemKind::Attachment, "123".to_string()))
         );
         assert_eq!(classify_storage_key("invalid"), None);
-        assert_eq!(classify_storage_key("id/manifest.enc"), None);
+        assert_eq!(classify_storage_key("123/manifest.enc"), None);
         assert_eq!(
             classify_storage_key("rust-tests/run/123/manifest.enc"),
             None
         );
         assert_eq!(classify_storage_key("/photo.jpg"), None);
-        assert_eq!(classify_storage_key("id/folder/photo.jpg"), None);
+        assert_eq!(classify_storage_key("diaries/123/folder/photo.jpg"), None);
+        assert_eq!(
+            classify_storage_key(&ObjectLocations::diary_attachment_backup(
+                "123",
+                "photo.jpg"
+            )),
+            None
+        );
     }
 
     #[test]
@@ -798,8 +809,12 @@ mod tests {
     fn download_capacity_blocks_below_safety_margin() {
         let plan = build_plan(
             vec![
-                entry("123/manifest.enc", Some("MANIFEST"), 10),
-                entry("123/video.mp4", Some("VIDEO"), 2 * 1024 * 1024),
+                entry(manifest("123"), Some("MANIFEST"), 10),
+                entry(
+                    attachment("123", "video.mp4"),
+                    Some("VIDEO"),
+                    2 * 1024 * 1024,
+                ),
             ],
             &HashMap::new(),
         );
@@ -845,8 +860,8 @@ mod tests {
         let source_dir = tempfile::tempdir().expect("source temp dir");
         let source_los = LocalObjectStore::new(source_dir.path().to_path_buf());
         let diary_id = "1234567890123";
-        let attachment_key = format!("{diary_id}/large.bin");
-        let manifest_key = remote_manifest_key(diary_id);
+        let attachment_key = attachment(diary_id, "large.bin");
+        let manifest_key = manifest(diary_id);
         let attachment = vec![0x5a; 256 * 1024];
         let manifest = DiaryManifest {
             id: diary_id.to_string(),

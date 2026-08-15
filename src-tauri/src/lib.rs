@@ -7,8 +7,8 @@ mod diaries;
 mod error;
 mod local_storage;
 mod object;
+pub mod object_locations;
 mod state;
-mod storages;
 mod stream;
 mod tasks;
 #[cfg(test)]

@@ -12,8 +12,8 @@ mod tests {
     use crate::diaries::diary_store::{DiaryStore, LocalStore, RemoteStore};
     use crate::diaries::{delete_diary, get_diary, save_diary};
     use crate::object::OssClient;
+    use crate::object_locations::ObjectLocations;
     use crate::state::AppState;
-    use crate::storages::remote_attachments_key;
     use crate::stream::{collect_data, create_mock_stream, ByteStream};
     use crate::test_utils::TestOssGuard;
     use bytes::Bytes;
@@ -212,7 +212,7 @@ mod tests {
             .await
             .unwrap();
         assert!(los
-            .get(&remote_attachments_key(diary_id, "attachment"))
+            .get(&ObjectLocations::diary_attachment(diary_id, "attachment"))
             .await
             .unwrap()
             .is_none());
@@ -248,7 +248,7 @@ mod tests {
             .unwrap();
         assert_eq!(collect_data(stream).await.unwrap(), old_data);
         assert!(los
-            .get(&remote_attachments_key(diary_id, "attachment"))
+            .get(&ObjectLocations::diary_attachment(diary_id, "attachment"))
             .await
             .unwrap()
             .is_none());
@@ -459,7 +459,10 @@ mod tests {
 
         // 下载并检查内容是否依然正确
         let (down_stream, _) = client
-            .download(&remote_attachments_key(&diary_id, &attachment_id), None)
+            .download(
+                &ObjectLocations::diary_attachment(&diary_id, &attachment_id),
+                None,
+            )
             .await
             .unwrap();
         let downloaded_bytes = collect_data(down_stream).await.expect("收集失败");
@@ -553,7 +556,10 @@ mod tests {
 
         // 验证数据确实被修改（下载并检查）
         let (raw_stream, _) = client
-            .download(&remote_attachments_key(&diary_id, &attachment_id), None)
+            .download(
+                &ObjectLocations::diary_attachment(&diary_id, &attachment_id),
+                None,
+            )
             .await
             .unwrap();
 
@@ -619,7 +625,7 @@ mod tests {
         }
         assert!(!attachment_id.is_empty(), "附件上传未完成");
 
-        let key = remote_attachments_key(&diary_id, &attachment_id);
+        let key = ObjectLocations::diary_attachment(&diary_id, &attachment_id);
 
         // 验证缓存是否存在以及数据内容
         let cached = los.get(&key).await.unwrap();
@@ -752,7 +758,10 @@ mod tests {
         assert_eq!(meta.filename, new_filename, "附件更名后元数据未更新");
         assert_eq!(meta.id, attachment.id, "重命名不应改变附件 ID");
         let (stream, _) = client
-            .download(&remote_attachments_key(&diary_id, &attachment.id), None)
+            .download(
+                &ObjectLocations::diary_attachment(&diary_id, &attachment.id),
+                None,
+            )
             .await
             .expect("重命名后原附件 ID 对象应该仍然存在");
         assert_eq!(collect_data(stream).await.unwrap(), raw_data);

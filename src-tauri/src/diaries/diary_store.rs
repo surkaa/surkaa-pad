@@ -6,10 +6,7 @@ use crate::caches::{AttachmentCacheManager, CacheError, LocalObjectStore};
 use crate::diaries::attachment_upload::{LocalAttachmentUpload, RemoteAttachmentUpload};
 use crate::diaries::{AttachmentUploadSession, DiaryError};
 use crate::object::{NextToken, ObjectError, OssClient};
-use crate::storages::{
-    diary_id_from_common_prefix, diary_id_from_manifest_key, remote_attachments_key,
-    remote_manifest_key,
-};
+use crate::object_locations::{ObjectLocations, StoredObject};
 use crate::stream::{tracker_stream, ByteStream};
 use futures_util::StreamExt;
 use std::sync::Arc;
@@ -21,10 +18,6 @@ pub type StoreProgressCallback = Arc<dyn Fn(u8) + Send + Sync>;
 pub type AttachmentUploadProgressCallback = Arc<dyn Fn(AttachmentUploadProgress) + Send + Sync>;
 
 const ATTACHMENT_UPLOAD_CHUNK_SIZE: usize = 8 * 1024 * 1024;
-
-fn attachment_backup_key(id: &str, filename: &str) -> String {
-    format!("{id}/.attachment-transaction/{filename}")
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AttachmentUploadProgress {
@@ -170,8 +163,8 @@ async fn upload_stream_to_session(
 }
 
 fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: &str) -> (Vec<String>, String) {
-    let prefix = format!("{id}/");
-    let manifest_key = remote_manifest_key(id);
+    let prefix = ObjectLocations::diary_prefix(id);
+    let manifest_key = ObjectLocations::diary_manifest(id);
     let mut attachment_keys: Vec<String> = keys
         .into_iter()
         .filter(|key| key.starts_with(&prefix) && key != &manifest_key)
@@ -321,26 +314,26 @@ impl LocalStore {
 #[async_trait]
 impl DiaryStore for LocalStore {
     async fn upload_manifest(&self, id: &str, data: &[u8]) -> Result<String, DiaryError> {
-        let key = remote_manifest_key(id);
+        let key = ObjectLocations::diary_manifest(id);
         self.los.save_bytes(&key, data).await?;
         let etag = format!("{:X}", md5::compute(data));
         Ok(etag)
     }
 
     async fn download_manifest(&self, id: &str) -> Result<(Vec<u8>, String), DiaryError> {
-        let key = remote_manifest_key(id);
+        let key = ObjectLocations::diary_manifest(id);
         let etag = self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
         let data = self.los.get_data(&key).await?;
         Ok((data, etag))
     }
 
     async fn get_manifest_etag(&self, id: &str) -> Result<Option<String>, DiaryError> {
-        let key = remote_manifest_key(id);
+        let key = ObjectLocations::diary_manifest(id);
         Ok(self.los.get(&key).await?)
     }
 
     async fn get_manifest_size(&self, id: &str) -> Result<u64, DiaryError> {
-        let key = remote_manifest_key(id);
+        let key = ObjectLocations::diary_manifest(id);
         self.los
             .get_size(&key)
             .await?
@@ -358,7 +351,10 @@ impl DiaryStore for LocalStore {
         let all = self.los.get_all().await?;
         let mut ids: Vec<String> = all
             .into_iter()
-            .filter_map(|(key, _)| diary_id_from_manifest_key(&key))
+            .filter_map(|(key, _)| match ObjectLocations::parse(&key) {
+                Some(StoredObject::DiaryManifest { diary_id }) => Some(diary_id),
+                _ => None,
+            })
             .collect();
         // 日记 ID 是反向时间戳：时间越新，ID 的字典序越小。
         // 因此升序排列才是“最新日记在前”，并与 OSS 的对象键顺序一致。
@@ -384,7 +380,7 @@ impl DiaryStore for LocalStore {
         size: u64,
         _mimetype: &str,
     ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         Ok(Box::new(
             LocalAttachmentUpload::begin(self.los.clone(), key, size).await?,
         ))
@@ -397,7 +393,7 @@ impl DiaryStore for LocalStore {
         range: Option<(u64, u64)>,
         _known_etag: Option<&str>,
     ) -> Result<ByteStream, DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         Ok(self.los.get_stream(&key, range).await?)
     }
 
@@ -407,7 +403,7 @@ impl DiaryStore for LocalStore {
         filename: &str,
         _known_etag: Option<&str>,
     ) -> Result<u64, DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         self.los
             .get_size(&key)
             .await?
@@ -420,21 +416,21 @@ impl DiaryStore for LocalStore {
         filename: &str,
         progress: StoreProgressCallback,
     ) -> Result<(), DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
         progress(100);
         Ok(())
     }
 
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         self.los.delete(&key).await?;
         Ok(())
     }
 
     async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
-        let key = remote_attachments_key(id, filename);
-        let backup_key = attachment_backup_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
+        let backup_key = ObjectLocations::diary_attachment_backup(id, filename);
         let etag = self.los.get(&key).await?.ok_or(CacheError::NotFound)?;
         let stream = self.los.get_stream(&key, None).await?;
         self.los
@@ -449,8 +445,8 @@ impl DiaryStore for LocalStore {
         filename: &str,
         _mimetype: &str,
     ) -> Result<(), DiaryError> {
-        let key = remote_attachments_key(id, filename);
-        let backup_key = attachment_backup_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
+        let backup_key = ObjectLocations::diary_attachment_backup(id, filename);
         let etag = self
             .los
             .get(&backup_key)
@@ -463,7 +459,7 @@ impl DiaryStore for LocalStore {
 
     async fn delete_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
         self.los
-            .delete(&attachment_backup_key(id, filename))
+            .delete(&ObjectLocations::diary_attachment_backup(id, filename))
             .await?;
         Ok(())
     }
@@ -520,14 +516,14 @@ impl RemoteStore {
 #[async_trait]
 impl DiaryStore for RemoteStore {
     async fn upload_manifest(&self, id: &str, data: &[u8]) -> Result<String, DiaryError> {
-        let key = remote_manifest_key(id);
+        let key = ObjectLocations::diary_manifest(id);
         let etag = self.client.upload_bytes(&key, data).await?;
         let _ = self.los.save_bytes(&key, data).await;
         Ok(etag)
     }
 
     async fn download_manifest(&self, id: &str) -> Result<(Vec<u8>, String), DiaryError> {
-        let key = remote_manifest_key(id);
+        let key = ObjectLocations::diary_manifest(id);
         // 优先检查本地缓存
         if let Some(cached_etag) = self.los.get(&key).await? {
             let metadata = self.client.get_metadata(&key).await?;
@@ -545,13 +541,13 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn get_manifest_etag(&self, id: &str) -> Result<Option<String>, DiaryError> {
-        let key = remote_manifest_key(id);
+        let key = ObjectLocations::diary_manifest(id);
         let metadata = self.client.get_metadata(&key).await?;
         Ok(metadata.etag)
     }
 
     async fn get_manifest_size(&self, id: &str) -> Result<u64, DiaryError> {
-        let key = remote_manifest_key(id);
+        let key = ObjectLocations::diary_manifest(id);
         self.client
             .get_metadata(&key)
             .await?
@@ -564,7 +560,7 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
-        let prefix = format!("{id}/");
+        let prefix = ObjectLocations::diary_prefix(id);
         let keys = self.client.list_all_keys(&prefix).await?;
         let (attachment_keys, manifest_key) = diary_object_keys(keys, id);
 
@@ -582,16 +578,22 @@ impl DiaryStore for RemoteStore {
         &self,
         next_token: NextToken,
     ) -> Result<(Vec<String>, NextToken), DiaryError> {
-        let (prefixes, nt) = self.client.list_common_prefixes("", next_token).await?;
+        let (prefixes, nt) = self
+            .client
+            .list_common_prefixes(ObjectLocations::diaries_prefix(), next_token)
+            .await?;
         let candidate_ids: Vec<String> = prefixes
             .into_iter()
-            .filter_map(|prefix| diary_id_from_common_prefix(&prefix))
+            .filter_map(|prefix| ObjectLocations::diary_id_from_common_prefix(&prefix))
             .collect();
 
         // 一级目录也可能只残留附件。并发确认 manifest 存在，避免把孤立目录
         // 暴露成日记，同时保持 ListObjectsV2 返回的字典序。
         let checks = futures_util::stream::iter(candidate_ids.into_iter().map(|id| async move {
-            let exists = self.client.object_exists(&remote_manifest_key(&id)).await?;
+            let exists = self
+                .client
+                .object_exists(&ObjectLocations::diary_manifest(&id))
+                .await?;
             Ok::<_, DiaryError>(exists.then_some(id))
         }))
         .buffered(10)
@@ -613,7 +615,7 @@ impl DiaryStore for RemoteStore {
         size: u64,
         mimetype: &str,
     ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         Ok(Box::new(
             RemoteAttachmentUpload::begin(
                 self.los.clone(),
@@ -634,7 +636,7 @@ impl DiaryStore for RemoteStore {
         range: Option<(u64, u64)>,
         known_etag: Option<&str>,
     ) -> Result<ByteStream, DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         if let Some(cached_etag) = self.los.get(&key).await? {
             // 已知 etag 匹配，直接使用缓存
             if known_etag.is_some_and(|k| k == cached_etag) {
@@ -661,7 +663,7 @@ impl DiaryStore for RemoteStore {
         filename: &str,
         known_etag: Option<&str>,
     ) -> Result<u64, DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         if let Some(cached_etag) = self.los.get(&key).await? {
             if known_etag.is_some_and(|etag| etags_match(etag, &cached_etag)) {
                 if let Some(size) = self.los.get_size(&key).await? {
@@ -705,7 +707,7 @@ impl DiaryStore for RemoteStore {
         filename: &str,
         progress: StoreProgressCallback,
     ) -> Result<(), DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         let metadata = self.client.get_metadata(&key).await?;
         let size = metadata.content_length.ok_or_else(|| {
             DiaryError::Object(ObjectError::OperationFailed(format!(
@@ -765,7 +767,7 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
-        let key = remote_attachments_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
         self.client.delete(&key).await?;
         let _ = self.los.delete(&key).await;
         self.attachment_cache.forget(&key).await?;
@@ -773,8 +775,8 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
-        let key = remote_attachments_key(id, filename);
-        let backup_key = attachment_backup_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
+        let backup_key = ObjectLocations::diary_attachment_backup(id, filename);
         let metadata = self.client.get_metadata(&key).await?;
         let remote_etag = metadata.etag.ok_or_else(|| {
             DiaryError::Object(ObjectError::OperationFailed(format!(
@@ -804,8 +806,8 @@ impl DiaryStore for RemoteStore {
         filename: &str,
         mimetype: &str,
     ) -> Result<(), DiaryError> {
-        let key = remote_attachments_key(id, filename);
-        let backup_key = attachment_backup_key(id, filename);
+        let key = ObjectLocations::diary_attachment(id, filename);
+        let backup_key = ObjectLocations::diary_attachment_backup(id, filename);
         let size = self
             .los
             .get_size(&backup_key)
@@ -842,7 +844,7 @@ impl DiaryStore for RemoteStore {
 
     async fn delete_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
         self.los
-            .delete(&attachment_backup_key(id, filename))
+            .delete(&ObjectLocations::diary_attachment_backup(id, filename))
             .await?;
         Ok(())
     }
@@ -1046,13 +1048,13 @@ mod tests {
     #[test]
     fn diary_delete_plan_scopes_prefix_and_keeps_manifest_separate() {
         let id = "1234567890123";
-        let manifest = remote_manifest_key(id);
+        let manifest = ObjectLocations::diary_manifest(id);
         let (attachments, manifest_key) = diary_object_keys(
             vec![
                 manifest.clone(),
-                format!("{id}/att-b"),
-                format!("{id}/att-a"),
-                format!("{id}4/att-unrelated"),
+                ObjectLocations::diary_attachment(id, "att-b"),
+                ObjectLocations::diary_attachment(id, "att-a"),
+                ObjectLocations::diary_attachment(&format!("{id}4"), "att-unrelated"),
                 "unrelated/manifest.enc".to_string(),
             ],
             id,
@@ -1060,7 +1062,10 @@ mod tests {
 
         assert_eq!(
             attachments,
-            vec![format!("{id}/att-a"), format!("{id}/att-b")]
+            vec![
+                ObjectLocations::diary_attachment(id, "att-a"),
+                ObjectLocations::diary_attachment(id, "att-b")
+            ]
         );
         assert_eq!(manifest_key, manifest);
     }
@@ -1143,7 +1148,7 @@ mod tests {
 
         for id in &expected_ids {
             client
-                .upload_bytes(&remote_manifest_key(id), b"manifest")
+                .upload_bytes(&ObjectLocations::diary_manifest(id), b"manifest")
                 .await
                 .unwrap();
         }
@@ -1152,7 +1157,10 @@ mod tests {
         for index in 0..15 {
             client
                 .upload_bytes(
-                    &format!("{attachment_heavy_diary}/att-{index:02}"),
+                    &ObjectLocations::diary_attachment(
+                        attachment_heavy_diary,
+                        &format!("att-{index:02}"),
+                    ),
                     b"attachment",
                 )
                 .await
@@ -1160,7 +1168,10 @@ mod tests {
         }
         // 只有附件的数字目录不能被当成日记。
         client
-            .upload_bytes(&format!("{orphan}/att-orphan"), b"attachment")
+            .upload_bytes(
+                &ObjectLocations::diary_attachment(orphan, "att-orphan"),
+                b"attachment",
+            )
             .await
             .unwrap();
         // 非日记一级目录也必须被忽略。

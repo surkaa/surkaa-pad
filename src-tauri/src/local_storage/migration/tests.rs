@@ -23,10 +23,13 @@ async fn custom_plan_appends_los_and_counts_objects() {
     std::fs::create_dir_all(&target_base).unwrap();
     let source = LocalObjectStore::new(source_dir);
     source
-        .save_bytes("1/manifest.enc", b"manifest")
+        .save_bytes("nested/object-a", b"manifest")
         .await
         .unwrap();
-    source.save_bytes("1/att-1", b"attachment").await.unwrap();
+    source
+        .save_bytes("nested/object-b", b"attachment")
+        .await
+        .unwrap();
 
     let request = resolve_request(&manager(&temp_dir), Some(display_path(&target_base))).unwrap();
     let plan = build_plan(&source, request).await.unwrap().public();
@@ -42,11 +45,11 @@ async fn streaming_copy_preserves_nested_objects_and_etags() {
     let source = LocalObjectStore::new(temp_dir.path().join("source"));
     let target = LocalObjectStore::new(temp_dir.path().join("target"));
     source
-        .save_bytes("123/manifest.enc", b"manifest-data")
+        .save_bytes("nested/object-a", b"manifest-data")
         .await
         .unwrap();
     source
-        .save_bytes("123/att-1", &vec![7; 1024 * 1024])
+        .save_bytes("nested/object-b", &vec![7; 1024 * 1024])
         .await
         .unwrap();
     let entries = source.get_all_entries().await.unwrap();
@@ -77,11 +80,11 @@ async fn verification_rejects_same_size_corruption() {
     let temp_dir = tempfile::tempdir().unwrap();
     let source = LocalObjectStore::new(temp_dir.path().join("source"));
     let target = LocalObjectStore::new(temp_dir.path().join("target"));
-    source.save_bytes("1/att", b"source").await.unwrap();
+    source.save_bytes("nested/object", b"source").await.unwrap();
     let entries = source.get_all_entries().await.unwrap();
     target
         .save_stream_with_etag(
-            "1/att",
+            "nested/object",
             &entries[0].etag,
             Box::pin(futures_util::stream::once(async {
                 Ok(bytes::Bytes::from_static(b"target"))
@@ -144,11 +147,11 @@ async fn forced_copy_to_custom_location_switches_only_after_verification() {
     std::fs::create_dir_all(&target_base).unwrap();
     let source = LocalObjectStore::new(source_root.clone());
     source
-        .save_bytes("123/manifest.enc", b"manifest")
+        .save_bytes("nested/object-a", b"manifest")
         .await
         .unwrap();
     source
-        .save_bytes("123/att-1", &vec![9; 2 * 1024 * 1024])
+        .save_bytes("nested/object-b", &vec![9; 2 * 1024 * 1024])
         .await
         .unwrap();
     let (sender, _receiver) = mpsc::unbounded_channel();
@@ -167,11 +170,11 @@ async fn forced_copy_to_custom_location_switches_only_after_verification() {
     let target = LocalObjectStore::new(target_base.join("los"));
     assert!(!source_root.exists());
     assert_eq!(
-        target.get_data("123/manifest.enc").await.unwrap(),
+        target.get_data("nested/object-a").await.unwrap(),
         b"manifest"
     );
     assert_eq!(
-        target.get_size("123/att-1").await.unwrap(),
+        target.get_size("nested/object-b").await.unwrap(),
         Some(2 * 1024 * 1024)
     );
     assert_eq!(
@@ -192,7 +195,10 @@ async fn pending_migration_with_completed_target_is_verified_and_resumed() {
     let target_root = target_base.join("los");
     std::fs::create_dir_all(&target_base).unwrap();
     let source = LocalObjectStore::new(source_root.clone());
-    source.save_bytes("123/att", b"resume-data").await.unwrap();
+    source
+        .save_bytes("nested/object", b"resume-data")
+        .await
+        .unwrap();
     let target = LocalObjectStore::new(target_root.clone());
     let entries = source.get_all_entries().await.unwrap();
     let (copy_sender, _copy_receiver) = mpsc::unbounded_channel();

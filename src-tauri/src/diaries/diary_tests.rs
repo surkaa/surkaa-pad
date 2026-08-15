@@ -8,7 +8,7 @@ mod tests {
     use crate::diaries::CURRENT_VERSION;
     use crate::diaries::{delete_diary, get_diary, save_diary, update_diary_content_only};
     use crate::object::OssClient;
-    use crate::storages::{remote_attachments_key, remote_manifest_key};
+    use crate::object_locations::ObjectLocations;
     use crate::stream::create_mock_stream;
     use crate::test_utils::TestOssGuard;
     use chrono::Utc;
@@ -93,15 +93,15 @@ mod tests {
         let not_found_result = get_diary(&cache, &crypto, &store, &id).await;
         assert!(not_found_result.is_err(), "删除后日记不应被检索");
         let (remaining_objects, next_token) = client
-            .list(&format!("{id}/"), None)
+            .list(&ObjectLocations::diary_prefix(&id), None)
             .await
             .expect("检查删除后的日记对象失败");
         assert!(remaining_objects.is_empty(), "删除后不应残留日记附件");
         assert!(next_token.is_none());
         for key in [
-            remote_manifest_key(&id),
-            remote_attachments_key(&id, "att-one"),
-            remote_attachments_key(&id, "att-two"),
+            ObjectLocations::diary_manifest(&id),
+            ObjectLocations::diary_attachment(&id, "att-one"),
+            ObjectLocations::diary_attachment(&id, "att-two"),
         ] {
             assert!(
                 los.get(&key).await.unwrap().is_none(),
@@ -129,7 +129,7 @@ mod tests {
             .await
             .expect("保存日记失败");
         let id = summary.id.clone();
-        let object_key = remote_manifest_key(&id);
+        let object_key = ObjectLocations::diary_manifest(&id);
 
         // 获取 OSS 上的 etag
         let metadata = client
