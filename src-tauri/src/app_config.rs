@@ -448,7 +448,7 @@ mod tests {
             base_path: PathBuf::from("D:/DiaryData"),
         };
         let pending = PendingLocalStorageMigration::new(
-            PathBuf::from("C:/old/lfc"),
+            PathBuf::from("C:/old/los"),
             PathBuf::from("D:/DiaryData/los"),
             PathBuf::from("D:/DiaryData/los.migrating"),
             location.clone(),

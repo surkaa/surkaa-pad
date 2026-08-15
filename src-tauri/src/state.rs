@@ -202,11 +202,8 @@ impl AppState {
         attachment_server: AttachmentServerHandle,
     ) -> Self {
         let app_config = AppConfigStore::in_memory(AppConfig::default());
-        let local_storage = LocalStorageManager::new(
-            app_config.clone(),
-            local_object_store.root().to_path_buf(),
-            local_object_store.root().to_path_buf(),
-        );
+        let local_storage =
+            LocalStorageManager::new(app_config.clone(), local_object_store.root().to_path_buf());
         let attachment_cache =
             AttachmentCacheManager::new(local_object_store.clone(), app_config.clone());
         Self {

@@ -54,11 +54,8 @@ fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let paths = app.handle().path();
     let app_config = AppConfigStore::load(paths.app_config_dir()?.join(APP_CONFIG_FILENAME))?;
     tauri_plugin_log::log::info!("[startup] app config loaded");
-    let local_storage = local_storage::LocalStorageManager::new(
-        app_config.clone(),
-        paths.app_local_data_dir()?,
-        paths.app_cache_dir()?,
-    );
+    let local_storage =
+        local_storage::LocalStorageManager::new(app_config.clone(), paths.app_local_data_dir()?);
     let los_path = local_storage.startup_root();
     let (listener, attachment_server) = bind_attachment_server()?;
     tauri_plugin_log::log::info!("[startup] attachment server bound");

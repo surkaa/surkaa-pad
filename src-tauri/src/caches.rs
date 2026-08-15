@@ -9,6 +9,5 @@ pub use attachment_cache::{AttachmentCacheManager, AttachmentCacheStats};
 pub use cache_error::CacheError;
 pub use diary_memory_cache::DiaryMemoryCache;
 pub use local_object_store::{
-    ChunkedSaveHandle, LocalObjectEntry, LocalObjectStore, LEGACY_LOCAL_OBJECT_STORE_DIRECTORY,
-    LOCAL_OBJECT_STORE_DIRECTORY,
+    ChunkedSaveHandle, LocalObjectEntry, LocalObjectStore, LOCAL_OBJECT_STORE_DIRECTORY,
 };

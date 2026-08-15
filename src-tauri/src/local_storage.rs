@@ -1,5 +1,5 @@
 use crate::app_config::{AppConfigStore, LocalStorageLocation, PendingLocalStorageMigration};
-use crate::caches::{LEGACY_LOCAL_OBJECT_STORE_DIRECTORY, LOCAL_OBJECT_STORE_DIRECTORY};
+use crate::caches::LOCAL_OBJECT_STORE_DIRECTORY;
 use std::path::{Path, PathBuf};
 
 pub mod migration;
@@ -42,19 +42,13 @@ pub(crate) fn existing_ancestor(path: &Path) -> Option<&Path> {
 pub struct LocalStorageManager {
     config: AppConfigStore,
     default_root: PathBuf,
-    legacy_root: PathBuf,
 }
 
 impl LocalStorageManager {
-    pub fn new(
-        config: AppConfigStore,
-        app_local_data_dir: PathBuf,
-        app_cache_dir: PathBuf,
-    ) -> Self {
+    pub fn new(config: AppConfigStore, app_local_data_dir: PathBuf) -> Self {
         Self {
             config,
             default_root: app_local_data_dir.join(LOCAL_OBJECT_STORE_DIRECTORY),
-            legacy_root: app_cache_dir.join(LEGACY_LOCAL_OBJECT_STORE_DIRECTORY),
         }
     }
 
@@ -98,20 +92,7 @@ impl LocalStorageManager {
                 return pending.target_root().to_path_buf();
             }
         }
-        let configured = self.config.current();
-        if matches!(
-            configured.local_storage_location(),
-            LocalStorageLocation::Default
-        ) && (!self.default_root.exists() || directory_is_empty(&self.default_root))
-            && self.legacy_root.exists()
-        {
-            return self.legacy_root.clone();
-        }
         self.configured_root()
-    }
-
-    pub fn is_legacy_root(&self, root: &Path) -> bool {
-        root == self.legacy_root
     }
 
     /// 自定义位置一旦完成配置就必须保持可访问，不能像全新默认目录一样按空存储处理。
@@ -127,12 +108,6 @@ impl LocalStorageManager {
     }
 }
 
-fn directory_is_empty(path: &PathBuf) -> bool {
-    std::fs::read_dir(path)
-        .map(|mut entries| entries.next().is_none())
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,11 +118,7 @@ mod tests {
         location: LocalStorageLocation,
     ) -> LocalStorageManager {
         let config = AppConfigStore::in_memory(AppConfig::with_local_storage_location(location));
-        LocalStorageManager::new(
-            config,
-            temp_dir.path().join("local-data"),
-            temp_dir.path().join("cache"),
-        )
+        LocalStorageManager::new(config, temp_dir.path().join("local-data"))
     }
 
     #[test]
@@ -162,25 +133,12 @@ mod tests {
     }
 
     #[test]
-    fn legacy_only_install_temporarily_uses_lfc_directory() {
+    fn default_location_always_uses_persistent_los_directory() {
         let temp_dir = tempfile::tempdir().unwrap();
         let manager = manager(&temp_dir, LocalStorageLocation::Default);
-        std::fs::create_dir_all(&manager.legacy_root).unwrap();
-
-        assert_eq!(manager.startup_root(), manager.legacy_root);
-        assert!(manager.is_legacy_root(&manager.startup_root()));
-    }
-
-    #[test]
-    fn completed_default_migration_prefers_los_directory() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let manager = manager(&temp_dir, LocalStorageLocation::Default);
-        std::fs::create_dir_all(&manager.legacy_root).unwrap();
         std::fs::create_dir_all(&manager.default_root).unwrap();
-        std::fs::write(manager.default_root.join("migration-complete"), b"ok").unwrap();
 
         assert_eq!(manager.startup_root(), manager.default_root);
-        assert!(!manager.is_legacy_root(&manager.startup_root()));
     }
 
     #[test]

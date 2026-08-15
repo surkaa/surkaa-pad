@@ -98,8 +98,8 @@ async function checkStartupLocalStorageMigration() {
       return;
     }
     showUnavailableLocalStorage.value = false;
-    if (status.legacyMigrationRequired || status.migrationPending) {
-      await migrateLegacyLocalStorage();
+    if (status.migrationPending) {
+      await resumeLocalStorageMigration();
     }
   } catch (error) {
     logStartupError('Local storage startup check failed', error);
@@ -110,7 +110,7 @@ async function checkStartupLocalStorageMigration() {
   }
 }
 
-async function migrateLegacyLocalStorage() {
+async function resumeLocalStorageMigration() {
   showLocalStorageMigration.value = true;
   localStorageMigrationDisplay.value = initialLocalStorageMigrationDisplay();
   const event = new Channel<LocalStorageMigrationEvent>();
@@ -140,10 +140,10 @@ async function migrateLegacyLocalStorage() {
   </router-view>
   <LocalStorageMigrationDialog
     v-model="showLocalStorageMigration"
-    title="升级本地数据目录"
+    title="继续迁移本地数据位置"
     :display="localStorageMigrationDisplay"
     allow-defer
-    @retry="migrateLegacyLocalStorage"
+    @retry="resumeLocalStorageMigration"
     @defer="showLocalStorageMigration = false"
     @restart="relaunch"
   />

@@ -11,7 +11,6 @@ use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
 
 pub const LOCAL_OBJECT_STORE_DIRECTORY: &str = "los";
-pub const LEGACY_LOCAL_OBJECT_STORE_DIRECTORY: &str = "lfc";
 
 const DATA_FILE_SUFFIX: &str = ".data";
 // `.md5` 是旧版本沿用的磁盘格式；文件内容现在表示对象 ETag，不保证一定是 MD5。

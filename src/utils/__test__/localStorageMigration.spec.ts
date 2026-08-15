@@ -10,7 +10,7 @@ describe('localStorageMigration display', () => {
     let state = initialLocalStorageMigrationDisplay();
     state = reduceLocalStorageMigrationDisplay(state, {
       event: 'preparing',
-      data: {sourcePath: 'C:/old/lfc', targetPath: 'D:/Diary/los'},
+      data: {sourcePath: 'C:/old/los', targetPath: 'D:/Diary/los'},
     });
     state = reduceLocalStorageMigrationDisplay(state, {
       event: 'progress',
@@ -26,7 +26,7 @@ describe('localStorageMigration display', () => {
       },
     });
 
-    expect(state.sourcePath).toBe('C:/old/lfc');
+    expect(state.sourcePath).toBe('C:/old/los');
     expect(state.targetPath).toBe('D:/Diary/los');
     expect(state.statusText).toBe('正在复制本地数据…');
     expect(state.currentFile).toBe('123/att-1');

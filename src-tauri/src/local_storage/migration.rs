@@ -101,7 +101,6 @@ pub struct LocalStorageInfo {
     pub current_path: String,
     pub configured_path: String,
     pub is_default: bool,
-    pub legacy_migration_required: bool,
     pub migration_pending: bool,
     pub total_files: u32,
     #[specta(type = f64)]
@@ -111,7 +110,6 @@ pub struct LocalStorageInfo {
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalStorageMigrationStatus {
-    pub legacy_migration_required: bool,
     pub migration_pending: bool,
     pub unavailable_path: Option<String>,
     pub unavailable_reason: Option<String>,
@@ -199,7 +197,6 @@ pub async fn cmd_get_local_storage_info(
         current_path: display_path(los.root()),
         configured_path: display_path(&manager.configured_root()),
         is_default: matches!(manager.configured_location(), LocalStorageLocation::Default),
-        legacy_migration_required: manager.is_legacy_root(los.root()),
         migration_pending: manager.pending_migration().is_some(),
         total_files: entries.len() as u32,
         total_bytes: entries
@@ -218,7 +215,6 @@ pub fn cmd_get_local_storage_migration_status(
     let root = state.local_object_store();
     let unavailable_reason = manager.active_root_unavailable_reason(root.root());
     LocalStorageMigrationStatus {
-        legacy_migration_required: manager.is_legacy_root(root.root()),
         migration_pending: manager.pending_migration().is_some(),
         unavailable_path: unavailable_reason
             .as_ref()

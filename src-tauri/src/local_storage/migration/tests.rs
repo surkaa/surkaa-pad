@@ -12,7 +12,6 @@ fn manager(temp_dir: &tempfile::TempDir) -> LocalStorageManager {
     LocalStorageManager::new(
         crate::app_config::AppConfigStore::in_memory(crate::app_config::AppConfig::default()),
         temp_dir.path().join("local-data"),
-        temp_dir.path().join("cache"),
     )
 }
 
@@ -134,36 +133,6 @@ fn directory_size_counts_existing_staging_files() {
 
     assert_eq!(directory_size(temp_dir.path()).unwrap(), 544);
     assert_eq!(directory_size(&temp_dir.path().join("missing")).unwrap(), 0);
-}
-
-#[tokio::test]
-async fn legacy_directory_is_moved_to_default_los_and_committed() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let manager = manager(&temp_dir);
-    let source_root = temp_dir.path().join("cache").join("lfc");
-    let target_root = temp_dir.path().join("local-data").join("los");
-    let source = LocalObjectStore::new(source_root.clone());
-    source
-        .save_bytes("123/manifest.enc", b"legacy-manifest")
-        .await
-        .unwrap();
-    let (sender, _receiver) = mpsc::unbounded_channel();
-    let sender: Arc<dyn MessageSender<LocalStorageMigrationEvent>> = Arc::new(sender);
-
-    execute_migration(source, manager.clone(), sender, None, true)
-        .await
-        .unwrap();
-
-    assert!(!source_root.exists());
-    assert_eq!(
-        LocalObjectStore::new(target_root)
-            .get_data("123/manifest.enc")
-            .await
-            .unwrap(),
-        b"legacy-manifest"
-    );
-    assert!(manager.pending_migration().is_none());
-    assert_eq!(manager.configured_location(), LocalStorageLocation::Default);
 }
 
 #[tokio::test]
