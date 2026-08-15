@@ -316,6 +316,10 @@ fn main() {
             println!("  已复制且一致: {}", plan.already_copied.len());
             println!("  目标冲突: {}", plan.conflicts.len());
             println!("  旧目录异常对象: {}", plan.malformed_legacy_keys.len());
+            println!(
+                "  已忽略的空目录标记: {}",
+                plan.ignored_legacy_directory_markers.len()
+            );
             println!("  新结构对象: {}", plan.current_objects.len());
             println!("  其他命名空间对象: {}", plan.unrelated.len());
 
@@ -349,6 +353,9 @@ fn main() {
                         movement.target_key,
                         format_bytes(movement.size)
                     );
+                }
+                for entry in &plan.ignored_legacy_directory_markers {
+                    println!("忽略空目录标记: {}", entry.key);
                 }
                 for entry in &plan.unrelated {
                     println!("保留其他对象: {} ({})", entry.key, format_bytes(entry.size));

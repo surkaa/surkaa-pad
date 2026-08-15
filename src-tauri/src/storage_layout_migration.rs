@@ -35,6 +35,7 @@ pub struct LayoutMigrationPlan {
     pub already_copied: Vec<LayoutObjectMove>,
     pub conflicts: Vec<LayoutTargetConflict>,
     pub malformed_legacy_keys: Vec<String>,
+    pub ignored_legacy_directory_markers: Vec<LayoutObjectEntry>,
     pub current_objects: Vec<LayoutObjectEntry>,
     pub unrelated: Vec<LayoutObjectEntry>,
 }
@@ -534,6 +535,11 @@ pub fn build_layout_migration_plan(
             continue;
         }
 
+        if is_empty_legacy_directory_marker(&entry) {
+            plan.ignored_legacy_directory_markers.push(entry);
+            continue;
+        }
+
         let Some(object) = LegacyObjectLocations::parse(&entry.key) else {
             if starts_with_numeric_directory(&entry.key) {
                 plan.malformed_legacy_keys.push(entry.key);
@@ -566,6 +572,13 @@ pub fn build_layout_migration_plan(
     }
 
     plan
+}
+
+fn is_empty_legacy_directory_marker(entry: &LayoutObjectEntry) -> bool {
+    entry.size == 0
+        && entry.key.strip_suffix('/').is_some_and(|diary_id| {
+            !diary_id.is_empty() && diary_id.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 fn starts_with_numeric_directory(key: &str) -> bool {
@@ -657,11 +670,29 @@ mod tests {
             entry("ai/sessions/1/meta.enc", 1, Some("ai")),
             entry("rust-tests/run/object", 2, Some("test")),
             entry("123/nested/unknown", 3, Some("unknown")),
+            entry("456/", 1, Some("non-empty-marker")),
             entry("not-a-diary/manifest.enc", 4, Some("other")),
         ]);
 
-        assert_eq!(plan.malformed_legacy_keys, ["123/nested/unknown"]);
+        assert_eq!(plan.malformed_legacy_keys, ["123/nested/unknown", "456/"]);
         assert_eq!(plan.unrelated.len(), 3);
+        assert!(!plan.is_safe_to_copy());
+    }
+
+    #[test]
+    fn ignores_only_empty_top_level_numeric_directory_markers() {
+        let plan = build_layout_migration_plan([
+            entry("123/", 0, Some("empty-marker")),
+            entry("123/nested/", 0, Some("nested-marker")),
+            entry("not-a-diary/", 0, Some("unrelated-marker")),
+        ]);
+
+        assert_eq!(
+            plan.ignored_legacy_directory_markers,
+            [entry("123/", 0, Some("empty-marker"))]
+        );
+        assert_eq!(plan.malformed_legacy_keys, ["123/nested/"]);
+        assert_eq!(plan.unrelated.len(), 1);
         assert!(!plan.is_safe_to_copy());
     }
 
