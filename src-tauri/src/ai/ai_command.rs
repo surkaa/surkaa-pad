@@ -1,6 +1,6 @@
 use super::{
-    AiAgent, AiAgentEvent, AiConversationTurn, AiError, AiModel, AiModelProvider, AiProviderConfig,
-    DiaryReadTools, OpenAiCompatibleClient,
+    AiAgent, AiAgentEvent, AiAgentRunResult, AiConversationTurn, AiError, AiModel, AiModelProvider,
+    AiProviderConfig, DiaryReadTools, OpenAiCompatibleClient,
 };
 use crate::error::AppError;
 use crate::state::AppState;
@@ -54,14 +54,15 @@ pub fn cmd_run_ai_agent(
         let tools = DiaryReadTools::new(state);
         let agent = AiAgent::new(&client, &tools);
         let emit = |message| send_event(&event, message);
-        let run = agent.run_stream_with_history(&model, &history, &prompt, &emit);
+        let run = agent.run_stream_with_history_source(&model, &history, &prompt, &emit);
 
         tokio::select! {
             _ = cancellation.cancelled() => {
                 let _ = send_event(&event, AiAgentEvent::Cancelled);
             }
             result = run => match result {
-                Ok(response) => {
+                Ok(AiAgentRunResult { response, source }) => {
+                    let _ = send_event(&event, AiAgentEvent::ConversationSource(source));
                     let _ = send_event(&event, AiAgentEvent::Completed(response));
                 }
                 Err(error) => {

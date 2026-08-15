@@ -1,5 +1,10 @@
 import type {Channel} from '@tauri-apps/api/core';
-import type {AiAgentEvent, AiAgentResponse, AiConversationTurn} from '../bindings';
+import type {
+  AiAgentEvent,
+  AiAgentResponse,
+  AiConversationSource,
+  AiConversationTurn,
+} from '../bindings';
 import api from './api';
 import type {AiServiceConfig} from './aiConfig';
 
@@ -66,6 +71,10 @@ export function buildAiConversationHistory(
       ? [{user, assistant}]
       : [];
   });
+}
+
+export function formatAiConversationSource(source: AiConversationSource): string {
+  return JSON.stringify(source, null, 2);
 }
 
 export function initialAiAgentDisplayState(): AiAgentDisplayState {
@@ -181,6 +190,8 @@ export function reduceAiAgentEvent(
         answer: state.answer + message.data,
         status: '正在生成回答…',
       };
+    case 'conversationSource':
+      return state;
     case 'completed':
       return {
         state: 'completed',

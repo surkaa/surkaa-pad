@@ -18,6 +18,87 @@ pub struct AiConversationTurn {
     pub assistant: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConversationSource {
+    pub model: String,
+    pub messages: Vec<AiConversationSourceMessage>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase",
+    tag = "role"
+)]
+pub enum AiConversationSourceMessage {
+    System {
+        content: String,
+    },
+    User {
+        content: String,
+    },
+    Assistant {
+        reasoning_content: Option<String>,
+        content: Option<String>,
+        tool_calls: Vec<AiConversationSourceToolCall>,
+    },
+    Tool {
+        tool_call_id: String,
+        content: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConversationSourceToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+impl AiConversationSource {
+    pub(crate) fn from_messages(model: &str, messages: &[AiMessage]) -> Self {
+        Self {
+            model: model.to_owned(),
+            messages: messages
+                .iter()
+                .map(AiConversationSourceMessage::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<&AiMessage> for AiConversationSourceMessage {
+    fn from(message: &AiMessage) -> Self {
+        match message {
+            AiMessage::System(content) => Self::System {
+                content: content.clone(),
+            },
+            AiMessage::User(content) => Self::User {
+                content: content.clone(),
+            },
+            AiMessage::Assistant(message) => Self::Assistant {
+                reasoning_content: message.reasoning_content.clone(),
+                content: message.content.clone(),
+                tool_calls: message
+                    .tool_calls
+                    .iter()
+                    .map(|call| AiConversationSourceToolCall {
+                        id: call.id.clone(),
+                        name: call.name.clone(),
+                        arguments: call.arguments.to_string(),
+                    })
+                    .collect(),
+            },
+            AiMessage::Tool(result) => Self::Tool {
+                tool_call_id: result.tool_call_id.clone(),
+                content: result.content.clone(),
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AiCompletionRequest {
     model: String,

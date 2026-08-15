@@ -153,8 +153,8 @@ async fn includes_completed_conversation_turns_before_the_current_prompt() {
         },
     ];
 
-    AiAgent::new(&provider, &tools)
-        .run_stream_with_history("qwen", &history, " 当前问题 ", &|_| Ok(()))
+    let result = AiAgent::new(&provider, &tools)
+        .run_stream_with_history_source("qwen", &history, " 当前问题 ", &|_| Ok(()))
         .await
         .unwrap();
 
@@ -179,6 +179,59 @@ async fn includes_completed_conversation_turns_before_the_current_prompt() {
             AiMessage::User("当前问题".into()),
         ]
     );
+    assert_eq!(result.source.model, "qwen");
+    assert_eq!(result.source.messages.len(), 7);
+    assert!(matches!(
+        result.source.messages.last(),
+        Some(AiConversationSourceMessage::Assistant {
+            content: Some(content),
+            tool_calls,
+            ..
+        }) if content == "这是回答" && tool_calls.is_empty()
+    ));
+}
+
+#[tokio::test]
+async fn conversation_source_contains_tool_calls_raw_results_and_final_answer() {
+    let provider = FakeProvider::new(vec![
+        completion_with_reasoning(Some("需要读取日记"), None, vec![tool_call("call-1")], None),
+        completion(Some("最终回答"), vec![], None),
+    ]);
+    let tools = FakeTools::succeeding(json!({"content": "完整正文"}));
+
+    let result = AiAgent::new(&provider, &tools)
+        .run_stream_with_history_source("qwen", &[], "读取日记", &|_| Ok(()))
+        .await
+        .unwrap();
+
+    assert_eq!(result.source.messages.len(), 5);
+    assert!(matches!(
+        &result.source.messages[2],
+        AiConversationSourceMessage::Assistant {
+            reasoning_content: Some(reasoning),
+            content: None,
+            tool_calls,
+        } if reasoning == "需要读取日记"
+            && tool_calls.len() == 1
+            && tool_calls[0].id == "call-1"
+            && tool_calls[0].arguments == r#"{"diaryId":"123"}"#
+    ));
+    assert!(matches!(
+        &result.source.messages[3],
+        AiConversationSourceMessage::Tool {
+            tool_call_id,
+            content,
+        } if tool_call_id == "call-1"
+            && content.contains("完整正文")
+            && content.contains("\"ok\":true")
+    ));
+    assert!(matches!(
+        result.source.messages.last(),
+        Some(AiConversationSourceMessage::Assistant {
+            content: Some(content),
+            ..
+        }) if content == "最终回答"
+    ));
 }
 
 #[tokio::test]

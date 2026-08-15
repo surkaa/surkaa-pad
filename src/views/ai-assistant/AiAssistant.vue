@@ -4,7 +4,7 @@ import {computed, nextTick, onActivated, onBeforeUnmount, ref} from 'vue';
 import {useRouter} from 'vue-router';
 import {openUrl} from '@tauri-apps/plugin-opener';
 import {useQuasar} from 'quasar';
-import type {AiAgentEvent} from '../../bindings';
+import type {AiAgentEvent, AiConversationSource} from '../../bindings';
 import {
   formatAiResponseMeta,
   formatAiProcessSummary,
@@ -29,6 +29,7 @@ import api from '../../utils/api';
 import {formatError} from '../../utils/formatError';
 import {useConfigStore} from '../../stores/config';
 import {useAiAssistantShortcuts} from '../../composables/useAiAssistantShortcuts';
+import AiConversationSourceDialog from './AiConversationSourceDialog.vue';
 
 interface AiExchange extends AiAgentDisplayState {
   id: number;
@@ -60,6 +61,8 @@ const modelCheckError = ref<string | null>(null);
 const question = ref('');
 const sending = ref(false);
 const exchanges = ref<AiExchange[]>([]);
+const conversationSource = ref<AiConversationSource | null>(null);
+const showConversationSource = ref(false);
 const isCanceling = computed(() => exchanges.value.some(exchange => exchange.state === 'canceling'));
 const modelReady = computed(() => !!config.value && modelCheckState.value === 'available');
 const modelLabel = computed(() => {
@@ -188,7 +191,12 @@ async function submitQuestion() {
 
 function handleAgentEvent(id: number, message: AiAgentEvent) {
   const exchange = findExchange(id);
-  if (!exchange || isTerminalAiExchangeState(exchange.state)) return;
+  if (!exchange) return;
+  if (message.event === 'conversationSource') {
+    conversationSource.value = message.data;
+    return;
+  }
+  if (isTerminalAiExchangeState(exchange.state)) return;
 
   const processExpanded = nextAiProcessExpanded(exchange.processExpanded, exchange, message);
   Object.assign(exchange, reduceAiAgentEvent(exchange, message));
@@ -443,6 +451,17 @@ async function scrollToBottom() {
         />
         <span>{{ modelLabel }}</span>
         <q-btn
+          v-if="conversationSource"
+          flat
+          dense
+          no-caps
+          icon="data_object"
+          label="源码"
+          :disable="sending"
+          aria-label="查看当前对话完整源码"
+          @click="showConversationSource = true"
+        />
+        <q-btn
           v-if="modelCheckState === 'failed'"
           flat
           dense
@@ -490,6 +509,10 @@ async function scrollToBottom() {
       </div>
       <div class="privacy-hint">当前会话历史、问题及 Agent 读取的日记文字会发送到你配置的 AI 服务</div>
     </div>
+    <AiConversationSourceDialog
+      v-model="showConversationSource"
+      :source="conversationSource"
+    />
   </div>
 </template>
 

@@ -718,8 +718,11 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 
 /** user-defined types **/
 
-export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
+export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "conversationSource"; data: AiConversationSource } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
 export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null }
+export type AiConversationSource = { model: string; messages: AiConversationSourceMessage[] }
+export type AiConversationSourceMessage = { role: "system"; content: string } | { role: "user"; content: string } | { role: "assistant"; reasoning_content: string | null; content: string | null; tool_calls: AiConversationSourceToolCall[] } | { role: "tool"; tool_call_id: string; content: string }
+export type AiConversationSourceToolCall = { id: string; name: string; arguments: string }
 export type AiConversationTurn = { user: string; assistant: string }
 export type AiModel = { id: string; ownedBy: string | null }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }

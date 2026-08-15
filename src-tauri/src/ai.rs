@@ -13,6 +13,7 @@ mod provider;
 mod tools;
 mod types;
 
+pub(crate) use agent::AiAgentRunResult;
 pub use agent::{AiAgent, AiAgentEvent, AiAgentResponse};
 pub use client::OpenAiCompatibleClient;
 pub use config::AiProviderConfig;
@@ -21,6 +22,7 @@ pub use error::AiError;
 pub use provider::AiModelProvider;
 pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor};
 pub use types::{
-    AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiConversationTurn,
-    AiMessage, AiModel, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
+    AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiConversationSource,
+    AiConversationSourceMessage, AiConversationSourceToolCall, AiConversationTurn, AiMessage,
+    AiModel, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
 };

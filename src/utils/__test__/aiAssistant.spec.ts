@@ -4,6 +4,7 @@ import type {AiAgentEvent} from '../../bindings';
 import {
   buildAiConversationHistory,
   formatAiResponseMeta,
+  formatAiConversationSource,
   formatAiProcessSummary,
   formatProcessDuration,
   initialAiAgentDisplayState,
@@ -68,6 +69,25 @@ describe('buildAiConversationHistory', () => {
       {user: '第一问', assistant: '第一答'},
       {user: '第二问', assistant: '第二答'},
     ]);
+  });
+});
+
+describe('formatAiConversationSource', () => {
+  it('formats the complete message chain as readable JSON', () => {
+    const source = {
+      model: 'qwen3:8b',
+      messages: [
+        {role: 'system' as const, content: '系统提示'},
+        {role: 'user' as const, content: '读取日记'},
+        {
+          role: 'tool' as const,
+          tool_call_id: 'call-1',
+          content: '{"ok":true}',
+        },
+      ],
+    };
+
+    expect(formatAiConversationSource(source)).toBe(JSON.stringify(source, null, 2));
   });
 });
 
@@ -221,6 +241,19 @@ describe('reduceAiAgentEvent', () => {
 
     expect(failed.state).toBe('failed');
     expect(failed.error).toBe('模型服务断开连接');
+  });
+
+  it('leaves display state unchanged when the full source arrives', () => {
+    const state = initialAiAgentDisplayState();
+    const source = {
+      model: 'qwen3:8b',
+      messages: [{role: 'system' as const, content: '系统提示'}],
+    };
+
+    expect(reduceAiAgentEvent(state, {
+      event: 'conversationSource',
+      data: source,
+    })).toBe(state);
   });
 });
 

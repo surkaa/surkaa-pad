@@ -1,6 +1,6 @@
 use super::{
-    AiAssistantMessage, AiCompletionDelta, AiCompletionRequest, AiConversationTurn, AiError,
-    AiMessage, AiModelProvider, AiToolExecutor, AiToolResult, AiUsage,
+    AiAssistantMessage, AiCompletionDelta, AiCompletionRequest, AiConversationSource,
+    AiConversationTurn, AiError, AiMessage, AiModelProvider, AiToolExecutor, AiToolResult, AiUsage,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -29,6 +29,11 @@ pub struct AiAgentResponse {
     #[specta(type = f64)]
     pub model_rounds: usize,
     pub usage: Option<AiUsage>,
+}
+
+pub(crate) struct AiAgentRunResult {
+    pub response: AiAgentResponse,
+    pub source: AiConversationSource,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
@@ -73,6 +78,7 @@ pub enum AiAgentEvent {
         delta: String,
     },
     AnswerDelta(String),
+    ConversationSource(AiConversationSource),
     Completed(AiAgentResponse),
     Failed(String),
     Cancelled,
@@ -119,6 +125,22 @@ impl<'a> AiAgent<'a> {
     where
         F: Fn(AiAgentEvent) -> Result<(), AiError> + Send + Sync,
     {
+        Ok(self
+            .run_stream_with_history_source(model, history, prompt, emit)
+            .await?
+            .response)
+    }
+
+    pub(crate) async fn run_stream_with_history_source<F>(
+        &self,
+        model: &str,
+        history: &[AiConversationTurn],
+        prompt: &str,
+        emit: &F,
+    ) -> Result<AiAgentRunResult, AiError>
+    where
+        F: Fn(AiAgentEvent) -> Result<(), AiError> + Send + Sync,
+    {
         if prompt.trim().is_empty() {
             return Err(AiError::InvalidRequest("问题不能为空".into()));
         }
@@ -162,12 +184,18 @@ impl<'a> AiAgent<'a> {
             if assistant_message.tool_calls.is_empty() {
                 let answer = assistant_message
                     .content
+                    .as_ref()
                     .filter(|content| !content.trim().is_empty())
+                    .cloned()
                     .ok_or_else(|| AiError::InvalidResponse("AI 未返回回答或工具调用".into()))?;
-                return Ok(AiAgentResponse {
-                    answer,
-                    model_rounds: round,
-                    usage: total_usage,
+                messages.push(AiMessage::Assistant(assistant_message));
+                return Ok(AiAgentRunResult {
+                    response: AiAgentResponse {
+                        answer,
+                        model_rounds: round,
+                        usage: total_usage,
+                    },
+                    source: AiConversationSource::from_messages(model, &messages),
                 });
             }
 
