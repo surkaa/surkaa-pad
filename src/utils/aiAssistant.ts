@@ -1,5 +1,5 @@
 import type {Channel} from '@tauri-apps/api/core';
-import type {AiAgentEvent, AiAgentResponse} from '../bindings';
+import type {AiAgentEvent, AiAgentResponse, AiConversationTurn} from '../bindings';
 import api from './api';
 import type {AiServiceConfig} from './aiConfig';
 
@@ -26,11 +26,18 @@ export interface AiAgentDisplayState {
   processSteps: AiProcessStep[];
 }
 
+export interface AiConversationHistorySource {
+  state: AiExchangeState;
+  question: string;
+  answer: string;
+}
+
 export type AiAgentRunner = typeof api.cmdRunAiAgent;
 
 export async function startAiQuestion(
   config: AiServiceConfig,
   prompt: string,
+  history: AiConversationTurn[],
   event: Channel<AiAgentEvent>,
   runner: AiAgentRunner = api.cmdRunAiAgent,
 ): Promise<string> {
@@ -44,8 +51,21 @@ export async function startAiQuestion(
     config.baseUrl,
     config.apiKey.trim() || null,
     config.model,
+    history,
     normalizedPrompt,
   );
+}
+
+export function buildAiConversationHistory(
+  exchanges: readonly AiConversationHistorySource[],
+): AiConversationTurn[] {
+  return exchanges.flatMap(exchange => {
+    const user = exchange.question.trim();
+    const assistant = exchange.answer.trim();
+    return exchange.state === 'completed' && user && assistant
+      ? [{user, assistant}]
+      : [];
+  });
 }
 
 export function initialAiAgentDisplayState(): AiAgentDisplayState {

@@ -21,6 +21,6 @@ pub use error::AiError;
 pub use provider::AiModelProvider;
 pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor};
 pub use types::{
-    AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiMessage, AiModel,
-    AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
+    AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiConversationTurn,
+    AiMessage, AiModel, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
 };

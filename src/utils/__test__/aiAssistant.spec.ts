@@ -2,6 +2,7 @@ import {describe, expect, it, vi} from 'vitest';
 import type {Channel} from '@tauri-apps/api/core';
 import type {AiAgentEvent} from '../../bindings';
 import {
+  buildAiConversationHistory,
   formatAiResponseMeta,
   formatAiProcessSummary,
   formatProcessDuration,
@@ -24,13 +25,15 @@ describe('startAiQuestion', () => {
     const event = {} as Channel<AiAgentEvent>;
     const runner = vi.fn().mockResolvedValue('task-token');
 
-    await expect(startAiQuestion(config, '  最近写了什么？\n', event, runner))
+    const history = [{user: '上一问', assistant: '上一答'}];
+    await expect(startAiQuestion(config, '  最近写了什么？\n', history, event, runner))
       .resolves.toBe('task-token');
     expect(runner).toHaveBeenCalledWith(
       event,
       'http://localhost:11434/v1',
       'local-secret',
       'qwen3:8b',
+      history,
       '最近写了什么？',
     );
   });
@@ -39,15 +42,32 @@ describe('startAiQuestion', () => {
     const event = {} as Channel<AiAgentEvent>;
     const runner = vi.fn().mockResolvedValue('task-token');
 
-    await startAiQuestion({...config, apiKey: '  '}, '问题', event, runner);
+    await startAiQuestion({...config, apiKey: '  '}, '问题', [], event, runner);
     expect(runner).toHaveBeenCalledWith(
       event,
       config.baseUrl,
       null,
       config.model,
+      [],
       '问题',
     );
-    await expect(startAiQuestion(config, ' \n ', event, runner)).rejects.toThrow('问题不能为空');
+    await expect(startAiQuestion(config, ' \n ', [], event, runner)).rejects.toThrow('问题不能为空');
+  });
+});
+
+describe('buildAiConversationHistory', () => {
+  it('keeps only completed non-empty question and answer pairs in order', () => {
+    expect(buildAiConversationHistory([
+      {state: 'completed', question: ' 第一问 ', answer: ' 第一答 '},
+      {state: 'failed', question: '失败问题', answer: '部分回答'},
+      {state: 'cancelled', question: '取消问题', answer: '部分回答'},
+      {state: 'running', question: '当前问题', answer: ''},
+      {state: 'completed', question: ' ', answer: '空问题'},
+      {state: 'completed', question: '第二问', answer: '第二答'},
+    ])).toEqual([
+      {user: '第一问', assistant: '第一答'},
+      {user: '第二问', assistant: '第二答'},
+    ]);
   });
 });
 

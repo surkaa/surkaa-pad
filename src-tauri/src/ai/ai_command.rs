@@ -1,6 +1,6 @@
 use super::{
-    AiAgent, AiAgentEvent, AiError, AiModel, AiModelProvider, AiProviderConfig, DiaryReadTools,
-    OpenAiCompatibleClient,
+    AiAgent, AiAgentEvent, AiConversationTurn, AiError, AiModel, AiModelProvider, AiProviderConfig,
+    DiaryReadTools, OpenAiCompatibleClient,
 };
 use crate::error::AppError;
 use crate::state::AppState;
@@ -30,6 +30,7 @@ pub async fn cmd_list_ai_models(
 /// * `base_url` - OpenAI 兼容 API 根地址
 /// * `api_key` - 可选的 Bearer API Key
 /// * `model` - 本次问答使用的模型 ID
+/// * `history` - 当前会话中此前已完成的用户问题和最终回答
 /// * `prompt` - 用户问题
 /// * `event` - 接收模型状态、增量回答和最终结果的事件通道
 /// # Returns
@@ -42,6 +43,7 @@ pub fn cmd_run_ai_agent(
     base_url: String,
     api_key: Option<String>,
     model: String,
+    history: Vec<AiConversationTurn>,
     prompt: String,
 ) -> Result<String, AppError> {
     let config = AiProviderConfig::new(&base_url, api_key)?;
@@ -52,7 +54,7 @@ pub fn cmd_run_ai_agent(
         let tools = DiaryReadTools::new(state);
         let agent = AiAgent::new(&client, &tools);
         let emit = |message| send_event(&event, message);
-        let run = agent.run_stream(&model, &prompt, &emit);
+        let run = agent.run_stream_with_history(&model, &history, &prompt, &emit);
 
         tokio::select! {
             _ = cancellation.cancelled() => {

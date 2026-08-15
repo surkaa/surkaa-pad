@@ -1,6 +1,6 @@
 use super::{
-    AiAssistantMessage, AiCompletionDelta, AiCompletionRequest, AiError, AiMessage,
-    AiModelProvider, AiToolExecutor, AiToolResult, AiUsage,
+    AiAssistantMessage, AiCompletionDelta, AiCompletionRequest, AiConversationTurn, AiError,
+    AiMessage, AiModelProvider, AiToolExecutor, AiToolResult, AiUsage,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -106,6 +106,19 @@ impl<'a> AiAgent<'a> {
     where
         F: Fn(AiAgentEvent) -> Result<(), AiError> + Send + Sync,
     {
+        self.run_stream_with_history(model, &[], prompt, emit).await
+    }
+
+    pub async fn run_stream_with_history<F>(
+        &self,
+        model: &str,
+        history: &[AiConversationTurn],
+        prompt: &str,
+        emit: &F,
+    ) -> Result<AiAgentResponse, AiError>
+    where
+        F: Fn(AiAgentEvent) -> Result<(), AiError> + Send + Sync,
+    {
         if prompt.trim().is_empty() {
             return Err(AiError::InvalidRequest("问题不能为空".into()));
         }
@@ -116,10 +129,9 @@ impl<'a> AiAgent<'a> {
         }
 
         let definitions = self.tools.definitions();
-        let mut messages = vec![
-            AiMessage::System(SYSTEM_PROMPT.into()),
-            AiMessage::User(prompt.trim().into()),
-        ];
+        let mut messages = vec![AiMessage::System(SYSTEM_PROMPT.into())];
+        append_conversation_history(&mut messages, history)?;
+        messages.push(AiMessage::User(prompt.trim().into()));
         let mut total_usage = None;
         let mut next_operation_id = 1;
 
@@ -208,6 +220,29 @@ impl<'a> AiAgent<'a> {
 
         unreachable!("positive max_model_rounds always returns from the loop")
     }
+}
+
+fn append_conversation_history(
+    messages: &mut Vec<AiMessage>,
+    history: &[AiConversationTurn],
+) -> Result<(), AiError> {
+    for (index, turn) in history.iter().enumerate() {
+        let user = turn.user.trim();
+        let assistant = turn.assistant.trim();
+        if user.is_empty() || assistant.is_empty() {
+            return Err(AiError::InvalidRequest(format!(
+                "第 {} 轮历史问答不完整",
+                index + 1
+            )));
+        }
+        messages.push(AiMessage::User(user.into()));
+        messages.push(AiMessage::Assistant(AiAssistantMessage {
+            reasoning_content: None,
+            content: Some(assistant.into()),
+            tool_calls: vec![],
+        }));
+    }
+    Ok(())
 }
 
 fn elapsed_millis(duration: Duration) -> u64 {

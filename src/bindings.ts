@@ -677,14 +677,15 @@ async cmdListAiModels(baseUrl: string, apiKey: string | null) : Promise<Result<A
  * * `base_url` - OpenAI 兼容 API 根地址
  * * `api_key` - 可选的 Bearer API Key
  * * `model` - 本次问答使用的模型 ID
+ * * `history` - 当前会话中此前已完成的用户问题和最终回答
  * * `prompt` - 用户问题
  * * `event` - 接收模型状态、增量回答和最终结果的事件通道
  * # Returns
  * * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
  */
-async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, model: string, prompt: string) : Promise<Result<string, AppError>> {
+async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, model: string, history: AiConversationTurn[], prompt: string) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_agent", { event, baseUrl, apiKey, model, prompt }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_agent", { event, baseUrl, apiKey, model, history, prompt }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -719,6 +720,7 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 
 export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
 export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null }
+export type AiConversationTurn = { user: string; assistant: string }
 export type AiModel = { id: string; ownedBy: string | null }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"

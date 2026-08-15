@@ -9,6 +9,7 @@ import {
   formatAiResponseMeta,
   formatAiProcessSummary,
   formatProcessDuration,
+  buildAiConversationHistory,
   initialAiAgentDisplayState,
   isTerminalAiExchangeState,
   nextAiProcessExpanded,
@@ -67,7 +68,7 @@ const modelLabel = computed(() => {
   if (modelCheckState.value === 'checking') return `正在检查 ${model}…`;
   if (modelCheckState.value === 'unavailable') return `${model} · 当前不可用`;
   if (modelCheckState.value === 'failed') return `${model} · 无法验证`;
-  return `${model} · 每次提问独立处理`;
+  return `${model} · 保留当前会话上下文`;
 });
 let nextExchangeId = 1;
 let pendingScrollFrame: number | null = null;
@@ -153,6 +154,7 @@ async function submitQuestion() {
   const activeConfig = config.value;
   const prompt = question.value.trim();
   if (!activeConfig || !modelReady.value || !prompt || sending.value) return;
+  const history = buildAiConversationHistory(exchanges.value);
 
   const exchange: AiExchange = {
     ...initialAiAgentDisplayState(),
@@ -171,7 +173,7 @@ async function submitQuestion() {
   event.onmessage = message => handleAgentEvent(exchange.id, message);
 
   try {
-    const taskToken = await startAiQuestion(activeConfig, prompt, event);
+    const taskToken = await startAiQuestion(activeConfig, prompt, history, event);
     const current = findExchange(exchange.id);
     if (!current || isTerminalAiExchangeState(current.state)) return;
     current.taskToken = taskToken;
@@ -486,7 +488,7 @@ async function scrollToBottom() {
           @click="sending ? cancelActiveQuestion() : submitQuestion()"
         />
       </div>
-      <div class="privacy-hint">问题及 Agent 读取的日记文字会发送到你配置的 AI 服务</div>
+      <div class="privacy-hint">当前会话历史、问题及 Agent 读取的日记文字会发送到你配置的 AI 服务</div>
     </div>
   </div>
 </template>

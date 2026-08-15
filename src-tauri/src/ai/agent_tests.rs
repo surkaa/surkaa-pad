@@ -139,6 +139,67 @@ async fn returns_direct_answer_without_running_tools() {
 }
 
 #[tokio::test]
+async fn includes_completed_conversation_turns_before_the_current_prompt() {
+    let provider = FakeProvider::new(vec![completion(Some("这是回答"), vec![], None)]);
+    let tools = FakeTools::succeeding(json!({}));
+    let history = vec![
+        AiConversationTurn {
+            user: " 第一问 ".into(),
+            assistant: " 第一答 ".into(),
+        },
+        AiConversationTurn {
+            user: "第二问".into(),
+            assistant: "第二答".into(),
+        },
+    ];
+
+    AiAgent::new(&provider, &tools)
+        .run_stream_with_history("qwen", &history, " 当前问题 ", &|_| Ok(()))
+        .await
+        .unwrap();
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(matches!(&requests[0].messages()[0], AiMessage::System(_)));
+    assert_eq!(
+        &requests[0].messages()[1..],
+        &[
+            AiMessage::User("第一问".into()),
+            AiMessage::Assistant(AiAssistantMessage {
+                reasoning_content: None,
+                content: Some("第一答".into()),
+                tool_calls: vec![],
+            }),
+            AiMessage::User("第二问".into()),
+            AiMessage::Assistant(AiAssistantMessage {
+                reasoning_content: None,
+                content: Some("第二答".into()),
+                tool_calls: vec![],
+            }),
+            AiMessage::User("当前问题".into()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn rejects_incomplete_conversation_history_before_calling_the_provider() {
+    let provider = FakeProvider::new(vec![]);
+    let tools = FakeTools::succeeding(json!({}));
+    let history = vec![AiConversationTurn {
+        user: "上一问".into(),
+        assistant: "  ".into(),
+    }];
+
+    assert_eq!(
+        AiAgent::new(&provider, &tools)
+            .run_stream_with_history("qwen", &history, "当前问题", &|_| Ok(()))
+            .await,
+        Err(AiError::InvalidRequest("第 1 轮历史问答不完整".into()))
+    );
+    assert!(provider.requests().is_empty());
+}
+
+#[tokio::test]
 async fn executes_tools_and_feeds_results_back_to_the_model() {
     let provider = FakeProvider::new(vec![
         completion(

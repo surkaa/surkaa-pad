@@ -1,5 +1,5 @@
 use super::AiError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use specta::Type;
 use std::collections::HashSet;
@@ -9,6 +9,13 @@ use std::collections::HashSet;
 pub struct AiModel {
     pub id: String,
     pub owned_by: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConversationTurn {
+    pub user: String,
+    pub assistant: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
