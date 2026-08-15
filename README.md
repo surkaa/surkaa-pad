@@ -81,7 +81,7 @@ flowchart TB
 
 - **内存缓存** (`DashMap`) — 按日记 ID 索引，命中直接返回
 - **本地对象存储** (`LocalObjectStore`) — 默认位于 `app_local_data_dir()/los`；本地模式下保存全部数据，远程模式下通过 ETag 校验避免重复下载
-- **位置迁移** — 旧版 `app_cache_dir()/lfc` 会在启动时迁移；Windows 可选择任意目录，实际数据放在所选目录的 `los` 子目录中
+- **位置迁移** — Windows 可选择任意目录，实际数据放在所选目录的 `los` 子目录中
 - **附件 HTTP 服务** — 仅监听回环地址，使用随机令牌并支持 Range 请求及流式 CTR 解密
 
 ## 配置云存储
@@ -192,13 +192,15 @@ cargo test
 cargo clippy
 ```
 
-### OSS 测试桶管理
+### OSS 管理工具
 
-`src-tauri/src/bin/oss_tool.rs` 提供了一个 CLI 工具，用于管理测试用的 OSS 存储桶（列出、删除、上传、下载等操作）。需在 `src-tauri/.env` 中配置 `ALIYUN_KEY`、`ALIYUN_SECRET`、`ALIYUN_BUCKET_NAME`、`ALIYUN_ENDPOINT`。
+`src-tauri/src/bin/oss_tool.rs` 提供了一个 CLI 工具，用于检查和管理 OSS 对象（列出、删除、上传、下载及一次性布局迁移等操作）。需在 `src-tauri/.env` 中配置 `ALIYUN_KEY`、`ALIYUN_SECRET`、`ALIYUN_BUCKET_NAME`、`ALIYUN_ENDPOINT`。写入和删除命令会直接操作所配置的 Bucket，执行前必须确认环境配置。
 
 ```bash
 cargo run --bin oss_tool -- <command>
 ```
+
+旧日记对象迁移到 `diaries/` 命名空间的具体操作见 [对象布局迁移说明](docs/object-layout-migration.md)。
 
 需要 OSS 的 Rust 测试使用唯一对象前缀隔离：通过后自动清理，失败时保留对象，并在测试日志中打印对应前缀。
 

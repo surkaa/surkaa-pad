@@ -1,4 +1,4 @@
-//! 测试桶管理工具
+//! OSS 管理工具
 //!
 //! 用法：
 //!   cargo run --bin oss_tool -- list [prefix]
@@ -407,7 +407,7 @@ fn main() {
 }
 
 fn print_help() {
-    println!("测试桶管理工具");
+    println!("OSS 管理工具");
     println!();
     println!("用法:");
     println!("  oss_tool list [prefix]           列出对象");
