@@ -10,12 +10,15 @@
 //!   cargo run --bin oss_tool -- head <key>
 //!   cargo run --bin oss_tool -- multipart-list [prefix]
 //!   cargo run --bin oss_tool -- multipart-parts <key> <upload_id>
+//!   cargo run --bin oss_tool -- layout-plan [--details]
 //!
 //! 需要在 src-tauri/.env 中配置 ALIYUN_KEY、ALIYUN_SECRET、ALIYUN_BUCKET_NAME、ALIYUN_ENDPOINT。
 
 use s3::Bucket;
 use serde::Deserialize;
 use std::collections::HashMap;
+use surkaa_pad_lib::object_locations::ObjectLocations;
+use surkaa_pad_lib::storage_layout_migration::{build_layout_migration_plan, LayoutObjectEntry};
 
 #[derive(Debug, Deserialize)]
 struct ListPartsResult {
@@ -290,6 +293,75 @@ fn main() {
             );
         }
 
+        "layout-plan" => {
+            let details = args.get(2).is_some_and(|value| value == "--details");
+            println!("只读检查对象布局迁移:");
+            println!("  bucket: {bucket_name}");
+            let entries = rt
+                .block_on(list_all_objects(&bucket))
+                .expect("列出对象失败");
+            let current_count = entries
+                .iter()
+                .filter(|entry| ObjectLocations::parse(&entry.key).is_some())
+                .count();
+            let plan = build_layout_migration_plan(entries);
+
+            println!("  旧结构对象: {}", plan.legacy_object_count());
+            println!("  旧结构大小: {}", format_bytes(plan.legacy_bytes()));
+            println!(
+                "  待复制: {} 个 ({})",
+                plan.pending.len(),
+                format_bytes(plan.pending_bytes())
+            );
+            println!("  已复制且一致: {}", plan.already_copied.len());
+            println!("  目标冲突: {}", plan.conflicts.len());
+            println!("  旧目录异常对象: {}", plan.malformed_legacy_keys.len());
+            println!("  新结构对象: {current_count}");
+            println!("  其他命名空间对象: {}", plan.unrelated.len());
+
+            for conflict in &plan.conflicts {
+                println!(
+                    "冲突: {} -> {} (源 {} / {:?}, 目标 {} / {:?})",
+                    conflict.source.source_key,
+                    conflict.source.target_key,
+                    format_bytes(conflict.source.size),
+                    conflict.source.etag,
+                    format_bytes(conflict.target_size),
+                    conflict.target_etag
+                );
+            }
+            for key in &plan.malformed_legacy_keys {
+                println!("无法识别的旧目录对象: {key}");
+            }
+            if details {
+                for movement in &plan.pending {
+                    println!(
+                        "待复制: {} -> {} ({})",
+                        movement.source_key,
+                        movement.target_key,
+                        format_bytes(movement.size)
+                    );
+                }
+                for movement in &plan.already_copied {
+                    println!(
+                        "已复制: {} -> {} ({})",
+                        movement.source_key,
+                        movement.target_key,
+                        format_bytes(movement.size)
+                    );
+                }
+                for entry in &plan.unrelated {
+                    println!("保留其他对象: {} ({})", entry.key, format_bytes(entry.size));
+                }
+            }
+
+            if plan.is_safe_to_copy() {
+                println!("检查通过：未发现冲突或无法识别的旧目录对象。");
+            } else {
+                println!("检查未通过：解决以上冲突或异常对象后才能执行迁移。");
+            }
+        }
+
         "help" => print_help(),
         unknown => {
             eprintln!("未知命令: {unknown}");
@@ -312,6 +384,31 @@ fn print_help() {
     println!("  oss_tool multipart-list [prefix] 只读列出未完成 Upload 及 Part 汇总");
     println!("  oss_tool multipart-parts <key> <upload-id>");
     println!("                                    只读列出指定 Upload 的 Part 明细");
+    println!("  oss_tool layout-plan [--details] 只读生成对象布局迁移计划");
+}
+
+async fn list_all_objects(bucket: &Bucket) -> Result<Vec<LayoutObjectEntry>, String> {
+    let mut entries = Vec::new();
+    let mut token = None;
+    loop {
+        let (result, status) = bucket
+            .list_page(String::new(), None, token, None, Some(1000))
+            .await
+            .map_err(|error| error.to_string())?;
+        if status >= 300 {
+            return Err(format!("HTTP {status}"));
+        }
+        entries.extend(result.contents.into_iter().map(|object| LayoutObjectEntry {
+            key: object.key,
+            size: object.size,
+            etag: object.e_tag.map(|etag| etag.trim_matches('"').to_string()),
+        }));
+        token = result.next_continuation_token;
+        if token.is_none() {
+            break;
+        }
+    }
+    Ok(entries)
 }
 
 async fn list_all_parts(

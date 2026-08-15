@@ -9,6 +9,7 @@ mod local_storage;
 mod object;
 pub mod object_locations;
 mod state;
+pub mod storage_layout_migration;
 mod stream;
 mod tasks;
 #[cfg(test)]
