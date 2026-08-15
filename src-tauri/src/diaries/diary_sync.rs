@@ -515,7 +515,9 @@ fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
         StoredObject::DiaryAttachment { diary_id, .. } => {
             Some((SyncItemKind::Attachment, diary_id))
         }
-        StoredObject::DiaryAttachmentBackup { .. } => None,
+        StoredObject::DiaryAttachmentBackup { .. }
+        | StoredObject::AiSessionMeta { .. }
+        | StoredObject::AiSessionMessage { .. } => None,
     }
 }
 
