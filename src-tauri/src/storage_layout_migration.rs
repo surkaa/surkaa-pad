@@ -1,5 +1,7 @@
-use crate::object_locations::{LegacyObjectLocations, ObjectLocations};
+use crate::object::{ObjectError, OssClient};
+use crate::object_locations::{LegacyObjectLocations, ObjectLocations, StoredObject};
 use std::collections::HashMap;
+use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LayoutObjectEntry {
@@ -29,6 +31,7 @@ pub struct LayoutMigrationPlan {
     pub already_copied: Vec<LayoutObjectMove>,
     pub conflicts: Vec<LayoutTargetConflict>,
     pub malformed_legacy_keys: Vec<String>,
+    pub current_objects: Vec<LayoutObjectEntry>,
     pub unrelated: Vec<LayoutObjectEntry>,
 }
 
@@ -58,6 +61,213 @@ impl LayoutMigrationPlan {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LayoutCopyResult {
+    pub copied: usize,
+    pub already_copied: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LayoutCleanupResult {
+    pub deleted: usize,
+}
+
+#[derive(Debug, Error)]
+pub enum LayoutMigrationError {
+    #[error("对象存储操作失败: {0}")]
+    Object(#[from] ObjectError),
+    #[error("迁移计划存在 {conflicts} 个冲突、{malformed} 个无法识别的旧目录对象")]
+    UnsafePlan { conflicts: usize, malformed: usize },
+    #[error("目标对象在计划后出现，已停止且不会覆盖: {0}")]
+    TargetAppeared(String),
+    #[error("源对象不存在或在计划后发生变化: {0}")]
+    SourceChanged(String),
+    #[error("对象复制后不存在或与源对象不一致: {0}")]
+    CopyVerificationFailed(String),
+    #[error("仍有 {0} 个对象未复制，拒绝删除旧对象")]
+    PendingObjects(usize),
+    #[error("目标对象不存在或与源对象不一致，拒绝删除: {0}")]
+    CleanupVerificationFailed(String),
+    #[error("全量复查失败: remaining={remaining}, verified={verified}, expected={expected}")]
+    FinalVerificationFailed {
+        remaining: usize,
+        verified: usize,
+        expected: usize,
+    },
+    #[error("清理后仍存在 {0} 个旧布局对象")]
+    CleanupIncomplete(usize),
+}
+
+pub async fn load_layout_migration_plan(
+    client: &OssClient,
+) -> Result<LayoutMigrationPlan, LayoutMigrationError> {
+    let mut entries = Vec::new();
+    let mut next_token = None;
+    loop {
+        let (page, token) = client.list("", next_token).await?;
+        entries.extend(page.into_iter().map(|object| LayoutObjectEntry {
+            key: object.key,
+            size: object.size,
+            etag: object.etag,
+        }));
+        let Some(token) = token else {
+            break;
+        };
+        next_token = Some(token);
+    }
+    Ok(build_layout_migration_plan(entries))
+}
+
+pub async fn copy_layout_objects<F>(
+    client: &OssClient,
+    progress: F,
+) -> Result<LayoutCopyResult, LayoutMigrationError>
+where
+    F: Fn(usize, usize, &LayoutObjectMove),
+{
+    let plan = load_layout_migration_plan(client).await?;
+    ensure_plan_safe(&plan)?;
+
+    for (index, movement) in plan.pending.iter().enumerate() {
+        ensure_source_unchanged(client, movement).await?;
+        if client.object_exists(&movement.target_key).await? {
+            return Err(LayoutMigrationError::TargetAppeared(
+                movement.target_key.clone(),
+            ));
+        }
+        client
+            .copy_object(&movement.source_key, &movement.target_key)
+            .await?;
+        let target = current_entry(client, &movement.target_key).await?;
+        if target
+            .as_ref()
+            .is_none_or(|target| !movement_matches_entry(movement, target))
+        {
+            return Err(LayoutMigrationError::CopyVerificationFailed(
+                movement.target_key.clone(),
+            ));
+        }
+        progress(index + 1, plan.pending.len(), movement);
+    }
+
+    let verified = load_layout_migration_plan(client).await?;
+    ensure_plan_safe(&verified)?;
+    let expected = plan.legacy_object_count();
+    if !verified.pending.is_empty() || verified.already_copied.len() != expected {
+        return Err(LayoutMigrationError::FinalVerificationFailed {
+            remaining: verified.pending.len(),
+            verified: verified.already_copied.len(),
+            expected,
+        });
+    }
+    Ok(LayoutCopyResult {
+        copied: plan.pending.len(),
+        already_copied: plan.already_copied.len(),
+    })
+}
+
+pub async fn cleanup_legacy_layout_objects<F>(
+    client: &OssClient,
+    progress: F,
+) -> Result<LayoutCleanupResult, LayoutMigrationError>
+where
+    F: Fn(usize, usize, &LayoutObjectMove),
+{
+    let mut plan = load_layout_migration_plan(client).await?;
+    ensure_plan_safe(&plan)?;
+    if !plan.pending.is_empty() {
+        return Err(LayoutMigrationError::PendingObjects(plan.pending.len()));
+    }
+    // 即便清理中途失败，也尽量最后再删除旧 manifest 提交标志。
+    plan.already_copied.sort_by_key(|movement| {
+        matches!(
+            LegacyObjectLocations::parse(&movement.source_key),
+            Some(StoredObject::DiaryManifest { .. })
+        )
+    });
+
+    for (index, movement) in plan.already_copied.iter().enumerate() {
+        ensure_source_unchanged(client, movement).await?;
+        let target = current_entry(client, &movement.target_key).await?;
+        if target
+            .as_ref()
+            .is_none_or(|target| !movement_matches_entry(movement, target))
+        {
+            return Err(LayoutMigrationError::CleanupVerificationFailed(
+                movement.source_key.clone(),
+            ));
+        }
+        client.delete(&movement.source_key).await?;
+        progress(index + 1, plan.already_copied.len(), movement);
+    }
+
+    let verified = load_layout_migration_plan(client).await?;
+    ensure_plan_safe(&verified)?;
+    if verified.legacy_object_count() != 0 {
+        return Err(LayoutMigrationError::CleanupIncomplete(
+            verified.legacy_object_count(),
+        ));
+    }
+    Ok(LayoutCleanupResult {
+        deleted: plan.already_copied.len(),
+    })
+}
+
+fn ensure_plan_safe(plan: &LayoutMigrationPlan) -> Result<(), LayoutMigrationError> {
+    if plan.is_safe_to_copy() {
+        Ok(())
+    } else {
+        Err(LayoutMigrationError::UnsafePlan {
+            conflicts: plan.conflicts.len(),
+            malformed: plan.malformed_legacy_keys.len(),
+        })
+    }
+}
+
+async fn ensure_source_unchanged(
+    client: &OssClient,
+    movement: &LayoutObjectMove,
+) -> Result<(), LayoutMigrationError> {
+    let source = current_entry(client, &movement.source_key).await?;
+    if source
+        .as_ref()
+        .is_some_and(|source| movement_matches_entry(movement, source))
+    {
+        Ok(())
+    } else {
+        Err(LayoutMigrationError::SourceChanged(
+            movement.source_key.clone(),
+        ))
+    }
+}
+
+async fn current_entry(
+    client: &OssClient,
+    key: &str,
+) -> Result<Option<LayoutObjectEntry>, LayoutMigrationError> {
+    if !client.object_exists(key).await? {
+        return Ok(None);
+    }
+    let metadata = client.get_metadata(key).await?;
+    Ok(Some(LayoutObjectEntry {
+        key: key.to_string(),
+        size: metadata.content_length.ok_or_else(|| {
+            LayoutMigrationError::CopyVerificationFailed(format!("对象缺少 Content-Length: {key}"))
+        })?,
+        etag: metadata.etag,
+    }))
+}
+
+fn movement_matches_entry(movement: &LayoutObjectMove, entry: &LayoutObjectEntry) -> bool {
+    movement.size == entry.size
+        && match (movement.etag.as_deref(), entry.etag.as_deref()) {
+            (Some(left), Some(right)) => {
+                normalize_etag(left).eq_ignore_ascii_case(normalize_etag(right))
+            }
+            _ => false,
+        }
+}
+
 pub fn build_layout_migration_plan(
     entries: impl IntoIterator<Item = LayoutObjectEntry>,
 ) -> LayoutMigrationPlan {
@@ -71,6 +281,7 @@ pub fn build_layout_migration_plan(
 
     for entry in entries {
         if ObjectLocations::parse(&entry.key).is_some() {
+            plan.current_objects.push(entry);
             continue;
         }
 
@@ -131,6 +342,7 @@ fn normalize_etag(etag: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::TestOssGuard;
 
     fn entry(key: &str, size: u64, etag: Option<&str>) -> LayoutObjectEntry {
         LayoutObjectEntry {
@@ -210,6 +422,81 @@ mod tests {
             entry("diaries/123/attachments/att-1", 20, Some("attachment")),
         ]);
 
-        assert_eq!(plan, LayoutMigrationPlan::default());
+        assert_eq!(plan.current_objects.len(), 2);
+        assert!(plan.pending.is_empty());
+        assert!(plan.already_copied.is_empty());
+        assert!(plan.conflicts.is_empty());
+        assert!(plan.unrelated.is_empty());
+    }
+
+    #[tokio::test]
+    async fn copy_verify_and_cleanup_are_idempotent_and_leave_unrelated_objects_untouched() {
+        let client = OssClient::from_env();
+        let (client, guard) = TestOssGuard::new(client).await;
+        let legacy_objects = [
+            ("123/manifest.enc", b"manifest".as_slice()),
+            ("123/att-1", b"attachment-one".as_slice()),
+            ("123/att-2", b"attachment-two".as_slice()),
+        ];
+        for (key, data) in legacy_objects {
+            client.upload_bytes(key, data).await.unwrap();
+        }
+        let unrelated_key = "ai/sessions/1/meta.enc";
+        client
+            .upload_bytes(unrelated_key, b"unrelated")
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            cleanup_legacy_layout_objects(&client, |_, _, _| {}).await,
+            Err(LayoutMigrationError::PendingObjects(3))
+        ));
+        for (key, _) in legacy_objects {
+            assert!(client.object_exists(key).await.unwrap());
+        }
+
+        let copied = copy_layout_objects(&client, |_, _, _| {}).await.unwrap();
+        assert_eq!(
+            copied,
+            LayoutCopyResult {
+                copied: 3,
+                already_copied: 0,
+            }
+        );
+        let repeated = copy_layout_objects(&client, |_, _, _| {}).await.unwrap();
+        assert_eq!(
+            repeated,
+            LayoutCopyResult {
+                copied: 0,
+                already_copied: 3,
+            }
+        );
+        for (source, data) in legacy_objects {
+            let object = LegacyObjectLocations::parse(source).unwrap();
+            assert_eq!(
+                client
+                    .download_bytes(&ObjectLocations::key(&object))
+                    .await
+                    .unwrap(),
+                data
+            );
+        }
+
+        let cleaned = cleanup_legacy_layout_objects(&client, |_, _, _| {})
+            .await
+            .unwrap();
+        assert_eq!(cleaned, LayoutCleanupResult { deleted: 3 });
+        let repeated_cleanup = cleanup_legacy_layout_objects(&client, |_, _, _| {})
+            .await
+            .unwrap();
+        assert_eq!(repeated_cleanup, LayoutCleanupResult { deleted: 0 });
+        for (key, _) in legacy_objects {
+            assert!(!client.object_exists(key).await.unwrap());
+        }
+        assert_eq!(
+            client.download_bytes(unrelated_key).await.unwrap(),
+            b"unrelated"
+        );
+        guard.cleanup().await;
     }
 }

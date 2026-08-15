@@ -68,6 +68,12 @@ pub struct OssClient {
     key_prefix: String,
 }
 
+impl Default for OssClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OssClient {
     pub fn new() -> Self {
         Self {
@@ -338,6 +344,24 @@ impl OssClient {
             .unwrap_or_default()
             .to_string();
         Ok(etag)
+    }
+
+    /// 在同一 Bucket 内复制对象。该操作由 OSS 服务端完成，不会把对象内容
+    /// 下载到应用进程；调用方必须自行确保目标 Key 可以安全写入。
+    pub async fn copy_object(&self, source_key: &str, target_key: &str) -> Result<(), ObjectError> {
+        let bucket = self.inner()?;
+        let source_key = self.physical_key(source_key);
+        let target_key = self.physical_key(target_key);
+        let status = bucket
+            .copy_object_internal(&source_key, &target_key)
+            .await
+            .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
+        if status >= 300 {
+            return Err(ObjectError::OperationFailed(format!(
+                "Copy failed: HTTP {status}"
+            )));
+        }
+        Ok(())
     }
 
     pub async fn delete(&self, key: &str) -> Result<(), ObjectError> {
@@ -692,7 +716,8 @@ impl OssClient {
 
 #[cfg(test)]
 mod tests {
-    use super::oss_config_diagnostics;
+    use super::{oss_config_diagnostics, OssClient};
+    use crate::test_utils::TestOssGuard;
 
     #[test]
     fn oss_config_diagnostics_never_contains_configuration_values() {
@@ -710,5 +735,24 @@ mod tests {
         assert!(diagnostics.contains(&format!("bucket={}", bucket.len())));
         assert!(diagnostics.contains(&format!("akid={}", akid.len())));
         assert!(diagnostics.contains(&format!("sakey={}", sakey.len())));
+    }
+
+    #[tokio::test]
+    async fn server_side_copy_preserves_object_content_and_etag() {
+        let client = OssClient::from_env();
+        let (client, guard) = TestOssGuard::new(client).await;
+        let source = "layout-copy/source.bin";
+        let target = "layout-copy/target.bin";
+        let data = b"layout-copy-test";
+        let source_etag = client.upload_bytes(source, data).await.unwrap();
+
+        client.copy_object(source, target).await.unwrap();
+
+        assert_eq!(client.download_bytes(target).await.unwrap(), data);
+        assert_eq!(
+            client.get_metadata(target).await.unwrap().etag.as_deref(),
+            Some(source_etag.as_str())
+        );
+        guard.cleanup().await;
     }
 }

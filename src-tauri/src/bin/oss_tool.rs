@@ -11,14 +11,18 @@
 //!   cargo run --bin oss_tool -- multipart-list [prefix]
 //!   cargo run --bin oss_tool -- multipart-parts <key> <upload_id>
 //!   cargo run --bin oss_tool -- layout-plan [--details]
+//!   cargo run --bin oss_tool -- layout-copy --confirm-bucket <bucket>
+//!   cargo run --bin oss_tool -- layout-cleanup --confirm-bucket <bucket>
 //!
 //! 需要在 src-tauri/.env 中配置 ALIYUN_KEY、ALIYUN_SECRET、ALIYUN_BUCKET_NAME、ALIYUN_ENDPOINT。
 
 use s3::Bucket;
 use serde::Deserialize;
 use std::collections::HashMap;
-use surkaa_pad_lib::object_locations::ObjectLocations;
-use surkaa_pad_lib::storage_layout_migration::{build_layout_migration_plan, LayoutObjectEntry};
+use surkaa_pad_lib::storage_layout_migration::{
+    cleanup_legacy_layout_objects, copy_layout_objects, load_layout_migration_plan,
+};
+use surkaa_pad_lib::OssClient;
 
 #[derive(Debug, Deserialize)]
 struct ListPartsResult {
@@ -297,14 +301,10 @@ fn main() {
             let details = args.get(2).is_some_and(|value| value == "--details");
             println!("只读检查对象布局迁移:");
             println!("  bucket: {bucket_name}");
-            let entries = rt
-                .block_on(list_all_objects(&bucket))
+            let client = create_migration_client(&endpoint, &akid, &aks, &bucket_name);
+            let plan = rt
+                .block_on(load_layout_migration_plan(&client))
                 .expect("列出对象失败");
-            let current_count = entries
-                .iter()
-                .filter(|entry| ObjectLocations::parse(&entry.key).is_some())
-                .count();
-            let plan = build_layout_migration_plan(entries);
 
             println!("  旧结构对象: {}", plan.legacy_object_count());
             println!("  旧结构大小: {}", format_bytes(plan.legacy_bytes()));
@@ -316,7 +316,7 @@ fn main() {
             println!("  已复制且一致: {}", plan.already_copied.len());
             println!("  目标冲突: {}", plan.conflicts.len());
             println!("  旧目录异常对象: {}", plan.malformed_legacy_keys.len());
-            println!("  新结构对象: {current_count}");
+            println!("  新结构对象: {}", plan.current_objects.len());
             println!("  其他命名空间对象: {}", plan.unrelated.len());
 
             for conflict in &plan.conflicts {
@@ -362,6 +362,42 @@ fn main() {
             }
         }
 
+        "layout-copy" => {
+            require_bucket_confirmation(&args, &bucket_name, "layout-copy");
+            let client = create_migration_client(&endpoint, &akid, &aks, &bucket_name);
+            let result = rt
+                .block_on(copy_layout_objects(&client, |index, total, movement| {
+                    println!(
+                        "  [{index}/{total}] {} -> {} ({})",
+                        movement.source_key,
+                        movement.target_key,
+                        format_bytes(movement.size)
+                    );
+                }))
+                .expect("对象布局复制失败");
+            println!(
+                "复制及全量校验完成：新复制 {} 个、此前已存在 {} 个；旧对象仍完整保留。",
+                result.copied, result.already_copied
+            );
+        }
+
+        "layout-cleanup" => {
+            require_bucket_confirmation(&args, &bucket_name, "layout-cleanup");
+            let client = create_migration_client(&endpoint, &akid, &aks, &bucket_name);
+            let result = rt
+                .block_on(cleanup_legacy_layout_objects(
+                    &client,
+                    |index, total, movement| {
+                        println!("  [{index}/{total}] {}", movement.source_key);
+                    },
+                ))
+                .expect("旧对象清理失败");
+            println!(
+                "旧布局清理完成：删除 {} 个旧对象；其他命名空间对象未改动。",
+                result.deleted
+            );
+        }
+
         "help" => print_help(),
         unknown => {
             eprintln!("未知命令: {unknown}");
@@ -385,30 +421,45 @@ fn print_help() {
     println!("  oss_tool multipart-parts <key> <upload-id>");
     println!("                                    只读列出指定 Upload 的 Part 明细");
     println!("  oss_tool layout-plan [--details] 只读生成对象布局迁移计划");
+    println!("  oss_tool layout-copy --confirm-bucket <bucket>");
+    println!("                                    复制并校验旧布局对象，不删除源对象");
+    println!("  oss_tool layout-cleanup --confirm-bucket <bucket>");
+    println!("                                    删除已验证的新布局所对应的旧对象");
 }
 
-async fn list_all_objects(bucket: &Bucket) -> Result<Vec<LayoutObjectEntry>, String> {
-    let mut entries = Vec::new();
-    let mut token = None;
-    loop {
-        let (result, status) = bucket
-            .list_page(String::new(), None, token, None, Some(1000))
-            .await
-            .map_err(|error| error.to_string())?;
-        if status >= 300 {
-            return Err(format!("HTTP {status}"));
-        }
-        entries.extend(result.contents.into_iter().map(|object| LayoutObjectEntry {
-            key: object.key,
-            size: object.size,
-            etag: object.e_tag.map(|etag| etag.trim_matches('"').to_string()),
-        }));
-        token = result.next_continuation_token;
-        if token.is_none() {
-            break;
-        }
+fn require_bucket_confirmation(args: &[String], bucket_name: &str, command: &str) {
+    if !bucket_confirmation_matches(args, bucket_name) {
+        panic!("用法: oss_tool {command} --confirm-bucket {bucket_name}");
     }
-    Ok(entries)
+}
+
+fn bucket_confirmation_matches(args: &[String], bucket_name: &str) -> bool {
+    matches!(
+        (
+            args.get(2).map(String::as_str),
+            args.get(3).map(String::as_str),
+            args.get(4)
+        ),
+        (Some("--confirm-bucket"), Some(value), None) if value == bucket_name
+    )
+}
+
+fn create_migration_client(
+    endpoint: &str,
+    akid: &str,
+    secret: &str,
+    bucket_name: &str,
+) -> OssClient {
+    let client = OssClient::new();
+    client
+        .initialize(
+            endpoint.to_string(),
+            akid.to_string(),
+            secret.to_string(),
+            bucket_name.to_string(),
+        )
+        .expect("初始化迁移客户端失败");
+    client
 }
 
 async fn list_all_parts(
@@ -508,7 +559,7 @@ fn format_endpoint(endpoint: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_bytes, ListPartsResult};
+    use super::{bucket_confirmation_matches, format_bytes, ListPartsResult};
 
     #[test]
     fn parses_aliyun_list_parts_response() {
@@ -543,5 +594,27 @@ mod tests {
             format_bytes(result.parts.iter().map(|part| part.size).sum()),
             "8.00 MiB"
         );
+    }
+
+    #[test]
+    fn destructive_layout_commands_require_exact_bucket_confirmation() {
+        let valid =
+            ["oss_tool", "layout-cleanup", "--confirm-bucket", "surkaa"].map(str::to_string);
+        assert!(bucket_confirmation_matches(&valid, "surkaa"));
+
+        for invalid in [
+            vec!["oss_tool", "layout-cleanup"],
+            vec!["oss_tool", "layout-cleanup", "--confirm-bucket", "other"],
+            vec![
+                "oss_tool",
+                "layout-cleanup",
+                "--confirm-bucket",
+                "surkaa",
+                "extra",
+            ],
+        ] {
+            let invalid = invalid.into_iter().map(str::to_string).collect::<Vec<_>>();
+            assert!(!bucket_confirmation_matches(&invalid, "surkaa"));
+        }
     }
 }

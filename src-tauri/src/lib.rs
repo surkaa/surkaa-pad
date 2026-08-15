@@ -7,6 +7,7 @@ mod diaries;
 mod error;
 mod local_storage;
 mod object;
+pub use object::{ObjectError, OssClient};
 pub mod object_locations;
 mod state;
 pub mod storage_layout_migration;
