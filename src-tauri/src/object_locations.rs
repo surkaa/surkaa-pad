@@ -2,6 +2,34 @@ const DIARIES_DIRECTORY: &str = "diaries";
 const MANIFEST_FILENAME: &str = "manifest.enc";
 const ATTACHMENTS_DIRECTORY: &str = "attachments";
 const ATTACHMENT_TRANSACTIONS_DIRECTORY: &str = ".attachment-transaction";
+const AI_DIRECTORY: &str = "ai";
+const AI_SESSIONS_DIRECTORY: &str = "sessions";
+const AI_SESSION_META_FILENAME: &str = "meta.enc";
+const AI_SESSION_MESSAGES_DIRECTORY: &str = "messages";
+const AI_MESSAGE_INDEX_WIDTH: usize = 20;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AiSessionMessageKind {
+    User,
+    Assistant,
+}
+
+impl AiSessionMessageKind {
+    const fn key_name(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Assistant => "assistant",
+        }
+    }
+
+    fn from_key_name(value: &str) -> Option<Self> {
+        match value {
+            "user" => Some(Self::User),
+            "assistant" => Some(Self::Assistant),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum StoredObject {
@@ -16,14 +44,23 @@ pub enum StoredObject {
         diary_id: String,
         attachment_id: String,
     },
+    AiSessionMeta {
+        session_id: String,
+    },
+    AiSessionMessage {
+        session_id: String,
+        index: u64,
+        kind: AiSessionMessageKind,
+    },
 }
 
 impl StoredObject {
-    pub fn diary_id(&self) -> &str {
+    pub fn diary_id(&self) -> Option<&str> {
         match self {
             Self::DiaryManifest { diary_id }
             | Self::DiaryAttachment { diary_id, .. }
-            | Self::DiaryAttachmentBackup { diary_id, .. } => diary_id,
+            | Self::DiaryAttachmentBackup { diary_id, .. } => Some(diary_id),
+            Self::AiSessionMeta { .. } | Self::AiSessionMessage { .. } => None,
         }
     }
 }
@@ -60,6 +97,31 @@ impl ObjectLocations {
         )
     }
 
+    pub const fn ai_sessions_prefix() -> &'static str {
+        "ai/sessions/"
+    }
+
+    pub fn ai_session_prefix(session_id: &str) -> String {
+        format!("{AI_DIRECTORY}/{AI_SESSIONS_DIRECTORY}/{session_id}/")
+    }
+
+    pub fn ai_session_meta(session_id: &str) -> String {
+        format!("{AI_DIRECTORY}/{AI_SESSIONS_DIRECTORY}/{session_id}/{AI_SESSION_META_FILENAME}")
+    }
+
+    pub fn ai_session_messages_prefix(session_id: &str) -> String {
+        format!(
+            "{AI_DIRECTORY}/{AI_SESSIONS_DIRECTORY}/{session_id}/{AI_SESSION_MESSAGES_DIRECTORY}/"
+        )
+    }
+
+    pub fn ai_session_message(session_id: &str, index: u64, kind: AiSessionMessageKind) -> String {
+        format!(
+            "{AI_DIRECTORY}/{AI_SESSIONS_DIRECTORY}/{session_id}/{AI_SESSION_MESSAGES_DIRECTORY}/{index:0AI_MESSAGE_INDEX_WIDTH$}_{}.enc",
+            kind.key_name()
+        )
+    }
+
     pub fn key(object: &StoredObject) -> String {
         match object {
             StoredObject::DiaryManifest { diary_id } => Self::diary_manifest(diary_id),
@@ -71,10 +133,19 @@ impl ObjectLocations {
                 diary_id,
                 attachment_id,
             } => Self::diary_attachment_backup(diary_id, attachment_id),
+            StoredObject::AiSessionMeta { session_id } => Self::ai_session_meta(session_id),
+            StoredObject::AiSessionMessage {
+                session_id,
+                index,
+                kind,
+            } => Self::ai_session_message(session_id, *index, *kind),
         }
     }
 
     pub fn parse(key: &str) -> Option<StoredObject> {
+        if key.starts_with(Self::ai_sessions_prefix()) {
+            return Self::parse_ai_session(key);
+        }
         let mut parts = key.split('/');
         if parts.next()? != DIARIES_DIRECTORY {
             return None;
@@ -92,6 +163,28 @@ impl ObjectLocations {
                 Some(StoredObject::DiaryAttachmentBackup {
                     diary_id,
                     attachment_id: valid_leaf(attachment_id)?.to_string(),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_ai_session(key: &str) -> Option<StoredObject> {
+        let mut parts = key.split('/');
+        if parts.next()? != AI_DIRECTORY || parts.next()? != AI_SESSIONS_DIRECTORY {
+            return None;
+        }
+        let session_id = valid_numeric_id(parts.next()?)?.to_string();
+        match (parts.next()?, parts.next(), parts.next()) {
+            (AI_SESSION_META_FILENAME, None, None) => {
+                Some(StoredObject::AiSessionMeta { session_id })
+            }
+            (AI_SESSION_MESSAGES_DIRECTORY, Some(filename), None) => {
+                let (index, kind) = parse_ai_message_filename(filename)?;
+                Some(StoredObject::AiSessionMessage {
+                    session_id,
+                    index,
+                    kind,
                 })
             }
             _ => None,
@@ -146,7 +239,23 @@ impl LegacyObjectLocations {
 }
 
 fn valid_diary_id(value: &str) -> Option<&str> {
+    valid_numeric_id(value)
+}
+
+fn valid_numeric_id(value: &str) -> Option<&str> {
     (!value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())).then_some(value)
+}
+
+fn parse_ai_message_filename(filename: &str) -> Option<(u64, AiSessionMessageKind)> {
+    let stem = filename.strip_suffix(".enc")?;
+    let (index, kind) = stem.split_once('_')?;
+    if index.len() != AI_MESSAGE_INDEX_WIDTH || !index.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some((
+        index.parse().ok()?,
+        AiSessionMessageKind::from_key_name(kind)?,
+    ))
 }
 
 fn valid_leaf(value: &str) -> Option<&str> {
@@ -180,6 +289,19 @@ mod tests {
             ObjectLocations::diary_attachment_backup("8215021834823", "att-1"),
             "diaries/8215021834823/.attachment-transaction/att-1"
         );
+        assert_eq!(ObjectLocations::ai_sessions_prefix(), "ai/sessions/");
+        assert_eq!(
+            ObjectLocations::ai_session_meta("8215021834823"),
+            "ai/sessions/8215021834823/meta.enc"
+        );
+        assert_eq!(
+            ObjectLocations::ai_session_message(
+                "8215021834823",
+                12,
+                AiSessionMessageKind::Assistant,
+            ),
+            "ai/sessions/8215021834823/messages/00000000000000000012_assistant.enc"
+        );
     }
 
     #[test]
@@ -195,6 +317,14 @@ mod tests {
             StoredObject::DiaryAttachmentBackup {
                 diary_id: "8215021834823".into(),
                 attachment_id: "att-1".into(),
+            },
+            StoredObject::AiSessionMeta {
+                session_id: "8215021834823".into(),
+            },
+            StoredObject::AiSessionMessage {
+                session_id: "8215021834823".into(),
+                index: 12,
+                kind: AiSessionMessageKind::Assistant,
             },
         ];
         for object in objects {
@@ -233,6 +363,9 @@ mod tests {
             "diaries/8215021834823/attachments/",
             "diaries/8215021834823/attachments/att-1/extra",
             "ai/session/meta.enc",
+            "ai/sessions/not-a-number/meta.enc",
+            "ai/sessions/8215021834823/messages/12_user.enc",
+            "ai/sessions/8215021834823/messages/00000000000000000012_unknown.enc",
         ] {
             assert_eq!(ObjectLocations::parse(key), None, "key={key}");
         }

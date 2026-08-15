@@ -10,6 +10,7 @@ mod diary_tools;
 mod error;
 mod openai_protocol;
 mod provider;
+mod session_types;
 mod tools;
 mod types;
 
@@ -20,6 +21,12 @@ pub use config::AiProviderConfig;
 pub use diary_tools::DiaryReadTools;
 pub use error::AiError;
 pub use provider::AiModelProvider;
+pub use session_types::{
+    deserialize_session_message, deserialize_session_meta, migrate_session_document,
+    AiAssistantRecordState, AiProcessStepKind, AiProcessStepRecord, AiProcessStepState,
+    AiSessionDataError, AiSessionMessage, AiSessionMessagePayload, AiSessionMeta,
+    CURRENT_AI_SESSION_VERSION,
+};
 pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor};
 pub use types::{
     AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiConversationSource,

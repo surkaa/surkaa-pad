@@ -4,7 +4,7 @@ use serde_json::Value;
 use specta::Type;
 use std::collections::HashSet;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiModel {
     pub id: String,
@@ -18,14 +18,14 @@ pub struct AiConversationTurn {
     pub assistant: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiConversationSource {
     pub model: String,
     pub messages: Vec<AiConversationSourceMessage>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(
     rename_all = "lowercase",
     rename_all_fields = "camelCase",
@@ -49,7 +49,7 @@ pub enum AiConversationSourceMessage {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiConversationSourceToolCall {
     pub id: String,
@@ -220,7 +220,7 @@ pub struct AiCompletion {
     pub usage: Option<AiUsage>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiUsage {
     #[specta(type = f64)]
