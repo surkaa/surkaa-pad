@@ -668,6 +668,7 @@ mod tests {
     fn separates_unrelated_namespaces_from_malformed_legacy_keys() {
         let plan = build_layout_migration_plan([
             entry("ai/sessions/1/meta.enc", 1, Some("ai")),
+            entry("ai/sessions/not-a-number/meta.enc", 1, Some("bad-ai")),
             entry("rust-tests/run/object", 2, Some("test")),
             entry("123/nested/unknown", 3, Some("unknown")),
             entry("456/", 1, Some("non-empty-marker")),
@@ -676,6 +677,10 @@ mod tests {
 
         assert_eq!(plan.malformed_legacy_keys, ["123/nested/unknown", "456/"]);
         assert_eq!(plan.unrelated.len(), 3);
+        assert!(plan
+            .unrelated
+            .iter()
+            .any(|entry| entry.key == "ai/sessions/not-a-number/meta.enc"));
         assert!(!plan.is_safe_to_copy());
     }
 
