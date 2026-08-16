@@ -34,6 +34,28 @@ pub enum StoredObject {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StoredObjectCollection {
+    AiSessionMetas,
+    AiSessionMessageBlocks { session_id: String },
+}
+
+impl StoredObjectCollection {
+    pub fn contains(&self, object: &StoredObject) -> bool {
+        match (self, object) {
+            (Self::AiSessionMetas, StoredObject::AiSessionMeta { .. }) => true,
+            (
+                Self::AiSessionMessageBlocks { session_id },
+                StoredObject::AiSessionMessageBlock {
+                    session_id: object_session_id,
+                    ..
+                },
+            ) => session_id == object_session_id,
+            _ => false,
+        }
+    }
+}
+
 impl StoredObject {
     pub fn diary_id(&self) -> Option<&str> {
         match self {
@@ -105,6 +127,12 @@ impl ObjectLocations {
         format!(
             "{AI_DIRECTORY}/{AI_SESSIONS_DIRECTORY}/{session_id}/{AI_SESSION_MESSAGES_DIRECTORY}/{level}/{block_id}.enc"
         )
+    }
+
+    pub fn ai_session_id_from_common_prefix(prefix: &str) -> Option<String> {
+        let rest = prefix.strip_prefix(Self::ai_sessions_prefix())?;
+        let session_id = rest.strip_suffix('/')?;
+        Some(valid_numeric_id(session_id)?.to_string())
     }
 
     pub fn key(object: &StoredObject) -> String {
@@ -407,5 +435,38 @@ mod tests {
         ] {
             assert!(!ObjectLocations::is_diary_attachment(key), "key={key}");
         }
+    }
+
+    #[test]
+    fn filters_ai_object_collections_without_exposing_key_rules() {
+        let meta = StoredObject::AiSessionMeta {
+            session_id: "1".into(),
+        };
+        let first_session_block = StoredObject::AiSessionMessageBlock {
+            session_id: "1".into(),
+            level: 0,
+            block_id: 0,
+        };
+        let other_session_block = StoredObject::AiSessionMessageBlock {
+            session_id: "2".into(),
+            level: 0,
+            block_id: 0,
+        };
+
+        assert!(StoredObjectCollection::AiSessionMetas.contains(&meta));
+        let blocks = StoredObjectCollection::AiSessionMessageBlocks {
+            session_id: "1".into(),
+        };
+        assert!(blocks.contains(&first_session_block));
+        assert!(!blocks.contains(&meta));
+        assert!(!blocks.contains(&other_session_block));
+        assert_eq!(
+            ObjectLocations::ai_session_id_from_common_prefix("ai/sessions/1/"),
+            Some("1".into())
+        );
+        assert_eq!(
+            ObjectLocations::ai_session_id_from_common_prefix("ai/sessions/nope/"),
+            None
+        );
     }
 }

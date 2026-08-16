@@ -1,5 +1,6 @@
 pub mod ai;
 mod app_config;
+pub mod app_object_store;
 mod attachments;
 mod caches;
 mod cryptos;
