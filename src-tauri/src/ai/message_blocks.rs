@@ -489,6 +489,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn appends_and_restores_more_than_one_hundred_thousand_messages() {
+        const MESSAGE_COUNT: u64 = 123_456;
+        let store = MemoryBlockStore::default();
+        append_range(&store, MESSAGE_COUNT).await;
+
+        assert_eq!(
+            store.layout("1").await,
+            expected_decimal_layout(MESSAGE_COUNT)
+        );
+
+        let messages = load_compacted_messages(&store, "1", MESSAGE_COUNT)
+            .await
+            .unwrap();
+        assert_eq!(messages.len(), usize::try_from(MESSAGE_COUNT).unwrap());
+        for (expected_index, message) in (0..MESSAGE_COUNT).zip(messages) {
+            assert_eq!(message.index, expected_index);
+            assert_eq!(
+                message.payload,
+                AiSessionMessagePayload::User {
+                    content: format!("消息 {expected_index}"),
+                }
+            );
+        }
+    }
+
+    fn expected_decimal_layout(message_count: u64) -> Vec<(u32, u64)> {
+        let mut layout = Vec::new();
+        let mut level = 0;
+        let mut block_size = 1;
+        while block_size <= message_count {
+            let block_count = (message_count / block_size) % BLOCK_RADIX;
+            let first_block_id = message_count / block_size / BLOCK_RADIX * BLOCK_RADIX;
+            layout.extend((0..block_count).map(|offset| (level, first_block_id + offset)));
+            let Some(next_size) = block_size.checked_mul(BLOCK_RADIX) else {
+                break;
+            };
+            block_size = next_size;
+            level += 1;
+        }
+        layout.sort_unstable();
+        layout
+    }
+
+    #[tokio::test]
     async fn writes_target_before_deleting_any_source_block() {
         let store = MemoryBlockStore::default();
         append_range(&store, 9).await;
