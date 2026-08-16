@@ -19,8 +19,9 @@ pub struct AiSessionMeta {
     pub created_at: i64,
     #[specta(type = f64)]
     pub updated_at: i64,
+    /// 已经完成消息块写入并由 meta 确认的连续消息数量。
     #[specta(type = f64)]
-    pub message_count: u64,
+    pub committed_message_count: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
@@ -296,7 +297,7 @@ mod tests {
             "model": "deepseek-chat",
             "createdAt": 1_700_000_000_000_i64,
             "updatedAt": 1_700_000_000_100_i64,
-            "messageCount": 2
+            "committedMessageCount": 2
         }))
         .unwrap()
     }
@@ -305,7 +306,7 @@ mod tests {
     fn deserializes_current_session_meta_and_checks_identity() {
         let meta = deserialize_session_meta("8215021834823", &meta_json(1)).unwrap();
         assert_eq!(meta.title, "最近的日记");
-        assert_eq!(meta.message_count, 2);
+        assert_eq!(meta.committed_message_count, 2);
 
         assert!(matches!(
             deserialize_session_meta("other", &meta_json(1)),

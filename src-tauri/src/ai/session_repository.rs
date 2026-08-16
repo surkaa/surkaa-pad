@@ -1,8 +1,8 @@
 use super::{
     append_and_compact_message, deserialize_session_message_block, deserialize_session_meta,
-    load_compacted_messages, AiMessageBlockError, AiMessageBlockStore, AiSessionDataError,
-    AiSessionMessage, AiSessionMessageBlock, AiSessionMessagePayload, AiSessionMeta,
-    CURRENT_AI_SESSION_VERSION,
+    load_all_compacted_messages, load_compacted_messages, AiMessageBlockError, AiMessageBlockStore,
+    AiSessionDataError, AiSessionMessage, AiSessionMessageBlock, AiSessionMessagePayload,
+    AiSessionMeta, CURRENT_AI_SESSION_VERSION,
 };
 use crate::app_object_store::{AppObjectStoreError, SharedAppObjectStore};
 use crate::cryptos::{Crypto, CryptoError};
@@ -30,8 +30,10 @@ pub enum AiSessionRepositoryError {
     SessionNotFound(String),
     #[error("AI 会话参数无效: {0}")]
     InvalidInput(String),
-    #[error("AI 会话消息数量已溢出")]
-    MessageCountOverflow,
+    #[error("AI 会话已提交消息数量溢出")]
+    CommittedMessageCountOverflow,
+    #[error("AI 会话已提交 {committed} 条消息，但存储中只能恢复出 {actual} 条连续消息")]
+    CommittedMessagesMissing { committed: u64, actual: u64 },
 }
 
 /// AI 会话领域仓库：负责独立 JSON 文档、加解密、元数据提交和消息块合并。
@@ -42,6 +44,7 @@ pub struct AiSessionRepository {
     store: SharedAppObjectStore,
     crypto: Crypto,
     session_locks: Arc<DashMap<String, Weak<Mutex<()>>>>,
+    reconciled_sessions: Arc<DashMap<String, ()>>,
 }
 
 impl AiSessionRepository {
@@ -50,6 +53,7 @@ impl AiSessionRepository {
             store,
             crypto,
             session_locks: Arc::new(DashMap::new()),
+            reconciled_sessions: Arc::new(DashMap::new()),
         }
     }
 
@@ -77,9 +81,10 @@ impl AiSessionRepository {
             model,
             created_at,
             updated_at: created_at,
-            message_count: 0,
+            committed_message_count: 0,
         };
         self.save_meta(&meta).await?;
+        self.reconciled_sessions.insert(meta.id.clone(), ());
         Ok(meta)
     }
 
@@ -87,7 +92,13 @@ impl AiSessionRepository {
         &self,
         session_id: &str,
     ) -> Result<Option<AiSessionMeta>, AiSessionRepositoryError> {
-        self.load_meta(session_id).await
+        let lock = self.session_lock(session_id);
+        let _guard = lock.lock().await;
+        let Some(meta) = self.load_meta(session_id).await? else {
+            return Ok(None);
+        };
+        let (meta, _) = self.ensure_reconciled_locked(meta).await?;
+        Ok(Some(meta))
     }
 
     pub async fn list_sessions(&self) -> Result<Vec<AiSessionMeta>, AiSessionRepositoryError> {
@@ -121,22 +132,31 @@ impl AiSessionRepository {
     ) -> Result<AiSessionMessage, AiSessionRepositoryError> {
         let lock = self.session_lock(session_id);
         let _guard = lock.lock().await;
-        let mut meta = self.required_meta(session_id).await?;
+        let meta = self.required_meta(session_id).await?;
+        let (mut meta, _) = self.ensure_reconciled_locked(meta).await?;
         let message = AiSessionMessage {
-            index: meta.message_count,
+            index: meta.committed_message_count,
             created_at,
             payload,
         };
 
-        // 消息块先持久化并完成必要的逐级合并，最后才增加 meta.messageCount。
+        // 消息块先持久化并完成必要的逐级合并，最后才推进提交水位。
         // 因此 meta 始终不会声称存在尚未落盘的消息。
-        append_and_compact_message(self, session_id, message.clone()).await?;
-        meta.message_count = meta
-            .message_count
-            .checked_add(1)
-            .ok_or(AiSessionRepositoryError::MessageCountOverflow)?;
+        if let Err(error) = append_and_compact_message(self, session_id, message.clone()).await {
+            self.reconciled_sessions.remove(session_id);
+            return Err(error.into());
+        }
+        meta.committed_message_count =
+            meta.committed_message_count.checked_add(1).ok_or_else(|| {
+                self.reconciled_sessions.remove(session_id);
+                AiSessionRepositoryError::CommittedMessageCountOverflow
+            })?;
         meta.updated_at = meta.updated_at.max(created_at);
-        self.save_meta(&meta).await?;
+        if let Err(error) = self.save_meta(&meta).await {
+            // 消息块可能已经完整落盘；下次访问必须重新协调，而不能继续信任旧水位。
+            self.reconciled_sessions.remove(session_id);
+            return Err(error);
+        }
         Ok(message)
     }
 
@@ -147,7 +167,11 @@ impl AiSessionRepository {
         let lock = self.session_lock(session_id);
         let _guard = lock.lock().await;
         let meta = self.required_meta(session_id).await?;
-        Ok(load_compacted_messages(self, session_id, meta.message_count).await?)
+        let (meta, recovered_messages) = self.ensure_reconciled_locked(meta).await?;
+        if let Some(messages) = recovered_messages {
+            return Ok(messages);
+        }
+        Ok(load_compacted_messages(self, session_id, meta.committed_message_count).await?)
     }
 
     pub async fn update_ai_title(
@@ -166,7 +190,8 @@ impl AiSessionRepository {
         }
         let lock = self.session_lock(session_id);
         let _guard = lock.lock().await;
-        let mut meta = self.required_meta(session_id).await?;
+        let meta = self.required_meta(session_id).await?;
+        let (mut meta, _) = self.ensure_reconciled_locked(meta).await?;
         meta.ai_title = ai_title;
         meta.updated_at = meta.updated_at.max(updated_at);
         self.save_meta(&meta).await?;
@@ -191,6 +216,7 @@ impl AiSessionRepository {
                 session_id: session_id.to_owned(),
             })
             .await?;
+        self.reconciled_sessions.remove(session_id);
         Ok(())
     }
 
@@ -212,6 +238,38 @@ impl AiSessionRepository {
         self.load_meta(session_id)
             .await?
             .ok_or_else(|| AiSessionRepositoryError::SessionNotFound(session_id.to_owned()))
+    }
+
+    /// 首次访问会话或上次写入失败后，根据实际消息块校准 meta 的提交水位。
+    ///
+    /// 物理消息多于提交水位，说明消息块已完整写入但 meta 提交中断，此时向前推进
+    /// 水位；物理消息少于提交水位则意味着已确认的数据丢失，必须报错而不能回退。
+    async fn ensure_reconciled_locked(
+        &self,
+        mut meta: AiSessionMeta,
+    ) -> Result<(AiSessionMeta, Option<Vec<AiSessionMessage>>), AiSessionRepositoryError> {
+        if self.reconciled_sessions.contains_key(&meta.id) {
+            return Ok((meta, None));
+        }
+
+        let messages = load_all_compacted_messages(self, &meta.id).await?;
+        let actual = u64::try_from(messages.len())
+            .map_err(|_| AiSessionRepositoryError::CommittedMessageCountOverflow)?;
+        if actual < meta.committed_message_count {
+            return Err(AiSessionRepositoryError::CommittedMessagesMissing {
+                committed: meta.committed_message_count,
+                actual,
+            });
+        }
+        if actual > meta.committed_message_count {
+            meta.committed_message_count = actual;
+            if let Some(last_message) = messages.last() {
+                meta.updated_at = meta.updated_at.max(last_message.created_at);
+            }
+            self.save_meta(&meta).await?;
+        }
+        self.reconciled_sessions.insert(meta.id.clone(), ());
+        Ok((meta, Some(messages)))
     }
 
     async fn load_meta(
@@ -354,26 +412,45 @@ mod tests {
     use crate::object_locations::ObjectLocations;
     use std::sync::Mutex as StdMutex;
 
-    struct FailDeleteOnceStore {
+    struct FaultInjectingStore {
         inner: LocalAppObjectStore,
-        failure: StdMutex<Option<StoredObject>>,
+        save_failure: StdMutex<Option<StoredObject>>,
+        delete_failure: StdMutex<Option<StoredObject>>,
     }
 
-    impl FailDeleteOnceStore {
+    impl FaultInjectingStore {
         fn new(inner: LocalAppObjectStore) -> Self {
             Self {
                 inner,
-                failure: StdMutex::new(None),
+                save_failure: StdMutex::new(None),
+                delete_failure: StdMutex::new(None),
             }
         }
 
-        fn fail_once(&self, object: StoredObject) {
-            *self.failure.lock().unwrap() = Some(object);
+        fn fail_save_once(&self, object: StoredObject) {
+            *self.save_failure.lock().unwrap() = Some(object);
+        }
+
+        fn fail_delete_once(&self, object: StoredObject) {
+            *self.delete_failure.lock().unwrap() = Some(object);
+        }
+
+        fn take_matching_failure(
+            failure: &StdMutex<Option<StoredObject>>,
+            object: &StoredObject,
+        ) -> bool {
+            let mut failure = failure.lock().unwrap();
+            if failure.as_ref() == Some(object) {
+                failure.take();
+                true
+            } else {
+                false
+            }
         }
     }
 
     #[async_trait]
-    impl AppObjectStore for FailDeleteOnceStore {
+    impl AppObjectStore for FaultInjectingStore {
         async fn load_bytes(
             &self,
             object: &StoredObject,
@@ -386,20 +463,14 @@ mod tests {
             object: &StoredObject,
             data: &[u8],
         ) -> Result<(), AppObjectStoreError> {
+            if Self::take_matching_failure(&self.save_failure, object) {
+                return Err(CacheError::Metadata("模拟对象写入失败".into()).into());
+            }
             self.inner.save_bytes(object, data).await
         }
 
         async fn delete(&self, object: &StoredObject) -> Result<(), AppObjectStoreError> {
-            let should_fail = {
-                let mut failure = self.failure.lock().unwrap();
-                if failure.as_ref() == Some(object) {
-                    failure.take();
-                    true
-                } else {
-                    false
-                }
-            };
-            if should_fail {
+            if Self::take_matching_failure(&self.delete_failure, object) {
                 return Err(CacheError::Metadata("模拟消息块删除失败".into()).into());
             }
             self.inner.delete(object).await
@@ -483,7 +554,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap()
-                .message_count,
+                .committed_message_count,
             25
         );
     }
@@ -525,7 +596,7 @@ mod tests {
     async fn deleting_a_session_removes_blocks_before_its_visibility_marker() {
         let temp = tempfile::tempdir().unwrap();
         let local = LocalObjectStore::new(temp.path().to_path_buf());
-        let store = Arc::new(FailDeleteOnceStore::new(LocalAppObjectStore::new(
+        let store = Arc::new(FaultInjectingStore::new(LocalAppObjectStore::new(
             local.clone(),
         )));
         let repository = AiSessionRepository::new(store.clone(), crypto());
@@ -540,13 +611,13 @@ mod tests {
                 .unwrap();
         }
 
-        store.fail_once(StoredObject::AiSessionMessageBlock {
+        store.fail_delete_once(StoredObject::AiSessionMessageBlock {
             session_id: meta.id.clone(),
             level: 1,
             block_id: 0,
         });
         assert!(repository.delete_session(&meta.id).await.is_err());
-        assert!(repository.get_session(&meta.id).await.unwrap().is_some());
+        assert!(repository.load_meta(&meta.id).await.unwrap().is_some());
 
         repository.delete_session(&meta.id).await.unwrap();
 
@@ -558,6 +629,113 @@ mod tests {
             .is_empty());
         // 删除是幂等的，便于中断后重试清理。
         repository.delete_session(&meta.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reconciles_a_compacted_message_when_meta_commit_was_interrupted() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = LocalObjectStore::new(temp.path().to_path_buf());
+        let store = Arc::new(FaultInjectingStore::new(LocalAppObjectStore::new(
+            local.clone(),
+        )));
+        let repository = AiSessionRepository::new(store.clone(), crypto());
+        let meta = repository
+            .create_session("session".into(), "model".into(), 100)
+            .await
+            .unwrap();
+        for index in 0..9 {
+            repository
+                .append_message(&meta.id, 101 + index as i64, user_message(index))
+                .await
+                .unwrap();
+        }
+
+        store.fail_save_once(StoredObject::AiSessionMeta {
+            session_id: meta.id.clone(),
+        });
+        assert!(repository
+            .append_message(&meta.id, 110, user_message(9))
+            .await
+            .is_err());
+        assert_eq!(
+            repository
+                .load_meta(&meta.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .committed_message_count,
+            9
+        );
+        assert_eq!(
+            store
+                .list(&StoredObjectCollection::AiSessionMessageBlocks {
+                    session_id: meta.id.clone(),
+                })
+                .await
+                .unwrap(),
+            vec![StoredObject::AiSessionMessageBlock {
+                session_id: meta.id.clone(),
+                level: 1,
+                block_id: 0,
+            }]
+        );
+
+        // 模拟应用重启：进程内协调标记丢失，只能根据加密消息块恢复提交水位。
+        let restarted = AiSessionRepository::new(store, crypto());
+        let recovered = restarted.get_session(&meta.id).await.unwrap().unwrap();
+        assert_eq!(recovered.committed_message_count, 10);
+        assert_eq!(recovered.updated_at, 110);
+        assert_eq!(restarted.load_messages(&meta.id).await.unwrap().len(), 10);
+
+        let next = restarted
+            .append_message(&meta.id, 111, user_message(10))
+            .await
+            .unwrap();
+        assert_eq!(next.index, 10);
+        assert_eq!(
+            restarted
+                .get_session(&meta.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .committed_message_count,
+            11
+        );
+    }
+
+    #[tokio::test]
+    async fn never_silently_rolls_back_a_committed_message_watermark() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(FaultInjectingStore::new(LocalAppObjectStore::new(
+            LocalObjectStore::new(temp.path().to_path_buf()),
+        )));
+        let repository = AiSessionRepository::new(store.clone(), crypto());
+        let meta = repository
+            .create_session("session".into(), "model".into(), 100)
+            .await
+            .unwrap();
+        repository
+            .append_message(&meta.id, 101, user_message(0))
+            .await
+            .unwrap();
+        store
+            .inner
+            .delete(&StoredObject::AiSessionMessageBlock {
+                session_id: meta.id.clone(),
+                level: 0,
+                block_id: 0,
+            })
+            .await
+            .unwrap();
+
+        let restarted = AiSessionRepository::new(store, crypto());
+        assert!(matches!(
+            restarted.get_session(&meta.id).await,
+            Err(AiSessionRepositoryError::CommittedMessagesMissing {
+                committed: 1,
+                actual: 0,
+            })
+        ));
     }
 
     #[tokio::test]
