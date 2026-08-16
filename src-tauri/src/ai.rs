@@ -22,10 +22,10 @@ pub use diary_tools::DiaryReadTools;
 pub use error::AiError;
 pub use provider::AiModelProvider;
 pub use session_types::{
-    deserialize_session_message, deserialize_session_meta, migrate_session_document,
-    AiAssistantRecordState, AiProcessStepKind, AiProcessStepRecord, AiProcessStepState,
-    AiSessionDataError, AiSessionMessage, AiSessionMessagePayload, AiSessionMeta,
-    CURRENT_AI_SESSION_VERSION,
+    ai_message_block_size, deserialize_session_message_block, deserialize_session_meta,
+    migrate_session_document, AiAssistantRecordState, AiProcessStepKind, AiProcessStepRecord,
+    AiProcessStepState, AiSessionDataError, AiSessionMessage, AiSessionMessageBlock,
+    AiSessionMessagePayload, AiSessionMeta, CURRENT_AI_SESSION_VERSION,
 };
 pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor};
 pub use types::{

@@ -1,4 +1,5 @@
 use super::{AiConversationSourceMessage, AiUsage};
+use crate::object_locations::MAX_AI_MESSAGE_BLOCK_LEVEL;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use specta::Type;
@@ -12,6 +13,7 @@ pub struct AiSessionMeta {
     pub version: u32,
     pub id: String,
     pub title: String,
+    pub ai_title: Option<String>,
     pub model: String,
     #[specta(type = f64)]
     pub created_at: i64,
@@ -24,13 +26,22 @@ pub struct AiSessionMeta {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiSessionMessage {
-    pub version: u32,
-    pub session_id: String,
     #[specta(type = f64)]
     pub index: u64,
     #[specta(type = f64)]
     pub created_at: i64,
     pub payload: AiSessionMessagePayload,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSessionMessageBlock {
+    pub version: u32,
+    pub session_id: String,
+    pub level: u32,
+    #[specta(type = f64)]
+    pub block_id: u64,
+    pub messages: Vec<AiSessionMessage>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
@@ -120,6 +131,15 @@ pub fn deserialize_session_meta(
     if meta.title.trim().is_empty() {
         return Err(AiSessionDataError::InvalidData("会话标题不能为空".into()));
     }
+    if meta
+        .ai_title
+        .as_deref()
+        .is_some_and(|title| title.trim().is_empty())
+    {
+        return Err(AiSessionDataError::InvalidData(
+            "AI 生成的会话标题不能为空字符串".into(),
+        ));
+    }
     if meta.model.trim().is_empty() {
         return Err(AiSessionDataError::InvalidData("会话模型不能为空".into()));
     }
@@ -131,28 +151,35 @@ pub fn deserialize_session_meta(
     Ok(meta)
 }
 
-pub fn deserialize_session_message(
+pub fn deserialize_session_message_block(
     expected_session_id: &str,
-    expected_index: u64,
+    expected_level: u32,
+    expected_block_id: u64,
     bytes: &[u8],
-) -> Result<AiSessionMessage, AiSessionDataError> {
+) -> Result<AiSessionMessageBlock, AiSessionDataError> {
     let json = inspect_document(bytes)?;
     validate_current_version(&json)?;
-    let message: AiSessionMessage = serde_json::from_value(json)?;
-    if message.session_id != expected_session_id {
+    let block: AiSessionMessageBlock = serde_json::from_value(json)?;
+    if block.session_id != expected_session_id {
         return Err(AiSessionDataError::InvalidData(format!(
-            "消息所属会话 {} 与请求的会话 {expected_session_id} 不一致",
-            message.session_id
+            "消息块所属会话 {} 与请求的会话 {expected_session_id} 不一致",
+            block.session_id
         )));
     }
-    if message.index != expected_index {
+    if block.level != expected_level || block.block_id != expected_block_id {
         return Err(AiSessionDataError::InvalidData(format!(
-            "消息索引 {} 与请求的索引 {expected_index} 不一致",
-            message.index
+            "消息块位置 {}/{} 与请求的位置 {expected_level}/{expected_block_id} 不一致",
+            block.level, block.block_id
         )));
     }
-    validate_message_payload(&message.payload)?;
-    Ok(message)
+    validate_message_block(&block)?;
+    Ok(block)
+}
+
+pub fn ai_message_block_size(level: u32) -> Option<u64> {
+    (level <= MAX_AI_MESSAGE_BLOCK_LEVEL)
+        .then(|| 10_u64.checked_pow(level))
+        .flatten()
 }
 
 /// 当前仅有 V1，因此现阶段迁移只验证版本；未来 V2 在这里串接连续 JSON 迁移步骤。
@@ -212,6 +239,43 @@ fn validate_message_payload(payload: &AiSessionMessagePayload) -> Result<(), AiS
     }
 }
 
+fn validate_message_block(block: &AiSessionMessageBlock) -> Result<(), AiSessionDataError> {
+    let block_size = ai_message_block_size(block.level).ok_or_else(|| {
+        AiSessionDataError::InvalidData(format!("消息块等级 {} 超出范围", block.level))
+    })?;
+    let expected_len = usize::try_from(block_size)
+        .map_err(|_| AiSessionDataError::InvalidData(format!("消息块等级 {} 过大", block.level)))?;
+    if block.messages.len() != expected_len {
+        return Err(AiSessionDataError::InvalidData(format!(
+            "{level} 级消息块必须包含 {block_size} 条消息，实际为 {actual}",
+            level = block.level,
+            actual = block.messages.len()
+        )));
+    }
+    let start = block
+        .block_id
+        .checked_mul(block_size)
+        .ok_or_else(|| AiSessionDataError::InvalidData("消息块起始索引溢出".into()))?;
+    start
+        .checked_add(block_size.saturating_sub(1))
+        .ok_or_else(|| AiSessionDataError::InvalidData("消息块结束索引溢出".into()))?;
+    for (offset, message) in block.messages.iter().enumerate() {
+        let offset = u64::try_from(offset)
+            .map_err(|_| AiSessionDataError::InvalidData("消息块偏移量溢出".into()))?;
+        let expected_index = start
+            .checked_add(offset)
+            .ok_or_else(|| AiSessionDataError::InvalidData("消息索引溢出".into()))?;
+        if message.index != expected_index {
+            return Err(AiSessionDataError::InvalidData(format!(
+                "消息块内索引不连续：期望 {expected_index}，实际为 {}",
+                message.index
+            )));
+        }
+        validate_message_payload(&message.payload)?;
+    }
+    Ok(())
+}
+
 fn is_numeric_id(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
 }
@@ -226,6 +290,7 @@ mod tests {
             "version": version,
             "id": "8215021834823",
             "title": "最近的日记",
+            "aiTitle": null,
             "model": "deepseek-chat",
             "createdAt": 1_700_000_000_000_i64,
             "updatedAt": 1_700_000_000_100_i64,
@@ -264,11 +329,9 @@ mod tests {
     }
 
     #[test]
-    fn roundtrips_user_and_assistant_messages() {
-        let messages = [
+    fn roundtrips_level_one_message_block() {
+        let mut messages = vec![
             AiSessionMessage {
-                version: CURRENT_AI_SESSION_VERSION,
-                session_id: "8215021834823".into(),
                 index: 0,
                 created_at: 1,
                 payload: AiSessionMessagePayload::User {
@@ -276,8 +339,6 @@ mod tests {
                 },
             },
             AiSessionMessage {
-                version: CURRENT_AI_SESSION_VERSION,
-                session_id: "8215021834823".into(),
                 index: 1,
                 created_at: 2,
                 payload: AiSessionMessagePayload::Assistant {
@@ -299,14 +360,27 @@ mod tests {
                 },
             },
         ];
-
-        for message in messages {
-            let bytes = serde_json::to_vec(&message).unwrap();
-            assert_eq!(
-                deserialize_session_message(&message.session_id, message.index, &bytes).unwrap(),
-                message
-            );
+        for index in 2..10 {
+            messages.push(AiSessionMessage {
+                index,
+                created_at: index as i64,
+                payload: AiSessionMessagePayload::User {
+                    content: format!("消息 {index}"),
+                },
+            });
         }
+        let block = AiSessionMessageBlock {
+            version: CURRENT_AI_SESSION_VERSION,
+            session_id: "8215021834823".into(),
+            level: 1,
+            block_id: 0,
+            messages,
+        };
+        let bytes = serde_json::to_vec(&block).unwrap();
+        assert_eq!(
+            deserialize_session_message_block("8215021834823", 1, 0, &bytes).unwrap(),
+            block
+        );
     }
 
     #[test]
@@ -314,27 +388,87 @@ mod tests {
         let value = json!({
             "version": 1,
             "sessionId": "8215021834823",
-            "index": 3,
-            "createdAt": 1,
-            "payload": {
-                "role": "assistant",
-                "state": "completed",
-                "content": " ",
-                "error": null,
-                "model": "model",
-                "usage": null,
-                "processSteps": [],
-                "trace": []
-            }
+            "level": 0,
+            "blockId": 3,
+            "messages": [{
+                "index": 3,
+                "createdAt": 1,
+                "payload": {
+                    "role": "assistant",
+                    "state": "completed",
+                    "content": " ",
+                    "error": null,
+                    "model": "model",
+                    "usage": null,
+                    "processSteps": [],
+                    "trace": []
+                }
+            }]
         });
         let bytes = serde_json::to_vec(&value).unwrap();
         assert!(matches!(
-            deserialize_session_message("8215021834823", 3, &bytes),
+            deserialize_session_message_block("8215021834823", 0, 3, &bytes),
             Err(AiSessionDataError::InvalidData(message)) if message.contains("不能为空")
         ));
         assert!(matches!(
-            deserialize_session_message("8215021834823", 4, &bytes),
-            Err(AiSessionDataError::InvalidData(message)) if message.contains("索引")
+            deserialize_session_message_block("8215021834823", 0, 4, &bytes),
+            Err(AiSessionDataError::InvalidData(message)) if message.contains("位置")
+        ));
+    }
+
+    #[test]
+    fn validates_block_size_and_contiguous_indices() {
+        let message = |index| AiSessionMessage {
+            index,
+            created_at: index as i64,
+            payload: AiSessionMessagePayload::User {
+                content: format!("消息 {index}"),
+            },
+        };
+        let level_zero = AiSessionMessageBlock {
+            version: 1,
+            session_id: "8215021834823".into(),
+            level: 0,
+            block_id: 20,
+            messages: vec![message(20)],
+        };
+        let bytes = serde_json::to_vec(&level_zero).unwrap();
+        assert_eq!(
+            deserialize_session_message_block("8215021834823", 0, 20, &bytes).unwrap(),
+            level_zero
+        );
+
+        let invalid = AiSessionMessageBlock {
+            version: 1,
+            session_id: "8215021834823".into(),
+            level: 1,
+            block_id: 2,
+            messages: (20..29).map(message).collect(),
+        };
+        assert!(matches!(
+            deserialize_session_message_block(
+                "8215021834823",
+                1,
+                2,
+                &serde_json::to_vec(&invalid).unwrap(),
+            ),
+            Err(AiSessionDataError::InvalidData(message)) if message.contains("10 条")
+        ));
+
+        let mut non_contiguous: Vec<_> = (20..30).map(message).collect();
+        non_contiguous[5].index = 99;
+        let invalid = AiSessionMessageBlock {
+            messages: non_contiguous,
+            ..invalid
+        };
+        assert!(matches!(
+            deserialize_session_message_block(
+                "8215021834823",
+                1,
+                2,
+                &serde_json::to_vec(&invalid).unwrap(),
+            ),
+            Err(AiSessionDataError::InvalidData(message)) if message.contains("不连续")
         ));
     }
 }

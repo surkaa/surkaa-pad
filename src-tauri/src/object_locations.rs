@@ -6,30 +6,7 @@ const AI_DIRECTORY: &str = "ai";
 const AI_SESSIONS_DIRECTORY: &str = "sessions";
 const AI_SESSION_META_FILENAME: &str = "meta.enc";
 const AI_SESSION_MESSAGES_DIRECTORY: &str = "messages";
-const AI_MESSAGE_INDEX_WIDTH: usize = 20;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum AiSessionMessageKind {
-    User,
-    Assistant,
-}
-
-impl AiSessionMessageKind {
-    const fn key_name(self) -> &'static str {
-        match self {
-            Self::User => "user",
-            Self::Assistant => "assistant",
-        }
-    }
-
-    fn from_key_name(value: &str) -> Option<Self> {
-        match value {
-            "user" => Some(Self::User),
-            "assistant" => Some(Self::Assistant),
-            _ => None,
-        }
-    }
-}
+pub const MAX_AI_MESSAGE_BLOCK_LEVEL: u32 = 19;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum StoredObject {
@@ -47,10 +24,10 @@ pub enum StoredObject {
     AiSessionMeta {
         session_id: String,
     },
-    AiSessionMessage {
+    AiSessionMessageBlock {
         session_id: String,
-        index: u64,
-        kind: AiSessionMessageKind,
+        level: u32,
+        block_id: u64,
     },
 }
 
@@ -60,7 +37,7 @@ impl StoredObject {
             Self::DiaryManifest { diary_id }
             | Self::DiaryAttachment { diary_id, .. }
             | Self::DiaryAttachmentBackup { diary_id, .. } => Some(diary_id),
-            Self::AiSessionMeta { .. } | Self::AiSessionMessage { .. } => None,
+            Self::AiSessionMeta { .. } | Self::AiSessionMessageBlock { .. } => None,
         }
     }
 }
@@ -115,10 +92,15 @@ impl ObjectLocations {
         )
     }
 
-    pub fn ai_session_message(session_id: &str, index: u64, kind: AiSessionMessageKind) -> String {
+    pub fn ai_session_message_level_prefix(session_id: &str, level: u32) -> String {
         format!(
-            "{AI_DIRECTORY}/{AI_SESSIONS_DIRECTORY}/{session_id}/{AI_SESSION_MESSAGES_DIRECTORY}/{index:0AI_MESSAGE_INDEX_WIDTH$}_{}.enc",
-            kind.key_name()
+            "{AI_DIRECTORY}/{AI_SESSIONS_DIRECTORY}/{session_id}/{AI_SESSION_MESSAGES_DIRECTORY}/{level}/"
+        )
+    }
+
+    pub fn ai_session_message_block(session_id: &str, level: u32, block_id: u64) -> String {
+        format!(
+            "{AI_DIRECTORY}/{AI_SESSIONS_DIRECTORY}/{session_id}/{AI_SESSION_MESSAGES_DIRECTORY}/{level}/{block_id}.enc"
         )
     }
 
@@ -134,11 +116,11 @@ impl ObjectLocations {
                 attachment_id,
             } => Self::diary_attachment_backup(diary_id, attachment_id),
             StoredObject::AiSessionMeta { session_id } => Self::ai_session_meta(session_id),
-            StoredObject::AiSessionMessage {
+            StoredObject::AiSessionMessageBlock {
                 session_id,
-                index,
-                kind,
-            } => Self::ai_session_message(session_id, *index, *kind),
+                level,
+                block_id,
+            } => Self::ai_session_message_block(session_id, *level, *block_id),
         }
     }
 
@@ -175,16 +157,17 @@ impl ObjectLocations {
             return None;
         }
         let session_id = valid_numeric_id(parts.next()?)?.to_string();
-        match (parts.next()?, parts.next(), parts.next()) {
-            (AI_SESSION_META_FILENAME, None, None) => {
+        match (parts.next()?, parts.next(), parts.next(), parts.next()) {
+            (AI_SESSION_META_FILENAME, None, None, None) => {
                 Some(StoredObject::AiSessionMeta { session_id })
             }
-            (AI_SESSION_MESSAGES_DIRECTORY, Some(filename), None) => {
-                let (index, kind) = parse_ai_message_filename(filename)?;
-                Some(StoredObject::AiSessionMessage {
+            (AI_SESSION_MESSAGES_DIRECTORY, Some(level), Some(filename), None) => {
+                let level = parse_ai_message_block_level(level)?;
+                let block_id = parse_ai_message_block_id(filename)?;
+                Some(StoredObject::AiSessionMessageBlock {
                     session_id,
-                    index,
-                    kind,
+                    level,
+                    block_id,
                 })
             }
             _ => None,
@@ -246,16 +229,25 @@ fn valid_numeric_id(value: &str) -> Option<&str> {
     (!value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())).then_some(value)
 }
 
-fn parse_ai_message_filename(filename: &str) -> Option<(u64, AiSessionMessageKind)> {
-    let stem = filename.strip_suffix(".enc")?;
-    let (index, kind) = stem.split_once('_')?;
-    if index.len() != AI_MESSAGE_INDEX_WIDTH || !index.bytes().all(|byte| byte.is_ascii_digit()) {
+fn parse_ai_message_block_level(value: &str) -> Option<u32> {
+    let level = parse_canonical_nonnegative_integer(value)?;
+    u32::try_from(level)
+        .ok()
+        .filter(|level| *level <= MAX_AI_MESSAGE_BLOCK_LEVEL)
+}
+
+fn parse_ai_message_block_id(filename: &str) -> Option<u64> {
+    parse_canonical_nonnegative_integer(filename.strip_suffix(".enc")?)
+}
+
+fn parse_canonical_nonnegative_integer(value: &str) -> Option<u64> {
+    if value.is_empty()
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+        || (value.len() > 1 && value.starts_with('0'))
+    {
         return None;
     }
-    Some((
-        index.parse().ok()?,
-        AiSessionMessageKind::from_key_name(kind)?,
-    ))
+    value.parse().ok()
 }
 
 fn valid_leaf(value: &str) -> Option<&str> {
@@ -295,12 +287,8 @@ mod tests {
             "ai/sessions/8215021834823/meta.enc"
         );
         assert_eq!(
-            ObjectLocations::ai_session_message(
-                "8215021834823",
-                12,
-                AiSessionMessageKind::Assistant,
-            ),
-            "ai/sessions/8215021834823/messages/00000000000000000012_assistant.enc"
+            ObjectLocations::ai_session_message_block("8215021834823", 1, 2),
+            "ai/sessions/8215021834823/messages/1/2.enc"
         );
     }
 
@@ -321,10 +309,10 @@ mod tests {
             StoredObject::AiSessionMeta {
                 session_id: "8215021834823".into(),
             },
-            StoredObject::AiSessionMessage {
+            StoredObject::AiSessionMessageBlock {
                 session_id: "8215021834823".into(),
-                index: 12,
-                kind: AiSessionMessageKind::Assistant,
+                level: 1,
+                block_id: 2,
             },
         ];
         for object in objects {
@@ -365,7 +353,11 @@ mod tests {
             "ai/session/meta.enc",
             "ai/sessions/not-a-number/meta.enc",
             "ai/sessions/8215021834823/messages/12_user.enc",
-            "ai/sessions/8215021834823/messages/00000000000000000012_unknown.enc",
+            "ai/sessions/8215021834823/messages/20/0.enc",
+            "ai/sessions/8215021834823/messages/01/0.enc",
+            "ai/sessions/8215021834823/messages/1/02.enc",
+            "ai/sessions/8215021834823/messages/1/not-a-number.enc",
+            "ai/sessions/8215021834823/messages/1/2.enc/extra",
         ] {
             assert_eq!(ObjectLocations::parse(key), None, "key={key}");
         }

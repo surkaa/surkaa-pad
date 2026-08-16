@@ -517,7 +517,7 @@ fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
         }
         StoredObject::DiaryAttachmentBackup { .. }
         | StoredObject::AiSessionMeta { .. }
-        | StoredObject::AiSessionMessage { .. } => None,
+        | StoredObject::AiSessionMessageBlock { .. } => None,
     }
 }
 
