@@ -377,19 +377,43 @@ impl LocalObjectStore {
 
     /// 获取所有有效本地对象的信息。
     pub async fn get_all_entries(&self) -> Result<Vec<LocalObjectEntry>, CacheError> {
+        self.get_entries_under(self.store_dir.as_path()).await
+    }
+
+    /// 获取指定 Key 前缀下的所有有效本地对象。
+    ///
+    /// 调用方应传入目录型前缀（例如 `ai/sessions/`）；返回结果中的 Key 仍相对于
+    /// LocalObjectStore 根目录，便于交给统一的对象位置解析器处理。
+    pub async fn get_entries_with_prefix(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<LocalObjectEntry>, CacheError> {
+        let prefix = prefix.trim_matches('/');
+        if Path::new(prefix)
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        {
+            return Err(CacheError::InvalidFilename);
+        }
+        let start_dir = if prefix.is_empty() {
+            self.store_dir.as_ref().to_path_buf()
+        } else {
+            self.store_dir.join(prefix)
+        };
+        self.get_entries_under(&start_dir).await
+    }
+
+    async fn get_entries_under(
+        &self,
+        start_dir: &Path,
+    ) -> Result<Vec<LocalObjectEntry>, CacheError> {
         let mut results = Vec::new();
-        let mut stack = vec![self.store_dir.as_ref().to_path_buf()];
+        let mut stack = vec![start_dir.to_path_buf()];
 
         while let Some(dir) = stack.pop() {
             let mut read_dir = match tokio::fs::read_dir(&dir).await {
                 Ok(read_dir) => read_dir,
-                Err(error)
-                    if error.kind() == std::io::ErrorKind::NotFound
-                        && dir.as_path() == self.store_dir.as_path() =>
-                {
-                    // 尚未产生任何本地对象，或存储目录被系统清理时，按空存储处理。
-                    return Ok(results);
-                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(results),
                 Err(error) => return Err(error.into()),
             };
 
