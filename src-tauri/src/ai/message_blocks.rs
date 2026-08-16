@@ -84,6 +84,26 @@ pub async fn load_compacted_messages(
     session_id: &str,
     expected_count: u64,
 ) -> Result<Vec<AiSessionMessage>, AiMessageBlockError> {
+    let messages = load_all_compacted_messages(store, session_id).await?;
+    let actual_count =
+        u64::try_from(messages.len()).map_err(|_| AiMessageBlockError::IndexOverflow)?;
+    if actual_count != expected_count {
+        return Err(AiMessageBlockError::NonContiguousMessages {
+            expected: expected_count,
+            actual: actual_count,
+        });
+    }
+    Ok(messages)
+}
+
+/// 不依赖 meta 中的提交水位，从当前所有消息块恢复完整且连续的物理消息序列。
+///
+/// 该入口用于会话首次打开或上次提交失败后的协调。正常追加仍使用 meta 中的水位，
+/// 不会在每次写入前重复扫描全部消息块。
+pub async fn load_all_compacted_messages(
+    store: &dyn AiMessageBlockStore,
+    session_id: &str,
+) -> Result<Vec<AiSessionMessage>, AiMessageBlockError> {
     let mut messages = BTreeMap::<u64, AiSessionMessage>::new();
     for block in store.list_blocks(session_id).await? {
         ensure_block_location(&block, session_id, block.level, block.block_id)?;
@@ -104,15 +124,7 @@ pub async fn load_compacted_messages(
         }
     }
 
-    let actual_count =
-        u64::try_from(messages.len()).map_err(|_| AiMessageBlockError::IndexOverflow)?;
-    if actual_count != expected_count {
-        return Err(AiMessageBlockError::NonContiguousMessages {
-            expected: expected_count,
-            actual: actual_count,
-        });
-    }
-    for (expected, actual) in (0..expected_count).zip(messages.keys().copied()) {
+    for (expected, actual) in (0_u64..).zip(messages.keys().copied()) {
         if expected != actual {
             return Err(AiMessageBlockError::NonContiguousMessages { expected, actual });
         }

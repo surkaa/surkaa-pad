@@ -23,7 +23,8 @@ pub use config::AiProviderConfig;
 pub use diary_tools::DiaryReadTools;
 pub use error::AiError;
 pub use message_blocks::{
-    append_and_compact_message, load_compacted_messages, AiMessageBlockError, AiMessageBlockStore,
+    append_and_compact_message, load_all_compacted_messages, load_compacted_messages,
+    AiMessageBlockError, AiMessageBlockStore,
 };
 pub use provider::AiModelProvider;
 pub use session_repository::{AiSessionRepository, AiSessionRepositoryError};
