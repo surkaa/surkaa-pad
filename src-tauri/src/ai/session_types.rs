@@ -172,7 +172,7 @@ pub fn deserialize_session_message_block(
             block.level, block.block_id
         )));
     }
-    validate_message_block(&block)?;
+    validate_session_message_block(&block)?;
     Ok(block)
 }
 
@@ -239,7 +239,9 @@ fn validate_message_payload(payload: &AiSessionMessagePayload) -> Result<(), AiS
     }
 }
 
-fn validate_message_block(block: &AiSessionMessageBlock) -> Result<(), AiSessionDataError> {
+pub(crate) fn validate_session_message_block(
+    block: &AiSessionMessageBlock,
+) -> Result<(), AiSessionDataError> {
     let block_size = ai_message_block_size(block.level).ok_or_else(|| {
         AiSessionDataError::InvalidData(format!("消息块等级 {} 超出范围", block.level))
     })?;

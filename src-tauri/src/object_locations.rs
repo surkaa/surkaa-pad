@@ -6,6 +6,9 @@ const AI_DIRECTORY: &str = "ai";
 const AI_SESSIONS_DIRECTORY: &str = "sessions";
 const AI_SESSION_META_FILENAME: &str = "meta.enc";
 const AI_SESSION_MESSAGES_DIRECTORY: &str = "messages";
+/// `u64` 消息索引最多只需要 0–19 级十进制块。
+/// 极高等级的块理论上可能触及对象存储约 5 GB 的单对象上限，但真实会话几乎不可能
+/// 累积到对应消息数量，现阶段不为这个不可达场景引入按字节再次拆块的复杂度。
 pub const MAX_AI_MESSAGE_BLOCK_LEVEL: u32 = 19;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

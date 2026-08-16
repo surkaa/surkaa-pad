@@ -8,6 +8,7 @@ mod client_tests;
 mod config;
 mod diary_tools;
 mod error;
+mod message_blocks;
 mod openai_protocol;
 mod provider;
 mod session_types;
@@ -20,6 +21,9 @@ pub use client::OpenAiCompatibleClient;
 pub use config::AiProviderConfig;
 pub use diary_tools::DiaryReadTools;
 pub use error::AiError;
+pub use message_blocks::{
+    append_and_compact_message, load_compacted_messages, AiMessageBlockError, AiMessageBlockStore,
+};
 pub use provider::AiModelProvider;
 pub use session_types::{
     ai_message_block_size, deserialize_session_message_block, deserialize_session_meta,
