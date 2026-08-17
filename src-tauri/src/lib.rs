@@ -17,6 +17,31 @@ mod tasks;
 mod test_utils;
 mod utils;
 
+#[cfg(target_os = "android")]
+mod android_tls {
+    use jni::{
+        objects::JObject,
+        sys::{jboolean, JNI_FALSE, JNI_TRUE},
+        JNIEnv,
+    };
+
+    /// 初始化 reqwest/rustls 所使用的 Android 系统证书验证器。
+    ///
+    /// `rustls-platform-verifier` 需要在首次 HTTPS 请求前保存 JVM 与应用 Context。
+    /// Kotlin 端会在 `MainActivity.onCreate` 中调用此 JNI 方法。
+    #[no_mangle]
+    pub extern "system" fn Java_cn_surkaa_pad_MainActivity_initializeRustlsPlatformVerifier(
+        mut env: JNIEnv,
+        _activity: JObject,
+        context: JObject,
+    ) -> jboolean {
+        match rustls_platform_verifier::android::init_hosted(&mut env, context) {
+            Ok(()) => JNI_TRUE,
+            Err(_) => JNI_FALSE,
+        }
+    }
+}
+
 use crate::ai::ai_command::{cmd_list_ai_models, cmd_run_ai_agent};
 use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::attachment_command::{

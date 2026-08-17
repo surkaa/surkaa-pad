@@ -1,5 +1,7 @@
 package cn.surkaa.pad
 
+import android.content.Context
+import android.util.Log
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 
@@ -10,6 +12,14 @@ import androidx.core.view.OnApplyWindowInsetsListener
 import kotlin.math.max
 
 class MainActivity : TauriActivity() {
+    companion object {
+        init {
+            System.loadLibrary("surkaa_pad_lib")
+        }
+    }
+
+    private external fun initializeRustlsPlatformVerifier(context: Context): Boolean
+
     fun applySystemBarsPadding(view: View) {
         ViewCompat.setOnApplyWindowInsetsListener(
             view,
@@ -29,6 +39,12 @@ class MainActivity : TauriActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (!initializeRustlsPlatformVerifier(applicationContext)) {
+            Log.e(
+                "SurKaaPad",
+                "Failed to initialize Android TLS certificate verifier; HTTPS requests will fail.",
+            )
+        }
         window.decorView?.let { applySystemBarsPadding(it) }
     }
 }

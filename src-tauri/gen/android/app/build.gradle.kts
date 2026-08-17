@@ -88,6 +88,9 @@ rust {
 }
 
 dependencies {
+    // reqwest 0.13 的 rustls 后端使用此 AAR 调用 Android TrustManager。
+    // 文件路径由根 Gradle 脚本通过 cargo metadata 定位，避免依赖开发机目录或网络解析。
+    implementation(files(rootProject.extra["rustlsPlatformVerifierAndroidAar"] as File))
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.10.1")

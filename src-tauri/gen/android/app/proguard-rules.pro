@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# rustls-platform-verifier 从 Rust 通过 JNI 调用 Android TrustManager；R8 无法
+# 静态发现该调用，因此 release 包必须保留其 Kotlin 支持类。
+-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }
