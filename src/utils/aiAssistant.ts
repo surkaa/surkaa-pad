@@ -106,7 +106,7 @@ export function buildPersistedAiExchanges(
     }
     if (pendingQuestion === null) continue;
 
-    const processSteps: AiProcessStep[] = message.payload.process_steps.map(step => ({...step}));
+    const processSteps: AiProcessStep[] = message.payload.processSteps.map(step => ({...step}));
     const completed = message.payload.state === 'completed';
     exchanges.push({
       question: pendingQuestion,

@@ -68,6 +68,7 @@ pub enum AiSessionMessagePayload {
         error: Option<String>,
         model: String,
         usage: Option<AiUsage>,
+        #[specta(rename = "processSteps")]
         process_steps: Vec<AiProcessStepRecord>,
         /// 本轮新产生的 assistant/tool 消息，不重复保存系统提示和历史轮次。
         trace: Vec<AiConversationSourceMessage>,
