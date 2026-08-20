@@ -4,6 +4,7 @@ import type {
   AiAgentResponse,
   AiConversationSource,
   AiConversationTurn,
+  AiSessionMessage,
 } from '../bindings';
 import api from './api';
 import type {AiServiceConfig} from './aiConfig';
@@ -37,7 +38,12 @@ export interface AiConversationHistorySource {
   answer: string;
 }
 
+export interface PersistedAiExchange extends AiAgentDisplayState {
+  question: string;
+}
+
 export type AiAgentRunner = typeof api.cmdRunAiAgent;
+export type AiSessionAgentRunner = typeof api.cmdRunAiSessionAgent;
 
 export async function startAiQuestion(
   config: AiServiceConfig,
@@ -59,6 +65,81 @@ export async function startAiQuestion(
     history,
     normalizedPrompt,
   );
+}
+
+export async function startAiSessionQuestion(
+  config: AiServiceConfig,
+  sessionId: string,
+  prompt: string,
+  event: Channel<AiAgentEvent>,
+  runner: AiSessionAgentRunner = api.cmdRunAiSessionAgent,
+): Promise<string> {
+  const normalizedSessionId = sessionId.trim();
+  const normalizedPrompt = prompt.trim();
+  if (!normalizedSessionId) throw new Error('AI 会话 ID 不能为空');
+  if (!normalizedPrompt) throw new Error('问题不能为空');
+
+  return runner(
+    event,
+    config.baseUrl,
+    config.apiKey.trim() || null,
+    normalizedSessionId,
+    normalizedPrompt,
+  );
+}
+
+/**
+ * 将持久化的用户/助手消息还原为页面按轮展示的数据。
+ * 仓库正常情况下会保证消息成对；这里仍容忍损坏或中断留下的孤立消息，避免整页无法打开。
+ */
+export function buildPersistedAiExchanges(
+  messages: readonly AiSessionMessage[],
+): PersistedAiExchange[] {
+  const exchanges: PersistedAiExchange[] = [];
+  let pendingQuestion: string | null = null;
+
+  for (const message of messages) {
+    if (message.payload.role === 'user') {
+      if (pendingQuestion !== null) exchanges.push(interruptedExchange(pendingQuestion));
+      pendingQuestion = message.payload.content;
+      continue;
+    }
+    if (pendingQuestion === null) continue;
+
+    const processSteps: AiProcessStep[] = message.payload.process_steps.map(step => ({...step}));
+    const completed = message.payload.state === 'completed';
+    exchanges.push({
+      question: pendingQuestion,
+      state: message.payload.state,
+      answer: message.payload.content,
+      status: '',
+      response: completed
+        ? {
+          answer: message.payload.content,
+          modelRounds: processSteps.filter(step => step.kind === 'model').length,
+          usage: message.payload.usage,
+        }
+        : null,
+      error: message.payload.error,
+      processSteps,
+    });
+    pendingQuestion = null;
+  }
+
+  if (pendingQuestion !== null) exchanges.push(interruptedExchange(pendingQuestion));
+  return exchanges;
+}
+
+function interruptedExchange(question: string): PersistedAiExchange {
+  return {
+    question,
+    state: 'failed',
+    answer: '',
+    status: '',
+    response: null,
+    error: '这次回答未完整保存，请重新提问',
+    processSteps: [],
+  };
 }
 
 export function buildAiConversationHistory(

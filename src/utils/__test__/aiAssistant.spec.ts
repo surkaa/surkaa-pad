@@ -3,6 +3,7 @@ import type {Channel} from '@tauri-apps/api/core';
 import type {AiAgentEvent} from '../../bindings';
 import {
   buildAiConversationHistory,
+  buildPersistedAiExchanges,
   formatAiResponseMeta,
   formatAiConversationSource,
   formatAiProcessSummary,
@@ -12,6 +13,7 @@ import {
   reduceAiAgentEvent,
   shouldCollapseAiProcess,
   startAiQuestion,
+  startAiSessionQuestion,
 } from '../aiAssistant';
 import type {AiServiceConfig} from '../aiConfig';
 
@@ -53,6 +55,161 @@ describe('startAiQuestion', () => {
       '问题',
     );
     await expect(startAiQuestion(config, ' \n ', [], event, runner)).rejects.toThrow('问题不能为空');
+  });
+});
+
+describe('startAiSessionQuestion', () => {
+  it('uses the persisted session and does not resend model or history', async () => {
+    const event = {} as Channel<AiAgentEvent>;
+    const runner = vi.fn().mockResolvedValue('session-task-token');
+
+    await expect(startAiSessionQuestion(config, ' 8212345678901 ', ' 继续总结 ', event, runner))
+      .resolves.toBe('session-task-token');
+    expect(runner).toHaveBeenCalledWith(
+      event,
+      config.baseUrl,
+      'local-secret',
+      '8212345678901',
+      '继续总结',
+    );
+  });
+
+  it('rejects blank session ids and questions', async () => {
+    const event = {} as Channel<AiAgentEvent>;
+    const runner = vi.fn();
+
+    await expect(startAiSessionQuestion(config, ' ', '问题', event, runner))
+      .rejects.toThrow('AI 会话 ID 不能为空');
+    await expect(startAiSessionQuestion(config, '8212345678901', ' ', event, runner))
+      .rejects.toThrow('问题不能为空');
+    expect(runner).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildPersistedAiExchanges', () => {
+  it('restores completed, failed, and cancelled exchanges in order', () => {
+    const messages = [
+      {
+        index: 0,
+        createdAt: 100,
+        payload: {role: 'user' as const, content: '第一问'},
+      },
+      {
+        index: 1,
+        createdAt: 110,
+        payload: {
+          role: 'assistant' as const,
+          state: 'completed' as const,
+          content: '第一答',
+          error: null,
+          model: 'qwen3:8b',
+          usage: {promptTokens: 20, completionTokens: 8, totalTokens: 28},
+          process_steps: [{
+            id: 'model-1',
+            kind: 'model' as const,
+            title: '生成回答',
+            detail: '回答生成完成',
+            reasoning: '',
+            state: 'completed' as const,
+            durationMs: 40,
+          }],
+          trace: [],
+        },
+      },
+      {
+        index: 2,
+        createdAt: 120,
+        payload: {role: 'user' as const, content: '第二问'},
+      },
+      {
+        index: 3,
+        createdAt: 130,
+        payload: {
+          role: 'assistant' as const,
+          state: 'failed' as const,
+          content: '部分回答',
+          error: '连接断开',
+          model: 'qwen3:8b',
+          usage: null,
+          process_steps: [],
+          trace: [],
+        },
+      },
+      {
+        index: 4,
+        createdAt: 140,
+        payload: {role: 'user' as const, content: '第三问'},
+      },
+      {
+        index: 5,
+        createdAt: 150,
+        payload: {
+          role: 'assistant' as const,
+          state: 'cancelled' as const,
+          content: '',
+          error: null,
+          model: 'qwen3:8b',
+          usage: null,
+          process_steps: [],
+          trace: [],
+        },
+      },
+    ];
+
+    expect(buildPersistedAiExchanges(messages)).toEqual([
+      expect.objectContaining({
+        question: '第一问',
+        state: 'completed',
+        answer: '第一答',
+        response: {
+          answer: '第一答',
+          modelRounds: 1,
+          usage: {promptTokens: 20, completionTokens: 8, totalTokens: 28},
+        },
+      }),
+      expect.objectContaining({
+        question: '第二问',
+        state: 'failed',
+        answer: '部分回答',
+        error: '连接断开',
+      }),
+      expect.objectContaining({
+        question: '第三问',
+        state: 'cancelled',
+      }),
+    ]);
+  });
+
+  it('keeps loading when persisted data contains orphan messages', () => {
+    const messages = [
+      {
+        index: 0,
+        createdAt: 100,
+        payload: {
+          role: 'assistant' as const,
+          state: 'completed' as const,
+          content: '没有问题的回答',
+          error: null,
+          model: 'qwen3:8b',
+          usage: null,
+          process_steps: [],
+          trace: [],
+        },
+      },
+      {
+        index: 1,
+        createdAt: 110,
+        payload: {role: 'user' as const, content: '没有回答的问题'},
+      },
+    ];
+
+    expect(buildPersistedAiExchanges(messages)).toEqual([
+      expect.objectContaining({
+        question: '没有回答的问题',
+        state: 'failed',
+        error: '这次回答未完整保存，请重新提问',
+      }),
+    ]);
   });
 });
 

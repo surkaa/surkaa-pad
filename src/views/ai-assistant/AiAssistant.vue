@@ -4,17 +4,17 @@ import {computed, nextTick, onActivated, onBeforeUnmount, ref} from 'vue';
 import {useRouter} from 'vue-router';
 import {openUrl} from '@tauri-apps/plugin-opener';
 import {useQuasar} from 'quasar';
-import type {AiAgentEvent, AiConversationSource} from '../../bindings';
+import type {AiAgentEvent, AiConversationSource, AiSessionMeta} from '../../bindings';
 import {
+  buildPersistedAiExchanges,
   formatAiResponseMeta,
   formatAiProcessSummary,
   formatProcessDuration,
-  buildAiConversationHistory,
   initialAiAgentDisplayState,
   isTerminalAiExchangeState,
   nextAiProcessExpanded,
   reduceAiAgentEvent,
-  startAiQuestion,
+  startAiSessionQuestion,
   type AiAgentDisplayState,
   type AiExchangeState,
   type AiProcessStep,
@@ -30,6 +30,7 @@ import {formatError} from '../../utils/formatError';
 import {useConfigStore} from '../../stores/config';
 import {useAiAssistantShortcuts} from '../../composables/useAiAssistantShortcuts';
 import AiConversationSourceDialog from './AiConversationSourceDialog.vue';
+import AiSessionSidebar from './AiSessionSidebar.vue';
 
 interface AiExchange extends AiAgentDisplayState {
   id: number;
@@ -61,22 +62,36 @@ const modelCheckError = ref<string | null>(null);
 const question = ref('');
 const sending = ref(false);
 const exchanges = ref<AiExchange[]>([]);
+const sessions = ref<AiSessionMeta[]>([]);
+const activeSessionId = ref<string | null>(null);
+const loadingSessions = ref(true);
+const loadingSession = ref(false);
+const sessionsError = ref<string | null>(null);
+const deletingSessionId = ref<string | null>(null);
+const sessionDrawerOpen = ref(false);
 const conversationSource = ref<AiConversationSource | null>(null);
 const showConversationSource = ref(false);
+const activeSession = computed(() => (
+  sessions.value.find(session => session.id === activeSessionId.value) ?? null
+));
+const activeModel = computed(() => activeSession.value?.model ?? config.value?.model ?? '');
 const isCanceling = computed(() => exchanges.value.some(exchange => exchange.state === 'canceling'));
 const modelReady = computed(() => !!config.value && modelCheckState.value === 'available');
 const modelLabel = computed(() => {
-  const model = config.value?.model;
+  const model = activeModel.value;
   if (!model) return '';
   if (modelCheckState.value === 'checking') return `正在检查 ${model}…`;
   if (modelCheckState.value === 'unavailable') return `${model} · 当前不可用`;
   if (modelCheckState.value === 'failed') return `${model} · 无法验证`;
-  return `${model} · 保留当前会话上下文`;
+  return activeSessionId.value
+    ? `${model} · 对话已自动保存`
+    : `${model} · 新对话将在首次发送时创建`;
 });
 let nextExchangeId = 1;
 let pendingScrollFrame: number | null = null;
 let unmounting = false;
 let configRefreshId = 0;
+let sessionLoadId = 0;
 
 defineOptions({name: 'AiAssistant'});
 
@@ -85,6 +100,8 @@ useAiAssistantShortcuts(shortcuts, {
 });
 
 onActivated(async () => {
+  unmounting = false;
+  await refreshSessions();
   await refreshConfig();
   await nextTick();
   questionInput.value?.focus();
@@ -92,6 +109,7 @@ onActivated(async () => {
 onBeforeUnmount(() => {
   unmounting = true;
   configRefreshId += 1;
+  sessionLoadId += 1;
   if (pendingScrollFrame !== null) cancelAnimationFrame(pendingScrollFrame);
   void cancelActiveQuestion(false);
 });
@@ -107,7 +125,7 @@ async function refreshConfig() {
     if (refreshId !== configRefreshId) return;
     config.value = loadedConfig;
     loadingConfig.value = false;
-    if (loadedConfig) await checkModelAvailability(loadedConfig, refreshId);
+    if (loadedConfig) await checkModelAvailability(configForActiveSession(loadedConfig), refreshId);
   } catch (error) {
     if (refreshId !== configRefreshId) return;
     config.value = null;
@@ -115,6 +133,12 @@ async function refreshConfig() {
   } finally {
     if (refreshId === configRefreshId) loadingConfig.value = false;
   }
+}
+
+function configForActiveSession(baseConfig: AiServiceConfig): AiServiceConfig {
+  return activeSession.value
+    ? {...baseConfig, model: activeSession.value.model}
+    : baseConfig;
 }
 
 async function checkModelAvailability(
@@ -136,7 +160,135 @@ async function checkModelAvailability(
 
 function retryModelCheck() {
   const activeConfig = config.value;
-  if (activeConfig) void checkModelAvailability(activeConfig);
+  if (activeConfig) void checkModelAvailability(configForActiveSession(activeConfig));
+}
+
+async function refreshSessions() {
+  if (sending.value) return;
+  loadingSessions.value = true;
+  sessionsError.value = null;
+  try {
+    const loadedSessions = await api.cmdListAiSessions();
+    sessions.value = loadedSessions;
+    const nextSession = loadedSessions.find(session => session.id === activeSessionId.value)
+      ?? loadedSessions[0]
+      ?? null;
+    if (nextSession) {
+      await loadSession(nextSession.id, false);
+    } else {
+      resetToNewSession(false);
+    }
+  } catch (error) {
+    sessionsError.value = `读取对话失败：${formatError(error)}`;
+  } finally {
+    loadingSessions.value = false;
+  }
+}
+
+async function loadSession(sessionId: string, refreshModel = true) {
+  if (sending.value) return;
+  const loadId = ++sessionLoadId;
+  loadingSession.value = true;
+  try {
+    const detail = await api.cmdGetAiSession(sessionId);
+    if (loadId !== sessionLoadId) return;
+    if (!detail) {
+      sessions.value = sessions.value.filter(session => session.id !== sessionId);
+      if (activeSessionId.value === sessionId) resetToNewSession(false);
+      $q.notify({type: 'warning', message: '该 AI 对话已不存在'});
+      return;
+    }
+
+    upsertSession(detail.meta);
+    activeSessionId.value = detail.meta.id;
+    exchanges.value = buildPersistedAiExchanges(detail.messages).map(restored => ({
+      ...restored,
+      id: nextExchangeId++,
+      taskToken: null,
+      cancelRequested: false,
+      processExpanded: restored.state !== 'completed',
+    }));
+    conversationSource.value = null;
+    showConversationSource.value = false;
+    question.value = '';
+    sessionDrawerOpen.value = false;
+    if (refreshModel && config.value) {
+      void checkModelAvailability(configForActiveSession(config.value));
+    }
+    await scrollToBottom();
+  } catch (error) {
+    if (loadId !== sessionLoadId) return;
+    $q.notify({type: 'negative', message: `打开 AI 对话失败：${formatError(error)}`});
+  } finally {
+    if (loadId === sessionLoadId) loadingSession.value = false;
+  }
+}
+
+function selectSession(sessionId: string) {
+  sessionDrawerOpen.value = false;
+  if (sessionId === activeSessionId.value || sending.value || loadingSession.value) return;
+  void loadSession(sessionId);
+}
+
+function startNewSession() {
+  if (sending.value || loadingSession.value) return;
+  resetToNewSession(true);
+}
+
+function resetToNewSession(refreshModel: boolean) {
+  sessionLoadId += 1;
+  activeSessionId.value = null;
+  exchanges.value = [];
+  conversationSource.value = null;
+  showConversationSource.value = false;
+  question.value = '';
+  loadingSession.value = false;
+  sessionDrawerOpen.value = false;
+  if (refreshModel && config.value) void checkModelAvailability(config.value);
+  void nextTick(() => questionInput.value?.focus());
+}
+
+function requestDeleteSession(session: AiSessionMeta) {
+  if (sending.value || deletingSessionId.value) return;
+  const title = session.aiTitle?.trim() || session.title.trim() || '新对话';
+  $q.dialog({
+    title: '删除对话',
+    message: `确定删除“${title}”及其全部聊天记录吗？`,
+    cancel: true,
+    persistent: true,
+  }).onOk(() => void deleteSession(session.id));
+}
+
+async function deleteSession(sessionId: string) {
+  deletingSessionId.value = sessionId;
+  try {
+    await api.cmdDeleteAiSession(sessionId);
+    sessions.value = sessions.value.filter(session => session.id !== sessionId);
+    if (activeSessionId.value === sessionId) {
+      const nextSession = sessions.value[0];
+      if (nextSession) await loadSession(nextSession.id);
+      else resetToNewSession(true);
+    }
+  } catch (error) {
+    $q.notify({type: 'negative', message: `删除 AI 对话失败：${formatError(error)}`});
+  } finally {
+    deletingSessionId.value = null;
+  }
+}
+
+function upsertSession(meta: AiSessionMeta) {
+  sessions.value = [meta, ...sessions.value.filter(session => session.id !== meta.id)]
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
+async function refreshSessionListAfterRun(sessionId: string) {
+  try {
+    const loadedSessions = await api.cmdListAiSessions();
+    if (activeSessionId.value !== sessionId) return;
+    sessions.value = loadedSessions;
+  } catch (error) {
+    console.warn('刷新 AI 会话列表失败', error);
+  }
 }
 
 function openSettings() {
@@ -154,10 +306,23 @@ function handleComposerKeydown(event: KeyboardEvent) {
 }
 
 async function submitQuestion() {
-  const activeConfig = config.value;
+  const storedConfig = config.value;
   const prompt = question.value.trim();
-  if (!activeConfig || !modelReady.value || !prompt || sending.value) return;
-  const history = buildAiConversationHistory(exchanges.value);
+  if (!storedConfig || !modelReady.value || !prompt || sending.value) return;
+
+  let sessionId = activeSessionId.value;
+  if (!sessionId) {
+    try {
+      const created = await api.cmdCreateAiSession(prompt, storedConfig.model);
+      upsertSession(created);
+      activeSessionId.value = created.id;
+      sessionId = created.id;
+    } catch (error) {
+      $q.notify({type: 'negative', message: `创建 AI 对话失败：${formatError(error)}`});
+      return;
+    }
+  }
+  const activeConfig = configForActiveSession(storedConfig);
 
   const exchange: AiExchange = {
     ...initialAiAgentDisplayState(),
@@ -169,6 +334,7 @@ async function submitQuestion() {
   };
   exchanges.value.push(exchange);
   question.value = '';
+  conversationSource.value = null;
   sending.value = true;
   await scrollToBottom();
 
@@ -176,7 +342,7 @@ async function submitQuestion() {
   event.onmessage = message => handleAgentEvent(exchange.id, message);
 
   try {
-    const taskToken = await startAiQuestion(activeConfig, prompt, history, event);
+    const taskToken = await startAiSessionQuestion(activeConfig, sessionId, prompt, event);
     const current = findExchange(exchange.id);
     if (!current || isTerminalAiExchangeState(current.state)) return;
     current.taskToken = taskToken;
@@ -260,6 +426,8 @@ function finishExchange(exchange: AiExchange, state: Extract<AiExchangeState, 'c
   exchange.cancelRequested = false;
   exchange.processExpanded = state !== 'completed';
   sending.value = false;
+  const sessionId = activeSessionId.value;
+  if (sessionId) void refreshSessionListAfterRun(sessionId);
   scheduleScrollToBottom();
 }
 
@@ -296,8 +464,53 @@ async function scrollToBottom() {
 
 <template>
   <div id="ai-assistant">
+    <div
+      v-if="sessionDrawerOpen"
+      class="session-drawer-backdrop"
+      aria-hidden="true"
+      @click="sessionDrawerOpen = false"
+    ></div>
+    <AiSessionSidebar
+      :class="{'is-open': sessionDrawerOpen}"
+      :sessions="sessions"
+      :active-session-id="activeSessionId"
+      :loading="loadingSessions"
+      :error="sessionsError"
+      :disabled="sending || loadingSessions || loadingSession"
+      :deleting-session-id="deletingSessionId"
+      @new="startNewSession"
+      @select="selectSession"
+      @delete="requestDeleteSession"
+      @retry="refreshSessions"
+    />
+    <main class="assistant-main">
+      <div class="mobile-session-bar">
+        <q-btn
+          flat
+          dense
+          no-caps
+          icon="forum"
+          label="对话"
+          :disable="sending"
+          @click="sessionDrawerOpen = true"
+        />
+        <span>{{ activeSession?.aiTitle || activeSession?.title || '新对话' }}</span>
+        <q-btn
+          flat
+          round
+          dense
+          icon="add"
+          :disable="sending || loadingSessions || loadingSession"
+          aria-label="新建 AI 对话"
+          @click="startNewSession"
+        />
+      </div>
     <section ref="scrollContainer" class="conversation" aria-live="polite">
-      <div v-if="exchanges.length === 0" class="welcome-panel">
+      <div v-if="loadingSession" class="session-loading">
+        <q-spinner-dots color="primary" size="34px"/>
+        <span>正在加载对话</span>
+      </div>
+      <div v-else-if="exchanges.length === 0" class="welcome-panel">
         <q-icon name="auto_awesome" size="44px" class="welcome-icon"/>
         <h1>问问你的日记</h1>
         <p>AI Agent 可以按需搜索和读取日记文字，但不会修改任何内容，也无法理解图片或播放音视频。</p>
@@ -313,7 +526,7 @@ async function scrollToBottom() {
           </template>
         </q-banner>
         <q-banner v-else-if="modelCheckState === 'unavailable'" rounded class="config-banner">
-          <div>模型“{{ config.model }}”已不在服务提供的模型列表中，请重新选择。</div>
+          <div>模型“{{ activeModel }}”已不在服务提供的模型列表中，请重新选择。</div>
           <template #action>
             <q-btn flat color="primary" label="前往设置" @click="openSettings"/>
           </template>
@@ -509,6 +722,7 @@ async function scrollToBottom() {
       </div>
       <div class="privacy-hint">当前会话历史、问题及 Agent 读取的日记文字会发送到你配置的 AI 服务</div>
     </div>
+    </main>
     <AiConversationSourceDialog
       v-model="showConversationSource"
       :source="conversationSource"
@@ -518,19 +732,43 @@ async function scrollToBottom() {
 
 <style scoped lang="scss">
 #ai-assistant {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
-  flex-direction: column;
   overflow: hidden;
   background: var(--pad-bg-color-100);
   color: var(--pad-text-color-100);
+}
+
+.assistant-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mobile-session-bar,
+.session-drawer-backdrop {
+  display: none;
 }
 
 .conversation {
   flex: 1;
   overflow-y: auto;
   padding: 28px max(20px, calc((100% - 820px) / 2)) 32px;
+}
+
+.session-loading {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--pad-text-color-400);
+  font-size: 0.8rem;
 }
 
 .welcome-panel {
@@ -974,6 +1212,38 @@ async function scrollToBottom() {
 .privacy-hint {
   margin-top: 6px;
   text-align: center;
+}
+
+@media (max-width: 800px) {
+  .session-drawer-backdrop {
+    position: absolute;
+    z-index: 11;
+    inset: 0;
+    display: block;
+    background: rgb(0 0 0 / 38%);
+  }
+
+  .mobile-session-bar {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    color: var(--pad-text-color-300);
+    background: var(--pad-bg-color-200);
+    border-bottom: 1px solid var(--pad-border-color-100);
+
+    span {
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      color: var(--pad-text-color-200);
+      font-size: 0.78rem;
+      text-align: center;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
 }
 
 @media (max-width: 512px) {
