@@ -57,6 +57,11 @@ impl AiSessionRepository {
         }
     }
 
+    /// 存储模式切换后强制各会话在下一次访问时重新核对实际消息块。
+    pub fn invalidate_reconciliation(&self) {
+        self.reconciled_sessions.clear();
+    }
+
     pub async fn create_session(
         &self,
         title: String,

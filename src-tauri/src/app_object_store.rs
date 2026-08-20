@@ -2,6 +2,7 @@ use crate::caches::{CacheError, LocalObjectStore};
 use crate::object::{ObjectError, OssClient};
 use crate::object_locations::{ObjectLocations, StoredObject, StoredObjectCollection};
 use async_trait::async_trait;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri_plugin_log::log;
 use thiserror::Error;
@@ -106,6 +107,68 @@ impl AppObjectStore for LocalAppObjectStore {
 pub struct RemoteAppObjectStore {
     remote: OssClient,
     local: LocalObjectStore,
+}
+
+/// 根据 AppState 的运行时存储模式，在本地权威存储和远程权威存储之间切换。
+///
+/// 存储模式切换本身由 AppState 的 `storage_mode_gate` 串行化；这里仅共享同一个
+/// 原子状态，使长期持有的 Repository 不必在每次切换后重建。
+#[derive(Clone)]
+pub struct SwitchableAppObjectStore {
+    local: LocalAppObjectStore,
+    remote: RemoteAppObjectStore,
+    remote_enabled: Arc<AtomicBool>,
+}
+
+impl SwitchableAppObjectStore {
+    pub fn new(
+        local_object_store: LocalObjectStore,
+        remote_client: OssClient,
+        remote_enabled: Arc<AtomicBool>,
+    ) -> Self {
+        Self {
+            local: LocalAppObjectStore::new(local_object_store.clone()),
+            remote: RemoteAppObjectStore::new(remote_client, local_object_store),
+            remote_enabled,
+        }
+    }
+
+    fn active(&self) -> &dyn AppObjectStore {
+        if self.remote_enabled.load(Ordering::Relaxed) {
+            &self.remote
+        } else {
+            &self.local
+        }
+    }
+}
+
+#[async_trait]
+impl AppObjectStore for SwitchableAppObjectStore {
+    async fn load_bytes(
+        &self,
+        object: &StoredObject,
+    ) -> Result<Option<Vec<u8>>, AppObjectStoreError> {
+        self.active().load_bytes(object).await
+    }
+
+    async fn save_bytes(
+        &self,
+        object: &StoredObject,
+        data: &[u8],
+    ) -> Result<(), AppObjectStoreError> {
+        self.active().save_bytes(object, data).await
+    }
+
+    async fn delete(&self, object: &StoredObject) -> Result<(), AppObjectStoreError> {
+        self.active().delete(object).await
+    }
+
+    async fn list(
+        &self,
+        collection: &StoredObjectCollection,
+    ) -> Result<Vec<StoredObject>, AppObjectStoreError> {
+        self.active().list(collection).await
+    }
 }
 
 impl RemoteAppObjectStore {
@@ -408,5 +471,29 @@ mod tests {
             .is_none());
 
         guard.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn switchable_store_follows_the_shared_runtime_mode() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = LocalObjectStore::new(temp.path().to_path_buf());
+        let remote_enabled = Arc::new(AtomicBool::new(false));
+        let store =
+            SwitchableAppObjectStore::new(local.clone(), OssClient::new(), remote_enabled.clone());
+        let object = StoredObject::AiSessionMeta {
+            session_id: "1".into(),
+        };
+
+        store.save_bytes(&object, b"local").await.unwrap();
+        assert_eq!(
+            store.load_bytes(&object).await.unwrap(),
+            Some(b"local".to_vec())
+        );
+
+        remote_enabled.store(true, Ordering::Relaxed);
+        assert!(matches!(
+            store.load_bytes(&object).await,
+            Err(AppObjectStoreError::Remote(ObjectError::NotInitialized))
+        ));
     }
 }

@@ -45,7 +45,7 @@ export function reduceSyncProgressDisplay(
     }
   }
   if (msg.event === 'progress') {
-    const phase = data.phase === 'manifests' ? '日记主文件' : '附件'
+    const phase = syncPhaseText(stringValue(data.phase))
     return {
       progress: numberValue(data.transferredBytes),
       total: numberValue(data.totalBytes),
@@ -72,6 +72,21 @@ export function reduceSyncProgressDisplay(
     }
   }
   return current
+}
+
+function syncPhaseText(phase: string): string {
+  switch (phase) {
+    case 'attachments':
+      return '附件'
+    case 'aiMessages':
+      return 'AI 消息'
+    case 'manifests':
+      return '日记主文件'
+    case 'aiSessions':
+      return 'AI 会话信息'
+    default:
+      return '数据'
+  }
 }
 
 export function formatBytes(bytes: number): string {

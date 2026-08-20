@@ -50,6 +50,25 @@ describe('reduceSyncProgressDisplay', () => {
     })
   })
 
+  it.each([
+    ['aiMessages', 'AI 消息'],
+    ['manifests', '日记主文件'],
+    ['aiSessions', 'AI 会话信息'],
+    ['unknown', '数据'],
+  ])('describes the %s synchronization phase', (phase, label) => {
+    const result = reduceSyncProgressDisplay(initialSyncProgressDisplay(), {
+      event: 'progress',
+      data: {
+        direction: 'upload',
+        phase,
+        currentFileIndex: 1,
+        totalFiles: 2,
+      },
+    })
+
+    expect(result.statusText).toBe(`正在上传${label} 1/2`)
+  })
+
   it('keeps the known total when completing and reports failures safely', () => {
     const current = { ...initialSyncProgressDisplay(), total: 100, progress: 75 }
     const completed = reduceSyncProgressDisplay(current, {

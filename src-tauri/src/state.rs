@@ -1,6 +1,8 @@
+use crate::ai::AiSessionRepository;
 #[cfg(test)]
 use crate::app_config::AppConfig;
 use crate::app_config::{AppConfigError, AppConfigStore};
+use crate::app_object_store::{SharedAppObjectStore, SwitchableAppObjectStore};
 use crate::attachments::chunked_upload::ChunkedUploadState;
 use crate::attachments::AttachmentServerHandle;
 use crate::caches::{AttachmentCacheManager, DiaryMemoryCache, LocalObjectStore};
@@ -32,6 +34,7 @@ pub struct AppState {
     storage_mode_gate: Arc<RwLock<()>>,
     app_config: AppConfigStore,
     local_storage: LocalStorageManager,
+    ai_session_repository: AiSessionRepository,
 }
 
 impl AppState {
@@ -47,9 +50,17 @@ impl AppState {
         let attachment_cache =
             AttachmentCacheManager::new(local_object_store.clone(), app_config.clone());
         let task_pool = TaskPool::new();
+        let oss_client = OssClient::new();
+        let remote_enabled = Arc::new(AtomicBool::new(false));
+        let app_object_store: SharedAppObjectStore = Arc::new(SwitchableAppObjectStore::new(
+            local_object_store.clone(),
+            oss_client.clone(),
+            remote_enabled.clone(),
+        ));
+        let ai_session_repository = AiSessionRepository::new(app_object_store, crypto.clone());
         Self {
             crypto,
-            oss_client: OssClient::new(),
+            oss_client,
             local_object_store,
             attachment_cache,
             diary_cache,
@@ -57,10 +68,11 @@ impl AppState {
             chunked_uploads: Arc::new(DashMap::new()),
             filename_allocators: Arc::new(DashMap::new()),
             attachment_server,
-            remote_enabled: Arc::new(AtomicBool::new(false)),
+            remote_enabled,
             storage_mode_gate: Arc::new(RwLock::new(())),
             app_config,
             local_storage,
+            ai_session_repository,
         }
     }
 
@@ -119,7 +131,10 @@ impl AppState {
 
     /// 设置远程存储启用状态
     pub fn set_remote_enabled(&self, enabled: bool) {
-        self.remote_enabled.store(enabled, Ordering::Relaxed);
+        let previous = self.remote_enabled.swap(enabled, Ordering::Relaxed);
+        if previous != enabled {
+            self.ai_session_repository.invalidate_reconciliation();
+        }
     }
 
     pub fn configured_remote_enabled(&self) -> Option<bool> {
@@ -167,6 +182,10 @@ impl AppState {
         self.local_storage.clone()
     }
 
+    pub fn ai_session_repository(&self) -> AiSessionRepository {
+        self.ai_session_repository.clone()
+    }
+
     /// 根据当前存储模式构造 DiaryStore
     pub fn diary_store(&self) -> Box<dyn DiaryStore> {
         if self.remote_enabled.load(Ordering::Relaxed) {
@@ -206,6 +225,13 @@ impl AppState {
             LocalStorageManager::new(app_config.clone(), local_object_store.root().to_path_buf());
         let attachment_cache =
             AttachmentCacheManager::new(local_object_store.clone(), app_config.clone());
+        let remote_enabled = Arc::new(AtomicBool::new(false));
+        let app_object_store: SharedAppObjectStore = Arc::new(SwitchableAppObjectStore::new(
+            local_object_store.clone(),
+            oss_client.clone(),
+            remote_enabled.clone(),
+        ));
+        let ai_session_repository = AiSessionRepository::new(app_object_store, crypto.clone());
         Self {
             crypto,
             oss_client,
@@ -216,10 +242,11 @@ impl AppState {
             chunked_uploads: Arc::new(DashMap::new()),
             filename_allocators: Arc::new(DashMap::new()),
             attachment_server,
-            remote_enabled: Arc::new(AtomicBool::new(false)),
+            remote_enabled,
             storage_mode_gate: Arc::new(RwLock::new(())),
             app_config,
             local_storage,
+            ai_session_repository,
         }
     }
 }
@@ -260,5 +287,34 @@ mod tests {
 
         state.set_remote_enabled(true);
         assert!(state.is_remote_enabled());
+    }
+
+    #[tokio::test]
+    async fn ai_repository_follows_runtime_storage_mode() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let crypto = Crypto::new();
+        crypto
+            .derive_dek(
+                "state-ai-test-password".into(),
+                "c3RhdGUtYWktcmVwb3NpdG9yeS10ZXN0LXNhbHQ",
+            )
+            .unwrap();
+        let state = AppState::from_parts(
+            crypto,
+            OssClient::new(),
+            LocalObjectStore::new(temp_dir.path().to_path_buf()),
+        );
+        let repository = state.ai_session_repository();
+        let session = repository
+            .create_session("本地会话".into(), "test-model".into(), 1)
+            .await
+            .unwrap();
+        assert!(repository.get_session(&session.id).await.unwrap().is_some());
+
+        state.set_remote_enabled(true);
+        assert!(repository.get_session(&session.id).await.is_err());
+
+        state.set_remote_enabled(false);
+        assert!(repository.get_session(&session.id).await.unwrap().is_some());
     }
 }

@@ -802,7 +802,7 @@ export type LocalStorageMigrationPlan = { sourcePath: string; targetPath: string
 export type LocalStorageMigrationStatus = { migrationPending: boolean; unavailablePath: string | null; unavailableReason: string | null }
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type SyncDirection = "upload" | "download"
-export type SyncPhase = "preparing" | "attachments" | "manifests"
+export type SyncPhase = "preparing" | "attachments" | "aiMessages" | "manifests" | "aiSessions"
 export type SyncProgressEvent = { event: "preparing"; data: { direction: SyncDirection } } | { event: "started"; data: { direction: SyncDirection; totalFiles: number; totalBytes: number; skippedFiles: number } } | { event: "progress"; data: { direction: SyncDirection; phase: SyncPhase; currentFile: string; currentFileIndex: number; totalFiles: number; currentFileBytes: number; currentFileSize: number; transferredBytes: number; totalBytes: number } } | { event: "completed"; data: { direction: SyncDirection; transferredFiles: number; skippedFiles: number; transferredBytes: number } } | { event: "error"; data: { direction: SyncDirection; phase: SyncPhase; currentFile: string | null; message: string } }
 export type TAURI_CHANNEL<TSend> = null
 

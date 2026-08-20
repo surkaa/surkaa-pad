@@ -24,7 +24,9 @@ pub enum SyncDirection {
 pub enum SyncPhase {
     Preparing,
     Attachments,
+    AiMessages,
     Manifests,
+    AiSessions,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -85,23 +87,33 @@ pub enum SyncProgressEvent {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SyncItemKind {
-    Attachment,
-    Manifest,
+    DiaryAttachment,
+    AiMessageBlock,
+    DiaryManifest,
+    AiSessionMeta,
 }
 
 impl SyncItemKind {
     fn phase(self) -> SyncPhase {
         match self {
-            Self::Attachment => SyncPhase::Attachments,
-            Self::Manifest => SyncPhase::Manifests,
+            Self::DiaryAttachment => SyncPhase::Attachments,
+            Self::AiMessageBlock => SyncPhase::AiMessages,
+            Self::DiaryManifest => SyncPhase::Manifests,
+            Self::AiSessionMeta => SyncPhase::AiSessions,
         }
     }
 
     fn order(self) -> u8 {
         match self {
-            Self::Attachment => 0,
-            Self::Manifest => 1,
+            Self::DiaryAttachment => 0,
+            Self::AiMessageBlock => 1,
+            Self::DiaryManifest => 2,
+            Self::AiSessionMeta => 3,
         }
+    }
+
+    fn is_child_object(self) -> bool {
+        matches!(self, Self::DiaryAttachment | Self::AiMessageBlock)
     }
 }
 
@@ -115,7 +127,6 @@ struct SyncObjectEntry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SyncItem {
     key: String,
-    diary_id: String,
     etag: Option<String>,
     size: u64,
     kind: SyncItemKind,
@@ -466,16 +477,28 @@ fn build_plan(
     let source_diary_ids = source_entries
         .iter()
         .filter_map(|entry| match classify_storage_key(&entry.key) {
-            Some((SyncItemKind::Manifest, diary_id)) => Some(diary_id),
+            Some((SyncItemKind::DiaryManifest, diary_id)) => Some(diary_id),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let source_ai_session_ids = source_entries
+        .iter()
+        .filter_map(|entry| match classify_storage_key(&entry.key) {
+            Some((SyncItemKind::AiSessionMeta, session_id)) => Some(session_id),
             _ => None,
         })
         .collect::<HashSet<_>>();
 
     for entry in source_entries {
-        let Some((kind, diary_id)) = classify_storage_key(&entry.key) else {
+        let Some((kind, owner_id)) = classify_storage_key(&entry.key) else {
             continue;
         };
-        if kind == SyncItemKind::Attachment && !source_diary_ids.contains(&diary_id) {
+        let parent_exists = match kind {
+            SyncItemKind::DiaryAttachment => source_diary_ids.contains(&owner_id),
+            SyncItemKind::AiMessageBlock => source_ai_session_ids.contains(&owner_id),
+            SyncItemKind::DiaryManifest | SyncItemKind::AiSessionMeta => true,
+        };
+        if kind.is_child_object() && !parent_exists {
             continue;
         }
         if etag_options_match(entry.etag.as_deref(), target_etags.get(&entry.key)) {
@@ -485,7 +508,6 @@ fn build_plan(
         }
         items.push(SyncItem {
             key: entry.key,
-            diary_id,
             etag: entry.etag,
             size: entry.size,
             kind,
@@ -511,13 +533,17 @@ fn build_plan(
 
 fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
     match ObjectLocations::parse(key)? {
-        StoredObject::DiaryManifest { diary_id } => Some((SyncItemKind::Manifest, diary_id)),
+        StoredObject::DiaryManifest { diary_id } => Some((SyncItemKind::DiaryManifest, diary_id)),
         StoredObject::DiaryAttachment { diary_id, .. } => {
-            Some((SyncItemKind::Attachment, diary_id))
+            Some((SyncItemKind::DiaryAttachment, diary_id))
         }
-        StoredObject::DiaryAttachmentBackup { .. }
-        | StoredObject::AiSessionMeta { .. }
-        | StoredObject::AiSessionMessageBlock { .. } => None,
+        StoredObject::DiaryAttachmentBackup { .. } => None,
+        StoredObject::AiSessionMeta { session_id } => {
+            Some((SyncItemKind::AiSessionMeta, session_id))
+        }
+        StoredObject::AiSessionMessageBlock { session_id, .. } => {
+            Some((SyncItemKind::AiMessageBlock, session_id))
+        }
     }
 }
 
@@ -632,6 +658,8 @@ fn percentage(current: u64, total: u64) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::{AiSessionMessagePayload, AiSessionRepository};
+    use crate::app_object_store::{LocalAppObjectStore, SharedAppObjectStore};
     use crate::caches::LocalObjectStore;
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::cryptos::Crypto;
@@ -655,6 +683,14 @@ mod tests {
 
     fn attachment(id: &str, name: &str) -> String {
         ObjectLocations::diary_attachment(id, name)
+    }
+
+    fn ai_meta(id: &str) -> String {
+        ObjectLocations::ai_session_meta(id)
+    }
+
+    fn ai_message(id: &str, level: u32, block_id: u64) -> String {
+        ObjectLocations::ai_session_message_block(id, level, block_id)
     }
 
     #[test]
@@ -732,6 +768,26 @@ mod tests {
     }
 
     #[test]
+    fn plan_orders_ai_message_blocks_before_session_meta_and_ignores_orphans() {
+        let source = vec![
+            entry(ai_meta("100"), Some("META"), 1),
+            entry(ai_message("100", 1, 0), Some("BLOCK"), 10),
+            entry(ai_message("200", 0, 0), Some("ORPHAN"), 1),
+        ];
+
+        let plan = build_plan(source, &HashMap::new());
+        assert_eq!(
+            plan.items
+                .iter()
+                .map(|item| item.key.as_str())
+                .collect::<Vec<_>>(),
+            [ai_message("100", 1, 0), ai_meta("100")]
+        );
+        assert_eq!(plan.items[0].kind, SyncItemKind::AiMessageBlock);
+        assert_eq!(plan.items[1].kind, SyncItemKind::AiSessionMeta);
+    }
+
+    #[test]
     fn plan_treats_missing_or_changed_target_as_transfer() {
         let source = vec![
             entry(manifest("123"), Some("MANIFEST"), 10),
@@ -777,11 +833,19 @@ mod tests {
     fn storage_key_classification_rejects_unrelated_paths() {
         assert_eq!(
             classify_storage_key(&manifest("123")),
-            Some((SyncItemKind::Manifest, "123".to_string()))
+            Some((SyncItemKind::DiaryManifest, "123".to_string()))
         );
         assert_eq!(
             classify_storage_key(&attachment("123", "photo.jpg")),
-            Some((SyncItemKind::Attachment, "123".to_string()))
+            Some((SyncItemKind::DiaryAttachment, "123".to_string()))
+        );
+        assert_eq!(
+            classify_storage_key(&ai_meta("456")),
+            Some((SyncItemKind::AiSessionMeta, "456".to_string()))
+        );
+        assert_eq!(
+            classify_storage_key(&ai_message("456", 2, 3)),
+            Some((SyncItemKind::AiMessageBlock, "456".to_string()))
         );
         assert_eq!(classify_storage_key("invalid"), None);
         assert_eq!(classify_storage_key("123/manifest.enc"), None);
@@ -885,6 +949,25 @@ mod tests {
             .save_bytes(&manifest_key, &encrypted_manifest)
             .await
             .unwrap();
+        let source_ai_store: SharedAppObjectStore =
+            Arc::new(LocalAppObjectStore::new(source_los.clone()));
+        let source_ai_repository = AiSessionRepository::new(source_ai_store, crypto.clone());
+        let session = source_ai_repository
+            .create_session("同步测试会话".into(), "test-model".into(), 10)
+            .await
+            .unwrap();
+        for index in 0..12 {
+            source_ai_repository
+                .append_message(
+                    &session.id,
+                    11 + index,
+                    AiSessionMessagePayload::User {
+                        content: format!("消息 {index}"),
+                    },
+                )
+                .await
+                .unwrap();
+        }
 
         let (upload_tx, mut upload_rx) = unbounded_channel();
         let upload_summary = sync_local_to_cloud(&source_los, &client, Arc::new(upload_tx))
@@ -892,11 +975,17 @@ mod tests {
             .unwrap();
         let upload_events = std::iter::from_fn(|| upload_rx.try_recv().ok()).collect::<Vec<_>>();
 
-        assert_eq!(upload_summary.transferred_files, 2);
+        assert_eq!(upload_summary.transferred_files, 6);
         assert_eq!(upload_summary.skipped_files, 0);
         assert_eq!(
             upload_summary.transferred_bytes,
-            attachment.len() as u64 + encrypted_manifest.len() as u64
+            source_los
+                .get_all_entries()
+                .await
+                .unwrap()
+                .iter()
+                .map(|entry| entry.size)
+                .sum::<u64>()
         );
         let phases = upload_events
             .iter()
@@ -906,7 +995,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(phases.first(), Some(&SyncPhase::Attachments));
-        assert_eq!(phases.last(), Some(&SyncPhase::Manifests));
+        assert!(phases.contains(&SyncPhase::AiMessages));
+        assert!(phases.contains(&SyncPhase::Manifests));
+        assert_eq!(phases.last(), Some(&SyncPhase::AiSessions));
         assert!(matches!(
             upload_events.last(),
             Some(SyncProgressEvent::Progress {
@@ -921,7 +1012,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(retry_summary.transferred_files, 0);
-        assert_eq!(retry_summary.skipped_files, 2);
+        assert_eq!(retry_summary.skipped_files, 6);
 
         let target_dir = tempfile::tempdir().expect("target temp dir");
         let target_los = LocalObjectStore::new(target_dir.path().to_path_buf());
@@ -932,7 +1023,7 @@ mod tests {
         let download_events =
             std::iter::from_fn(|| download_rx.try_recv().ok()).collect::<Vec<_>>();
 
-        assert_eq!(download_summary.transferred_files, 2);
+        assert_eq!(download_summary.transferred_files, 6);
         assert_eq!(
             target_los.get_data(&attachment_key).await.unwrap(),
             attachment
@@ -940,6 +1031,26 @@ mod tests {
         assert_eq!(
             target_los.get_data(&manifest_key).await.unwrap(),
             encrypted_manifest
+        );
+        let target_ai_store: SharedAppObjectStore =
+            Arc::new(LocalAppObjectStore::new(target_los.clone()));
+        let target_ai_repository = AiSessionRepository::new(target_ai_store, crypto);
+        assert_eq!(
+            target_ai_repository
+                .get_session(&session.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .committed_message_count,
+            12
+        );
+        assert_eq!(
+            target_ai_repository
+                .load_messages(&session.id)
+                .await
+                .unwrap()
+                .len(),
+            12
         );
         let downloaded_stream = target_los.get_stream(&attachment_key, None).await.unwrap();
         assert_eq!(
