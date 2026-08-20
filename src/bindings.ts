@@ -692,6 +692,81 @@ async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey:
 }
 },
 /**
+ * 创建一个空的 AI 会话。
+ * # Arguments
+ * * `title` - 会话的初始标题，通常取第一条用户问题
+ * * `model` - 创建会话时选择的模型 ID
+ * # Returns
+ * * `Result<AiSessionMeta, AppError>` - 已加密持久化的会话元数据
+ */
+async cmdCreateAiSession(title: string, model: string) : Promise<Result<AiSessionMeta, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_create_ai_session", { title, model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 按最近更新时间从新到旧列出 AI 会话。
+ * # Returns
+ * * `Result<Vec<AiSessionMeta>, AppError>` - 当前存储模式下可见的会话元数据
+ */
+async cmdListAiSessions() : Promise<Result<AiSessionMeta[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_list_ai_sessions") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 读取一个 AI 会话及其全部消息。
+ * # Arguments
+ * * `session_id` - 数字 AI 会话 ID
+ * # Returns
+ * * `Result<Option<AiSessionDetail>, AppError>` - 会话不存在时返回 `None`
+ */
+async cmdGetAiSession(sessionId: string) : Promise<Result<AiSessionDetail | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_ai_session", { sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 更新 AI 为会话生成的标题。
+ * # Arguments
+ * * `session_id` - 数字 AI 会话 ID
+ * * `ai_title` - AI 生成的标题；传入 `None` 可清除
+ * # Returns
+ * * `Result<AiSessionMeta, AppError>` - 更新后的会话元数据
+ */
+async cmdUpdateAiSessionAiTitle(sessionId: string, aiTitle: string | null) : Promise<Result<AiSessionMeta, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_update_ai_session_ai_title", { sessionId, aiTitle }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 删除一个 AI 会话的全部消息块及元数据。
+ * # Arguments
+ * * `session_id` - 数字 AI 会话 ID
+ * # Returns
+ * * `Result<(), AppError>` - 删除操作可安全重复执行
+ */
+async cmdDeleteAiSession(sessionId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_delete_ai_session", { sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 取消任务
  * # Arguments
  * * `cancel_token` - 创建后台任务时返回的取消令牌
@@ -720,11 +795,19 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 
 export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "conversationSource"; data: AiConversationSource } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
 export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null }
+export type AiAssistantRecordState = "completed" | "failed" | "cancelled"
 export type AiConversationSource = { model: string; messages: AiConversationSourceMessage[] }
 export type AiConversationSourceMessage = { role: "system"; content: string } | { role: "user"; content: string } | { role: "assistant"; reasoning_content: string | null; content: string | null; tool_calls: AiConversationSourceToolCall[] } | { role: "tool"; tool_call_id: string; content: string }
 export type AiConversationSourceToolCall = { id: string; name: string; arguments: string }
 export type AiConversationTurn = { user: string; assistant: string }
 export type AiModel = { id: string; ownedBy: string | null }
+export type AiProcessStepKind = "model" | "tool"
+export type AiProcessStepRecord = { id: string; kind: AiProcessStepKind; title: string; detail: string | null; reasoning: string; state: AiProcessStepState; durationMs: number | null }
+export type AiProcessStepState = "completed" | "failed" | "cancelled"
+export type AiSessionDetail = { meta: AiSessionMeta; messages: AiSessionMessage[] }
+export type AiSessionMessage = { index: number; createdAt: number; payload: AiSessionMessagePayload }
+export type AiSessionMessagePayload = { role: "user"; content: string } | { role: "assistant"; state: AiAssistantRecordState; content: string; error: string | null; model: string; usage: AiUsage | null; process_steps: AiProcessStepRecord[]; trace: AiConversationSourceMessage[] }
+export type AiSessionMeta = { version: number; id: string; title: string; aiTitle: string | null; model: string; createdAt: number; updatedAt: number; committedMessageCount: number }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }

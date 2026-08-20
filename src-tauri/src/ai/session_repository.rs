@@ -6,6 +6,7 @@ use super::{
 };
 use crate::app_object_store::{AppObjectStoreError, SharedAppObjectStore};
 use crate::cryptos::{Crypto, CryptoError};
+use crate::error::AppError;
 use crate::object_locations::{StoredObject, StoredObjectCollection};
 use crate::utils::id_generate::generate_descending_id;
 use async_trait::async_trait;
@@ -34,6 +35,20 @@ pub enum AiSessionRepositoryError {
     CommittedMessageCountOverflow,
     #[error("AI 会话已提交 {committed} 条消息，但存储中只能恢复出 {actual} 条连续消息")]
     CommittedMessagesMissing { committed: u64, actual: u64 },
+}
+
+impl From<AiSessionRepositoryError> for AppError {
+    fn from(error: AiSessionRepositoryError) -> Self {
+        let error_type = match &error {
+            AiSessionRepositoryError::SessionNotFound(_) => "ai_session_not_found",
+            AiSessionRepositoryError::InvalidInput(_) => "ai_session_invalid_input",
+            _ => "ai_session",
+        };
+        Self {
+            error_type: error_type.into(),
+            message: error.to_string(),
+        }
+    }
 }
 
 /// AI 会话领域仓库：负责独立 JSON 文档、加解密、元数据提交和消息块合并。
@@ -97,6 +112,7 @@ impl AiSessionRepository {
         &self,
         session_id: &str,
     ) -> Result<Option<AiSessionMeta>, AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
         let lock = self.session_lock(session_id);
         let _guard = lock.lock().await;
         let Some(meta) = self.load_meta(session_id).await? else {
@@ -104,6 +120,25 @@ impl AiSessionRepository {
         };
         let (meta, _) = self.ensure_reconciled_locked(meta).await?;
         Ok(Some(meta))
+    }
+
+    /// 在同一个会话锁内读取并协调 meta 与全部消息，避免两次调用之间插入新消息。
+    pub async fn load_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<(AiSessionMeta, Vec<AiSessionMessage>)>, AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
+        let lock = self.session_lock(session_id);
+        let _guard = lock.lock().await;
+        let Some(meta) = self.load_meta(session_id).await? else {
+            return Ok(None);
+        };
+        let (meta, recovered_messages) = self.ensure_reconciled_locked(meta).await?;
+        let messages = match recovered_messages {
+            Some(messages) => messages,
+            None => load_compacted_messages(self, session_id, meta.committed_message_count).await?,
+        };
+        Ok(Some((meta, messages)))
     }
 
     pub async fn list_sessions(&self) -> Result<Vec<AiSessionMeta>, AiSessionRepositoryError> {
@@ -135,6 +170,7 @@ impl AiSessionRepository {
         created_at: i64,
         payload: AiSessionMessagePayload,
     ) -> Result<AiSessionMessage, AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
         let lock = self.session_lock(session_id);
         let _guard = lock.lock().await;
         let meta = self.required_meta(session_id).await?;
@@ -169,6 +205,7 @@ impl AiSessionRepository {
         &self,
         session_id: &str,
     ) -> Result<Vec<AiSessionMessage>, AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
         let lock = self.session_lock(session_id);
         let _guard = lock.lock().await;
         let meta = self.required_meta(session_id).await?;
@@ -185,6 +222,7 @@ impl AiSessionRepository {
         ai_title: Option<String>,
         updated_at: i64,
     ) -> Result<AiSessionMeta, AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
         if ai_title
             .as_deref()
             .is_some_and(|title| title.trim().is_empty())
@@ -204,6 +242,7 @@ impl AiSessionRepository {
     }
 
     pub async fn delete_session(&self, session_id: &str) -> Result<(), AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
         let lock = self.session_lock(session_id);
         let _guard = lock.lock().await;
         let blocks = self
@@ -409,6 +448,15 @@ fn block_storage_error(error: impl std::fmt::Display) -> AiMessageBlockError {
     AiMessageBlockError::Storage(error.to_string())
 }
 
+fn validate_session_id(session_id: &str) -> Result<(), AiSessionRepositoryError> {
+    if session_id.is_empty() || !session_id.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(AiSessionRepositoryError::InvalidInput(
+            "会话 ID 必须是非空数字".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,6 +610,10 @@ mod tests {
                 .committed_message_count,
             25
         );
+        let (loaded_meta, loaded_messages) =
+            repository.load_session(&meta.id).await.unwrap().unwrap();
+        assert_eq!(loaded_meta.committed_message_count, 25);
+        assert_eq!(loaded_messages.len(), 25);
     }
 
     #[tokio::test]
@@ -763,5 +815,14 @@ mod tests {
                 .await,
             Err(AiSessionRepositoryError::SessionNotFound(id)) if id == "123"
         ));
+        assert!(matches!(
+            repository.get_session("../123").await,
+            Err(AiSessionRepositoryError::InvalidInput(_))
+        ));
+
+        let invalid: AppError = AiSessionRepositoryError::InvalidInput("bad".into()).into();
+        assert_eq!(invalid.error_type, "ai_session_invalid_input");
+        let missing: AppError = AiSessionRepositoryError::SessionNotFound("123".into()).into();
+        assert_eq!(missing.error_type, "ai_session_not_found");
     }
 }

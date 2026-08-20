@@ -19,7 +19,7 @@ pub struct AiSessionMeta {
     pub created_at: i64,
     #[specta(type = f64)]
     pub updated_at: i64,
-    /// 已经完成消息块写入并由 meta 确认的连续消息数量。
+    // 已经完成消息块写入并由 meta 确认的连续消息数量。
     #[specta(type = f64)]
     pub committed_message_count: u64,
 }
@@ -32,6 +32,13 @@ pub struct AiSessionMessage {
     #[specta(type = f64)]
     pub created_at: i64,
     pub payload: AiSessionMessagePayload,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSessionDetail {
+    pub meta: AiSessionMeta,
+    pub messages: Vec<AiSessionMessage>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
