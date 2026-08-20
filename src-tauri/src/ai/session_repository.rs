@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::{Arc, Weak};
 use thiserror::Error;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
 #[derive(Debug, Error)]
 pub enum AiSessionRepositoryError {
@@ -31,6 +31,8 @@ pub enum AiSessionRepositoryError {
     SessionNotFound(String),
     #[error("AI 会话参数无效: {0}")]
     InvalidInput(String),
+    #[error("AI 会话 {0} 正在生成回答")]
+    SessionBusy(String),
     #[error("AI 会话已提交消息数量溢出")]
     CommittedMessageCountOverflow,
     #[error("AI 会话已提交 {committed} 条消息，但存储中只能恢复出 {actual} 条连续消息")]
@@ -42,6 +44,7 @@ impl From<AiSessionRepositoryError> for AppError {
         let error_type = match &error {
             AiSessionRepositoryError::SessionNotFound(_) => "ai_session_not_found",
             AiSessionRepositoryError::InvalidInput(_) => "ai_session_invalid_input",
+            AiSessionRepositoryError::SessionBusy(_) => "ai_session_busy",
             _ => "ai_session",
         };
         Self {
@@ -59,6 +62,7 @@ pub struct AiSessionRepository {
     store: SharedAppObjectStore,
     crypto: Crypto,
     session_locks: Arc<DashMap<String, Weak<Mutex<()>>>>,
+    session_run_locks: Arc<DashMap<String, Weak<Mutex<()>>>>,
     reconciled_sessions: Arc<DashMap<String, ()>>,
 }
 
@@ -68,6 +72,7 @@ impl AiSessionRepository {
             store,
             crypto,
             session_locks: Arc::new(DashMap::new()),
+            session_run_locks: Arc::new(DashMap::new()),
             reconciled_sessions: Arc::new(DashMap::new()),
         }
     }
@@ -75,6 +80,17 @@ impl AiSessionRepository {
     /// 存储模式切换后强制各会话在下一次访问时重新核对实际消息块。
     pub fn invalidate_reconciliation(&self) {
         self.reconciled_sessions.clear();
+    }
+
+    /// 为一次完整模型问答占用会话，避免两个任务交叉追加用户和助手消息。
+    pub fn try_begin_run(
+        &self,
+        session_id: &str,
+    ) -> Result<OwnedMutexGuard<()>, AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
+        named_lock(&self.session_run_locks, session_id)
+            .try_lock_owned()
+            .map_err(|_| AiSessionRepositoryError::SessionBusy(session_id.to_owned()))
     }
 
     pub async fn create_session(
@@ -265,14 +281,7 @@ impl AiSessionRepository {
     }
 
     fn session_lock(&self, session_id: &str) -> Arc<Mutex<()>> {
-        let mut entry = self.session_locks.entry(session_id.to_owned()).or_default();
-        if let Some(lock) = entry.upgrade() {
-            lock
-        } else {
-            let lock = Arc::new(Mutex::new(()));
-            *entry = Arc::downgrade(&lock);
-            lock
-        }
+        named_lock(&self.session_locks, session_id)
     }
 
     async fn required_meta(
@@ -455,6 +464,17 @@ fn validate_session_id(session_id: &str) -> Result<(), AiSessionRepositoryError>
         ));
     }
     Ok(())
+}
+
+fn named_lock(locks: &DashMap<String, Weak<Mutex<()>>>, session_id: &str) -> Arc<Mutex<()>> {
+    let mut entry = locks.entry(session_id.to_owned()).or_default();
+    if let Some(lock) = entry.upgrade() {
+        lock
+    } else {
+        let lock = Arc::new(Mutex::new(()));
+        *entry = Arc::downgrade(&lock);
+        lock
+    }
 }
 
 #[cfg(test)]
@@ -824,5 +844,25 @@ mod tests {
         assert_eq!(invalid.error_type, "ai_session_invalid_input");
         let missing: AppError = AiSessionRepositoryError::SessionNotFound("123".into()).into();
         assert_eq!(missing.error_type, "ai_session_not_found");
+    }
+
+    #[test]
+    fn prevents_two_agent_runs_from_using_the_same_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let store: SharedAppObjectStore = Arc::new(LocalAppObjectStore::new(
+            LocalObjectStore::new(temp.path().to_path_buf()),
+        ));
+        let repository = AiSessionRepository::new(store, crypto());
+
+        let first = repository.try_begin_run("123").unwrap();
+        assert!(matches!(
+            repository.try_begin_run("123"),
+            Err(AiSessionRepositoryError::SessionBusy(id)) if id == "123"
+        ));
+        // 不同会话之间仍可并发运行。
+        let other = repository.try_begin_run("456").unwrap();
+        drop(first);
+        assert!(repository.try_begin_run("123").is_ok());
+        drop(other);
     }
 }

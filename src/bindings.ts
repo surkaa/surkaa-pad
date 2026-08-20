@@ -692,6 +692,27 @@ async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey:
 }
 },
 /**
+ * 在加密持久化会话中运行一次 AI Agent 问答。
+ * Rust 任务会自动保存用户问题以及完成、失败或取消状态的助手消息；同一会话不能
+ * 同时运行两个问答。任务运行期间存储模式保持不变。
+ * # Arguments
+ * * `event` - 接收模型状态、增量回答和最终结果的事件通道
+ * * `base_url` - OpenAI 兼容 API 根地址
+ * * `api_key` - 可选的 Bearer API Key
+ * * `session_id` - 已创建的数字 AI 会话 ID；模型与历史消息从会话中读取
+ * * `prompt` - 本轮用户问题
+ * # Returns
+ * * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
+ */
+async cmdRunAiSessionAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, sessionId: string, prompt: string) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_session_agent", { event, baseUrl, apiKey, sessionId, prompt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 创建一个空的 AI 会话。
  * # Arguments
  * * `title` - 会话的初始标题，通常取第一条用户问题

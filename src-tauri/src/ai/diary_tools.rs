@@ -23,15 +23,32 @@ const MAX_TOOL_DISPLAY_CHARS: usize = 80;
 #[derive(Clone)]
 pub struct DiaryReadTools {
     state: AppState,
+    storage_already_locked: bool,
 }
 
 impl DiaryReadTools {
     pub fn new(state: AppState) -> Self {
-        Self { state }
+        Self {
+            state,
+            storage_already_locked: false,
+        }
+    }
+
+    /// 供已经持有 `AppState::lock_storage_operation` 的长任务使用，避免公平读写锁中
+    /// 有写者排队时再次获取读锁形成自锁等待。
+    pub(crate) fn new_with_locked_storage(state: AppState) -> Self {
+        Self {
+            state,
+            storage_already_locked: true,
+        }
     }
 
     async fn list_recent_diaries(&self, limit: usize) -> Result<Value, AiToolError> {
-        let _storage_guard = self.state.lock_storage_operation().await;
+        let _storage_guard = if self.storage_already_locked {
+            None
+        } else {
+            Some(self.state.lock_storage_operation().await)
+        };
         let cache = self.state.diary_cache();
         let crypto = self.state.crypto();
         let store = self.state.diary_store();
@@ -62,7 +79,11 @@ impl DiaryReadTools {
     }
 
     async fn search_diaries(&self, query: &str, limit: usize) -> Result<Value, AiToolError> {
-        let _storage_guard = self.state.lock_storage_operation().await;
+        let _storage_guard = if self.storage_already_locked {
+            None
+        } else {
+            Some(self.state.lock_storage_operation().await)
+        };
         let cache = self.state.diary_cache();
         let crypto = self.state.crypto();
         let store = self.state.diary_store();
@@ -99,7 +120,11 @@ impl DiaryReadTools {
     }
 
     async fn read_diary(&self, diary_id: &str) -> Result<Value, AiToolError> {
-        let _storage_guard = self.state.lock_storage_operation().await;
+        let _storage_guard = if self.storage_already_locked {
+            None
+        } else {
+            Some(self.state.lock_storage_operation().await)
+        };
         let store = self.state.diary_store();
         let diary = get_diary(
             &self.state.diary_cache(),

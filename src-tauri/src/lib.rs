@@ -43,7 +43,7 @@ mod android_tls {
     }
 }
 
-use crate::ai::ai_command::{cmd_list_ai_models, cmd_run_ai_agent};
+use crate::ai::ai_command::{cmd_list_ai_models, cmd_run_ai_agent, cmd_run_ai_session_agent};
 use crate::ai::session_command::{
     cmd_create_ai_session, cmd_delete_ai_session, cmd_get_ai_session, cmd_list_ai_sessions,
     cmd_update_ai_session_ai_title,
@@ -165,6 +165,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             // AI Agent
             cmd_list_ai_models,
             cmd_run_ai_agent,
+            cmd_run_ai_session_agent,
             // AI 会话持久化
             cmd_create_ai_session,
             cmd_list_ai_sessions,

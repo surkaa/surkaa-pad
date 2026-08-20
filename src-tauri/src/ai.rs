@@ -11,6 +11,7 @@ mod error;
 mod message_blocks;
 mod openai_protocol;
 mod provider;
+mod session_agent;
 pub mod session_command;
 mod session_repository;
 mod session_types;
