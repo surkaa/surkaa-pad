@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
+import {useQuasar} from 'quasar'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import TaskItem from '@tiptap/extension-task-item'
@@ -19,6 +20,7 @@ import { findAttachmentNode } from './editor/attachmentNode'
 import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode, SummaryNode } from './editor/tiptap-extensions'
 import type {SummaryAttributes} from './editor/tiptap-extensions/SummaryNode'
 import AlbumImageInsertDialog from './AlbumImageInsertDialog.vue'
+import SummaryEditorDialog from './editor/SummaryEditorDialog.vue'
 import {
   attachmentInsertionsToEditorContent,
   type AttachmentInsertion,
@@ -28,6 +30,14 @@ import {NodeSelection} from '@tiptap/pm/state'
 import { findSearchHighlightRanges } from '../utils/searchHighlight'
 import { useEditorAlbumActions } from '../composables/useEditorAlbumActions'
 import { useAttachmentContextMenu } from '../composables/useAttachmentContextMenu'
+import {
+  appendSelectionToSummary,
+  listSummaryTargets,
+  readPlainTextSelection,
+  replaceSelectionWithSummary,
+  type PlainTextSelection,
+  type SummaryTarget,
+} from './editor/summarySelection'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -50,6 +60,7 @@ const emit = defineEmits<{
 
 const editorElement = ref<HTMLDivElement>()
 const currentPlatform = platform()
+const $q = useQuasar()
 
 const storageY = useStorage(`scroll-y-${props.diarySummary?.id}`, 0, sessionStorage)
 const { y } = useScroll(editorElement, {
@@ -71,12 +82,24 @@ const showSummaryDialog = ref(false)
 const summaryText = ref('')
 const summaryContent = ref('')
 const summaryEditPosition = ref<number | null>(null)
+const summaryDialogMode = ref<'edit' | 'selection'>('edit')
+const summarySourceSelection = ref<PlainTextSelection | null>(null)
+const summaryTargets = ref<SummaryTarget[]>([])
 
 function openSummaryDialog(position: number | null = null, attrs?: SummaryAttributes) {
+  summaryDialogMode.value = 'edit'
+  summarySourceSelection.value = null
+  summaryTargets.value = []
   summaryEditPosition.value = position
   summaryText.value = attrs?.summary ?? ''
   summaryContent.value = attrs?.content ?? ''
   showSummaryDialog.value = true
+}
+
+function resetSummaryDialogState() {
+  summarySourceSelection.value = null
+  summaryTargets.value = []
+  summaryEditPosition.value = null
 }
 
 const editor = useEditor({
@@ -281,7 +304,41 @@ function openSelectedSummaryDialog() {
     })
     return
   }
+
+  if (!selection.empty) {
+    const source = readPlainTextSelection(currentEditor.state)
+    if (!source) {
+      $q.notify({type: 'warning', message: '选区只能包含普通文字'})
+      return
+    }
+    summarySourceSelection.value = source
+    summaryTargets.value = listSummaryTargets(currentEditor.state.doc)
+    summaryEditPosition.value = null
+    summaryText.value = ''
+    summaryContent.value = source.text
+    summaryDialogMode.value = summaryTargets.value.length > 0 ? 'selection' : 'edit'
+    showSummaryDialog.value = true
+    return
+  }
   openSummaryDialog()
+}
+
+function createSummaryFromSelection() {
+  summaryDialogMode.value = 'edit'
+}
+
+function appendSelectedText(target: SummaryTarget) {
+  const currentEditor = editor.value
+  const source = summarySourceSelection.value
+  if (!currentEditor || !source) return
+  const transaction = appendSelectionToSummary(currentEditor.state, source, target.position)
+  if (!transaction) {
+    $q.notify({type: 'warning', message: '选区已经发生变化，请重新选择文字'})
+    return
+  }
+  currentEditor.view.dispatch(transaction)
+  showSummaryDialog.value = false
+  currentEditor.commands.focus()
 }
 
 function saveSummary() {
@@ -290,7 +347,16 @@ function saveSummary() {
   if (!currentEditor || !summary) return
   const attrs = {summary, content: summaryContent.value.trim()}
 
-  if (summaryEditPosition.value === null) {
+  const source = summarySourceSelection.value
+  if (source) {
+    const transaction = replaceSelectionWithSummary(currentEditor.state, source, attrs)
+    if (!transaction) {
+      $q.notify({type: 'warning', message: '选区已经发生变化，请重新选择文字'})
+      return
+    }
+    currentEditor.view.dispatch(transaction)
+    currentEditor.commands.focus()
+  } else if (summaryEditPosition.value === null) {
     currentEditor.chain().focus().insertSummary(attrs).run()
   } else {
     const position = summaryEditPosition.value
@@ -367,52 +433,19 @@ defineExpose({
     @contextmenu="handleContextMenu"
   >
     <EditorContent :editor="editor" />
-    <q-dialog v-model="showSummaryDialog" no-refocus>
-      <q-card class="summary-editor-dialog">
-        <q-card-section>
-          <div class="text-h6 summary-dialog-title">
-            {{ summaryEditPosition === null ? '添加折叠内容' : '编辑折叠内容' }}
-          </div>
-          <div class="text-caption summary-dialog-description">外显文字始终可见，内部文字可展开查看</div>
-        </q-card-section>
-        <q-card-section class="q-pt-none q-gutter-y-md">
-          <q-input
-            v-model="summaryText"
-            outlined
-            autofocus
-            label="外显文字"
-            maxlength="200"
-            counter
-            @keyup.enter="saveSummary"
-          />
-          <q-input
-            v-model="summaryContent"
-            outlined
-            type="textarea"
-            autogrow
-            label="内部文字"
-          />
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn
-            v-if="summaryEditPosition !== null"
-            flat
-            label="删除"
-            color="negative"
-            @click="deleteSummary"
-          />
-          <q-space/>
-          <q-btn flat label="取消" color="primary" v-close-popup/>
-          <q-btn
-            unelevated
-            label="保存"
-            color="primary"
-            :disable="!summaryText.trim()"
-            @click="saveSummary"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <SummaryEditorDialog
+      v-model="showSummaryDialog"
+      v-model:summary-text="summaryText"
+      v-model:summary-content="summaryContent"
+      :mode="summaryDialogMode"
+      :can-delete="summaryEditPosition !== null"
+      :targets="summaryTargets"
+      @create-from-selection="createSummaryFromSelection"
+      @append-selection="appendSelectedText"
+      @save="saveSummary"
+      @delete="deleteSummary"
+      @hide="resetSummaryDialogState"
+    />
     <AlbumImageInsertDialog
       v-model="showAlbumInsertDialog"
       :albums="albumInsertTargets"
@@ -491,39 +524,6 @@ defineExpose({
 
 }
 
-.summary-editor-dialog {
-  width: min(520px, calc(100vw - 24px));
-  max-height: 86vh;
-  color: var(--pad-text-color-100);
-  background: var(--pad-bg-color-200);
-  border-radius: var(--pad-radius-xl);
-
-  .summary-dialog-title {
-    color: var(--pad-text-color-100);
-  }
-
-  .summary-dialog-description {
-    color: var(--pad-text-color-400);
-  }
-
-  :deep(.q-field__control) {
-    background: var(--pad-bg-color-100);
-  }
-
-  :deep(.q-field__native),
-  :deep(.q-field__input) {
-    color: var(--pad-text-color-200);
-  }
-
-  :deep(.q-field__label),
-  :deep(.q-field__marginal) {
-    color: var(--pad-text-color-400);
-  }
-
-  :deep(.q-field--outlined .q-field__control::before) {
-    border-color: var(--pad-border-color-100);
-  }
-}
 </style>
 
 <style lang="scss">
