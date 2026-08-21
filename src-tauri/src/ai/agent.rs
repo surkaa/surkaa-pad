@@ -5,6 +5,7 @@ use super::{
 use serde::Serialize;
 use serde_json::json;
 use specta::Type;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tauri_plugin_log::log;
 
@@ -158,20 +159,33 @@ impl<'a> AiAgent<'a> {
         let mut next_operation_id = 1;
 
         for round in 1..=self.max_model_rounds {
-            emit(AiAgentEvent::ModelStarted { round })?;
             let model_started_at = Instant::now();
+            let model_step_started = AtomicBool::new(false);
+            let ensure_model_step_started = || {
+                if !model_step_started.swap(true, Ordering::AcqRel) {
+                    emit(AiAgentEvent::ModelStarted { round })?;
+                }
+                Ok::<(), AiError>(())
+            };
             let completion = self
                 .provider
                 .complete_stream(
                     AiCompletionRequest::new(model, messages.clone(), definitions.clone())?,
-                    &|delta| match delta {
-                        AiCompletionDelta::Reasoning(delta) => {
-                            emit(AiAgentEvent::ReasoningDelta { round, delta })
+                    &|delta| {
+                        ensure_model_step_started()?;
+                        match delta {
+                            AiCompletionDelta::Reasoning(delta) => {
+                                emit(AiAgentEvent::ReasoningDelta { round, delta })
+                            }
+                            AiCompletionDelta::Content(delta) => {
+                                emit(AiAgentEvent::AnswerDelta(delta))
+                            }
                         }
-                        AiCompletionDelta::Content(delta) => emit(AiAgentEvent::AnswerDelta(delta)),
                     },
                 )
                 .await?;
+            // 纯工具调用可能没有文字增量；完整响应到达后仍需创建模型步骤。
+            ensure_model_step_started()?;
             let tool_count = completion.message.tool_calls.len();
             emit(AiAgentEvent::ModelCompleted {
                 round,

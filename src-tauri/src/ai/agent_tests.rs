@@ -2,7 +2,10 @@ use super::*;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 
 struct FakeProvider {
     responses: Mutex<VecDeque<Result<AiCompletion, AiError>>>,
@@ -35,6 +38,32 @@ impl AiModelProvider for FakeProvider {
             .unwrap()
             .pop_front()
             .expect("fake provider response")
+    }
+}
+
+struct ModelStartTimingProvider<'a> {
+    model_started: &'a AtomicBool,
+}
+
+#[async_trait]
+impl AiModelProvider for ModelStartTimingProvider<'_> {
+    async fn list_models(&self) -> Result<Vec<AiModel>, AiError> {
+        Ok(vec![])
+    }
+
+    async fn complete(&self, _request: AiCompletionRequest) -> Result<AiCompletion, AiError> {
+        unreachable!("timing provider only supports streaming")
+    }
+
+    async fn complete_stream(
+        &self,
+        _request: AiCompletionRequest,
+        on_delta: &(dyn Fn(AiCompletionDelta) -> Result<(), AiError> + Send + Sync),
+    ) -> Result<AiCompletion, AiError> {
+        assert!(!self.model_started.load(Ordering::Acquire));
+        on_delta(AiCompletionDelta::Content("回答".into()))?;
+        assert!(self.model_started.load(Ordering::Acquire));
+        Ok(completion(Some("回答"), vec![], None))
     }
 }
 
@@ -118,6 +147,27 @@ fn tool_call(id: &str) -> AiToolCall {
         name: "read_diary".into(),
         arguments: json!({"diaryId": "123"}),
     }
+}
+
+#[tokio::test]
+async fn keeps_the_connection_state_until_the_first_model_delta() {
+    let model_started = AtomicBool::new(false);
+    let provider = ModelStartTimingProvider {
+        model_started: &model_started,
+    };
+    let tools = FakeTools::succeeding(json!({}));
+
+    AiAgent::new(&provider, &tools)
+        .run_stream("qwen", "测试连接状态", &|event| {
+            if matches!(event, AiAgentEvent::ModelStarted { .. }) {
+                model_started.store(true, Ordering::Release);
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    assert!(model_started.load(Ordering::Acquire));
 }
 
 #[tokio::test]

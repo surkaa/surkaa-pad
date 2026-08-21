@@ -267,6 +267,13 @@ describe('formatAiConversationSource', () => {
 });
 
 describe('reduceAiAgentEvent', () => {
+  it('starts by showing the AI service connection state', () => {
+    expect(initialAiAgentDisplayState()).toMatchObject({
+      status: '正在连接并等待 AI 服务响应…',
+      processSteps: [],
+    });
+  });
+
   it('streams text, clears temporary tool preambles, and completes with final metadata', () => {
     let state = initialAiAgentDisplayState();
     state = reduceAiAgentEvent(state, {

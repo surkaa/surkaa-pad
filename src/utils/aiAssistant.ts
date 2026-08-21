@@ -179,7 +179,7 @@ export function initialAiAgentDisplayState(): AiAgentDisplayState {
   return {
     state: 'running',
     answer: '',
-    status: '正在连接 AI 服务…',
+    status: '正在连接并等待 AI 服务响应…',
     response: null,
     error: null,
     processSteps: [],
