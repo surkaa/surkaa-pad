@@ -21,7 +21,7 @@
     <q-dialog v-model="showDialog">
       <q-card class="about-dialog">
         <q-card-section class="about-heading">
-          <q-icon name="auto_stories" size="36px"/>
+          <img src="/app-icon.png" alt="SurKaa Pad Logo" class="about-logo"/>
           <div>
             <div class="text-h6 title-text">{{ info?.appName || 'SurKaa Pad' }}</div>
             <div class="text-caption desc-text">本地优先、端到端加密的个人日记</div>
@@ -103,10 +103,14 @@ async function refreshInfo() {
   display: flex;
   align-items: center;
   gap: 12px;
+}
 
-  > .q-icon {
-    color: var(--pad-primary-dark);
-  }
+.about-logo {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: 10px;
 }
 
 .title-text {
