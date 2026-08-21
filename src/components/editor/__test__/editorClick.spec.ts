@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
 import {
+  disableMobileImageDragging,
   isMobileEditorPlatform,
   shouldFocusEditorEnd,
   shouldPreventEditorFocus,
@@ -85,6 +86,32 @@ describe('shouldPreventEditorFocus', () => {
     const button = document.createElement('button')
 
     expect(shouldPreventEditorFocus(button, 'android', true)).toBe(false)
+  })
+})
+
+describe('disableMobileImageDragging', () => {
+  it('disables native image and album dragging on mobile', () => {
+    const album = document.createElement('div')
+    album.className = 'editor-image-album'
+    album.draggable = true
+    const image = document.createElement('img')
+    image.dataset.id = 'image-1'
+    image.draggable = true
+    album.append(image)
+
+    expect(disableMobileImageDragging(image, 'android')).toBe(true)
+    expect(image.draggable).toBe(false)
+    expect(album.draggable).toBe(false)
+  })
+
+  it('keeps desktop images draggable and ignores non-image targets', () => {
+    const image = document.createElement('img')
+    image.dataset.id = 'image-1'
+    image.draggable = true
+
+    expect(disableMobileImageDragging(image, 'windows')).toBe(false)
+    expect(image.draggable).toBe(true)
+    expect(disableMobileImageDragging(document.createElement('p'), 'android')).toBe(false)
   })
 })
 

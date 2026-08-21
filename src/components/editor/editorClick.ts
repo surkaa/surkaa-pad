@@ -16,6 +16,20 @@ export function isMobileEditorPlatform(currentPlatform: string): boolean {
   return currentPlatform === 'android' || currentPlatform === 'ios'
 }
 
+export function disableMobileImageDragging(
+  target: EventTarget | null,
+  currentPlatform: string,
+): boolean {
+  if (!isMobileEditorPlatform(currentPlatform) || !(target instanceof Element)) return false
+
+  const image = target.closest<HTMLImageElement>('img[data-id]')
+  if (!image) return false
+  image.draggable = false
+  const album = image.closest<HTMLElement>('.editor-image-album')
+  if (album) album.draggable = false
+  return true
+}
+
 export function shouldPreventEditorFocus(
   target: EventTarget | null,
   currentPlatform: string,

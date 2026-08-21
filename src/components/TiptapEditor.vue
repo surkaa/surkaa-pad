@@ -11,6 +11,7 @@ import { platform } from '@tauri-apps/plugin-os'
 import type { AttachmentMeta, DiaryContent, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import {
+  disableMobileImageDragging,
   shouldFocusEditorEnd,
   shouldPreventEditorFocus,
 } from './editor/editorClick'
@@ -256,7 +257,17 @@ function handleWrapperClick(e: MouseEvent) {
 }
 
 function handleWrapperPointerDown(e: PointerEvent) {
+  if (disableMobileImageDragging(e.target, currentPlatform)) {
+    // 避免 ProseMirror 在按下可拖拽节点后重新开启 draggable；不阻止默认事件，保留点击和长按菜单。
+    e.stopPropagation()
+  }
   if (!shouldPreventEditorFocus(e.target, currentPlatform, Boolean(albumAnchor.value))) return
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+function handleWrapperDragStart(e: DragEvent) {
+  if (!disableMobileImageDragging(e.target, currentPlatform)) return
   e.preventDefault()
   e.stopPropagation()
 }
@@ -429,6 +440,7 @@ defineExpose({
     ref="editorElement"
     class="tiptap-wrapper"
     @pointerdown.capture="handleWrapperPointerDown"
+    @dragstart.capture="handleWrapperDragStart"
     @click="handleWrapperClick"
     @contextmenu="handleContextMenu"
   >
