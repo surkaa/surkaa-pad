@@ -26,6 +26,7 @@ struct MigrationRegistry {
 }
 
 struct V4ToV5;
+struct V5ToV6;
 
 #[async_trait]
 impl DiaryMigration for V4ToV5 {
@@ -39,6 +40,22 @@ impl DiaryMigration for V4ToV5 {
         _json: &mut Value,
     ) -> Result<(), DiaryError> {
         // V5 只新增可选的 Summary 内容节点，现有 V4 内容无需改写。
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl DiaryMigration for V5ToV6 {
+    fn source_version(&self) -> u32 {
+        5
+    }
+
+    async fn migrate_json(
+        &self,
+        _context: &MigrationContext<'_>,
+        _json: &mut Value,
+    ) -> Result<(), DiaryError> {
+        // V6 新增位置内容节点；已有 V5 节点结构保持不变。
         Ok(())
     }
 }
@@ -85,7 +102,7 @@ impl MigrationRegistry {
 
 fn default_registry() -> MigrationRegistry {
     // V1–V3 的兼容步骤已移除，只保留当前仍需执行的连续迁移步骤。
-    MigrationRegistry::new(vec![Box::new(V4ToV5)])
+    MigrationRegistry::new(vec![Box::new(V4ToV5), Box::new(V5ToV6)])
 }
 
 /// 检查并按注册步骤迁移 Manifest；返回 Some 时由调用方最后提交新版 Manifest。
@@ -114,7 +131,8 @@ mod tests {
     use crate::diaries::LocalStore;
 
     #[tokio::test]
-    async fn current_version_passes_through_and_v4_migrates_without_changing_content() {
+    async fn current_version_passes_through_and_supported_versions_migrate_without_changing_content(
+    ) {
         let temp_dir = tempfile::tempdir().unwrap();
         let store = LocalStore::new(LocalObjectStore::new(temp_dir.path().to_path_buf()));
         let context = MigrationContext {
@@ -158,6 +176,23 @@ mod tests {
                 .searchable_text(),
             "正文"
         );
+
+        let v5 = serde_json::json!({
+            "id": "test",
+            "version": 5,
+            "algorithm": "AES256-GCM_v1",
+            "content": {"nodes": [{"type": "summary", "summary": "标题", "content": "内容"}]},
+            "created": 1,
+            "updated": 2,
+            "attachments": [],
+        });
+        let migrated = migrate_manifest_bytes(&context, &serde_json::to_vec(&v5).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        let migrated: Value = serde_json::from_slice(&migrated).unwrap();
+        assert_eq!(migrated["version"], CURRENT_VERSION);
+        assert_eq!(migrated["content"], v5["content"]);
 
         for version in 1..4 {
             let source = serde_json::json!({"id": "test", "version": version});

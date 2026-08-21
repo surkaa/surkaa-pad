@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use specta::Type;
 use std::collections::HashSet;
 
@@ -16,7 +16,102 @@ pub enum AlbumDisplayMode {
     StackedCards,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, Type, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CoordinateSystem {
+    /// 世界大地测量系统 1984；日记持久化统一保存这一原始坐标。
+    Wgs84,
+}
+
+#[derive(Serialize, Clone, Debug, Type, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DiaryLocation {
+    pub coordinate_system: CoordinateSystem,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub horizontal_accuracy_meters: Option<f64>,
+    #[specta(type = f64)]
+    pub captured_at: i64,
+    pub place_name: Option<String>,
+    pub altitude_meters: Option<f64>,
+    pub vertical_accuracy_meters: Option<f64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnvalidatedDiaryLocation {
+    coordinate_system: CoordinateSystem,
+    latitude: f64,
+    longitude: f64,
+    horizontal_accuracy_meters: Option<f64>,
+    captured_at: i64,
+    place_name: Option<String>,
+    altitude_meters: Option<f64>,
+    vertical_accuracy_meters: Option<f64>,
+}
+
+impl<'de> Deserialize<'de> for DiaryLocation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let location = UnvalidatedDiaryLocation::deserialize(deserializer)?;
+        Self::try_from(location).map_err(de::Error::custom)
+    }
+}
+
+impl TryFrom<UnvalidatedDiaryLocation> for DiaryLocation {
+    type Error = &'static str;
+
+    fn try_from(value: UnvalidatedDiaryLocation) -> Result<Self, Self::Error> {
+        if !value.latitude.is_finite() || !(-90.0..=90.0).contains(&value.latitude) {
+            return Err("location latitude must be finite and between -90 and 90 degrees");
+        }
+        if !value.longitude.is_finite() || !(-180.0..=180.0).contains(&value.longitude) {
+            return Err("location longitude must be finite and between -180 and 180 degrees");
+        }
+        validate_optional_accuracy(
+            value.horizontal_accuracy_meters,
+            "location horizontal accuracy must be finite and non-negative",
+        )?;
+        validate_optional_accuracy(
+            value.vertical_accuracy_meters,
+            "location vertical accuracy must be finite and non-negative",
+        )?;
+        if value
+            .altitude_meters
+            .is_some_and(|altitude| !altitude.is_finite())
+        {
+            return Err("location altitude must be finite");
+        }
+        if value.captured_at < 0 {
+            return Err("location captured time must be non-negative");
+        }
+
+        Ok(Self {
+            coordinate_system: value.coordinate_system,
+            latitude: value.latitude,
+            longitude: value.longitude,
+            horizontal_accuracy_meters: value.horizontal_accuracy_meters,
+            captured_at: value.captured_at,
+            place_name: value.place_name,
+            altitude_meters: value.altitude_meters,
+            vertical_accuracy_meters: value.vertical_accuracy_meters,
+        })
+    }
+}
+
+fn validate_optional_accuracy(
+    accuracy: Option<f64>,
+    error: &'static str,
+) -> Result<(), &'static str> {
+    if accuracy.is_some_and(|accuracy| !accuracy.is_finite() || accuracy < 0.0) {
+        return Err(error);
+    }
+    Ok(())
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Type, PartialEq)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -29,6 +124,9 @@ pub enum DiaryContentNode {
     Summary {
         summary: String,
         content: String,
+    },
+    Location {
+        location: DiaryLocation,
     },
     Image {
         #[specta(rename = "attachmentId")]
@@ -66,7 +164,7 @@ pub struct DiaryAttachmentCounts {
     pub file: u32,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, Type, PartialEq, Eq, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, Type, PartialEq, Default)]
 pub struct DiaryContent {
     pub nodes: Vec<DiaryContentNode>,
 }
@@ -110,6 +208,11 @@ impl DiaryContent {
                     text.push_str(summary);
                     text.push('\n');
                     text.push_str(content);
+                }
+                DiaryContentNode::Location { location } => {
+                    if let Some(place_name) = &location.place_name {
+                        text.push_str(place_name);
+                    }
                 }
                 _ => {}
             }
@@ -178,7 +281,9 @@ impl DiaryContent {
                         counts.file = counts.file.saturating_add(1);
                     }
                 }
-                DiaryContentNode::Markdown { .. } | DiaryContentNode::Summary { .. } => {}
+                DiaryContentNode::Markdown { .. }
+                | DiaryContentNode::Summary { .. }
+                | DiaryContentNode::Location { .. } => {}
             }
         }
 
@@ -204,7 +309,9 @@ impl DiaryContent {
                 attachment_ids.retain(|id| id != attachment_id);
                 !attachment_ids.is_empty()
             }
-            DiaryContentNode::Markdown { .. } | DiaryContentNode::Summary { .. } => true,
+            DiaryContentNode::Markdown { .. }
+            | DiaryContentNode::Summary { .. }
+            | DiaryContentNode::Location { .. } => true,
         });
     }
 }
@@ -259,7 +366,8 @@ fn parse_attachment_marker(marker: &str) -> Option<DiaryContentNode> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AlbumDisplayMode, DiaryAttachmentCounts, DiaryContent, DiaryContentNode, ImageSize,
+        AlbumDisplayMode, CoordinateSystem, DiaryAttachmentCounts, DiaryContent, DiaryContentNode,
+        DiaryLocation, ImageSize,
     };
     use std::collections::HashSet;
 
@@ -424,6 +532,90 @@ mod tests {
 
         assert_eq!(content.searchable_text(), "外显标题\n折叠的内部文字");
         assert_eq!(content.title(), "外显标题");
+    }
+
+    #[test]
+    fn location_place_name_is_searchable_but_does_not_supply_the_title() {
+        let content = DiaryContent {
+            nodes: vec![
+                DiaryContentNode::Location {
+                    location: DiaryLocation {
+                        coordinate_system: CoordinateSystem::Wgs84,
+                        latitude: 23.1291,
+                        longitude: 113.2644,
+                        horizontal_accuracy_meters: Some(18.5),
+                        captured_at: 1_787_392_800_000,
+                        place_name: Some("广州市越秀区".to_string()),
+                        altitude_meters: None,
+                        vertical_accuracy_meters: None,
+                    },
+                },
+                DiaryContentNode::Markdown {
+                    text: "日记标题".to_string(),
+                },
+            ],
+        };
+
+        assert_eq!(content.searchable_text(), "广州市越秀区日记标题");
+        assert_eq!(content.title(), "日记标题");
+    }
+
+    #[test]
+    fn location_round_trip_uses_explicit_wgs84_fields() {
+        let json = serde_json::json!({
+            "type": "location",
+            "location": {
+                "coordinateSystem": "wgs84",
+                "latitude": 23.1291,
+                "longitude": 113.2644,
+                "horizontalAccuracyMeters": 18.5,
+                "capturedAt": 1_787_392_800_000_i64,
+                "placeName": "广州市越秀区",
+                "altitudeMeters": 12.3,
+                "verticalAccuracyMeters": 4.5
+            }
+        });
+
+        let node: DiaryContentNode = serde_json::from_value(json.clone()).unwrap();
+        assert!(matches!(
+            &node,
+            DiaryContentNode::Location { location }
+                if location.coordinate_system == CoordinateSystem::Wgs84
+                    && location.latitude == 23.1291
+                    && location.longitude == 113.2644
+                    && location.horizontal_accuracy_meters == Some(18.5)
+                    && location.place_name.as_deref() == Some("广州市越秀区")
+        ));
+        assert_eq!(serde_json::to_value(node).unwrap(), json);
+    }
+
+    #[test]
+    fn rejects_invalid_location_values_during_deserialization() {
+        let valid = serde_json::json!({
+            "coordinateSystem": "wgs84",
+            "latitude": 23.1291,
+            "longitude": 113.2644,
+            "horizontalAccuracyMeters": 18.5,
+            "capturedAt": 1,
+            "placeName": null,
+            "altitudeMeters": null,
+            "verticalAccuracyMeters": null
+        });
+
+        for (field, invalid_value) in [
+            ("latitude", serde_json::json!(90.1)),
+            ("longitude", serde_json::json!(-180.1)),
+            ("horizontalAccuracyMeters", serde_json::json!(-0.1)),
+            ("verticalAccuracyMeters", serde_json::json!(-0.1)),
+            ("capturedAt", serde_json::json!(-1)),
+        ] {
+            let mut invalid = valid.clone();
+            invalid[field] = invalid_value;
+            assert!(
+                serde_json::from_value::<DiaryLocation>(invalid).is_err(),
+                "field {field} should be rejected"
+            );
+        }
     }
 
     #[test]

@@ -863,6 +863,7 @@ mod tests {
     use crate::diaries::diary::{
         delete_diary, get_diary, lock_diary_operation, save_diary, update_diary_content_only,
     };
+    use crate::diaries::CURRENT_VERSION;
     use crate::stream::create_mock_stream;
     use crate::test_utils::TestOssGuard;
     use crate::utils::id_generate::generate_descending_id_with_timestamp;
@@ -1331,7 +1332,7 @@ mod tests {
             get_diary(&cache, &crypto, &store, diary_id).await,
             Err(DiaryError::UnsupportedVersion {
                 found: 3,
-                supported: 4
+                supported: CURRENT_VERSION
             })
         ));
 

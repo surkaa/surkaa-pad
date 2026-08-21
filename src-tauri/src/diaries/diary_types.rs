@@ -8,7 +8,7 @@ use specta::Type;
 use std::collections::{HashMap, HashSet};
 
 /// 当前代码唯一支持的日记 Manifest 版本。
-pub const CURRENT_VERSION: u32 = 5;
+pub const CURRENT_VERSION: u32 = 6;
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]

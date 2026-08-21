@@ -353,6 +353,17 @@ fn render_content(manifest: &DiaryManifest) -> String {
             DiaryContentNode::Summary { summary, content } => {
                 output.push_str(&format!("\n[折叠内容：{summary}]\n{content}\n"));
             }
+            DiaryContentNode::Location { location } => {
+                let place = location.place_name.as_deref().unwrap_or("未命名地点");
+                let accuracy = location
+                    .horizontal_accuracy_meters
+                    .map(|accuracy| format!("，精度约 ±{accuracy:.0} 米"))
+                    .unwrap_or_default();
+                output.push_str(&format!(
+                    "\n[位置: {place}，WGS-84 {:.6}, {:.6}{accuracy}]\n",
+                    location.latitude, location.longitude
+                ));
+            }
             DiaryContentNode::Image { attachment_id, .. } => {
                 push_attachment_marker(&mut output, "图片", attachment_id, &attachments)
             }
