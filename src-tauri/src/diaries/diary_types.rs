@@ -30,13 +30,18 @@ impl DiaryManifest {
             return true;
         }
 
-        let searchable_text = self.content.searchable_text();
+        let searchable_text = self.content.searchable_text().to_lowercase();
+        let searchable_filenames = self
+            .attachments
+            .iter()
+            .map(|attachment| attachment.filename.to_lowercase())
+            .collect::<Vec<_>>();
         let matches_keyword = |keyword: &str| {
-            searchable_text.contains(keyword)
-                || self
-                    .attachments
+            let keyword = keyword.to_lowercase();
+            searchable_text.contains(&keyword)
+                || searchable_filenames
                     .iter()
-                    .any(|attachment| attachment.filename.contains(keyword))
+                    .any(|filename| filename.contains(&keyword))
         };
         if match_any {
             keywords
@@ -234,6 +239,16 @@ mod tests {
         assert!(!manifest.matches_keywords(&["上海".into(), "机票".into()], false));
         assert!(manifest.matches_keywords(&["机票".into(), "行程".into()], true));
         assert!(manifest.matches_keywords(&[], false));
+    }
+
+    #[test]
+    fn keyword_matching_ignores_case_in_body_and_filenames() {
+        let mut manifest = searchable_manifest();
+        manifest.content = DiaryContent::from("Rust Search Notes");
+        manifest.attachments[0].filename = "Quarterly-REPORT.PDF".to_string();
+
+        assert!(manifest.matches_keywords(&["rust search".into()], false));
+        assert!(manifest.matches_keywords(&["report.pdf".into()], false));
     }
 
     #[test]
