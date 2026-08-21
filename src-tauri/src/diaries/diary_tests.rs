@@ -431,7 +431,7 @@ mod diary_search_tests {
             &second.id,
             AttachmentMeta {
                 id: "att-2".to_string(),
-                filename: "2".to_string(),
+                filename: "旅行清单.pdf".to_string(),
                 mimetype: "text/plain".to_string(),
                 size: 1,
                 encrypted: false,
@@ -519,6 +519,21 @@ mod diary_search_tests {
             1,
             "使用 OR 搜索 'rust async' 应该不匹配 1 篇日记"
         );
+
+        let (matches, unmatches) = test_search(
+            &cache,
+            &crypto,
+            &store,
+            "旅行清单".to_string(),
+            false,
+            vec![],
+            true,
+        )
+        .await;
+        assert_eq!(matches.len(), 1, "附件文件名应参与关键词搜索");
+        assert_eq!(matches[0].id, second.id);
+        assert_eq!(unmatches.len(), 3);
+
         let (matches, _) = test_search(
             &cache,
             &crypto,

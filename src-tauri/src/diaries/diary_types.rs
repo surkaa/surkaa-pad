@@ -24,6 +24,32 @@ pub struct DiaryManifest {
     pub version: u32,
 }
 
+impl DiaryManifest {
+    pub(crate) fn matches_keywords(&self, keywords: &[String], match_any: bool) -> bool {
+        if keywords.is_empty() {
+            return true;
+        }
+
+        let searchable_text = self.content.searchable_text();
+        let matches_keyword = |keyword: &str| {
+            searchable_text.contains(keyword)
+                || self
+                    .attachments
+                    .iter()
+                    .any(|attachment| attachment.filename.contains(keyword))
+        };
+        if match_any {
+            keywords
+                .iter()
+                .any(|keyword| matches_keyword(keyword.as_str()))
+        } else {
+            keywords
+                .iter()
+                .all(|keyword| matches_keyword(keyword.as_str()))
+        }
+    }
+}
+
 /// 解析 Manifest 的身份和版本元数据，不要求旧版或高版本符合当前结构。
 pub(crate) fn inspect_manifest_json(
     requested_id: &str,
@@ -167,6 +193,48 @@ mod tests {
     use crate::attachments::AttachmentMeta;
     use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
     use crate::diaries::diary_content::{DiaryAttachmentCounts, DiaryContent, DiaryContentNode};
+
+    fn searchable_manifest() -> DiaryManifest {
+        DiaryManifest {
+            id: "diary-1".to_string(),
+            algorithm: Gcm,
+            content: DiaryContent::from("上海出差记录"),
+            created: 1,
+            updated: 2,
+            attachments: ["酒店发票.pdf", "行程.png"]
+                .into_iter()
+                .map(|filename| AttachmentMeta {
+                    id: filename.to_string(),
+                    filename: filename.to_string(),
+                    mimetype: "application/octet-stream".to_string(),
+                    size: 1,
+                    encrypted: false,
+                    nonce: Vec::new(),
+                    algorithm: Gcm,
+                    etag: None,
+                })
+                .collect(),
+            version: CURRENT_VERSION,
+        }
+    }
+
+    #[test]
+    fn keywords_match_attachment_filenames() {
+        let manifest = searchable_manifest();
+
+        assert!(manifest.matches_keywords(&["酒店发票".into()], false));
+        assert!(!manifest.matches_keywords(&["会议记录".into()], true));
+    }
+
+    #[test]
+    fn keyword_logic_combines_body_and_filenames() {
+        let manifest = searchable_manifest();
+
+        assert!(manifest.matches_keywords(&["上海".into(), "发票".into()], false));
+        assert!(!manifest.matches_keywords(&["上海".into(), "机票".into()], false));
+        assert!(manifest.matches_keywords(&["机票".into(), "行程".into()], true));
+        assert!(manifest.matches_keywords(&[], false));
+    }
 
     #[test]
     fn summary_counts_content_nodes_instead_of_attachment_metadata() {

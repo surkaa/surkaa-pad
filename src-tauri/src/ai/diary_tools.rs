@@ -103,7 +103,7 @@ impl DiaryReadTools {
                 let diary = get_diary(&cache, &crypto, &*store, &id)
                     .await
                     .map_err(|error| execution_failed(SEARCH_DIARIES_TOOL, error))?;
-                if diary.content.matches_keywords(&keywords, false) {
+                if diary.matches_keywords(&keywords, false) {
                     summaries.push(DiaryToolSummary::from_manifest(&diary));
                     if summaries.len() == limit {
                         break;
@@ -151,7 +151,7 @@ impl AiToolExecutor for DiaryReadTools {
             },
             AiToolDefinition {
                 name: SEARCH_DIARIES_TOOL.into(),
-                description: "按正文关键词搜索日记，空格分隔的多个关键词必须全部匹配。返回从新到旧的摘要。".into(),
+                description: "按正文或附件文件名搜索日记，空格分隔的多个关键词必须全部匹配。返回从新到旧的摘要。".into(),
                 parameters: json!({
                     "type": "object",
                     "properties": {

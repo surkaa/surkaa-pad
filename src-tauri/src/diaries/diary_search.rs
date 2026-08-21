@@ -49,7 +49,7 @@ pub async fn search_diaries(
                     let diary = get_diary(cache, crypto, store, &id).await?;
 
                     // 如果 or 是 true，则满足任一关键词即可；如果 or 是 false，则必须满足所有关键词
-                    let keyword_matches = diary.content.matches_keywords(&keywords, keyword_or);
+                    let keyword_matches = diary.matches_keywords(&keywords, keyword_or);
                     let attachment_matches = attachment_types.is_empty()
                         || if attachment_or {
                             attachment_types.iter().any(|filter| {
