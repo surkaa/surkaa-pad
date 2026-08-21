@@ -25,36 +25,38 @@
         <q-separator/>
 
         <q-list separator class="toolbar-order-list">
-          <q-item v-for="(action, index) in toolbarOrder" :key="action" class="toolbar-order-item">
-            <q-item-section avatar>
-              <q-icon :name="EDITOR_TOOLBAR_ICONS[action]" class="action-icon"/>
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="label-text">{{ EDITOR_TOOLBAR_LABELS[action] }}</q-item-label>
-            </q-item-section>
-            <q-item-section side class="row-actions">
-              <q-btn
-                flat
-                round
-                dense
-                icon="keyboard_arrow_up"
-                color="primary"
-                :disable="index === 0"
-                :aria-label="`上移${EDITOR_TOOLBAR_LABELS[action]}`"
-                @click="move(action, -1)"
-              />
-              <q-btn
-                flat
-                round
-                dense
-                icon="keyboard_arrow_down"
-                color="primary"
-                :disable="index === toolbarOrder.length - 1"
-                :aria-label="`下移${EDITOR_TOOLBAR_LABELS[action]}`"
-                @click="move(action, 1)"
-              />
-            </q-item-section>
-          </q-item>
+          <TransitionGroup name="toolbar-order" tag="div">
+            <q-item v-for="(action, index) in toolbarOrder" :key="action" class="toolbar-order-item">
+              <q-item-section avatar>
+                <q-icon :name="EDITOR_TOOLBAR_ICONS[action]" class="action-icon"/>
+              </q-item-section>
+              <q-item-section>
+                <q-item-label class="label-text">{{ EDITOR_TOOLBAR_LABELS[action] }}</q-item-label>
+              </q-item-section>
+              <q-item-section side class="row-actions">
+                <q-btn
+                  flat
+                  round
+                  dense
+                  icon="keyboard_arrow_up"
+                  color="primary"
+                  :disable="index === 0"
+                  :aria-label="`上移${EDITOR_TOOLBAR_LABELS[action]}`"
+                  @click="move(action, -1)"
+                />
+                <q-btn
+                  flat
+                  round
+                  dense
+                  icon="keyboard_arrow_down"
+                  color="primary"
+                  :disable="index === toolbarOrder.length - 1"
+                  :aria-label="`下移${EDITOR_TOOLBAR_LABELS[action]}`"
+                  @click="move(action, 1)"
+                />
+              </q-item-section>
+            </q-item>
+          </TransitionGroup>
         </q-list>
 
         <q-card-actions align="right">
@@ -122,6 +124,14 @@ function resetOrder() {
 
 .toolbar-order-item {
   min-height: 54px;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--pad-border-color-100);
+  }
+}
+
+.toolbar-order-move {
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .action-icon {
@@ -133,5 +143,11 @@ function resetOrder() {
   align-items: center;
   gap: 2px;
   padding-left: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolbar-order-move {
+    transition: none;
+  }
 }
 </style>
