@@ -109,18 +109,7 @@
               :refresh-revision="localStorageRefreshRevision"
           />
           <DiaryVersionSettings :remote-enabled="remoteEnabled"/>
-          <q-item clickable v-ripple @click="exportLogFile" class="settings-item">
-            <q-item-section avatar class="settings-icon-section">
-              <q-icon name="description"/>
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="label-text text-weight-medium">导出日志文件</q-item-label>
-              <q-item-label caption class="desc-text">保存诊断日志以便排查问题</q-item-label>
-            </q-item-section>
-            <q-item-section side>
-              <q-icon name="chevron_right" class="desc-text"/>
-            </q-item-section>
-          </q-item>
+          <DiagnosticLogSettings/>
         </q-list>
         </section>
 
@@ -218,7 +207,6 @@
 import {ref} from 'vue';
 import {platform} from "@tauri-apps/plugin-os";
 import {confirm} from '@tauri-apps/plugin-dialog';
-import {exportLogFile} from "../../utils";
 import {useQuasar} from "quasar";
 import {useConfigStore} from "../../stores/config.ts";
 import {biometricCipher} from "../../utils/biometric.ts";
@@ -231,6 +219,7 @@ import AttachmentCacheSettings from './AttachmentCacheSettings.vue';
 import AiSettings from './AiSettings.vue';
 import DisableRemoteStorageDialog from '../../components/DisableRemoteStorageDialog.vue';
 import DiaryVersionSettings from './DiaryVersionSettings.vue';
+import DiagnosticLogSettings from './DiagnosticLogSettings.vue';
 import EditorShortcutSettings from './EditorShortcutSettings.vue';
 import LocalStorageSettings from './LocalStorageSettings.vue';
 import AboutSettings from './AboutSettings.vue';

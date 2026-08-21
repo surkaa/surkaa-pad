@@ -14,7 +14,6 @@
     "opener:allow-open-path",
     "dialog:default",
     "fs:allow-applog-read",
-    "fs:allow-write-file",
     "log:default",
     "core:window:allow-close",
     "process:default"
