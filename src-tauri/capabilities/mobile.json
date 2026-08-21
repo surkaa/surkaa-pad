@@ -15,6 +15,9 @@
     "opener:default",
     "opener:allow-open-path",
     "core:menu:default",
-    "native-camera:default"
+    "native-camera:default",
+    "geolocation:allow-check-permissions",
+    "geolocation:allow-request-permissions",
+    "geolocation:allow-get-current-position"
   ]
 }

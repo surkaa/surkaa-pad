@@ -7,6 +7,7 @@ mod cryptos;
 mod diaries;
 mod error;
 mod local_storage;
+mod location;
 mod object;
 pub use object::{ObjectError, OssClient};
 pub mod object_locations;
@@ -71,6 +72,7 @@ use crate::local_storage::migration::{
     cmd_get_local_storage_info, cmd_get_local_storage_migration_status, cmd_migrate_local_storage,
     cmd_open_local_storage, cmd_plan_local_storage_migration,
 };
+use crate::location::cmd_reverse_geocode;
 use crate::object::object_command::{
     cmd_disable_remote_storage, cmd_enable_remote_storage, cmd_get_attachment_cache_info,
     cmd_get_storage_mode, cmd_init_oss_client, cmd_migrate_legacy_remote_enabled,
@@ -147,6 +149,8 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_get_diary_manifest,
             cmd_search_diaries,
             cmd_inspect_diary_versions,
+            // Android 位置名称解析（Windows 仅返回无结果）
+            cmd_reverse_geocode,
             // 附件相关操作
             cmd_add_attachment,
             cmd_add_attachment_memory,
@@ -228,7 +232,9 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let app_builder = app_builder
         .plugin(tauri_plugin_biometric::init())
-        .plugin(tauri_plugin_native_camera::init());
+        .plugin(tauri_plugin_native_camera::init())
+        .plugin(tauri_plugin_geolocation::init())
+        .plugin(location::init_android_plugin());
 
     app_builder
         .invoke_handler(builder.invoke_handler())

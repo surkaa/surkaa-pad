@@ -433,6 +433,19 @@ async cmdInspectDiaryVersions(event: TAURI_CHANNEL<DiaryVersionEvent>) : Promise
 }
 },
 /**
+ * 使用 Android 系统逆地理编码器尝试取得可编辑的地点名称。
+ * 
+ * Windows 不主动获取位置或解析地点名称，因此返回 `None`。
+ */
+async cmdReverseGeocode(latitude: number, longitude: number) : Promise<Result<string | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_reverse_geocode", { latitude, longitude }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 给日记添加附件
  * # Arguments
  * * `event` - 接收上传进度与结果事件的通道
@@ -879,13 +892,19 @@ export type AttachmentTypeFilter = "image" | "audio" | "video" | "other"
 export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
 export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
 export type ChunkedUploadStartResult = { uploadToken: string; attachmentId: string; filename: string; nonce: number[] | null }
+export type CoordinateSystem = 
+/**
+ * 世界大地测量系统 1984；日记持久化统一保存这一原始坐标。
+ */
+"wgs84"
 export type DiaryAttachmentCounts = { image: number; audio: number; video: number; file: number }
 export type DiaryContent = { nodes: DiaryContentNode[] }
-export type DiaryContentNode = { type: "markdown"; text: string } | { type: "summary"; summary: string; content: string } | { type: "image"; attachmentId: string; size: ImageSize } | { type: "video"; attachmentId: string } | { type: "audio"; attachmentId: string } | { type: "file"; attachmentId: string } | { type: "album"; id: string; attachmentIds: string[]; displayMode: AlbumDisplayMode }
+export type DiaryContentNode = { type: "markdown"; text: string } | { type: "summary"; summary: string; content: string } | { type: "location"; location: DiaryLocation } | { type: "image"; attachmentId: string; size: ImageSize } | { type: "video"; attachmentId: string } | { type: "audio"; attachmentId: string } | { type: "file"; attachmentId: string } | { type: "album"; id: string; attachmentIds: string[]; displayMode: AlbumDisplayMode }
 /**
  * 仅在进入日记编辑页后加载的完整详情。
  */
 export type DiaryDetail = { summary: DiarySummary; manifestSize: number; content: DiaryContent; attachments: AttachmentMeta[]; attachmentUrls: Partial<{ [key in string]: string }> }
+export type DiaryLocation = { coordinateSystem: CoordinateSystem; latitude: number; longitude: number; horizontalAccuracyMeters: number | null; capturedAt: number; placeName: string | null; altitudeMeters: number | null; verticalAccuracyMeters: number | null }
 export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: DiaryContent; created: number; updated: number; attachments: AttachmentMeta[]; version: number }
 export type DiarySummary = { id: string; created: number; updated: number; 
 /**

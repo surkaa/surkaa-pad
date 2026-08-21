@@ -89,6 +89,7 @@ eventsource-stream = "0.2"
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-biometric = { git = "https://github.com/surkaa/plugins-workspace", rev = "6fa3112f426dd3a05619fd1f34a00089807c5fd5" }
 tauri-plugin-native-camera = "0.1.0"
+tauri-plugin-geolocation = "2.3.2"
 # reqwest 0.13 的 rustls 后端在 Android 使用系统证书验证器。该 crate 的 Kotlin
 # 支持组件由 Android Gradle 工程引入，见 gen/android/build.gradle.kts。
 rustls-platform-verifier = "0.6"
