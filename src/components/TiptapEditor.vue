@@ -8,7 +8,7 @@ import TaskItem from '@tiptap/extension-task-item'
 import TaskList from '@tiptap/extension-task-list'
 import { useScroll, useStorage } from '@vueuse/core'
 import { platform } from '@tauri-apps/plugin-os'
-import type { AttachmentMeta, DiaryContent, DiarySummary } from '../bindings'
+import type { AttachmentMeta, DiaryContent, DiaryLocation, DiarySummary } from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import {
   disableMobileImageDragging,
@@ -18,7 +18,15 @@ import {
 import { animateStackedAlbumCycle } from './editor/albumAnimation'
 import { setupEditorImageLoading } from './editor/imageLoading'
 import { findAttachmentNode } from './editor/attachmentNode'
-import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode, SummaryNode } from './editor/tiptap-extensions'
+import {
+  ImageNode,
+  VideoNode,
+  AudioNode,
+  FileNode,
+  AlbumNode,
+  SummaryNode,
+  LocationNode,
+} from './editor/tiptap-extensions'
 import type {SummaryAttributes} from './editor/tiptap-extensions/SummaryNode'
 import AlbumImageInsertDialog from './AlbumImageInsertDialog.vue'
 import SummaryEditorDialog from './editor/SummaryEditorDialog.vue'
@@ -56,6 +64,7 @@ const emit = defineEmits<{
   (e: 'rotateAttachment', attachmentId: string, rotation: number): void
   (e: 'renameAttachment', attachmentId: string, filename: string, cb: (newFilename: string) => void): void
   (e: 'saveDecryptAttachment', attachmentId: string): void
+  (e: 'openLocation', location: DiaryLocation): void
   (e: 'editorFocused'): void
 }>()
 
@@ -132,6 +141,9 @@ const editor = useEditor({
     AlbumNode,
     SummaryNode.configure({
       onEdit: (position, attrs) => openSummaryDialog(position, attrs),
+    }),
+    LocationNode.configure({
+      onOpen: location => emit('openLocation', location),
     }),
   ],
   editorProps: {
@@ -409,6 +421,8 @@ defineExpose({
   insertAudio: (id: string) => (editor.value?.chain().focus() as any).insertAudio({ id, src: props.attachmentMap[id] || '' }).run(),
   insertFile: (id: string, filename: string) => (editor.value?.chain().focus() as any)
     .insertFile({ id, filename }).run(),
+  insertLocation: (location: DiaryLocation) => (editor.value?.chain() as any)
+    .insertLocation(location).run(),
   insertAttachments,
   openSummaryDialog: openSelectedSummaryDialog,
   updateSrc(attachmentId: string, newUrl: string) {
@@ -589,6 +603,79 @@ defineExpose({
       &:focus-visible {
         color: var(--pad-primary-dark);
         background: color-mix(in srgb, var(--pad-primary-color) 14%, transparent);
+      }
+    }
+  }
+
+  .editor-location {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-sizing: border-box;
+    width: min(100%, 640px);
+    min-height: 68px;
+    margin: 0.75em 0;
+    padding: 12px 14px;
+    border: 1px solid var(--pad-border-color-100);
+    border-radius: 12px;
+    color: var(--pad-text-color);
+    background: var(--pad-bg-color-200);
+
+    .editor-location-icon {
+      display: grid;
+      flex: none;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--pad-primary-color) 16%, transparent);
+      font-size: 21px;
+    }
+
+    .editor-location-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .editor-location-name {
+      overflow: hidden;
+      color: var(--pad-text-color-100);
+      font-weight: 600;
+      line-height: 1.45;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .editor-location-details {
+      margin-top: 3px;
+      overflow-wrap: anywhere;
+      color: var(--pad-text-color-400);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .editor-location-open {
+      display: grid;
+      flex: none;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 0;
+      border-radius: 9px;
+      color: var(--pad-primary-dark);
+      background: transparent;
+      font-size: 21px;
+      cursor: pointer;
+
+      &:hover,
+      &:focus-visible {
+        background: color-mix(in srgb, var(--pad-primary-color) 14%, transparent);
+      }
+
+      &:disabled {
+        opacity: 0.4;
+        cursor: default;
       }
     }
   }

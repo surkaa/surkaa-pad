@@ -18,6 +18,15 @@ import UnusedAttachmentsDialog from './UnusedAttachmentsDialog.vue';
 import {useDiaryAttachmentRename} from '../../composables/useDiaryAttachmentRename';
 import {useDiaryEditorShortcuts} from '../../composables/useDiaryEditorShortcuts';
 import {useDiaryLeaveGuard} from '../../composables/useDiaryLeaveGuard';
+import {platform} from '@tauri-apps/plugin-os';
+import {openUrl} from '@tauri-apps/plugin-opener';
+import type {DiaryLocation} from '../../bindings';
+import {
+  buildAmapLocationUrl,
+  captureCurrentDiaryLocation,
+  DiaryLocationError,
+} from '../../utils/diaryLocation';
+import LocationConfirmDialog from '../../components/LocationConfirmDialog.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -33,6 +42,9 @@ const showSourceDialog = ref(false);
 const pinnedDiaryIds = configStore.useTauriConfig('pinned_diary_ids');
 const editorShortcuts = configStore.useTauriConfig('windows_editor_shortcuts');
 const toolbarOrder = configStore.useTauriConfig('editor_toolbar_order');
+const isAndroid = platform() === 'android';
+const showLocationDialog = ref(false);
+const pendingLocation = ref<DiaryLocation | null>(null);
 
 const {
   diaryId, diary, attachments, diaryManifestSize, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
@@ -76,6 +88,40 @@ function additionalAction() {
   showToolbarPanel.value = !showToolbarPanel.value;
 }
 
+async function captureLocation() {
+  if (!isAndroid) return;
+  showToolbarPanel.value = false;
+  $q.loading.show({message: '正在获取当前位置…'});
+  try {
+    pendingLocation.value = await captureCurrentDiaryLocation();
+    showLocationDialog.value = true;
+  } catch (error) {
+    const message = error instanceof DiaryLocationError
+      ? error.message
+      : `获取当前位置失败：${String(error)}`;
+    $q.notify({type: 'negative', message});
+  } finally {
+    $q.loading.hide();
+  }
+}
+
+function insertLocation(location: DiaryLocation) {
+  if (!tiptapEditorRef.value?.insertLocation(location)) {
+    $q.notify({type: 'negative', message: '插入当前位置失败'});
+    return;
+  }
+  showLocationDialog.value = false;
+  pendingLocation.value = null;
+}
+
+async function openLocation(location: DiaryLocation) {
+  try {
+    await openUrl(buildAmapLocationUrl(location));
+  } catch (error) {
+    $q.notify({type: 'negative', message: `打开地图失败：${String(error)}`});
+  }
+}
+
 useDiaryEditorShortcuts({
   shortcuts: editorShortcuts,
   showToolbarPanel,
@@ -87,6 +133,7 @@ useDiaryEditorShortcuts({
     || showUnusedAttachmentsDialog.value
     || showUploadDialog.value
     || showAudioDrawer.value
+    || showLocationDialog.value
   ),
   handlers: {
     insertPhoto: () => void mediaAction.insertPhoto(),
@@ -198,6 +245,7 @@ onActivated(async () => {
         @rotateAttachment="mediaAction.rotateAttachment"
         @renameAttachment="renameAttachment"
         @saveDecryptAttachment="mediaAction.saveDecryptAttachment"
+        @openLocation="openLocation"
         style="width: 100%; flex: 1; padding: 16px"
     />
 
@@ -218,6 +266,7 @@ onActivated(async () => {
         @audioRecording="mediaAction.audioRecording"
         @insertVideo="mediaAction.insertVideo"
         @insertFile="mediaAction.insertFile"
+        @insertLocation="captureLocation"
         style="width: 100%; flex-shrink: 0"
     />
 
@@ -225,6 +274,13 @@ onActivated(async () => {
         :visible="showAudioDrawer"
         @close="showAudioDrawer = false"
         @recorded="mediaAction.handleAudioRecorded"
+    />
+
+    <LocationConfirmDialog
+        v-model="showLocationDialog"
+        :location="pendingLocation"
+        @retry="captureLocation"
+        @confirm="insertLocation"
     />
 
     <q-dialog no-refocus v-model="showMenu" position="bottom">

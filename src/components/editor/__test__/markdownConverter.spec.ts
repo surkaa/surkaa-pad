@@ -250,6 +250,32 @@ describe('structured diary content', () => {
     expect(htmlToDiaryContent(html)).toEqual(content)
   })
 
+  it('round-trips a structured WGS84 location without mixing it into Markdown', () => {
+    const content = {nodes: [
+      {type: 'markdown' as const, text: 'before'},
+      {
+        type: 'location' as const,
+        location: {
+          coordinateSystem: 'wgs84' as const,
+          latitude: 23.1291,
+          longitude: 113.2644,
+          horizontalAccuracyMeters: 18.5,
+          capturedAt: 1_787_392_800_000,
+          placeName: '广州市越秀区',
+          altitudeMeters: null,
+          verticalAccuracyMeters: null,
+        },
+      },
+      {type: 'markdown' as const, text: 'after'},
+    ]}
+
+    const html = diaryContentToHtml(content, {})
+    expect(html).toContain('class="editor-location"')
+    expect(html).toContain('data-location=')
+    expect(htmlToDiaryContent(html)).toEqual(content)
+    expect(htmlToMarkdown(html)).toBe('before\n\nafter')
+  })
+
   it('uses an empty URL for an attachment missing from the map', () => {
     expect(diaryContentToHtml({nodes: [
       {type: 'image', attachmentId: 'missing', size: 'normal'},

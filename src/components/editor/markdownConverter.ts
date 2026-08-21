@@ -2,7 +2,7 @@
  * Tiptap HTML ↔ 结构化日记内容双向转换。
  * Markdown 只负责文本节点；附件节点始终直接转换，不经过文本标记。
  */
-import type {DiaryContent, DiaryContentNode} from '../../bindings'
+import type {DiaryContent, DiaryContentNode, DiaryLocation} from '../../bindings'
 
 const INLINE_TAGS: Record<string, [string, string]> = {
   STRONG: ['**', '**'],
@@ -35,6 +35,8 @@ export function diaryContentToHtml(
         return markdownToHtml(node.text)
       case 'summary':
         return renderSummary(node.summary, node.content)
+      case 'location':
+        return renderLocation(node.location)
       case 'image':
         return renderImage(node.attachmentId, attachmentMap[node.attachmentId] || '', node.size)
       case 'video':
@@ -102,6 +104,11 @@ function elementToStructuredNode(element: HTMLElement): DiaryContentNode | null 
     }
   }
 
+  if (element.classList.contains('editor-location')) {
+    const location = parseLocation(element.dataset.location)
+    return location ? {type: 'location', location} : null
+  }
+
   if (element.classList.contains('editor-image-album') && attachmentId) {
     return {
       type: 'album',
@@ -149,6 +156,19 @@ function renderSummary(summary: string, content: string): string {
     + `<summary>${escapeHtml(summary)}</summary>`
     + `<div class="editor-summary-content">${escapeHtml(content)}</div>`
     + '</details>'
+}
+
+function renderLocation(location: DiaryLocation): string {
+  const placeName = location.placeName?.trim() || '未命名地点'
+  const accuracy = location.horizontalAccuracyMeters === null
+    ? '精度未知'
+    : `精度约 ±${Math.round(location.horizontalAccuracyMeters)} 米`
+  return `<div class="editor-location" data-location="${escapeAttr(JSON.stringify(location))}">`
+    + '<span class="editor-location-icon">📍</span>'
+    + '<div class="editor-location-body">'
+    + `<div class="editor-location-name">${escapeHtml(placeName)}</div>`
+    + `<div class="editor-location-details">${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)} · ${accuracy}</div>`
+    + '</div><button type="button" class="editor-location-open">↗</button></div>'
 }
 
 function renderAlbum(
@@ -397,5 +417,19 @@ function parseJsonArray(value?: string): string[] {
     return Array.isArray(parsed) ? parsed.filter(item => typeof item === 'string') : []
   } catch {
     return []
+  }
+}
+
+function parseLocation(value?: string): DiaryLocation | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as Partial<DiaryLocation>
+    if (parsed.coordinateSystem !== 'wgs84'
+      || typeof parsed.latitude !== 'number'
+      || typeof parsed.longitude !== 'number'
+      || typeof parsed.capturedAt !== 'number') return null
+    return parsed as DiaryLocation
+  } catch {
+    return null
   }
 }

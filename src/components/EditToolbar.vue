@@ -35,6 +35,7 @@ const emit = defineEmits([
   'insertAudio', 'audioRecording',
   'insertVideo', 'takeVideo',
   'insertFile',
+  'insertLocation',
 ]);
 
 const currentPlatform = platform();
@@ -161,6 +162,11 @@ function attachmentActionTitle(label: string, action: EditorShortcutAction) {
                    :title="attachmentActionTitle('文件', 'insertFile')" @click="emit('insertFile')">
               <q-icon name="attach_file" size="28px" class="q-mb-xs"/>
               <span class="text-caption">文件</span>
+            </q-btn>
+            <q-btn v-if="isAndroid" flat stack color="grey-8" class="panel-item-btn"
+                   title="记录当前位置" @click="emit('insertLocation')">
+              <q-icon name="location_on" size="28px" class="q-mb-xs"/>
+              <span class="text-caption">位置</span>
             </q-btn>
           </div>
         </div>
