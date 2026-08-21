@@ -44,7 +44,7 @@ function targetCaption(target: SummaryTarget): string {
   <q-dialog v-model="visible" no-refocus @hide="emit('hide')">
     <q-card class="summary-editor-dialog">
       <template v-if="mode === 'selection'">
-        <q-card-section>
+        <q-card-section class="summary-dialog-header">
           <div class="text-h6 summary-dialog-title">处理选中文字</div>
           <div class="text-caption summary-dialog-description">
             创建新的折叠内容，或将文字移动到已有折叠内容中
@@ -78,18 +78,18 @@ function targetCaption(target: SummaryTarget): string {
             </q-item-section>
           </q-item>
         </q-list>
-        <q-card-actions align="right">
+        <q-card-actions align="right" class="summary-dialog-actions">
           <q-btn flat label="取消" color="primary" v-close-popup/>
         </q-card-actions>
       </template>
       <template v-else>
-        <q-card-section>
+        <q-card-section class="summary-dialog-header">
           <div class="text-h6 summary-dialog-title">
             {{ canDelete ? '编辑折叠内容' : '添加折叠内容' }}
           </div>
           <div class="text-caption summary-dialog-description">外显文字始终可见，内部文字可展开查看</div>
         </q-card-section>
-        <q-card-section class="q-pt-none q-gutter-y-md">
+        <q-card-section class="q-pt-none q-gutter-y-md summary-fields">
           <q-input
             v-model="editableSummary"
             outlined
@@ -107,7 +107,7 @@ function targetCaption(target: SummaryTarget): string {
             label="内部文字"
           />
         </q-card-section>
-        <q-card-actions align="right">
+        <q-card-actions align="right" class="summary-dialog-actions">
           <q-btn
             v-if="canDelete"
             flat
@@ -132,11 +132,25 @@ function targetCaption(target: SummaryTarget): string {
 
 <style scoped lang="scss">
 .summary-editor-dialog {
+  display: flex;
+  flex-direction: column;
   width: min(520px, calc(100vw - 24px));
   max-height: 86vh;
+  max-height: min(86dvh, calc(100dvh - 24px));
+  overflow: hidden;
   color: var(--pad-text-color-100);
   background: var(--pad-bg-color-200);
   border-radius: var(--pad-radius-xl);
+}
+
+.summary-dialog-header,
+.summary-dialog-actions {
+  flex: 0 0 auto;
+}
+
+.summary-fields {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .summary-dialog-title {
@@ -148,6 +162,8 @@ function targetCaption(target: SummaryTarget): string {
 }
 
 .summary-target-list {
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: min(56vh, 420px);
   overflow-y: auto;
   background: var(--pad-bg-color-100);
