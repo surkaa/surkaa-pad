@@ -26,6 +26,10 @@ pub enum DiaryContentNode {
     Markdown {
         text: String,
     },
+    Summary {
+        summary: String,
+        content: String,
+    },
     Image {
         #[specta(rename = "attachmentId")]
         attachment_id: String,
@@ -98,14 +102,19 @@ impl DiaryContent {
     }
 
     pub fn searchable_text(&self) -> String {
-        self.nodes
-            .iter()
-            .filter_map(|node| match node {
-                DiaryContentNode::Markdown { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("")
+        let mut text = String::new();
+        for node in &self.nodes {
+            match node {
+                DiaryContentNode::Markdown { text: markdown } => text.push_str(markdown),
+                DiaryContentNode::Summary { summary, content } => {
+                    text.push_str(summary);
+                    text.push('\n');
+                    text.push_str(content);
+                }
+                _ => {}
+            }
+        }
+        text
     }
 
     pub fn title(&self) -> String {
@@ -113,6 +122,7 @@ impl DiaryContent {
             .iter()
             .filter_map(|node| match node {
                 DiaryContentNode::Markdown { text } => Some(text),
+                DiaryContentNode::Summary { summary, .. } => Some(summary),
                 _ => None,
             })
             .flat_map(|text| text.lines())
@@ -168,7 +178,7 @@ impl DiaryContent {
                         counts.file = counts.file.saturating_add(1);
                     }
                 }
-                DiaryContentNode::Markdown { .. } => {}
+                DiaryContentNode::Markdown { .. } | DiaryContentNode::Summary { .. } => {}
             }
         }
 
@@ -194,7 +204,7 @@ impl DiaryContent {
                 attachment_ids.retain(|id| id != attachment_id);
                 !attachment_ids.is_empty()
             }
-            DiaryContentNode::Markdown { .. } => true,
+            DiaryContentNode::Markdown { .. } | DiaryContentNode::Summary { .. } => true,
         });
     }
 }
@@ -401,6 +411,19 @@ mod tests {
         };
 
         assert_eq!(content.title(), "");
+    }
+
+    #[test]
+    fn summary_text_is_searchable_and_can_supply_the_title() {
+        let content = DiaryContent {
+            nodes: vec![DiaryContentNode::Summary {
+                summary: "外显标题".to_string(),
+                content: "折叠的内部文字".to_string(),
+            }],
+        };
+
+        assert_eq!(content.searchable_text(), "外显标题\n折叠的内部文字");
+        assert_eq!(content.title(), "外显标题");
     }
 
     #[test]

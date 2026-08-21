@@ -8,7 +8,7 @@ use specta::Type;
 use std::collections::{HashMap, HashSet};
 
 /// 当前代码唯一支持的日记 Manifest 版本。
-pub const CURRENT_VERSION: u32 = 4;
+pub const CURRENT_VERSION: u32 = 5;
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
@@ -285,7 +285,7 @@ mod tests {
                     etag: None,
                 },
             ],
-            version: 4,
+            version: CURRENT_VERSION,
         };
         let summary = DiarySummary::from_manifest(&manifest);
 
@@ -298,7 +298,7 @@ mod tests {
 
         let full_manifest = serde_json::to_value(&manifest).expect("serialize manifest");
         assert_eq!(full_manifest["id"], "diary-1");
-        assert_eq!(full_manifest["version"], 4);
+        assert_eq!(full_manifest["version"], CURRENT_VERSION);
         assert_eq!(full_manifest["algorithm"], "AES256-GCM_v1");
         assert_eq!(
             full_manifest["content"]["nodes"].as_array().unwrap().len(),

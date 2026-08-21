@@ -23,6 +23,7 @@ describe('diary attachment references', () => {
     const content: DiaryContent = {
       nodes: [
         { type: 'markdown', text: '正文' },
+        { type: 'summary', summary: '外显', content: '内部' },
         { type: 'image', attachmentId: 'image-1', size: 'normal' },
         { type: 'audio', attachmentId: 'audio-1' },
         {

@@ -25,6 +25,24 @@ struct MigrationRegistry {
     steps: Vec<Box<dyn DiaryMigration>>,
 }
 
+struct V4ToV5;
+
+#[async_trait]
+impl DiaryMigration for V4ToV5 {
+    fn source_version(&self) -> u32 {
+        4
+    }
+
+    async fn migrate_json(
+        &self,
+        _context: &MigrationContext<'_>,
+        _json: &mut Value,
+    ) -> Result<(), DiaryError> {
+        // V5 只新增可选的 Summary 内容节点，现有 V4 内容无需改写。
+        Ok(())
+    }
+}
+
 impl MigrationRegistry {
     fn new(steps: Vec<Box<dyn DiaryMigration>>) -> Self {
         Self { steps }
@@ -66,8 +84,8 @@ impl MigrationRegistry {
 }
 
 fn default_registry() -> MigrationRegistry {
-    // V1–V3 的兼容步骤已移除。未来新增版本时在此注册新的连续迁移步骤。
-    MigrationRegistry::new(Vec::new())
+    // V1–V3 的兼容步骤已移除，只保留当前仍需执行的连续迁移步骤。
+    MigrationRegistry::new(vec![Box::new(V4ToV5)])
 }
 
 /// 检查并按注册步骤迁移 Manifest；返回 Some 时由调用方最后提交新版 Manifest。
@@ -75,7 +93,7 @@ pub(crate) async fn migrate_manifest_bytes(
     context: &MigrationContext<'_>,
     manifest_bytes: &[u8],
 ) -> Result<Option<Vec<u8>>, DiaryError> {
-    // 即使当前没有存储感知的迁移步骤，也保持上下文契约经过编译；未来步骤可直接操作存储。
+    // 保持存储感知迁移的上下文契约；并非每个版本步骤都需要移动关联对象。
     let _store = context.store;
     let (mut json, version) = inspect_manifest_json(context.diary_id, manifest_bytes)?;
     if default_registry()
@@ -92,10 +110,11 @@ pub(crate) async fn migrate_manifest_bytes(
 mod tests {
     use super::*;
     use crate::caches::LocalObjectStore;
+    use crate::diaries::diary_types::deserialize_current_manifest;
     use crate::diaries::LocalStore;
 
     #[tokio::test]
-    async fn current_version_passes_through_and_legacy_versions_have_no_compatibility_path() {
+    async fn current_version_passes_through_and_v4_migrates_without_changing_content() {
         let temp_dir = tempfile::tempdir().unwrap();
         let store = LocalStore::new(LocalObjectStore::new(temp_dir.path().to_path_buf()));
         let context = MigrationContext {
@@ -103,15 +122,44 @@ mod tests {
             store: &store,
         };
 
-        assert!(migrate_manifest_bytes(
-            &context,
-            br#"{"id":"test","version":4,"content":{"nodes":[]},"attachments":[]}"#,
-        )
-        .await
-        .unwrap()
-        .is_none());
+        let current = serde_json::json!({
+            "id": "test",
+            "version": CURRENT_VERSION,
+            "content": {"nodes": []},
+            "attachments": [],
+        });
+        assert!(
+            migrate_manifest_bytes(&context, &serde_json::to_vec(&current).unwrap())
+                .await
+                .unwrap()
+                .is_none()
+        );
 
-        for version in 1..CURRENT_VERSION {
+        let v4 = serde_json::json!({
+            "id": "test",
+            "version": 4,
+            "algorithm": "AES256-GCM_v1",
+            "content": {"nodes": [{"type": "markdown", "text": "正文"}]},
+            "created": 1,
+            "updated": 2,
+            "attachments": [],
+        });
+        let migrated = migrate_manifest_bytes(&context, &serde_json::to_vec(&v4).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        let migrated: Value = serde_json::from_slice(&migrated).unwrap();
+        assert_eq!(migrated["version"], CURRENT_VERSION);
+        assert_eq!(migrated["content"], v4["content"]);
+        assert_eq!(
+            deserialize_current_manifest("test", &serde_json::to_vec(&migrated).unwrap())
+                .unwrap()
+                .content
+                .searchable_text(),
+            "正文"
+        );
+
+        for version in 1..4 {
             let source = serde_json::json!({"id": "test", "version": version});
             assert!(matches!(
                 migrate_manifest_bytes(&context, &serde_json::to_vec(&source).unwrap()).await,

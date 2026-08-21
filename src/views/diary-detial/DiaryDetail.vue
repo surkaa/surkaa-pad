@@ -210,6 +210,7 @@ onActivated(async () => {
         v-click-outside="() => showToolbarPanel = false"
         @undo="tiptapEditorRef?.undo"
         @redo="tiptapEditorRef?.redo"
+        @editSummary="tiptapEditorRef?.openSummaryDialog"
         @additionalAction="additionalAction"
         @insertPhoto="mediaAction.insertPhoto"
         @takePhoto="mediaAction.takePhoto"

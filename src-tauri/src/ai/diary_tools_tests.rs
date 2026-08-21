@@ -1,6 +1,6 @@
 use super::*;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
-use crate::diaries::{save_diary, DiaryContent, DiaryContentNode};
+use crate::diaries::{save_diary, DiaryContent, DiaryContentNode, CURRENT_VERSION};
 
 fn tool_call(name: &str, arguments: Value) -> AiToolCall {
     AiToolCall {
@@ -179,6 +179,10 @@ fn renders_attachment_placeholders_without_storage_details() {
                 DiaryContentNode::Markdown {
                     text: "正文".into(),
                 },
+                DiaryContentNode::Summary {
+                    summary: "展开说明".into(),
+                    content: "折叠正文".into(),
+                },
                 DiaryContentNode::Audio {
                     attachment_id: "audio-id".into(),
                 },
@@ -196,12 +200,15 @@ fn renders_attachment_placeholders_without_storage_details() {
             algorithm: Gcm,
             etag: Some("private-etag".into()),
         }],
-        version: 4,
+        version: CURRENT_VERSION,
     };
 
     let value = serde_json::to_value(DiaryToolDocument::from_manifest(&manifest)).unwrap();
 
-    assert_eq!(value["content"], "正文\n[音频: 记录.m4a]\n");
+    assert_eq!(
+        value["content"],
+        "正文\n[折叠内容：展开说明]\n折叠正文\n\n[音频: 记录.m4a]\n"
+    );
     let serialized = value.to_string();
     assert!(!serialized.contains("private-etag"));
     assert!(!serialized.contains("nonce"));
@@ -220,7 +227,7 @@ fn truncates_long_diary_content_on_character_boundaries() {
         created: 1,
         updated: 2,
         attachments: vec![],
-        version: 4,
+        version: CURRENT_VERSION,
     };
 
     let document = DiaryToolDocument::from_manifest(&manifest);
@@ -242,7 +249,7 @@ fn truncates_long_summary_titles() {
         created: 1,
         updated: 2,
         attachments: vec![],
-        version: 4,
+        version: CURRENT_VERSION,
     };
 
     let summary = DiaryToolSummary::from_manifest(&manifest);

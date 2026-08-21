@@ -16,13 +16,15 @@ import {
 import { animateStackedAlbumCycle } from './editor/albumAnimation'
 import { setupEditorImageLoading } from './editor/imageLoading'
 import { findAttachmentNode } from './editor/attachmentNode'
-import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode } from './editor/tiptap-extensions'
+import { ImageNode, VideoNode, AudioNode, FileNode, AlbumNode, SummaryNode } from './editor/tiptap-extensions'
+import type {SummaryAttributes} from './editor/tiptap-extensions/SummaryNode'
 import AlbumImageInsertDialog from './AlbumImageInsertDialog.vue'
 import {
   attachmentInsertionsToEditorContent,
   type AttachmentInsertion,
 } from '../utils/attachmentInsertion'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import {NodeSelection} from '@tiptap/pm/state'
 import { findSearchHighlightRanges } from '../utils/searchHighlight'
 import { useEditorAlbumActions } from '../composables/useEditorAlbumActions'
 import { useAttachmentContextMenu } from '../composables/useAttachmentContextMenu'
@@ -65,6 +67,18 @@ const attachmentFilenames = computed<Record<string, string>>(() => Object.fromEn
   props.attachments.map(attachment => [attachment.id, attachment.filename]),
 ))
 
+const showSummaryDialog = ref(false)
+const summaryText = ref('')
+const summaryContent = ref('')
+const summaryEditPosition = ref<number | null>(null)
+
+function openSummaryDialog(position: number | null = null, attrs?: SummaryAttributes) {
+  summaryEditPosition.value = position
+  summaryText.value = attrs?.summary ?? ''
+  summaryContent.value = attrs?.content ?? ''
+  showSummaryDialog.value = true
+}
+
 const editor = useEditor({
   content: diaryContentToHtml(props.modelValue, props.attachmentMap, attachmentFilenames.value),
   extensions: [
@@ -92,6 +106,9 @@ const editor = useEditor({
     AudioNode,
     FileNode,
     AlbumNode,
+    SummaryNode.configure({
+      onEdit: (position, attrs) => openSummaryDialog(position, attrs),
+    }),
   ],
   editorProps: {
     attributes: {
@@ -253,6 +270,53 @@ function insertAttachments(insertions: readonly AttachmentInsertion[], atEnd: bo
   return chain.insertContent(attachmentInsertionsToEditorContent(insertions)).run()
 }
 
+function openSelectedSummaryDialog() {
+  const currentEditor = editor.value
+  if (!currentEditor) return
+  const selection = currentEditor.state.selection
+  if (selection instanceof NodeSelection && selection.node.type.name === 'summaryNode') {
+    openSummaryDialog(selection.from, {
+      summary: selection.node.attrs.summary,
+      content: selection.node.attrs.content,
+    })
+    return
+  }
+  openSummaryDialog()
+}
+
+function saveSummary() {
+  const currentEditor = editor.value
+  const summary = summaryText.value.trim()
+  if (!currentEditor || !summary) return
+  const attrs = {summary, content: summaryContent.value.trim()}
+
+  if (summaryEditPosition.value === null) {
+    currentEditor.chain().focus().insertSummary(attrs).run()
+  } else {
+    const position = summaryEditPosition.value
+    currentEditor.commands.command(({tr}) => {
+      const node = tr.doc.nodeAt(position)
+      if (node?.type.name !== 'summaryNode') return false
+      tr.setNodeMarkup(position, undefined, attrs)
+      return true
+    })
+  }
+  showSummaryDialog.value = false
+}
+
+function deleteSummary() {
+  const currentEditor = editor.value
+  const position = summaryEditPosition.value
+  if (!currentEditor || position === null) return
+  currentEditor.commands.command(({tr}) => {
+    const node = tr.doc.nodeAt(position)
+    if (node?.type.name !== 'summaryNode') return false
+    tr.delete(position, position + node.nodeSize)
+    return true
+  })
+  showSummaryDialog.value = false
+}
+
 defineExpose({
   editor,
   focusEnd: () => editor.value?.commands.focus('end'),
@@ -269,6 +333,7 @@ defineExpose({
   insertFile: (id: string, filename: string) => (editor.value?.chain().focus() as any)
     .insertFile({ id, filename }).run(),
   insertAttachments,
+  openSummaryDialog: openSelectedSummaryDialog,
   updateSrc(attachmentId: string, newUrl: string) {
     if (!editor.value) return false
     editor.value.commands.command(({ tr }) => {
@@ -302,6 +367,52 @@ defineExpose({
     @contextmenu="handleContextMenu"
   >
     <EditorContent :editor="editor" />
+    <q-dialog v-model="showSummaryDialog" no-refocus>
+      <q-card class="summary-editor-dialog">
+        <q-card-section>
+          <div class="text-h6 summary-dialog-title">
+            {{ summaryEditPosition === null ? '添加折叠内容' : '编辑折叠内容' }}
+          </div>
+          <div class="text-caption summary-dialog-description">外显文字始终可见，内部文字可展开查看</div>
+        </q-card-section>
+        <q-card-section class="q-pt-none q-gutter-y-md">
+          <q-input
+            v-model="summaryText"
+            outlined
+            autofocus
+            label="外显文字"
+            maxlength="200"
+            counter
+            @keyup.enter="saveSummary"
+          />
+          <q-input
+            v-model="summaryContent"
+            outlined
+            type="textarea"
+            autogrow
+            label="内部文字"
+          />
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn
+            v-if="summaryEditPosition !== null"
+            flat
+            label="删除"
+            color="negative"
+            @click="deleteSummary"
+          />
+          <q-space/>
+          <q-btn flat label="取消" color="primary" v-close-popup/>
+          <q-btn
+            unelevated
+            label="保存"
+            color="primary"
+            :disable="!summaryText.trim()"
+            @click="saveSummary"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
     <AlbumImageInsertDialog
       v-model="showAlbumInsertDialog"
       :albums="albumInsertTargets"
@@ -379,10 +490,95 @@ defineExpose({
   }
 
 }
+
+.summary-editor-dialog {
+  width: min(520px, calc(100vw - 24px));
+  max-height: 86vh;
+  color: var(--pad-text-color-100);
+  background: var(--pad-bg-color-200);
+  border-radius: var(--pad-radius-xl);
+
+  .summary-dialog-title {
+    color: var(--pad-text-color-100);
+  }
+
+  .summary-dialog-description {
+    color: var(--pad-text-color-400);
+  }
+
+  :deep(.q-field__control) {
+    background: var(--pad-bg-color-100);
+  }
+
+  :deep(.q-field__native),
+  :deep(.q-field__input) {
+    color: var(--pad-text-color-200);
+  }
+
+  :deep(.q-field__label),
+  :deep(.q-field__marginal) {
+    color: var(--pad-text-color-400);
+  }
+
+  :deep(.q-field--outlined .q-field__control::before) {
+    border-color: var(--pad-border-color-100);
+  }
+}
 </style>
 
 <style lang="scss">
 .tiptap-wrapper {
+  .editor-summary {
+    position: relative;
+    overflow: hidden;
+    margin: 0.75em 0;
+    border: 1px solid var(--pad-border-color-100);
+    border-radius: 10px;
+    background: var(--pad-bg-color-200);
+
+    > summary {
+      min-height: 24px;
+      padding: 10px 44px 10px 12px;
+      color: var(--pad-text-color-200);
+      font-weight: 600;
+      line-height: 1.45;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .editor-summary-content {
+      padding: 10px 12px 12px;
+      border-top: 1px solid var(--pad-border-color-100);
+      color: var(--pad-text-color-300);
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .editor-summary-edit {
+      position: absolute;
+      top: 5px;
+      right: 7px;
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: 0;
+      border-radius: 8px;
+      color: var(--pad-text-color-400);
+      background: transparent;
+      font-size: 17px;
+      cursor: pointer;
+
+      &:hover,
+      &:focus-visible {
+        color: var(--pad-primary-dark);
+        background: color-mix(in srgb, var(--pad-primary-color) 14%, transparent);
+      }
+    }
+  }
+
   .ProseMirror .editor-task-list {
     margin: 0.65em 0;
     padding: 0;

@@ -73,7 +73,7 @@ flowchart TB
 ### 加密流程
 
 1. 用户输入主密码 → Argon2id 从密码 + salt 派生 256 位 DEK
-2. 日记内容：V4 结构化 JSON manifest 经 AES-256-GCM 加密后写入当前存储
+2. 日记内容：V5 结构化 JSON manifest 经 AES-256-GCM 加密后写入当前存储
 3. 附件：AES-256-CTR 流式加密，支持分片上传和 Range 解密
 4. 密钥仅存于内存，会话结束后即销毁
 

@@ -881,7 +881,7 @@ export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: strin
 export type ChunkedUploadStartResult = { uploadToken: string; attachmentId: string; filename: string; nonce: number[] | null }
 export type DiaryAttachmentCounts = { image: number; audio: number; video: number; file: number }
 export type DiaryContent = { nodes: DiaryContentNode[] }
-export type DiaryContentNode = { type: "markdown"; text: string } | { type: "image"; attachmentId: string; size: ImageSize } | { type: "video"; attachmentId: string } | { type: "audio"; attachmentId: string } | { type: "file"; attachmentId: string } | { type: "album"; id: string; attachmentIds: string[]; displayMode: AlbumDisplayMode }
+export type DiaryContentNode = { type: "markdown"; text: string } | { type: "summary"; summary: string; content: string } | { type: "image"; attachmentId: string; size: ImageSize } | { type: "video"; attachmentId: string } | { type: "audio"; attachmentId: string } | { type: "file"; attachmentId: string } | { type: "album"; id: string; attachmentIds: string[]; displayMode: AlbumDisplayMode }
 /**
  * 仅在进入日记编辑页后加载的完整详情。
  */

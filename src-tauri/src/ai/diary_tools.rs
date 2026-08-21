@@ -350,6 +350,9 @@ fn render_content(manifest: &DiaryManifest) -> String {
     for node in &manifest.content.nodes {
         match node {
             DiaryContentNode::Markdown { text } => output.push_str(text),
+            DiaryContentNode::Summary { summary, content } => {
+                output.push_str(&format!("\n[折叠内容：{summary}]\n{content}\n"));
+            }
             DiaryContentNode::Image { attachment_id, .. } => {
                 push_attachment_marker(&mut output, "图片", attachment_id, &attachments)
             }

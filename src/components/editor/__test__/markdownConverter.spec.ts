@@ -237,6 +237,19 @@ describe('structured diary content', () => {
     expect(html).toContain('data-display-mode="stackedCards"')
   })
 
+  it('round-trips structured Summary content without mixing it into Markdown', () => {
+    const content = {nodes: [
+      {type: 'markdown' as const, text: 'before'},
+      {type: 'summary' as const, summary: '外显 <标题>', content: '内部第一行\n内部第二行'},
+      {type: 'markdown' as const, text: 'after'},
+    ]}
+
+    const html = diaryContentToHtml(content, {})
+    expect(html).toContain('<details class="editor-summary"')
+    expect(html).toContain('data-summary="外显 &lt;标题&gt;"')
+    expect(htmlToDiaryContent(html)).toEqual(content)
+  })
+
   it('uses an empty URL for an attachment missing from the map', () => {
     expect(diaryContentToHtml({nodes: [
       {type: 'image', attachmentId: 'missing', size: 'normal'},
@@ -326,7 +339,7 @@ describe('structured diary content', () => {
     expect(htmlToDiaryContent(diaryContentToHtml(content, attachmentMap))).toEqual(content)
   })
 
-  it('formats the actual V4 structure for source display', () => {
+  it('formats the current structured content for source display', () => {
     const source = diaryContentToSource({nodes: [
       {type: 'image', attachmentId: 'att-image', size: 'normal'},
     ]})

@@ -8,12 +8,19 @@ export function collectReferencedAttachmentIds(content: DiaryContent): Set<strin
   const ids = new Set<string>()
 
   for (const node of content.nodes) {
-    if (node.type === 'album') {
-      for (const attachmentId of node.attachmentIds) {
-        ids.add(attachmentId)
-      }
-    } else if (node.type !== 'markdown') {
-      ids.add(node.attachmentId)
+    switch (node.type) {
+      case 'album':
+        for (const attachmentId of node.attachmentIds) ids.add(attachmentId)
+        break
+      case 'image':
+      case 'audio':
+      case 'video':
+      case 'file':
+        ids.add(node.attachmentId)
+        break
+      case 'markdown':
+      case 'summary':
+        break
     }
   }
 

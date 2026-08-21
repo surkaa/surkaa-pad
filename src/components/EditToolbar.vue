@@ -28,6 +28,15 @@ const {
   toolbarOrder?: EditorToolbarAction[],
 }>();
 
+const emit = defineEmits([
+  'undo', 'redo',
+  'additionalAction', 'editSummary',
+  'insertPhoto', 'takePhoto',
+  'insertAudio', 'audioRecording',
+  'insertVideo', 'takeVideo',
+  'insertFile',
+]);
+
 const currentPlatform = platform();
 const isAndroid = currentPlatform === 'android';
 const isWindows = currentPlatform === 'windows';
@@ -43,6 +52,7 @@ function isToolbarActionActive(action: EditorToolbarAction): boolean {
     case 'heading2': return editor.isActive('heading', {level: 2});
     case 'heading3': return editor.isActive('heading', {level: 3});
     case 'taskList': return editor.isActive('taskList');
+    case 'summary': return editor.isActive('summaryNode');
   }
 }
 
@@ -56,6 +66,7 @@ function runToolbarAction(action: EditorToolbarAction) {
     case 'heading2': editor.chain().focus().toggleHeading({level: 2}).run(); break;
     case 'heading3': editor.chain().focus().toggleHeading({level: 3}).run(); break;
     case 'taskList': editor.chain().focus().toggleTaskList().run(); break;
+    case 'summary': emit('editSummary'); break;
   }
 }
 
@@ -68,6 +79,7 @@ function toolbarActionText(action: EditorToolbarAction): string {
     heading2: 'H2',
     heading3: 'H3',
     taskList: '',
+    summary: '',
   }[action];
 }
 
@@ -77,14 +89,6 @@ function attachmentActionTitle(label: string, action: EditorShortcutAction) {
   return `${label}（${formatEditorShortcut(shortcut)}）`;
 }
 
-const emit = defineEmits([
-  'undo', 'redo',
-  'additionalAction',
-  'insertPhoto', 'takePhoto',
-  'insertAudio', 'audioRecording',
-  'insertVideo', 'takeVideo',
-  'insertFile'
-]);
 </script>
 
 <template>
@@ -104,6 +108,7 @@ const emit = defineEmits([
               @click.stop="runToolbarAction(action)"
             >
               <q-icon v-if="action === 'taskList'" name="checklist" size="20px"/>
+              <q-icon v-else-if="action === 'summary'" name="unfold_more" size="20px"/>
               <b v-else-if="action === 'bold'">{{ toolbarActionText(action) }}</b>
               <u v-else-if="action === 'underline'">{{ toolbarActionText(action) }}</u>
               <s v-else-if="action === 'strike'">{{ toolbarActionText(action) }}</s>

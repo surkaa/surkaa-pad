@@ -20,6 +20,7 @@ describe('editor toolbar order', () => {
       'heading1',
       'heading2',
       'heading3',
+      'summary',
     ]);
   });
 
@@ -29,6 +30,8 @@ describe('editor toolbar order', () => {
     expect(moveEditorToolbarAction(DEFAULT_EDITOR_TOOLBAR_ORDER, 'bold', -1))
       .toEqual(DEFAULT_EDITOR_TOOLBAR_ORDER);
     expect(moveEditorToolbarAction(DEFAULT_EDITOR_TOOLBAR_ORDER, 'taskList', 1))
+      .not.toEqual(DEFAULT_EDITOR_TOOLBAR_ORDER);
+    expect(moveEditorToolbarAction(DEFAULT_EDITOR_TOOLBAR_ORDER, 'summary', 1))
       .toEqual(DEFAULT_EDITOR_TOOLBAR_ORDER);
   });
 });

@@ -33,6 +33,8 @@ export function diaryContentToHtml(
     switch (node.type) {
       case 'markdown':
         return markdownToHtml(node.text)
+      case 'summary':
+        return renderSummary(node.summary, node.content)
       case 'image':
         return renderImage(node.attachmentId, attachmentMap[node.attachmentId] || '', node.size)
       case 'video':
@@ -68,10 +70,10 @@ export function htmlToDiaryContent(html: string): DiaryContent {
 
   for (const child of doc.body.childNodes) {
     if (child.nodeType === Node.ELEMENT_NODE) {
-      const attachment = elementToAttachmentNode(child as HTMLElement)
-      if (attachment) {
+      const structuredNode = elementToStructuredNode(child as HTMLElement)
+      if (structuredNode) {
         flushMarkdown()
-        nodes.push(attachment)
+        nodes.push(structuredNode)
         continue
       }
     }
@@ -84,9 +86,21 @@ export function htmlToDiaryContent(html: string): DiaryContent {
   return {nodes}
 }
 
-function elementToAttachmentNode(element: HTMLElement): DiaryContentNode | null {
+function elementToStructuredNode(element: HTMLElement): DiaryContentNode | null {
   const tag = element.tagName.toUpperCase()
   const attachmentId = element.dataset.id
+
+  if (tag === 'DETAILS' && element.classList.contains('editor-summary')) {
+    return {
+      type: 'summary',
+      summary: element.dataset.summary
+        ?? element.querySelector('summary')?.textContent
+        ?? '',
+      content: element.dataset.content
+        ?? element.querySelector('.editor-summary-content')?.textContent
+        ?? '',
+    }
+  }
 
   if (element.classList.contains('editor-image-album') && attachmentId) {
     return {
@@ -130,6 +144,13 @@ function renderImage(
   return `<img src="${escapeAttr(url)}" data-id="${escapeAttr(attachmentId)}"${sizeAttr}>`
 }
 
+function renderSummary(summary: string, content: string): string {
+  return `<details class="editor-summary" data-summary="${escapeAttr(summary)}" data-content="${escapeAttr(content)}">`
+    + `<summary>${escapeHtml(summary)}</summary>`
+    + `<div class="editor-summary-content">${escapeHtml(content)}</div>`
+    + '</details>'
+}
+
 function renderAlbum(
   id: string,
   attachmentIds: string[],
@@ -156,8 +177,8 @@ function walkBlocks(parent: Node, out: string[]): void {
     const element = child as HTMLElement
     const tag = element.tagName.toUpperCase()
 
-    // 附件由 htmlToDiaryContent 直接读取，不属于 Markdown 文本。
-    if (elementToAttachmentNode(element)) continue
+    // 结构化节点由 htmlToDiaryContent 直接读取，不属于 Markdown 文本。
+    if (elementToStructuredNode(element)) continue
 
     switch (tag) {
       case 'BR':

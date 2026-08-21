@@ -6,6 +6,7 @@ export const EDITOR_TOOLBAR_ACTIONS = [
   'heading2',
   'heading3',
   'taskList',
+  'summary',
 ] as const;
 
 export type EditorToolbarAction = typeof EDITOR_TOOLBAR_ACTIONS[number];
@@ -18,6 +19,7 @@ export const EDITOR_TOOLBAR_LABELS: Record<EditorToolbarAction, string> = {
   heading2: '二级标题',
   heading3: '三级标题',
   taskList: '待办列表',
+  summary: '折叠内容',
 };
 
 export const EDITOR_TOOLBAR_ICONS: Record<EditorToolbarAction, string> = {
@@ -28,6 +30,7 @@ export const EDITOR_TOOLBAR_ICONS: Record<EditorToolbarAction, string> = {
   heading2: 'looks_two',
   heading3: 'looks_3',
   taskList: 'checklist',
+  summary: 'unfold_more',
 };
 
 export const DEFAULT_EDITOR_TOOLBAR_ORDER: EditorToolbarAction[] = [...EDITOR_TOOLBAR_ACTIONS];
