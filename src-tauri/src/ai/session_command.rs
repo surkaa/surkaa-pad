@@ -61,6 +61,22 @@ pub async fn cmd_update_ai_session_ai_title(
     update_ai_session_ai_title(state.inner(), session_id, ai_title).await
 }
 
+/// 更新一个 AI 会话后续问答使用的模型，不改写已经保存的历史消息。
+/// # Arguments
+/// * `session_id` - 数字 AI 会话 ID
+/// * `model` - 后续问答使用的新模型 ID
+/// # Returns
+/// * `Result<AiSessionMeta, AppError>` - 更新后的会话元数据
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_update_ai_session_model(
+    state: State<'_, AppState>,
+    session_id: &str,
+    model: String,
+) -> Result<AiSessionMeta, AppError> {
+    update_ai_session_model(state.inner(), session_id, model).await
+}
+
 /// 删除一个 AI 会话的全部消息块及元数据。
 /// # Arguments
 /// * `session_id` - 数字 AI 会话 ID
@@ -113,6 +129,18 @@ async fn update_ai_session_ai_title(
     Ok(state
         .ai_session_repository()
         .update_ai_title(session_id, ai_title, Utc::now().timestamp_millis())
+        .await?)
+}
+
+async fn update_ai_session_model(
+    state: &AppState,
+    session_id: &str,
+    model: String,
+) -> Result<AiSessionMeta, AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
+    Ok(state
+        .ai_session_repository()
+        .update_model(session_id, model, Utc::now().timestamp_millis())
         .await?)
 }
 
@@ -175,6 +203,11 @@ mod tests {
             .unwrap();
         assert_eq!(updated.ai_title.as_deref(), Some("AI 生成的标题"));
         assert!(updated.updated_at >= created.updated_at);
+
+        let updated = update_ai_session_model(&state, &created.id, "new-model".into())
+            .await
+            .unwrap();
+        assert_eq!(updated.model, "new-model");
 
         delete_ai_session(&state, &created.id).await.unwrap();
         assert!(get_ai_session(&state, &created.id).await.unwrap().is_none());

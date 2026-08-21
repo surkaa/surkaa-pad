@@ -11,6 +11,7 @@ import {
   initialAiAgentDisplayState,
   nextAiProcessExpanded,
   reduceAiAgentEvent,
+  resolveAiSessionModel,
   shouldCollapseAiProcess,
   startAiQuestion,
   startAiSessionQuestion,
@@ -210,6 +211,23 @@ describe('buildPersistedAiExchanges', () => {
         error: '这次回答未完整保存，请重新提问',
       }),
     ]);
+  });
+});
+
+describe('resolveAiSessionModel', () => {
+  it('keeps an available session model even when the global selection changed', () => {
+    expect(resolveAiSessionModel('model-a', 'model-b', new Set(['model-a', 'model-b'])))
+      .toEqual({kind: 'available'});
+  });
+
+  it('switches an unavailable session to the configured available model', () => {
+    expect(resolveAiSessionModel('model-a', 'model-b', new Set(['model-b'])))
+      .toEqual({kind: 'switch', model: 'model-b'});
+  });
+
+  it('reports unavailable when neither model can be used', () => {
+    expect(resolveAiSessionModel('model-a', 'model-b', new Set(['model-c'])))
+      .toEqual({kind: 'unavailable'});
   });
 });
 

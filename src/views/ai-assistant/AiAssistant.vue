@@ -14,17 +14,14 @@ import {
   isTerminalAiExchangeState,
   nextAiProcessExpanded,
   reduceAiAgentEvent,
+  resolveAiSessionModel,
   startAiSessionQuestion,
   type AiAgentDisplayState,
   type AiExchangeState,
   type AiProcessStep,
 } from '../../utils/aiAssistant';
 import {renderAiMarkdown} from '../../utils/aiMarkdown';
-import {
-  isAiModelAvailable,
-  loadAiServiceConfig,
-  type AiServiceConfig,
-} from '../../utils/aiConfig';
+import {loadAiServiceConfig, type AiServiceConfig} from '../../utils/aiConfig';
 import api from '../../utils/api';
 import {formatError} from '../../utils/formatError';
 import {useConfigStore} from '../../stores/config';
@@ -148,9 +145,31 @@ async function checkModelAvailability(
   modelCheckState.value = 'checking';
   modelCheckError.value = null;
   try {
-    const available = await isAiModelAvailable(activeConfig);
+    const models = await api.cmdListAiModels(
+      activeConfig.baseUrl,
+      activeConfig.apiKey.trim() || null,
+    );
     if (refreshId !== configRefreshId) return;
-    modelCheckState.value = available ? 'available' : 'unavailable';
+    const configuredModel = config.value?.model ?? activeConfig.model;
+    const resolution = resolveAiSessionModel(
+      activeConfig.model,
+      configuredModel,
+      new Set(models.map(model => model.id)),
+    );
+    if (resolution.kind === 'switch' && activeSessionId.value) {
+      const previousModel = activeConfig.model;
+      const sessionId = activeSessionId.value;
+      const updated = await api.cmdUpdateAiSessionModel(sessionId, resolution.model);
+      if (refreshId !== configRefreshId || activeSessionId.value !== sessionId) return;
+      upsertSession(updated);
+      modelCheckState.value = 'available';
+      $q.notify({
+        type: 'info',
+        message: `原模型“${previousModel}”不可用，已将此对话切换到“${resolution.model}”`,
+      });
+      return;
+    }
+    modelCheckState.value = resolution.kind === 'available' ? 'available' : 'unavailable';
   } catch (error) {
     if (refreshId !== configRefreshId) return;
     modelCheckState.value = 'failed';

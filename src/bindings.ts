@@ -773,6 +773,22 @@ async cmdUpdateAiSessionAiTitle(sessionId: string, aiTitle: string | null) : Pro
 }
 },
 /**
+ * 更新一个 AI 会话后续问答使用的模型，不改写已经保存的历史消息。
+ * # Arguments
+ * * `session_id` - 数字 AI 会话 ID
+ * * `model` - 后续问答使用的新模型 ID
+ * # Returns
+ * * `Result<AiSessionMeta, AppError>` - 更新后的会话元数据
+ */
+async cmdUpdateAiSessionModel(sessionId: string, model: string) : Promise<Result<AiSessionMeta, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_update_ai_session_model", { sessionId, model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 删除一个 AI 会话的全部消息块及元数据。
  * # Arguments
  * * `session_id` - 数字 AI 会话 ID

@@ -42,6 +42,11 @@ export interface PersistedAiExchange extends AiAgentDisplayState {
   question: string;
 }
 
+export type AiSessionModelResolution =
+  | {kind: 'available'}
+  | {kind: 'switch'; model: string}
+  | {kind: 'unavailable'};
+
 export type AiAgentRunner = typeof api.cmdRunAiAgent;
 export type AiSessionAgentRunner = typeof api.cmdRunAiSessionAgent;
 
@@ -128,6 +133,18 @@ export function buildPersistedAiExchanges(
 
   if (pendingQuestion !== null) exchanges.push(interruptedExchange(pendingQuestion));
   return exchanges;
+}
+
+export function resolveAiSessionModel(
+  sessionModel: string,
+  configuredModel: string,
+  availableModels: ReadonlySet<string>,
+): AiSessionModelResolution {
+  if (availableModels.has(sessionModel)) return {kind: 'available'};
+  if (configuredModel !== sessionModel && availableModels.has(configuredModel)) {
+    return {kind: 'switch', model: configuredModel};
+  }
+  return {kind: 'unavailable'};
 }
 
 function interruptedExchange(question: string): PersistedAiExchange {

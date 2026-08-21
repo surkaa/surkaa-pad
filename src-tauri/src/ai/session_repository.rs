@@ -257,6 +257,32 @@ impl AiSessionRepository {
         Ok(meta)
     }
 
+    pub async fn update_model(
+        &self,
+        session_id: &str,
+        model: String,
+        updated_at: i64,
+    ) -> Result<AiSessionMeta, AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
+        let model = model.trim();
+        if model.is_empty() {
+            return Err(AiSessionRepositoryError::InvalidInput(
+                "会话模型不能为空".into(),
+            ));
+        }
+        let lock = self.session_lock(session_id);
+        let _guard = lock.lock().await;
+        let meta = self.required_meta(session_id).await?;
+        let (mut meta, _) = self.ensure_reconciled_locked(meta).await?;
+        if meta.model == model {
+            return Ok(meta);
+        }
+        meta.model = model.to_owned();
+        meta.updated_at = meta.updated_at.max(updated_at);
+        self.save_meta(&meta).await?;
+        Ok(meta)
+    }
+
     pub async fn delete_session(&self, session_id: &str) -> Result<(), AiSessionRepositoryError> {
         validate_session_id(session_id)?;
         let lock = self.session_lock(session_id);
@@ -637,7 +663,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lists_by_update_time_and_updates_ai_title() {
+    async fn lists_by_update_time_and_updates_session_metadata() {
         let temp = tempfile::tempdir().unwrap();
         let store: SharedAppObjectStore = Arc::new(LocalAppObjectStore::new(
             LocalObjectStore::new(temp.path().to_path_buf()),
@@ -657,6 +683,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(updated.ai_title.as_deref(), Some("AI 标题"));
+        let updated = repository
+            .update_model(&first.id, "new-model".into(), 400)
+            .await
+            .unwrap();
+        assert_eq!(updated.model, "new-model");
         assert_eq!(
             repository
                 .list_sessions()
@@ -837,6 +868,14 @@ mod tests {
         ));
         assert!(matches!(
             repository.get_session("../123").await,
+            Err(AiSessionRepositoryError::InvalidInput(_))
+        ));
+        let session = repository
+            .create_session("title".into(), "model".into(), 1)
+            .await
+            .unwrap();
+        assert!(matches!(
+            repository.update_model(&session.id, " ".into(), 2).await,
             Err(AiSessionRepositoryError::InvalidInput(_))
         ));
 

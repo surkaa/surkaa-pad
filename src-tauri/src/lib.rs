@@ -46,7 +46,7 @@ mod android_tls {
 use crate::ai::ai_command::{cmd_list_ai_models, cmd_run_ai_agent, cmd_run_ai_session_agent};
 use crate::ai::session_command::{
     cmd_create_ai_session, cmd_delete_ai_session, cmd_get_ai_session, cmd_list_ai_sessions,
-    cmd_update_ai_session_ai_title,
+    cmd_update_ai_session_ai_title, cmd_update_ai_session_model,
 };
 use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::attachment_command::{
@@ -171,6 +171,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_list_ai_sessions,
             cmd_get_ai_session,
             cmd_update_ai_session_ai_title,
+            cmd_update_ai_session_model,
             cmd_delete_ai_session,
             // 其他
             cmd_cancel_task,
