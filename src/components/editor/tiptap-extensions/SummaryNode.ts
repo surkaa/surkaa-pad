@@ -30,6 +30,7 @@ function createSummaryNodeView(
   const summaryText = document.createElement('span');
   const content = document.createElement('div');
   const editButton = document.createElement('button');
+  let toggleAnimation: Animation | null = null;
 
   dom.className = 'editor-summary';
   dom.contentEditable = 'false';
@@ -64,6 +65,47 @@ function createSummaryNodeView(
   };
   editButton.addEventListener('click', handleEdit);
 
+  const handleToggle = (event: MouseEvent) => {
+    if (editButton.contains(event.target as Node)) return;
+    event.preventDefault();
+    if (toggleAnimation) return;
+
+    const shouldOpen = !dom.open;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (reduceMotion || typeof content.animate !== 'function') {
+      dom.open = shouldOpen;
+      return;
+    }
+
+    if (shouldOpen) dom.open = true;
+    const computedStyle = window.getComputedStyle(content);
+    const expandedFrame: Keyframe = {
+      height: `${content.scrollHeight}px`,
+      opacity: 1,
+      paddingTop: computedStyle.paddingTop,
+      paddingBottom: computedStyle.paddingBottom,
+    };
+    const collapsedFrame: Keyframe = {
+      height: '0px',
+      opacity: 0,
+      paddingTop: '0px',
+      paddingBottom: '0px',
+    };
+
+    toggleAnimation = content.animate(
+      shouldOpen ? [collapsedFrame, expandedFrame] : [expandedFrame, collapsedFrame],
+      {duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)'},
+    );
+    toggleAnimation.onfinish = () => {
+      if (!shouldOpen) dom.open = false;
+      toggleAnimation = null;
+    };
+    toggleAnimation.oncancel = () => {
+      toggleAnimation = null;
+    };
+  };
+  summary.addEventListener('click', handleToggle);
+
   return {
     dom,
     update(node) {
@@ -73,7 +115,11 @@ function createSummaryNodeView(
     },
     stopEvent: event => editButton.contains(event.target as Node),
     ignoreMutation: () => true,
-    destroy: () => editButton.removeEventListener('click', handleEdit),
+    destroy() {
+      toggleAnimation?.cancel();
+      editButton.removeEventListener('click', handleEdit);
+      summary.removeEventListener('click', handleToggle);
+    },
   };
 }
 

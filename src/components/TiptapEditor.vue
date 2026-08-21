@@ -547,6 +547,8 @@ defineExpose({
     }
 
     .editor-summary-content {
+      box-sizing: border-box;
+      overflow: hidden;
       padding: 10px 12px 12px;
       border-top: 1px solid var(--pad-border-color-100);
       color: var(--pad-text-color-300);

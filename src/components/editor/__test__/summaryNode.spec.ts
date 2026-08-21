@@ -50,4 +50,24 @@ describe('SummaryNode', () => {
     editor.destroy();
     element.remove();
   });
+
+  it('toggles the native details state when motion animation is unavailable', () => {
+    const element = document.createElement('div');
+    document.body.appendChild(element);
+    const editor = new Editor({
+      element,
+      extensions: [StarterKit, SummaryNode],
+      content: '<details class="editor-summary" data-summary="摘要" data-content="正文"></details>',
+    });
+    const details = element.querySelector('details.editor-summary') as HTMLDetailsElement;
+    const summary = details.querySelector('summary') as HTMLElement;
+
+    summary.click();
+    expect(details.open).toBe(true);
+    summary.click();
+    expect(details.open).toBe(false);
+
+    editor.destroy();
+    element.remove();
+  });
 });
