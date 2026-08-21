@@ -6,6 +6,8 @@ use super::{
 };
 use chrono::Utc;
 use std::sync::Mutex;
+use std::time::Instant;
+use tauri_plugin_log::log;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -59,11 +61,13 @@ impl<'a> AiSessionAgentRunner<'a> {
     where
         F: Fn(AiAgentEvent) -> Result<(), AiError> + Send + Sync,
     {
+        let run_started_at = Instant::now();
         let prompt = prompt.trim();
         if prompt.is_empty() {
             return Err(AiSessionRepositoryError::InvalidInput("问题不能为空".into()).into());
         }
 
+        let history_started_at = Instant::now();
         let Some((meta, mut stored_messages)) = self.repository.load_session(session_id).await?
         else {
             return Err(AiSessionRepositoryError::SessionNotFound(session_id.to_owned()).into());
@@ -76,8 +80,11 @@ impl<'a> AiSessionAgentRunner<'a> {
         )
         .await?;
         let history = conversation_history(&stored_messages)?;
+        let history_prepare_ms = history_started_at.elapsed().as_millis();
+        let history_turns = history.len();
         let model = meta.model;
 
+        let user_save_started_at = Instant::now();
         self.repository
             .append_message(
                 session_id,
@@ -87,6 +94,7 @@ impl<'a> AiSessionAgentRunner<'a> {
                 },
             )
             .await?;
+        let user_save_ms = user_save_started_at.elapsed().as_millis();
 
         let recorder = Mutex::new(AiProcessRecorder::default());
         let recorded_emit = |event: AiAgentEvent| {
@@ -103,6 +111,7 @@ impl<'a> AiSessionAgentRunner<'a> {
         }
         // 将模型 Future 限定在该作用域；取消分支返回后立即释放网络请求和工具调用资源，
         // 再执行助手消息持久化。
+        let agent_started_at = Instant::now();
         let terminal = {
             let agent = AiAgent::new(self.provider, self.tools);
             let run =
@@ -117,10 +126,12 @@ impl<'a> AiSessionAgentRunner<'a> {
                 _ = cancellation.cancelled() => Terminal::Cancelled,
             }
         };
+        let agent_ms = agent_started_at.elapsed().as_millis();
 
         match terminal {
             Terminal::Completed(result) => {
                 let process_steps = finish_recorder(&recorder, AiProcessStepState::Completed);
+                let assistant_save_started_at = Instant::now();
                 self.repository
                     .append_message(
                         session_id,
@@ -136,6 +147,18 @@ impl<'a> AiSessionAgentRunner<'a> {
                         },
                     )
                     .await?;
+                log_run_timing(
+                    session_id,
+                    "completed",
+                    history_turns,
+                    AiSessionRunTiming {
+                        history_prepare_ms,
+                        user_save_ms,
+                        agent_ms,
+                        assistant_save_ms: assistant_save_started_at.elapsed().as_millis(),
+                        total_ms: run_started_at.elapsed().as_millis(),
+                    },
+                );
                 Ok(AiSessionAgentOutcome::Completed {
                     response: result.response,
                     source: result.source,
@@ -145,6 +168,7 @@ impl<'a> AiSessionAgentRunner<'a> {
                 let message = error.to_string();
                 let (process_steps, partial_answer) =
                     finish_recorder_with_answer(&recorder, AiProcessStepState::Failed);
+                let assistant_save_started_at = Instant::now();
                 self.repository
                     .append_message(
                         session_id,
@@ -160,11 +184,24 @@ impl<'a> AiSessionAgentRunner<'a> {
                         },
                     )
                     .await?;
+                log_run_timing(
+                    session_id,
+                    "failed",
+                    history_turns,
+                    AiSessionRunTiming {
+                        history_prepare_ms,
+                        user_save_ms,
+                        agent_ms,
+                        assistant_save_ms: assistant_save_started_at.elapsed().as_millis(),
+                        total_ms: run_started_at.elapsed().as_millis(),
+                    },
+                );
                 Ok(AiSessionAgentOutcome::Failed(message))
             }
             Terminal::Cancelled => {
                 let (process_steps, partial_answer) =
                     finish_recorder_with_answer(&recorder, AiProcessStepState::Cancelled);
+                let assistant_save_started_at = Instant::now();
                 self.repository
                     .append_message(
                         session_id,
@@ -180,10 +217,49 @@ impl<'a> AiSessionAgentRunner<'a> {
                         },
                     )
                     .await?;
+                log_run_timing(
+                    session_id,
+                    "cancelled",
+                    history_turns,
+                    AiSessionRunTiming {
+                        history_prepare_ms,
+                        user_save_ms,
+                        agent_ms,
+                        assistant_save_ms: assistant_save_started_at.elapsed().as_millis(),
+                        total_ms: run_started_at.elapsed().as_millis(),
+                    },
+                );
                 Ok(AiSessionAgentOutcome::Cancelled)
             }
         }
     }
+}
+
+struct AiSessionRunTiming {
+    history_prepare_ms: u128,
+    user_save_ms: u128,
+    agent_ms: u128,
+    assistant_save_ms: u128,
+    total_ms: u128,
+}
+
+fn log_run_timing(
+    session_id: &str,
+    outcome: &str,
+    history_turns: usize,
+    timing: AiSessionRunTiming,
+) {
+    log::info!(
+        "[ai session timing] operation=run, session_id={}, outcome={}, history_turns={}, history_prepare_ms={}, user_save_ms={}, agent_ms={}, assistant_save_ms={}, total_ms={}",
+        session_id,
+        outcome,
+        history_turns,
+        timing.history_prepare_ms,
+        timing.user_save_ms,
+        timing.agent_ms,
+        timing.assistant_save_ms,
+        timing.total_ms
+    );
 }
 
 async fn recover_interrupted_turn(

@@ -12,6 +12,8 @@ use crate::utils::id_generate::generate_descending_id;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::{Arc, Weak};
+use std::time::Instant;
+use tauri_plugin_log::log;
 use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -99,6 +101,7 @@ impl AiSessionRepository {
         model: String,
         created_at: i64,
     ) -> Result<AiSessionMeta, AiSessionRepositoryError> {
+        let started_at = Instant::now();
         if title.trim().is_empty() {
             return Err(AiSessionRepositoryError::InvalidInput(
                 "会话标题不能为空".into(),
@@ -121,6 +124,11 @@ impl AiSessionRepository {
         };
         self.save_meta(&meta).await?;
         self.reconciled_sessions.insert(meta.id.clone(), ());
+        log::info!(
+            "[ai session timing] operation=create, session_id={}, total_ms={}",
+            meta.id,
+            started_at.elapsed().as_millis()
+        );
         Ok(meta)
     }
 
@@ -143,10 +151,19 @@ impl AiSessionRepository {
         &self,
         session_id: &str,
     ) -> Result<Option<(AiSessionMeta, Vec<AiSessionMessage>)>, AiSessionRepositoryError> {
+        let started_at = Instant::now();
         validate_session_id(session_id)?;
         let lock = self.session_lock(session_id);
+        let lock_started_at = Instant::now();
         let _guard = lock.lock().await;
+        let lock_wait_ms = lock_started_at.elapsed().as_millis();
         let Some(meta) = self.load_meta(session_id).await? else {
+            log::info!(
+                "[ai session timing] operation=load, session_id={}, found=false, lock_wait_ms={}, total_ms={}",
+                session_id,
+                lock_wait_ms,
+                started_at.elapsed().as_millis()
+            );
             return Ok(None);
         };
         let (meta, recovered_messages) = self.ensure_reconciled_locked(meta).await?;
@@ -154,10 +171,18 @@ impl AiSessionRepository {
             Some(messages) => messages,
             None => load_compacted_messages(self, session_id, meta.committed_message_count).await?,
         };
+        log::info!(
+            "[ai session timing] operation=load, session_id={}, found=true, messages={}, lock_wait_ms={}, total_ms={}",
+            session_id,
+            messages.len(),
+            lock_wait_ms,
+            started_at.elapsed().as_millis()
+        );
         Ok(Some((meta, messages)))
     }
 
     pub async fn list_sessions(&self) -> Result<Vec<AiSessionMeta>, AiSessionRepositoryError> {
+        let started_at = Instant::now();
         let objects = self
             .store
             .list(&StoredObjectCollection::AiSessionMetas)
@@ -177,6 +202,11 @@ impl AiSessionRepository {
                 .cmp(&left.updated_at)
                 .then_with(|| left.id.cmp(&right.id))
         });
+        log::info!(
+            "[ai session timing] operation=list, sessions={}, total_ms={}",
+            sessions.len(),
+            started_at.elapsed().as_millis()
+        );
         Ok(sessions)
     }
 
@@ -186,9 +216,16 @@ impl AiSessionRepository {
         created_at: i64,
         payload: AiSessionMessagePayload,
     ) -> Result<AiSessionMessage, AiSessionRepositoryError> {
+        let started_at = Instant::now();
         validate_session_id(session_id)?;
+        let role = match &payload {
+            AiSessionMessagePayload::User { .. } => "user",
+            AiSessionMessagePayload::Assistant { .. } => "assistant",
+        };
         let lock = self.session_lock(session_id);
+        let lock_started_at = Instant::now();
         let _guard = lock.lock().await;
+        let lock_wait_ms = lock_started_at.elapsed().as_millis();
         let meta = self.required_meta(session_id).await?;
         let (mut meta, _) = self.ensure_reconciled_locked(meta).await?;
         let message = AiSessionMessage {
@@ -214,6 +251,14 @@ impl AiSessionRepository {
             self.reconciled_sessions.remove(session_id);
             return Err(error);
         }
+        log::info!(
+            "[ai session timing] operation=append, session_id={}, message_index={}, role={}, lock_wait_ms={}, total_ms={}",
+            session_id,
+            message.index,
+            role,
+            lock_wait_ms,
+            started_at.elapsed().as_millis()
+        );
         Ok(message)
     }
 
@@ -221,15 +266,34 @@ impl AiSessionRepository {
         &self,
         session_id: &str,
     ) -> Result<Vec<AiSessionMessage>, AiSessionRepositoryError> {
+        let started_at = Instant::now();
         validate_session_id(session_id)?;
         let lock = self.session_lock(session_id);
+        let lock_started_at = Instant::now();
         let _guard = lock.lock().await;
+        let lock_wait_ms = lock_started_at.elapsed().as_millis();
         let meta = self.required_meta(session_id).await?;
         let (meta, recovered_messages) = self.ensure_reconciled_locked(meta).await?;
         if let Some(messages) = recovered_messages {
+            log::info!(
+                "[ai session timing] operation=load_messages, session_id={}, messages={}, lock_wait_ms={}, total_ms={}",
+                session_id,
+                messages.len(),
+                lock_wait_ms,
+                started_at.elapsed().as_millis()
+            );
             return Ok(messages);
         }
-        Ok(load_compacted_messages(self, session_id, meta.committed_message_count).await?)
+        let messages =
+            load_compacted_messages(self, session_id, meta.committed_message_count).await?;
+        log::info!(
+            "[ai session timing] operation=load_messages, session_id={}, messages={}, lock_wait_ms={}, total_ms={}",
+            session_id,
+            messages.len(),
+            lock_wait_ms,
+            started_at.elapsed().as_millis()
+        );
+        Ok(messages)
     }
 
     pub async fn update_ai_title(
@@ -284,15 +348,19 @@ impl AiSessionRepository {
     }
 
     pub async fn delete_session(&self, session_id: &str) -> Result<(), AiSessionRepositoryError> {
+        let started_at = Instant::now();
         validate_session_id(session_id)?;
         let lock = self.session_lock(session_id);
+        let lock_started_at = Instant::now();
         let _guard = lock.lock().await;
+        let lock_wait_ms = lock_started_at.elapsed().as_millis();
         let blocks = self
             .store
             .list(&StoredObjectCollection::AiSessionMessageBlocks {
                 session_id: session_id.to_owned(),
             })
             .await?;
+        let block_count = blocks.len();
         for block in blocks {
             self.store.delete(&block).await?;
         }
@@ -303,6 +371,13 @@ impl AiSessionRepository {
             })
             .await?;
         self.reconciled_sessions.remove(session_id);
+        log::info!(
+            "[ai session timing] operation=delete, session_id={}, blocks={}, lock_wait_ms={}, total_ms={}",
+            session_id,
+            block_count,
+            lock_wait_ms,
+            started_at.elapsed().as_millis()
+        );
         Ok(())
     }
 

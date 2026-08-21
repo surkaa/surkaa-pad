@@ -4,8 +4,44 @@ use crate::object_locations::{ObjectLocations, StoredObject, StoredObjectCollect
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri_plugin_log::log;
 use thiserror::Error;
+
+const SLOW_OBJECT_OPERATION_THRESHOLD: Duration = Duration::from_millis(250);
+
+struct SlowObjectOperationTimer {
+    mode: &'static str,
+    operation: &'static str,
+    target: String,
+    started_at: Instant,
+}
+
+impl SlowObjectOperationTimer {
+    fn new(mode: &'static str, operation: &'static str, target: String) -> Self {
+        Self {
+            mode,
+            operation,
+            target,
+            started_at: Instant::now(),
+        }
+    }
+}
+
+impl Drop for SlowObjectOperationTimer {
+    fn drop(&mut self) {
+        let elapsed = self.started_at.elapsed();
+        if elapsed >= SLOW_OBJECT_OPERATION_THRESHOLD {
+            log::info!(
+                "[app object timing] mode={}, operation={}, target={}, elapsed_ms={}",
+                self.mode,
+                self.operation,
+                self.target,
+                elapsed.as_millis()
+            );
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum AppObjectStoreError {
@@ -58,6 +94,7 @@ impl AppObjectStore for LocalAppObjectStore {
         object: &StoredObject,
     ) -> Result<Option<Vec<u8>>, AppObjectStoreError> {
         let key = ObjectLocations::key(object);
+        let _timing = SlowObjectOperationTimer::new("local", "load", key.clone());
         if self.local.get(&key).await?.is_none() {
             return Ok(None);
         }
@@ -73,14 +110,16 @@ impl AppObjectStore for LocalAppObjectStore {
         object: &StoredObject,
         data: &[u8],
     ) -> Result<(), AppObjectStoreError> {
-        self.local
-            .save_bytes(&ObjectLocations::key(object), data)
-            .await?;
+        let key = ObjectLocations::key(object);
+        let _timing = SlowObjectOperationTimer::new("local", "save", key.clone());
+        self.local.save_bytes(&key, data).await?;
         Ok(())
     }
 
     async fn delete(&self, object: &StoredObject) -> Result<(), AppObjectStoreError> {
-        self.local.delete(&ObjectLocations::key(object)).await?;
+        let key = ObjectLocations::key(object);
+        let _timing = SlowObjectOperationTimer::new("local", "delete", key.clone());
+        self.local.delete(&key).await?;
         Ok(())
     }
 
@@ -89,6 +128,7 @@ impl AppObjectStore for LocalAppObjectStore {
         collection: &StoredObjectCollection,
     ) -> Result<Vec<StoredObject>, AppObjectStoreError> {
         let prefix = collection_prefix(collection);
+        let _timing = SlowObjectOperationTimer::new("local", "list", prefix.clone());
         let mut objects = self
             .local
             .get_entries_with_prefix(&prefix)
@@ -196,6 +236,7 @@ impl AppObjectStore for RemoteAppObjectStore {
         object: &StoredObject,
     ) -> Result<Option<Vec<u8>>, AppObjectStoreError> {
         let key = ObjectLocations::key(object);
+        let _timing = SlowObjectOperationTimer::new("remote", "load", key.clone());
         if !self.remote.object_exists(&key).await? {
             if let Err(error) = self.local.delete(&key).await {
                 log::warn!(
@@ -238,6 +279,7 @@ impl AppObjectStore for RemoteAppObjectStore {
         data: &[u8],
     ) -> Result<(), AppObjectStoreError> {
         let key = ObjectLocations::key(object);
+        let _timing = SlowObjectOperationTimer::new("remote", "save", key.clone());
         let etag = self.remote.upload_bytes(&key, data).await?;
         self.cache_download(&key, data, Some(&etag)).await;
         Ok(())
@@ -245,6 +287,7 @@ impl AppObjectStore for RemoteAppObjectStore {
 
     async fn delete(&self, object: &StoredObject) -> Result<(), AppObjectStoreError> {
         let key = ObjectLocations::key(object);
+        let _timing = SlowObjectOperationTimer::new("remote", "delete", key.clone());
         self.remote.delete(&key).await?;
         if let Err(error) = self.local.delete(&key).await {
             log::warn!("[app object store] cache delete failed: key={key}, error={error}");
@@ -256,6 +299,8 @@ impl AppObjectStore for RemoteAppObjectStore {
         &self,
         collection: &StoredObjectCollection,
     ) -> Result<Vec<StoredObject>, AppObjectStoreError> {
+        let _timing =
+            SlowObjectOperationTimer::new("remote", "list", collection_prefix(collection));
         let mut objects = match collection {
             StoredObjectCollection::AiSessionMetas => {
                 let mut sessions = Vec::new();
