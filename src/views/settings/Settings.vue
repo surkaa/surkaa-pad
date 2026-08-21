@@ -79,6 +79,8 @@
 
         <AttachmentSettings/>
 
+        <ToolbarSettings/>
+
         <EditorShortcutSettings v-if="isWindows"/>
 
         <section class="settings-group">
@@ -215,6 +217,7 @@ import {formatError} from "../../utils/formatError.ts";
 import {biometricToggleAction} from "../../utils/biometricToggle.ts";
 import {useRemoteStorageSettings} from '../../composables/useRemoteStorageSettings';
 import AttachmentSettings from './AttachmentSettings.vue';
+import ToolbarSettings from './ToolbarSettings.vue';
 import AttachmentCacheSettings from './AttachmentCacheSettings.vue';
 import AiSettings from './AiSettings.vue';
 import DisableRemoteStorageDialog from '../../components/DisableRemoteStorageDialog.vue';

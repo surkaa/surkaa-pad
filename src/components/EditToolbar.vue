@@ -1,5 +1,6 @@
 <script setup lang="ts">
 
+import {computed} from 'vue';
 import type { Editor } from '@tiptap/vue-3'
 import { platform } from "@tauri-apps/plugin-os";
 import {
@@ -7,22 +8,68 @@ import {
   type EditorShortcutAction,
   type EditorShortcutConfig,
 } from "../utils/editorShortcuts.ts";
+import {
+  EDITOR_TOOLBAR_LABELS,
+  normalizeEditorToolbarOrder,
+  type EditorToolbarAction,
+} from '../utils/editorToolbar';
 
 const {
   view,
   panelOpen,
   editor,
   shortcuts,
+  toolbarOrder,
 } = defineProps<{
   view: boolean,
   panelOpen: boolean,
   editor?: Editor | null,
   shortcuts?: EditorShortcutConfig,
+  toolbarOrder?: EditorToolbarAction[],
 }>();
 
 const currentPlatform = platform();
 const isAndroid = currentPlatform === 'android';
 const isWindows = currentPlatform === 'windows';
+const orderedToolbarActions = computed(() => normalizeEditorToolbarOrder(toolbarOrder));
+
+function isToolbarActionActive(action: EditorToolbarAction): boolean {
+  if (!editor) return false;
+  switch (action) {
+    case 'bold': return editor.isActive('bold');
+    case 'underline': return editor.isActive('underline');
+    case 'strike': return editor.isActive('strike');
+    case 'heading1': return editor.isActive('heading', {level: 1});
+    case 'heading2': return editor.isActive('heading', {level: 2});
+    case 'heading3': return editor.isActive('heading', {level: 3});
+    case 'taskList': return editor.isActive('taskList');
+  }
+}
+
+function runToolbarAction(action: EditorToolbarAction) {
+  if (!editor) return;
+  switch (action) {
+    case 'bold': editor.chain().focus().toggleBold().run(); break;
+    case 'underline': editor.chain().focus().toggleUnderline().run(); break;
+    case 'strike': editor.chain().focus().toggleStrike().run(); break;
+    case 'heading1': editor.chain().focus().toggleHeading({level: 1}).run(); break;
+    case 'heading2': editor.chain().focus().toggleHeading({level: 2}).run(); break;
+    case 'heading3': editor.chain().focus().toggleHeading({level: 3}).run(); break;
+    case 'taskList': editor.chain().focus().toggleTaskList().run(); break;
+  }
+}
+
+function toolbarActionText(action: EditorToolbarAction): string {
+  return {
+    bold: 'B',
+    underline: 'U',
+    strike: 'S',
+    heading1: 'H1',
+    heading2: 'H2',
+    heading3: 'H3',
+    taskList: '',
+  }[action];
+}
 
 function attachmentActionTitle(label: string, action: EditorShortcutAction) {
   const shortcut = shortcuts?.[action];
@@ -47,20 +94,20 @@ const emit = defineEmits([
       <div class="toolbar-header">
         <div class="toolbar-scroll">
           <template v-if="editor">
-            <button class="tool-btn" :class="{ 'is-active': editor.isActive('bold') }" @click.stop="editor.chain().focus().toggleBold().run()"><b>B</b></button>
-            <button class="tool-btn" :class="{ 'is-active': editor.isActive('underline') }" @click.stop="editor.chain().focus().toggleUnderline().run()"><u>U</u></button>
-            <button class="tool-btn" :class="{ 'is-active': editor.isActive('strike') }" @click.stop="editor.chain().focus().toggleStrike().run()"><s>S</s></button>
-            <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 1 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 1 }).run()">H1</button>
-            <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 2 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 2 }).run()">H2</button>
-            <button class="tool-btn" :class="{ 'is-active': editor.isActive('heading', { level: 3 }) }" @click.stop="editor.chain().focus().toggleHeading({ level: 3 }).run()">H3</button>
             <button
+              v-for="action in orderedToolbarActions"
+              :key="action"
               class="tool-btn"
-              :class="{ 'is-active': editor.isActive('taskList') }"
-              title="待办列表"
-              aria-label="切换待办列表"
-              @click.stop="editor.chain().focus().toggleTaskList().run()"
+              :class="{ 'is-active': isToolbarActionActive(action) }"
+              :title="EDITOR_TOOLBAR_LABELS[action]"
+              :aria-label="EDITOR_TOOLBAR_LABELS[action]"
+              @click.stop="runToolbarAction(action)"
             >
-              <q-icon name="checklist" size="20px"/>
+              <q-icon v-if="action === 'taskList'" name="checklist" size="20px"/>
+              <b v-else-if="action === 'bold'">{{ toolbarActionText(action) }}</b>
+              <u v-else-if="action === 'underline'">{{ toolbarActionText(action) }}</u>
+              <s v-else-if="action === 'strike'">{{ toolbarActionText(action) }}</s>
+              <template v-else>{{ toolbarActionText(action) }}</template>
             </button>
             <div class="divider"></div>
           </template>

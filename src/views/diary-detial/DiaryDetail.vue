@@ -32,6 +32,7 @@ const showDetailDialog = ref(false);
 const showSourceDialog = ref(false);
 const pinnedDiaryIds = configStore.useTauriConfig('pinned_diary_ids');
 const editorShortcuts = configStore.useTauriConfig('windows_editor_shortcuts');
+const toolbarOrder = configStore.useTauriConfig('editor_toolbar_order');
 
 const {
   diaryId, diary, attachments, diaryManifestSize, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
@@ -205,6 +206,7 @@ onActivated(async () => {
         :panelOpen="showToolbarPanel"
         :editor="tiptapEditorRef?.editor ?? null"
         :shortcuts="editorShortcuts"
+        :toolbar-order="toolbarOrder"
         v-click-outside="() => showToolbarPanel = false"
         @undo="tiptapEditorRef?.undo"
         @redo="tiptapEditorRef?.redo"

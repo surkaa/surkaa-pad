@@ -19,6 +19,11 @@ import {
     normalizeAiAssistantShortcutConfig,
     type AiAssistantShortcutConfig,
 } from '../utils/aiAssistantShortcuts';
+import {
+    DEFAULT_EDITOR_TOOLBAR_ORDER,
+    normalizeEditorToolbarOrder,
+    type EditorToolbarAction,
+} from '../utils/editorToolbar';
 
 const STORAGE_PREFIX = 'config:';
 
@@ -40,6 +45,7 @@ type ConfigMap = {
     "windows_editor_shortcuts": EditorShortcutConfig;
     "windows_diary_list_shortcuts": DiaryListShortcutConfig;
     "windows_ai_assistant_shortcuts": AiAssistantShortcutConfig;
+    "editor_toolbar_order": EditorToolbarAction[];
 };
 const DEFAULT_CONFIG = {
     "app-theme": DEFAULT_THEME,
@@ -59,6 +65,7 @@ const DEFAULT_CONFIG = {
     "windows_editor_shortcuts": {...DEFAULT_WINDOWS_EDITOR_SHORTCUTS},
     "windows_diary_list_shortcuts": {...DEFAULT_WINDOWS_DIARY_LIST_SHORTCUTS},
     "windows_ai_assistant_shortcuts": {...DEFAULT_WINDOWS_AI_ASSISTANT_SHORTCUTS},
+    "editor_toolbar_order": [...DEFAULT_EDITOR_TOOLBAR_ORDER],
 } satisfies ConfigMap;
 
 type ConfigKey = keyof ConfigMap;
@@ -76,6 +83,9 @@ function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): Conf
     }
     if (key === 'windows_ai_assistant_shortcuts') {
         return normalizeAiAssistantShortcutConfig(value) as ConfigMap[K];
+    }
+    if (key === 'editor_toolbar_order') {
+        return normalizeEditorToolbarOrder(value) as ConfigMap[K];
     }
     return value as ConfigMap[K];
 }
