@@ -1,4 +1,4 @@
-use super::{AiSessionDetail, AiSessionMeta};
+use super::{session_agent::persisted_conversation_source, AiSessionDetail, AiSessionMeta};
 use crate::error::AppError;
 use crate::state::AppState;
 use chrono::Utc;
@@ -117,7 +117,23 @@ async fn get_ai_session(
         .ai_session_repository()
         .load_session(session_id)
         .await?
-        .map(|(meta, messages)| AiSessionDetail { meta, messages }))
+        .map(|(meta, messages)| {
+            let conversation_source = persisted_conversation_source(&meta.model, &messages)
+                .map_err(|error| {
+                    tauri_plugin_log::log::warn!(
+                        "重建 AI 会话源码失败: session_id={}, error={}",
+                        meta.id,
+                        error
+                    );
+                    error
+                })
+                .ok();
+            AiSessionDetail {
+                meta,
+                messages,
+                conversation_source,
+            }
+        }))
 }
 
 async fn update_ai_session_ai_title(
@@ -155,7 +171,7 @@ async fn delete_ai_session(state: &AppState, session_id: &str) -> Result<(), App
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::AiSessionMessagePayload;
+    use crate::ai::{AiAssistantRecordState, AiConversationSourceMessage, AiSessionMessagePayload};
     use crate::caches::LocalObjectStore;
     use crate::cryptos::Crypto;
     use crate::object::OssClient;
@@ -185,6 +201,7 @@ mod tests {
                 created.created_at + 1,
                 AiSessionMessagePayload::User {
                     content: "第一条问题".into(),
+                    timezone_offset_minutes: None,
                 },
             )
             .await
@@ -213,5 +230,75 @@ mod tests {
         assert!(get_ai_session(&state, &created.id).await.unwrap().is_none());
         // 删除命令保持幂等，便于失败后重试。
         delete_ai_session(&state, &created.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn loading_a_session_reconstructs_its_complete_model_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = test_state(temp.path().to_path_buf());
+        let created = create_ai_session(&state, "第一问".into(), "test-model".into())
+            .await
+            .unwrap();
+        state
+            .ai_session_repository()
+            .append_message(
+                &created.id,
+                created.created_at + 1,
+                AiSessionMessagePayload::User {
+                    content: "第一问".into(),
+                    timezone_offset_minutes: Some(480),
+                },
+            )
+            .await
+            .unwrap();
+        state
+            .ai_session_repository()
+            .append_message(
+                &created.id,
+                created.created_at + 2,
+                AiSessionMessagePayload::Assistant {
+                    state: AiAssistantRecordState::Completed,
+                    content: "第一答".into(),
+                    error: None,
+                    model: "test-model".into(),
+                    usage: None,
+                    process_steps: vec![],
+                    trace: vec![AiConversationSourceMessage::Assistant {
+                        reasoning_content: Some("思考内容".into()),
+                        content: Some("第一答".into()),
+                        tool_calls: vec![],
+                    }],
+                },
+            )
+            .await
+            .unwrap();
+
+        let detail = get_ai_session(&state, &created.id).await.unwrap().unwrap();
+        let source = detail.conversation_source.unwrap();
+
+        assert_eq!(source.model, "test-model");
+        assert_eq!(source.messages.len(), 4);
+        assert!(matches!(
+            source.messages[0],
+            AiConversationSourceMessage::System { .. }
+        ));
+        assert!(matches!(
+            source.messages[1],
+            AiConversationSourceMessage::System { .. }
+        ));
+        assert_eq!(
+            source.messages[2],
+            AiConversationSourceMessage::User {
+                content: "第一问".into()
+            }
+        );
+        assert!(matches!(
+            &source.messages[3],
+            AiConversationSourceMessage::Assistant {
+                reasoning_content: Some(reasoning),
+                content: Some(content),
+                tool_calls,
+            } if reasoning == "思考内容" && content == "第一答" && tool_calls.is_empty()
+        ));
     }
 }

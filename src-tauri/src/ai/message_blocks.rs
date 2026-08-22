@@ -411,6 +411,7 @@ mod tests {
             created_at: i64::try_from(index).unwrap(),
             payload: AiSessionMessagePayload::User {
                 content: format!("消息 {index}"),
+                timezone_offset_minutes: None,
             },
         }
     }
@@ -521,6 +522,7 @@ mod tests {
                 message.payload,
                 AiSessionMessagePayload::User {
                     content: format!("消息 {expected_index}"),
+                    timezone_offset_minutes: None,
                 }
             );
         }
@@ -639,6 +641,7 @@ mod tests {
         let mut conflicting_messages: Vec<_> = (0..10).map(message).collect();
         conflicting_messages[0].payload = AiSessionMessagePayload::User {
             content: "不同内容".into(),
+            timezone_offset_minutes: None,
         };
         store
             .insert(AiSessionMessageBlock {
@@ -696,6 +699,7 @@ mod tests {
             messages: vec![AiSessionMessage {
                 payload: AiSessionMessagePayload::User {
                     content: "冲突".into(),
+                    timezone_offset_minutes: None,
                 },
                 ..message(0)
             }],

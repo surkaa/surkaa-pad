@@ -99,6 +99,50 @@ impl From<&AiMessage> for AiConversationSourceMessage {
     }
 }
 
+impl TryFrom<&AiConversationSourceMessage> for AiMessage {
+    type Error = AiError;
+
+    fn try_from(message: &AiConversationSourceMessage) -> Result<Self, Self::Error> {
+        let message = match message {
+            AiConversationSourceMessage::System { content } => Self::System(content.clone()),
+            AiConversationSourceMessage::User { content } => Self::User(content.clone()),
+            AiConversationSourceMessage::Assistant {
+                reasoning_content,
+                content,
+                tool_calls,
+            } => Self::Assistant(AiAssistantMessage {
+                reasoning_content: reasoning_content.clone(),
+                content: content.clone(),
+                tool_calls: tool_calls
+                    .iter()
+                    .map(|call| {
+                        let arguments = serde_json::from_str(&call.arguments).map_err(|error| {
+                            AiError::InvalidRequest(format!(
+                                "历史工具 {} 的参数不是有效 JSON: {error}",
+                                call.name
+                            ))
+                        })?;
+                        Ok(AiToolCall {
+                            id: call.id.clone(),
+                            name: call.name.clone(),
+                            arguments,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, AiError>>()?,
+            }),
+            AiConversationSourceMessage::Tool {
+                tool_call_id,
+                content,
+            } => Self::Tool(AiToolResult {
+                tool_call_id: tool_call_id.clone(),
+                content: content.clone(),
+            }),
+        };
+        validate_message(&message)?;
+        Ok(message)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AiCompletionRequest {
     model: String,
@@ -363,5 +407,39 @@ mod tests {
         .unwrap();
 
         assert_eq!(request.messages().len(), 2);
+    }
+
+    #[test]
+    fn conversation_source_messages_roundtrip_tool_calls() {
+        let original = AiMessage::Assistant(AiAssistantMessage {
+            reasoning_content: Some("先读取".into()),
+            content: None,
+            tool_calls: vec![AiToolCall {
+                id: "call-1".into(),
+                name: "read_diary".into(),
+                arguments: json!({"diaryId": "123"}),
+            }],
+        });
+        let source = AiConversationSourceMessage::from(&original);
+
+        assert_eq!(AiMessage::try_from(&source).unwrap(), original);
+    }
+
+    #[test]
+    fn conversation_source_rejects_invalid_tool_arguments() {
+        let source = AiConversationSourceMessage::Assistant {
+            reasoning_content: None,
+            content: None,
+            tool_calls: vec![AiConversationSourceToolCall {
+                id: "call-1".into(),
+                name: "read_diary".into(),
+                arguments: "not-json".into(),
+            }],
+        };
+
+        assert!(matches!(
+            AiMessage::try_from(&source),
+            Err(AiError::InvalidRequest(message)) if message.contains("不是有效 JSON")
+        ));
     }
 }

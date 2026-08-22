@@ -1,4 +1,4 @@
-use super::{AiConversationSourceMessage, AiUsage};
+use super::{AiConversationSource, AiConversationSourceMessage, AiUsage};
 use crate::object_locations::MAX_AI_MESSAGE_BLOCK_LEVEL;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -39,6 +39,7 @@ pub struct AiSessionMessage {
 pub struct AiSessionDetail {
     pub meta: AiSessionMeta,
     pub messages: Vec<AiSessionMessage>,
+    pub conversation_source: Option<AiConversationSource>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
@@ -61,6 +62,9 @@ pub struct AiSessionMessageBlock {
 pub enum AiSessionMessagePayload {
     User {
         content: String,
+        /// 保存发送消息时的本地时区偏移，使日期变化提示能在不同设备上稳定重建。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        timezone_offset_minutes: Option<i16>,
     },
     Assistant {
         state: AiAssistantRecordState,
@@ -231,9 +235,15 @@ fn validate_current_version(json: &Value) -> Result<(), AiSessionDataError> {
 
 fn validate_message_payload(payload: &AiSessionMessagePayload) -> Result<(), AiSessionDataError> {
     match payload {
-        AiSessionMessagePayload::User { content } if content.trim().is_empty() => Err(
+        AiSessionMessagePayload::User { content, .. } if content.trim().is_empty() => Err(
             AiSessionDataError::InvalidData("用户消息内容不能为空".into()),
         ),
+        AiSessionMessagePayload::User {
+            timezone_offset_minutes: Some(offset),
+            ..
+        } if !(-14 * 60..=14 * 60).contains(offset) => Err(AiSessionDataError::InvalidData(
+            "用户消息的时区偏移超出有效范围".into(),
+        )),
         AiSessionMessagePayload::Assistant {
             state: AiAssistantRecordState::Completed,
             content,
@@ -347,6 +357,7 @@ mod tests {
                 created_at: 1,
                 payload: AiSessionMessagePayload::User {
                     content: "总结最近的日记".into(),
+                    timezone_offset_minutes: None,
                 },
             },
             AiSessionMessage {
@@ -377,6 +388,7 @@ mod tests {
                 created_at: index as i64,
                 payload: AiSessionMessagePayload::User {
                     content: format!("消息 {index}"),
+                    timezone_offset_minutes: None,
                 },
             });
         }
@@ -434,6 +446,7 @@ mod tests {
             created_at: index as i64,
             payload: AiSessionMessagePayload::User {
                 content: format!("消息 {index}"),
+                timezone_offset_minutes: None,
             },
         };
         let level_zero = AiSessionMessageBlock {

@@ -969,6 +969,7 @@ mod tests {
                     11 + index,
                     AiSessionMessagePayload::User {
                         content: format!("消息 {index}"),
+                        timezone_offset_minutes: None,
                     },
                 )
                 .await

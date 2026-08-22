@@ -142,6 +142,22 @@ impl<'a> AiAgent<'a> {
     where
         F: Fn(AiAgentEvent) -> Result<(), AiError> + Send + Sync,
     {
+        let mut messages = Vec::with_capacity(history.len().saturating_mul(2));
+        append_conversation_history(&mut messages, history)?;
+        self.run_stream_with_message_history_source(model, &messages, prompt, emit)
+            .await
+    }
+
+    pub(crate) async fn run_stream_with_message_history_source<F>(
+        &self,
+        model: &str,
+        history: &[AiMessage],
+        prompt: &str,
+        emit: &F,
+    ) -> Result<AiAgentRunResult, AiError>
+    where
+        F: Fn(AiAgentEvent) -> Result<(), AiError> + Send + Sync,
+    {
         if prompt.trim().is_empty() {
             return Err(AiError::InvalidRequest("问题不能为空".into()));
         }
@@ -152,8 +168,7 @@ impl<'a> AiAgent<'a> {
         }
 
         let definitions = self.tools.definitions();
-        let mut messages = vec![AiMessage::System(SYSTEM_PROMPT.into())];
-        append_conversation_history(&mut messages, history)?;
+        let mut messages = conversation_messages(history);
         messages.push(AiMessage::User(prompt.trim().into()));
         let mut total_usage = None;
         let mut next_operation_id = 1;
@@ -262,6 +277,20 @@ impl<'a> AiAgent<'a> {
 
         unreachable!("positive max_model_rounds always returns from the loop")
     }
+}
+
+pub(crate) fn conversation_source_for_history(
+    model: &str,
+    history: &[AiMessage],
+) -> AiConversationSource {
+    AiConversationSource::from_messages(model, &conversation_messages(history))
+}
+
+fn conversation_messages(history: &[AiMessage]) -> Vec<AiMessage> {
+    let mut messages = Vec::with_capacity(history.len().saturating_add(1));
+    messages.push(AiMessage::System(SYSTEM_PROMPT.into()));
+    messages.extend_from_slice(history);
+    messages
 }
 
 fn append_conversation_history(

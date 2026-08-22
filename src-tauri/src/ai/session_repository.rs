@@ -672,6 +672,7 @@ mod tests {
     fn user_message(index: u64) -> AiSessionMessagePayload {
         AiSessionMessagePayload::User {
             content: format!("消息 {index}"),
+            timezone_offset_minutes: None,
         }
     }
 
