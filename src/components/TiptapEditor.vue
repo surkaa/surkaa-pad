@@ -428,7 +428,9 @@ function openBlockOrderDialog() {
     return
   }
 
-  currentEditor.commands.blur()
+  // 这里只关闭输入焦点，不能调用 commands.blur()：后者会派发事务，可能让
+  // TrailingNode 自动补空段落，从而在尚未调整顺序时就触发日记保存。
+  currentEditor.view.dom.blur()
   blockOrderBlocks.value = blocks
   blockOrderSnapshot.value = topLevelBlockIdentities(document)
   showBlockOrderDialog.value = true

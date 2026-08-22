@@ -59,6 +59,7 @@ describe('diary block ordering', () => {
   });
 
   it('applies the final order as one undoable editor transaction', () => {
+    let updateCount = 0;
     const editor = new Editor({
       extensions: [StarterKit, ImageNode],
       content: {
@@ -69,7 +70,12 @@ describe('diary block ordering', () => {
           {type: 'paragraph', content: [{type: 'text', text: '最后一段'}]},
         ],
       },
+      onUpdate: () => updateCount += 1,
     });
+    editor.view.focus();
+    editor.view.dom.blur();
+    expect(updateCount).toBe(0);
+
     const original = editor.getJSON();
     const transaction = createBlockOrderTransaction(editor.state, [2, 0, 1]);
 
@@ -85,6 +91,7 @@ describe('diary block ordering', () => {
     expect(reordered?.[0]).toMatchObject({content: [{text: '最后一段'}]});
     expect(reordered?.[1]).toMatchObject({content: [{text: '第一段'}]});
     expect(reordered?.[2]?.attrs).toMatchObject({id: 'att-1', src: 'url-1'});
+    expect(updateCount).toBe(1);
 
     expect(editor.commands.undo()).toBe(true);
     expect(editor.getJSON()).toEqual(original);
