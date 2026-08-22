@@ -2,7 +2,6 @@ import type {Channel} from '@tauri-apps/api/core';
 import type {
   AiAgentEvent,
   AiAgentResponse,
-  AiConversationSource,
   AiConversationTurn,
   AiSessionMessage,
 } from '../bindings';
@@ -169,39 +168,6 @@ export function buildAiConversationHistory(
       ? [{user, assistant}]
       : [];
   });
-}
-
-export function formatAiConversationSource(
-  source: AiConversationSource,
-  expandJsonObjectStrings = false,
-): string {
-  return JSON.stringify(
-    expandJsonObjectStrings ? expandNestedJsonObjectStrings(source) : source,
-    null,
-    2,
-  );
-}
-
-function expandNestedJsonObjectStrings(value: unknown): unknown {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return value;
-    try {
-      const parsed: unknown = JSON.parse(trimmed);
-      return isJsonObject(parsed) ? expandNestedJsonObjectStrings(parsed) : value;
-    } catch {
-      return value;
-    }
-  }
-  if (Array.isArray(value)) return value.map(expandNestedJsonObjectStrings);
-  if (!isJsonObject(value)) return value;
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [key, expandNestedJsonObjectStrings(item)]),
-  );
-}
-
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function initialAiAgentDisplayState(): AiAgentDisplayState {

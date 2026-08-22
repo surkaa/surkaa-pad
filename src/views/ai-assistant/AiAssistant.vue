@@ -26,7 +26,7 @@ import api from '../../utils/api';
 import {formatError} from '../../utils/formatError';
 import {useConfigStore} from '../../stores/config';
 import {useAiAssistantShortcuts} from '../../composables/useAiAssistantShortcuts';
-import AiConversationSourceDialog from './AiConversationSourceDialog.vue';
+import JsonSourceDialog from '../../components/JsonSourceDialog.vue';
 import AiSessionSidebar from './AiSessionSidebar.vue';
 
 interface AiExchange extends AiAgentDisplayState {
@@ -744,9 +744,13 @@ async function scrollToBottom() {
       <div class="privacy-hint">当前会话历史、问题及 Agent 读取的日记文字会发送到你配置的 AI 服务</div>
     </div>
     </main>
-    <AiConversationSourceDialog
+    <JsonSourceDialog
       v-model="showConversationSource"
+      title="当前对话完整源码"
       :source="conversationSource"
+      copy-label="复制完整源码"
+      copy-success-message="当前对话完整源码已复制"
+      copy-error-prefix="复制对话源码失败"
     />
   </div>
 </template>
