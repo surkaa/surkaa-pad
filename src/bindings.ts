@@ -631,6 +631,24 @@ async cmdUpdateAttachmentFilename(id: string, attachmentId: string, newFilename:
 }
 },
 /**
+ * 静默保存音频时长和音波，不改变日记的用户编辑时间。
+ * # Arguments
+ * * `id` - 日记 ID
+ * * `attachment_id` - 音频附件 ID
+ * * `duration_ms` - 音频时长（毫秒）
+ * * `waveform` - 归一化后的紧凑音波数据
+ * # Returns
+ * * `Result<AttachmentMeta, AppError>` - 返回更新后的附件元数据
+ */
+async cmdUpdateAttachmentAudioInfo(id: string, attachmentId: string, durationMs: number, waveform: AudioWaveform) : Promise<Result<AttachmentMeta, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_update_attachment_audio_info", { id, attachmentId, durationMs, waveform }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 初始化分片上传
  * # Arguments
  * * `id` - 日记 ID
@@ -891,6 +909,7 @@ export type AiUsage = { promptTokens: number; completionTokens: number; totalTok
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }
 export type AttachmentCacheInfo = { cachedFiles: number; cachedBytes: number; limitBytes: number; maxFileSizeBytes: number }
+export type AttachmentContentInfo = { type: "audio"; durationMs: number | null; waveform: AudioWaveform | null } | { type: "image"; width: number | null; height: number | null; frameCount: number | null; durationMs: number | null } | { type: "video"; width: number | null; height: number | null; durationMs: number | null } | { type: "archive"; format: string | null; entryCount: number | null; uncompressedSize: number | null }
 export type AttachmentMeta = { 
 /**
  * 稳定附件 ID，同时作为存储对象 key 的末段。
@@ -899,7 +918,11 @@ id: string;
 /**
  * 仅用于展示和导出，不再参与对象寻址。
  */
-filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm; etag?: string | null }
+filename: string; mimetype: string; size: number; encrypted: boolean; nonce: number[]; algorithm: EncryptionAlgorithm; etag?: string | null; 
+/**
+ * 从附件内容中提取、可重新生成的类型专属信息。
+ */
+contentInfo?: AttachmentContentInfo | null }
 export type AttachmentProcessEvent = { event: "started" } | 
 /**
  * 0-100 的上传进度百分比
@@ -919,6 +942,18 @@ export type AttachmentProcessEvent = { event: "started" } |
 { event: "completedWithoutData" } | { event: "error"; data: string }
 export type AttachmentSettings = { defaultImageSizeIsSmall: boolean; encryptImageAttachments: boolean; encryptAudioAttachments: boolean; encryptVideoAttachments: boolean; encryptFileAttachments: boolean }
 export type AttachmentTypeFilter = "image" | "audio" | "video" | "other"
+/**
+ * 用于语音条渲染的紧凑单声道振幅包络。
+ */
+export type AudioWaveform = { 
+/**
+ * 音波生成算法版本；算法变化时可据此重新生成。
+ */
+version: number; 
+/**
+ * 将 -1..=1 的有符号峰值映射到 0..=255 后得到的紧凑采样。
+ */
+peaks: number[] }
 export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
 export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
 export type ChunkedUploadStartResult = { uploadToken: string; attachmentId: string; filename: string; nonce: number[] | null }

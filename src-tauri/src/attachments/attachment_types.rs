@@ -51,28 +51,29 @@ pub struct AttachmentMeta {
 )]
 pub enum AttachmentContentInfo {
     Audio {
-        #[specta(type = f64)]
+        #[specta(rename = "durationMs", type = Option<f64>)]
         duration_ms: Option<u64>,
         waveform: Option<AudioWaveform>,
     },
     Image {
         width: Option<u32>,
         height: Option<u32>,
+        #[specta(rename = "frameCount")]
         frame_count: Option<u32>,
-        #[specta(type = f64)]
+        #[specta(rename = "durationMs", type = Option<f64>)]
         duration_ms: Option<u64>,
     },
     Video {
         width: Option<u32>,
         height: Option<u32>,
-        #[specta(type = f64)]
+        #[specta(rename = "durationMs", type = Option<f64>)]
         duration_ms: Option<u64>,
     },
     Archive {
         format: Option<String>,
-        #[specta(type = f64)]
+        #[specta(rename = "entryCount", type = Option<f64>)]
         entry_count: Option<u64>,
-        #[specta(type = f64)]
+        #[specta(rename = "uncompressedSize", type = Option<f64>)]
         uncompressed_size: Option<u64>,
     },
 }
@@ -83,7 +84,7 @@ pub enum AttachmentContentInfo {
 pub struct AudioWaveform {
     /// 音波生成算法版本；算法变化时可据此重新生成。
     pub version: u8,
-    /// 归一化到 0..=255 的振幅峰值。
+    /// 将 -1..=1 的有符号峰值映射到 0..=255 后得到的紧凑采样。
     pub peaks: Vec<u8>,
 }
 
