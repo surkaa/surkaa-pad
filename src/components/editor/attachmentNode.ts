@@ -19,6 +19,9 @@ export function findAttachmentNode(
     if (tag === 'AUDIO' && el.dataset.id) {
       return { type: 'audio', attachmentId: el.dataset.id, el }
     }
+    if (el.classList.contains('editor-audio-attachment') && el.dataset.id) {
+      return { type: 'audio', attachmentId: el.dataset.id, el }
+    }
     if (el.classList.contains('editor-file-attachment') && el.dataset.id) {
       return { type: 'file', attachmentId: el.dataset.id, el }
     }

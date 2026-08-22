@@ -34,6 +34,22 @@ describe('findAttachmentNode', () => {
     }
   })
 
+  it('recognizes the custom audio player through its nested controls', () => {
+    const player = document.createElement('div')
+    player.className = 'editor-audio-attachment'
+    player.dataset.id = 'att-recording'
+    const waveform = document.createElement('div')
+    const canvas = document.createElement('canvas')
+    waveform.append(canvas)
+    player.append(waveform)
+
+    expect(findAttachmentNode(canvas)).toMatchObject({
+      type: 'audio',
+      attachmentId: 'att-recording',
+      el: player,
+    })
+  })
+
   it('stops at the editor boundary and ignores ordinary elements', () => {
     const wrapper = document.createElement('div')
     wrapper.dataset.id = 'outside'

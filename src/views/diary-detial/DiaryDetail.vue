@@ -251,6 +251,7 @@ onActivated(async () => {
         @rotateAttachment="mediaAction.rotateAttachment"
         @renameAttachment="renameAttachment"
         @saveDecryptAttachment="mediaAction.saveDecryptAttachment"
+        @audioInfoGenerated="mediaAction.saveAttachmentAudioInfo"
         @openLocation="openLocation"
         style="width: 100%; flex: 1; padding: 16px"
     />

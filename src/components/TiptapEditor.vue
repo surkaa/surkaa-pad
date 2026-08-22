@@ -8,7 +8,13 @@ import TaskItem from '@tiptap/extension-task-item'
 import TaskList from '@tiptap/extension-task-list'
 import { useScroll, useStorage } from '@vueuse/core'
 import { platform } from '@tauri-apps/plugin-os'
-import type { AttachmentMeta, DiaryContent, DiaryLocation, DiarySummary } from '../bindings'
+import type {
+  AttachmentMeta,
+  AudioWaveform,
+  DiaryContent,
+  DiaryLocation,
+  DiarySummary,
+} from '../bindings'
 import { diaryContentToHtml, htmlToDiaryContent } from './editor/markdownConverter'
 import {
   disableMobileImageDragging,
@@ -75,6 +81,7 @@ const emit = defineEmits<{
   (e: 'renameAttachment', attachmentId: string, filename: string, cb: (newFilename: string) => void): void
   (e: 'saveDecryptAttachment', attachmentId: string): void
   (e: 'openLocation', location: DiaryLocation): void
+  (e: 'audioInfoGenerated', attachmentId: string, durationMs: number, waveform: AudioWaveform): void
   (e: 'editorFocused'): void
 }>()
 
@@ -150,7 +157,12 @@ const editor = useEditor({
     TaskCompletionOrder,
     ImageNode,
     VideoNode,
-    AudioNode,
+    AudioNode.configure({
+      getAttachment: getAttachmentMeta,
+      onAudioInfoGenerated: (attachmentId, durationMs, waveform) => {
+        emit('audioInfoGenerated', attachmentId, durationMs, waveform)
+      },
+    }),
     FileNode,
     AlbumNode,
     SummaryNode.configure({
@@ -980,7 +992,97 @@ defineExpose({
     aspect-ratio: 1 / 1;
   }
 
-  audio[data-id] {
+  .editor-audio-attachment {
+    position: relative;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    box-sizing: border-box;
+    width: min(100%, 620px);
+    min-height: 68px;
+    padding: 10px 14px;
+    border: 1px solid var(--pad-border-color-200);
+    border-radius: var(--pad-radius-xl);
+    background: linear-gradient(
+      135deg,
+      var(--pad-bg-color-200),
+      color-mix(in srgb, var(--pad-primary-color) 7%, var(--pad-bg-color-100))
+    );
+    box-shadow: var(--pad-shadow-sm);
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+
+    .editor-audio-play {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: 0;
+      border-radius: var(--pad-radius-full);
+      color: var(--pad-text-color-light);
+      background: var(--pad-primary-gradient);
+      box-shadow: var(--pad-shadow-sm);
+      cursor: pointer;
+      transition: transform var(--pad-transition-fast), opacity var(--pad-transition-fast);
+
+      &:active {
+        transform: scale(0.94);
+      }
+
+      &:disabled {
+        cursor: default;
+        opacity: 0.55;
+      }
+    }
+
+    .editor-audio-play-icon {
+      padding-left: 2px;
+      font-size: 15px;
+      line-height: 1;
+    }
+
+    .editor-audio-waveform {
+      min-width: 0;
+      overflow: hidden;
+      border-radius: var(--pad-radius-md);
+    }
+
+    .editor-audio-time {
+      min-width: 38px;
+      color: var(--pad-text-color-300);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .editor-audio-status {
+      position: absolute;
+      right: 14px;
+      bottom: 2px;
+      color: var(--pad-text-color-400);
+      font-size: 10px;
+    }
+
+    .editor-audio-native {
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
+      padding: 0;
+    }
+
+    &:has(.editor-audio-native) {
+      grid-template-columns: 1fr;
+
+      .editor-audio-waveform {
+        width: 100%;
+      }
+    }
+  }
+
+  audio[data-id]:not(.editor-audio-native) {
     width: 90%;
     margin: 10px auto;
   }

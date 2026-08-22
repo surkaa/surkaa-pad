@@ -70,8 +70,8 @@ describe('shouldPreventEditorFocus', () => {
     expect(shouldPreventEditorFocus(null, 'android')).toBe(false)
   })
 
-  it('prevents mobile summary and location interactions from focusing the editor', () => {
-    for (const className of ['editor-summary', 'editor-location']) {
+  it('prevents mobile summary, location and audio interactions from focusing the editor', () => {
+    for (const className of ['editor-summary', 'editor-location', 'editor-audio-attachment']) {
       const block = document.createElement('div')
       block.className = className
       const child = document.createElement('span')

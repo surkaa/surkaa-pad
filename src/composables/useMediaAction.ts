@@ -1,6 +1,6 @@
 import {Channel} from "@tauri-apps/api/core";
 import {platform} from "@tauri-apps/plugin-os";
-import {AttachmentMeta, AttachmentProcessEvent} from "../bindings.ts";
+import {AttachmentMeta, AttachmentProcessEvent, type AudioWaveform} from "../bindings.ts";
 import {Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {useQuasar} from "quasar";
@@ -102,6 +102,26 @@ export function useMediaAction(
         );
     }
 
+    async function saveAttachmentAudioInfo(
+        attachmentId: string,
+        durationMs: number,
+        waveform: AudioWaveform,
+    ) {
+        if (!diaryId.value || !attachmentId) return;
+        try {
+            const attachment = await api.cmdUpdateAttachmentAudioInfo(
+                diaryId.value,
+                attachmentId,
+                durationMs,
+                waveform,
+            );
+            dataStore.updateAttachment(diaryId.value, attachment);
+        } catch (error) {
+            // 音波属于可重新生成的派生数据，失败不影响录音播放和日记编辑。
+            console.error('静默保存音频信息失败:', error);
+        }
+    }
+
     async function genericBatchUpload(
         encrypted: boolean,
         extensions?: string[],
@@ -193,7 +213,12 @@ export function useMediaAction(
         cancelUploadTask,
         cancelAllUploads,
         showAudioDrawer,
-        handleAudioRecorded: async (mimetype: string, data: Uint8Array) => {
+        saveAttachmentAudioInfo,
+        handleAudioRecorded: async (
+            mimetype: string,
+            data: Uint8Array,
+            generatedInfo?: {durationMs: number; waveform: AudioWaveform},
+        ) => {
             showAudioDrawer.value = false;
             if (beforeClick()) return;
 
@@ -210,7 +235,16 @@ export function useMediaAction(
                         return;
                     }
                     currentDiaryAttachmentUrlMap.value[att.id] = url;
-                    editorContentRef.value.insertAudio(att.id);
+                    const insertAudio = () => editorContentRef.value?.insertAudio(att.id);
+                    if (generatedInfo) {
+                        void saveAttachmentAudioInfo(
+                            att.id,
+                            generatedInfo.durationMs,
+                            generatedInfo.waveform,
+                        ).finally(insertAudio);
+                    } else {
+                        insertAudio();
+                    }
                 },
             );
         },
