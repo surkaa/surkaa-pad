@@ -343,7 +343,12 @@ onActivated(async () => {
         </q-card-section>
 
         <q-card-section class="q-pt-md">
-          <q-input v-model="newFilename" label="新文件名" autofocus/>
+          <q-input
+            v-model="newFilename"
+            label="新文件名"
+            input-class="rename-attachment-filename-input"
+            autofocus
+          />
         </q-card-section>
 
         <q-card-actions align="right">
@@ -377,5 +382,13 @@ onActivated(async () => {
     overflow: hidden;
   }
 
+}
+</style>
+
+<style lang="scss">
+.rename-attachment-filename-input {
+  color: var(--pad-text-color-100) !important;
+  caret-color: var(--pad-primary-dark);
+  -webkit-text-fill-color: var(--pad-text-color-100);
 }
 </style>
