@@ -6,16 +6,18 @@ use crate::diaries::{
 use crate::object::NextToken;
 use crate::state::AppState;
 use async_trait::async_trait;
-use chrono::{SecondsFormat, TimeZone, Utc};
+use chrono::{Local, NaiveDate, SecondsFormat, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
 const LIST_DIARIES_TOOL: &str = "list_recent_diaries";
+const LIST_DIARIES_BY_DATE_RANGE_TOOL: &str = "list_diaries_by_date_range";
 const SEARCH_DIARIES_TOOL: &str = "search_diaries";
 const READ_DIARY_TOOL: &str = "read_diary";
 const DEFAULT_RESULT_LIMIT: usize = 10;
 const MAX_RESULT_LIMIT: usize = 20;
+const MAX_RESULT_PAGE: usize = 10_000;
 const MAX_SUMMARY_TITLE_CHARS: usize = 200;
 const MAX_DIARY_CONTENT_CHARS: usize = 60_000;
 const MAX_TOOL_DISPLAY_CHARS: usize = 80;
@@ -119,6 +121,69 @@ impl DiaryReadTools {
         Ok(json!({"query": query, "diaries": summaries}))
     }
 
+    async fn list_diaries_by_date_range(
+        &self,
+        range: DiaryDateRange,
+        limit: usize,
+        page: usize,
+    ) -> Result<Value, AiToolError> {
+        let _storage_guard = if self.storage_already_locked {
+            None
+        } else {
+            Some(self.state.lock_storage_operation().await)
+        };
+        let cache = self.state.diary_cache();
+        let crypto = self.state.crypto();
+        let store = self.state.diary_store();
+        let skip = page
+            .checked_sub(1)
+            .and_then(|page_index| page_index.checked_mul(limit))
+            .ok_or_else(|| {
+                invalid_arguments_for(LIST_DIARIES_BY_DATE_RANGE_TOOL, "分页范围过大")
+            })?;
+        let target_count = limit.saturating_add(1);
+        let mut matched_count = 0;
+        let mut summaries = Vec::with_capacity(target_count);
+        let mut next_token: NextToken = None;
+
+        'pages: loop {
+            let (ids, next) = store
+                .list_diary_ids(next_token)
+                .await
+                .map_err(|error| execution_failed(LIST_DIARIES_BY_DATE_RANGE_TOOL, error))?;
+            for id in ids {
+                let diary = get_diary(&cache, &crypto, &*store, &id)
+                    .await
+                    .map_err(|error| execution_failed(LIST_DIARIES_BY_DATE_RANGE_TOOL, error))?;
+                if !range.contains_timestamp(diary.created) {
+                    continue;
+                }
+                if matched_count < skip {
+                    matched_count += 1;
+                    continue;
+                }
+                summaries.push(DiaryToolSummary::from_manifest(&diary));
+                if summaries.len() == target_count {
+                    break 'pages;
+                }
+            }
+            let Some(next) = next else {
+                break;
+            };
+            next_token = Some(next);
+        }
+
+        let has_more = summaries.len() > limit;
+        summaries.truncate(limit);
+        Ok(json!({
+            "startDate": range.start.to_string(),
+            "endDate": range.end.to_string(),
+            "page": page,
+            "hasMore": has_more,
+            "diaries": summaries,
+        }))
+    }
+
     async fn read_diary(&self, diary_id: &str) -> Result<Value, AiToolError> {
         let _storage_guard = if self.storage_already_locked {
             None
@@ -148,6 +213,35 @@ impl AiToolExecutor for DiaryReadTools {
                 name: LIST_DIARIES_TOOL.into(),
                 description: "按从新到旧顺序列出最近的日记摘要。需要了解最近写了什么或先浏览日记时使用。".into(),
                 parameters: limit_schema(),
+            },
+            AiToolDefinition {
+                name: LIST_DIARIES_BY_DATE_RANGE_TOOL.into(),
+                description: "按设备本地日期范围列出日记摘要，起止日期均包含在内，结果从新到旧。需要查找较早时期或某段时间内的日记时使用。".into(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "startDate": {
+                            "type": "string",
+                            "description": "起始日期，格式为 YYYY-MM-DD",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                        },
+                        "endDate": {
+                            "type": "string",
+                            "description": "结束日期，格式为 YYYY-MM-DD",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                        },
+                        "limit": limit_property(),
+                        "page": {
+                            "type": "integer",
+                            "description": "结果页码，从 1 开始",
+                            "minimum": 1,
+                            "maximum": MAX_RESULT_PAGE,
+                            "default": 1
+                        }
+                    },
+                    "required": ["startDate", "endDate"],
+                    "additionalProperties": false
+                }),
             },
             AiToolDefinition {
                 name: SEARCH_DIARIES_TOOL.into(),
@@ -194,6 +288,16 @@ impl AiToolExecutor for DiaryReadTools {
                     .and_then(Value::as_u64)
                     .map(|limit| format!("最多 {limit} 篇")),
             ),
+            LIST_DIARIES_BY_DATE_RANGE_TOOL => AiToolCallDisplay::new(
+                "按日期浏览日记",
+                match (
+                    call.arguments.get("startDate").and_then(Value::as_str),
+                    call.arguments.get("endDate").and_then(Value::as_str),
+                ) {
+                    (Some(start), Some(end)) => Some(format!("{start} 至 {end}")),
+                    _ => None,
+                },
+            ),
             SEARCH_DIARIES_TOOL => AiToolCallDisplay::new(
                 "搜索日记",
                 call.arguments
@@ -221,7 +325,7 @@ impl AiToolExecutor for DiaryReadTools {
             return "操作失败，AI 将根据现有信息继续处理".into();
         };
         match call.name.as_str() {
-            LIST_DIARIES_TOOL | SEARCH_DIARIES_TOOL => value
+            LIST_DIARIES_TOOL | LIST_DIARIES_BY_DATE_RANGE_TOOL | SEARCH_DIARIES_TOOL => value
                 .get("diaries")
                 .and_then(Value::as_array)
                 .map(|diaries| format!("找到 {} 篇日记", diaries.len()))
@@ -243,6 +347,13 @@ impl AiToolExecutor for DiaryReadTools {
                 let args: LimitArgs = parse_arguments(call)?;
                 self.list_recent_diaries(validate_limit(call, args.limit)?)
                     .await
+            }
+            LIST_DIARIES_BY_DATE_RANGE_TOOL => {
+                let args: DateRangeArgs = parse_arguments(call)?;
+                let range = DiaryDateRange::parse(call, &args.start_date, &args.end_date)?;
+                let limit = validate_limit(call, args.limit)?;
+                let page = validate_page(call, args.page)?;
+                self.list_diaries_by_date_range(range, limit, page).await
             }
             SEARCH_DIARIES_TOOL => {
                 let args: SearchArgs = parse_arguments(call)?;
@@ -284,6 +395,51 @@ struct SearchArgs {
     query: String,
     #[serde(default = "default_result_limit")]
     limit: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DateRangeArgs {
+    start_date: String,
+    end_date: String,
+    #[serde(default = "default_result_limit")]
+    limit: usize,
+    #[serde(default = "default_result_page")]
+    page: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DiaryDateRange {
+    start: NaiveDate,
+    end: NaiveDate,
+}
+
+impl DiaryDateRange {
+    fn parse(call: &AiToolCall, start: &str, end: &str) -> Result<Self, AiToolError> {
+        let parse_date = |field: &str, value: &str| {
+            NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| {
+                invalid_arguments(call, format!("{field} 必须是有效的 YYYY-MM-DD 日期"))
+            })
+        };
+        let range = Self {
+            start: parse_date("startDate", start)?,
+            end: parse_date("endDate", end)?,
+        };
+        if range.start > range.end {
+            return Err(invalid_arguments(call, "startDate 不能晚于 endDate"));
+        }
+        Ok(range)
+    }
+
+    fn contains_timestamp(self, timestamp_millis: i64) -> bool {
+        Local
+            .timestamp_millis_opt(timestamp_millis)
+            .single()
+            .is_some_and(|timestamp| {
+                let date = timestamp.date_naive();
+                date >= self.start && date <= self.end
+            })
+    }
 }
 
 #[derive(Deserialize)]
@@ -424,9 +580,27 @@ fn validate_limit(call: &AiToolCall, limit: usize) -> Result<usize, AiToolError>
     }
 }
 
+fn validate_page(call: &AiToolCall, page: usize) -> Result<usize, AiToolError> {
+    if (1..=MAX_RESULT_PAGE).contains(&page) {
+        Ok(page)
+    } else {
+        Err(invalid_arguments(
+            call,
+            format!("page 必须在 1 到 {MAX_RESULT_PAGE} 之间"),
+        ))
+    }
+}
+
 fn invalid_arguments(call: &AiToolCall, message: impl Into<String>) -> AiToolError {
     AiToolError::InvalidArguments {
         tool: call.name.clone(),
+        message: message.into(),
+    }
+}
+
+fn invalid_arguments_for(tool: &str, message: impl Into<String>) -> AiToolError {
+    AiToolError::InvalidArguments {
+        tool: tool.into(),
         message: message.into(),
     }
 }
@@ -440,6 +614,10 @@ fn execution_failed(tool: &str, error: impl std::fmt::Display) -> AiToolError {
 
 fn default_result_limit() -> usize {
     DEFAULT_RESULT_LIMIT
+}
+
+fn default_result_page() -> usize {
+    1
 }
 
 fn limit_schema() -> Value {

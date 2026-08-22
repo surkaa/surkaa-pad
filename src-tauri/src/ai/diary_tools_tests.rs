@@ -1,6 +1,7 @@
 use super::*;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
 use crate::diaries::{save_diary, DiaryContent, DiaryContentNode, CURRENT_VERSION};
+use crate::utils::id_generate::generate_descending_id_with_timestamp;
 
 fn tool_call(name: &str, arguments: Value) -> AiToolCall {
     AiToolCall {
@@ -11,7 +12,7 @@ fn tool_call(name: &str, arguments: Value) -> AiToolCall {
 }
 
 #[test]
-fn definitions_expose_only_three_read_only_tools() {
+fn definitions_expose_only_four_read_only_tools() {
     let temp_dir = tempfile::tempdir().unwrap();
     let state = AppState::from_parts(
         crate::cryptos::Crypto::new(),
@@ -26,7 +27,12 @@ fn definitions_expose_only_three_read_only_tools() {
 
     assert_eq!(
         names,
-        [LIST_DIARIES_TOOL, SEARCH_DIARIES_TOOL, READ_DIARY_TOOL]
+        [
+            LIST_DIARIES_TOOL,
+            LIST_DIARIES_BY_DATE_RANGE_TOOL,
+            SEARCH_DIARIES_TOOL,
+            READ_DIARY_TOOL
+        ]
     );
 }
 
@@ -103,10 +109,61 @@ async fn rejects_unknown_tools_and_invalid_arguments_without_reading_storage() {
     ));
     assert!(matches!(
         tools
+            .execute(&tool_call(
+                LIST_DIARIES_BY_DATE_RANGE_TOOL,
+                json!({"startDate": "2026-02-30", "endDate": "2026-03-01"}),
+            ))
+            .await,
+        Err(AiToolError::InvalidArguments { .. })
+    ));
+    assert!(matches!(
+        tools
+            .execute(&tool_call(
+                LIST_DIARIES_BY_DATE_RANGE_TOOL,
+                json!({"startDate": "2026-03-02", "endDate": "2026-03-01"}),
+            ))
+            .await,
+        Err(AiToolError::InvalidArguments { .. })
+    ));
+    assert!(matches!(
+        tools
+            .execute(&tool_call(
+                LIST_DIARIES_BY_DATE_RANGE_TOOL,
+                json!({"startDate": "2026-03-01", "endDate": "2026-03-02", "page": 0}),
+            ))
+            .await,
+        Err(AiToolError::InvalidArguments { .. })
+    ));
+    assert!(matches!(
+        tools
             .execute(&tool_call(READ_DIARY_TOOL, json!({"diaryId": "../x"})))
             .await,
         Err(AiToolError::InvalidArguments { .. })
     ));
+}
+
+#[test]
+fn date_range_uses_inclusive_local_calendar_dates() {
+    let date = Local::now().date_naive();
+    let start = Local
+        .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+        .single()
+        .unwrap()
+        .timestamp_millis();
+    let end = Local
+        .from_local_datetime(&date.and_hms_opt(23, 59, 59).unwrap())
+        .single()
+        .unwrap()
+        .timestamp_millis();
+    let range = DiaryDateRange {
+        start: date,
+        end: date,
+    };
+
+    assert!(range.contains_timestamp(start));
+    assert!(range.contains_timestamp(end));
+    assert!(!range.contains_timestamp(start - 1));
+    assert!(!range.contains_timestamp(end + 1_000));
 }
 
 #[tokio::test]
@@ -167,6 +224,95 @@ async fn lists_searches_and_reads_real_local_diaries() {
         .unwrap();
     assert_eq!(document["content"], "上海 旅行记录");
     assert_eq!(document["contentTruncated"], false);
+}
+
+#[tokio::test]
+async fn lists_diaries_by_inclusive_date_range_with_stable_pagination() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let crypto = crate::cryptos::Crypto::new();
+    crypto
+        .derive_dek(
+            "test-password".into(),
+            crate::cryptos::crypto_types::DERIVE_SALT,
+        )
+        .unwrap();
+    let state = AppState::from_parts(
+        crypto,
+        crate::object::OssClient::new(),
+        crate::caches::LocalObjectStore::new(temp_dir.path().to_path_buf()),
+    );
+    let timestamp = |year, month, day, hour| {
+        Local
+            .with_ymd_and_hms(year, month, day, hour, 0, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis()
+    };
+    let outside = save_diary_at(&state, "范围之外", timestamp(2026, 3, 9, 23)).await;
+    let oldest = save_diary_at(&state, "范围内最早", timestamp(2026, 3, 10, 0)).await;
+    let middle = save_diary_at(&state, "范围内中间", timestamp(2026, 3, 10, 12)).await;
+    let newest = save_diary_at(&state, "范围内最新", timestamp(2026, 3, 11, 23)).await;
+    let tools = DiaryReadTools::new(state);
+
+    let first_page = tools
+        .execute(&tool_call(
+            LIST_DIARIES_BY_DATE_RANGE_TOOL,
+            json!({
+                "startDate": "2026-03-10",
+                "endDate": "2026-03-11",
+                "limit": 2,
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(first_page["page"], 1);
+    assert_eq!(first_page["hasMore"], true);
+    assert_eq!(first_page["diaries"][0]["id"], newest);
+    assert_eq!(first_page["diaries"][1]["id"], middle);
+
+    let second_page = tools
+        .execute(&tool_call(
+            LIST_DIARIES_BY_DATE_RANGE_TOOL,
+            json!({
+                "startDate": "2026-03-10",
+                "endDate": "2026-03-11",
+                "limit": 2,
+                "page": 2,
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(second_page["hasMore"], false);
+    assert_eq!(second_page["diaries"].as_array().unwrap().len(), 1);
+    assert_eq!(second_page["diaries"][0]["id"], oldest);
+    assert!(second_page.to_string().contains("范围内最早"));
+    assert!(!first_page.to_string().contains(&outside));
+    assert!(!second_page.to_string().contains(&outside));
+}
+
+async fn save_diary_at(state: &AppState, title: &str, created_at: i64) -> String {
+    let id = generate_descending_id_with_timestamp(created_at);
+    let manifest = DiaryManifest {
+        id: id.clone(),
+        algorithm: Gcm,
+        content: DiaryContent {
+            nodes: vec![DiaryContentNode::Markdown { text: title.into() }],
+        },
+        created: created_at,
+        updated: created_at,
+        attachments: vec![],
+        version: CURRENT_VERSION,
+    };
+    let encrypted = state
+        .crypto()
+        .encrypt(&serde_json::to_vec(&manifest).unwrap())
+        .unwrap();
+    state
+        .diary_store()
+        .upload_manifest(&id, &encrypted)
+        .await
+        .unwrap();
+    id
 }
 
 #[test]
