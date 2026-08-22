@@ -30,6 +30,7 @@ import {
 import type {SummaryAttributes} from './editor/tiptap-extensions/SummaryNode'
 import AlbumImageInsertDialog from './AlbumImageInsertDialog.vue'
 import SummaryEditorDialog from './editor/SummaryEditorDialog.vue'
+import DiaryBlockOrderDialog from './editor/DiaryBlockOrderDialog.vue'
 import {
   attachmentInsertionsToEditorContent,
   type AttachmentInsertion,
@@ -47,6 +48,14 @@ import {
   type PlainTextSelection,
   type SummaryTarget,
 } from './editor/summarySelection'
+import type {EditorJsonNode} from './editor/albumEditor'
+import {
+  createBlockOrderTransaction,
+  describeDiaryBlocks,
+  isValidBlockOrder,
+  topLevelBlockIdentities,
+  type DiaryBlockDescriptor,
+} from './editor/blockOrder'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -95,6 +104,9 @@ const summaryEditPosition = ref<number | null>(null)
 const summaryDialogMode = ref<'edit' | 'selection'>('edit')
 const summarySourceSelection = ref<PlainTextSelection | null>(null)
 const summaryTargets = ref<SummaryTarget[]>([])
+const showBlockOrderDialog = ref(false)
+const blockOrderBlocks = ref<DiaryBlockDescriptor[]>([])
+const blockOrderSnapshot = ref<string[]>([])
 
 function openSummaryDialog(position: number | null = null, attrs?: SummaryAttributes) {
   summaryDialogMode.value = 'edit'
@@ -406,6 +418,46 @@ function deleteSummary() {
   showSummaryDialog.value = false
 }
 
+function openBlockOrderDialog() {
+  const currentEditor = editor.value
+  if (!currentEditor) return
+  const document = currentEditor.getJSON() as EditorJsonNode
+  const blocks = describeDiaryBlocks(document, props.attachments)
+  if (blocks.length < 2) {
+    $q.notify({type: 'info', message: '当前内容不足两个块，无需调整顺序'})
+    return
+  }
+
+  currentEditor.commands.blur()
+  blockOrderBlocks.value = blocks
+  blockOrderSnapshot.value = topLevelBlockIdentities(document)
+  showBlockOrderDialog.value = true
+}
+
+function applyBlockOrder(order: number[]) {
+  const currentEditor = editor.value
+  if (!currentEditor || !isValidBlockOrder(order, blockOrderBlocks.value.length)) {
+    $q.notify({type: 'warning', message: '内容顺序无效，请重新调整'})
+    return
+  }
+
+  const currentDocument = currentEditor.getJSON() as EditorJsonNode
+  const currentSnapshot = topLevelBlockIdentities(currentDocument)
+  if (!sameStrings(currentSnapshot, blockOrderSnapshot.value)) {
+    showBlockOrderDialog.value = false
+    $q.notify({type: 'warning', message: '日记内容已经发生变化，请重新打开排序'})
+    return
+  }
+
+  const transaction = createBlockOrderTransaction(currentEditor.state, order)
+  showBlockOrderDialog.value = false
+  if (transaction) currentEditor.view.dispatch(transaction)
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
 defineExpose({
   editor,
   focusEnd: () => editor.value?.commands.focus('end'),
@@ -425,6 +477,7 @@ defineExpose({
     .insertLocation(location).run(),
   insertAttachments,
   openSummaryDialog: openSelectedSummaryDialog,
+  openBlockOrderDialog,
   updateSrc(attachmentId: string, newUrl: string) {
     if (!editor.value) return false
     editor.value.commands.command(({ tr }) => {
@@ -471,6 +524,11 @@ defineExpose({
       @save="saveSummary"
       @delete="deleteSummary"
       @hide="resetSummaryDialogState"
+    />
+    <DiaryBlockOrderDialog
+      v-model="showBlockOrderDialog"
+      :blocks="blockOrderBlocks"
+      @confirm="applyBlockOrder"
     />
     <AlbumImageInsertDialog
       v-model="showAlbumInsertDialog"

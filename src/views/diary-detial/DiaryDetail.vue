@@ -149,6 +149,12 @@ function showDiarySource() {
   showSourceDialog.value = true;
 }
 
+async function showBlockOrder() {
+  showMenu.value = false;
+  await nextTick();
+  tiptapEditorRef.value?.openBlockOrderDialog();
+}
+
 function showImage(src: string) {
   Dialog.create({
     component: ImagePreview,
@@ -294,6 +300,9 @@ onActivated(async () => {
           </q-item>
           <q-item clickable v-ripple @click="showDiarySource">
             <q-item-section>展示源码</q-item-section>
+          </q-item>
+          <q-item clickable v-ripple @click="showBlockOrder">
+            <q-item-section>调整内容顺序</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="() => {deleteDiary(); showMenu = false}">
             <q-item-section>删除</q-item-section>
