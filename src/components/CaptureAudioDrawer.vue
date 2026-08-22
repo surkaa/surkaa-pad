@@ -2,14 +2,22 @@
 import {setWebmDuration} from "../utils";
 import {computed, onUnmounted, ref} from "vue";
 import {useQuasar} from "quasar";
+import type {AudioWaveform} from '../bindings';
+import {generateAudioWaveform} from '../utils/audioWaveform';
 
 let mediaRecorder: MediaRecorder | null = null;
 let stream: MediaStream | null = null;
 let flushInterval: number | null = null;
 let audioChunks: Blob[] = [];
+let audioContext: AudioContext | null = null;
+let audioSource: MediaStreamAudioSourceNode | null = null;
+let analyser: AnalyserNode | null = null;
+let waveformFrame: number | null = null;
 const PERIODIC_FLUSH_MS = 100;
 const recording = ref(false);
+const stopping = ref(false);
 const recordingDuration = ref(0); // 录音时长（秒）
+const waveformCanvas = ref<HTMLCanvasElement>();
 let startTime: number = 0; // 录音开始时间戳
 
 const $q = useQuasar();
@@ -22,7 +30,10 @@ const {
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'recorded', mimetype: string, data: Uint8Array): void;
+  (e: 'recorded', mimetype: string, data: Uint8Array, generatedInfo?: {
+    durationMs: number;
+    waveform: AudioWaveform;
+  }): void;
 }>();
 
 // 格式化时长显示（MM:SS）
@@ -55,6 +66,7 @@ async function startRecording() {
   }
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
     const mimeType = getSupportedMimeType();
     mediaRecorder = new MediaRecorder(stream, { mimeType });
     mediaRecorder.ondataavailable = (event: BlobEvent) => {
@@ -62,20 +74,12 @@ async function startRecording() {
         audioChunks.push(event.data);
       }
     };
-    mediaRecorder.onstop = () => {
-      if (!stream) {
-        console.error('MediaStream 丢失');
-        return;
-      }
-      console.log('录音已停止，处理音频数据...');
-      stream.getTracks().forEach(track => track.stop());
-    };
-
     // 重置时长并开始录音
     recordingDuration.value = 0;
     startTime = Date.now();
     mediaRecorder.start();
     recording.value = true;
+    startWaveformPreview(stream);
 
     // 更新录音时长
     flushInterval = setInterval(() => {
@@ -107,6 +111,7 @@ async function startRecording() {
 }
 
 async function stopRecording() {
+  if (stopping.value) return;
   recording.value = false;
   if (!mediaRecorder) {
     console.warn('没有正在进行的录音');
@@ -116,19 +121,40 @@ async function stopRecording() {
     console.warn('录音已经停止');
     return;
   }
-  mediaRecorder.stop();
+  stopping.value = true;
+  stopInterval();
+  const recorder = mediaRecorder;
+  const recordedMimeType = recorder.mimeType;
+  const recordedDurationMs = Date.now() - startTime;
+  const stopped = new Promise<void>(resolve => {
+    recorder.addEventListener('stop', () => resolve(), {once: true});
+  });
+  recorder.stop();
+  await stopped;
+  stream?.getTracks().forEach(track => track.stop());
+  stream = null;
+  await stopWaveformPreview();
 
-  let audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
-  const newWebmBuffer = setWebmDuration(await audioBlob.arrayBuffer(), Date.now() - startTime);
+  console.log('录音已停止，处理音频数据...');
+  const audioBlob = new Blob(audioChunks, {type: recordedMimeType});
+  const newWebmBuffer = setWebmDuration(await audioBlob.arrayBuffer(), recordedDurationMs);
   const data = new Uint8Array(newWebmBuffer);
+  let generatedInfo: {durationMs: number; waveform: AudioWaveform} | undefined;
+  try {
+    generatedInfo = await generateAudioWaveform(new Blob([newWebmBuffer], {type: recordedMimeType}));
+  } catch (error) {
+    // 音波生成失败不应导致录音丢失，插入后仍可在渲染时再次尝试。
+    console.error('生成录音音波失败:', error);
+  }
 
   // 重置音频数据
   audioChunks = [];
+  mediaRecorder = null;
+  stopping.value = false;
 
   emit('close');
-  emit('recorded', mediaRecorder.mimeType, data);
+  emit('recorded', recordedMimeType, data, generatedInfo);
   console.log("录音停止...");
-  stopInterval();
 }
 
 function stopInterval() {
@@ -140,21 +166,87 @@ function stopInterval() {
 
 function clickBtn() {
   if (recording.value) {
-    stopRecording();
+    void stopRecording();
   } else {
-    startRecording();
+    void startRecording();
   }
 }
 
 function closeDrawer() {
   if (recording.value) {
-    stopRecording();
+    void stopRecording();
+    return;
   }
   emit('close');
 }
 
+function startWaveformPreview(inputStream: MediaStream) {
+  void stopWaveformPreview();
+  audioContext = new AudioContext();
+  audioSource = audioContext.createMediaStreamSource(inputStream);
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 256;
+  analyser.smoothingTimeConstant = 0.72;
+  audioSource.connect(analyser);
+  drawWaveform();
+}
+
+function drawWaveform() {
+  const canvas = waveformCanvas.value;
+  const currentAnalyser = analyser;
+  if (!canvas || !currentAnalyser) return;
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  const width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
+  const height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  const samples = new Uint8Array(currentAnalyser.fftSize);
+  currentAnalyser.getByteTimeDomainData(samples);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = getComputedStyle(canvas).getPropertyValue('--pad-record-primary').trim()
+    || '#c98c7a';
+  const barCount = 48;
+  const gap = 2 * ratio;
+  const barWidth = Math.max(1.5 * ratio, (width - gap * (barCount - 1)) / barCount);
+  const samplesPerBar = samples.length / barCount;
+  for (let index = 0; index < barCount; index += 1) {
+    const start = Math.floor(index * samplesPerBar);
+    const end = Math.max(start + 1, Math.ceil((index + 1) * samplesPerBar));
+    let amplitude = 0;
+    for (let sampleIndex = start; sampleIndex < end; sampleIndex += 1) {
+      amplitude = Math.max(amplitude, Math.abs(samples[sampleIndex] - 128) / 128);
+    }
+    const barHeight = Math.max(2 * ratio, amplitude * height * 0.9);
+    const x = index * (barWidth + gap);
+    context.beginPath();
+    context.roundRect(x, (height - barHeight) / 2, barWidth, barHeight, barWidth / 2);
+    context.fill();
+  }
+  waveformFrame = requestAnimationFrame(drawWaveform);
+}
+
+async function stopWaveformPreview() {
+  if (waveformFrame !== null) {
+    cancelAnimationFrame(waveformFrame);
+    waveformFrame = null;
+  }
+  audioSource?.disconnect();
+  analyser?.disconnect();
+  audioSource = null;
+  analyser = null;
+  const context = audioContext;
+  audioContext = null;
+  if (context && context.state !== 'closed') await context.close().catch(() => undefined);
+}
+
 onUnmounted(() => {
   stopInterval();
+  stream?.getTracks().forEach(track => track.stop());
+  void stopWaveformPreview();
 });
 </script>
 
@@ -179,6 +271,10 @@ onUnmounted(() => {
           <div class="duration-display" :class="{ 'recording': recording }">
             <div class="duration-text">{{ recording ? formattedDuration : '00:00' }}</div>
             <div class="duration-label">{{ recording ? '录音中...' : '准备录音' }}</div>
+          </div>
+
+          <div class="live-waveform" :class="{'recording': recording}">
+            <canvas ref="waveformCanvas" aria-label="实时录音音波"></canvas>
           </div>
 
           <div class="button-container">
@@ -361,6 +457,30 @@ onUnmounted(() => {
           color: var(--pad-text-color-300);
           font-weight: 500;
           letter-spacing: 0.5px;
+        }
+      }
+
+      .live-waveform {
+        box-sizing: border-box;
+        width: min(100%, 320px);
+        height: 72px;
+        margin: -22px auto 30px;
+        padding: 8px 12px;
+        border: 1px solid var(--pad-border-color-100);
+        border-radius: var(--pad-radius-xl);
+        background: var(--pad-bg-color-200);
+        opacity: 0.55;
+        transition: opacity var(--pad-transition-base), border-color var(--pad-transition-base);
+
+        &.recording {
+          border-color: color-mix(in srgb, var(--pad-record-primary) 45%, var(--pad-border-color-100));
+          opacity: 1;
+        }
+
+        canvas {
+          display: block;
+          width: 100%;
+          height: 100%;
         }
       }
 
