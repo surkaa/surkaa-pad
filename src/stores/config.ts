@@ -3,6 +3,7 @@ import {customRef, onScopeDispose, Ref} from "vue";
 import {DEFAULT_THEME, ThemeType} from "../types.ts";
 import {
     DEFAULT_WINDOWS_EDITOR_SHORTCUTS,
+    normalizeEditorShortcutConfig,
     type EditorShortcutConfig,
 } from "../utils/editorShortcuts.ts";
 import {
@@ -80,6 +81,9 @@ function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): Conf
     }
     if (key === 'windows_diary_list_shortcuts') {
         return normalizeDiaryListShortcutConfig(value) as ConfigMap[K];
+    }
+    if (key === 'windows_editor_shortcuts') {
+        return normalizeEditorShortcutConfig(value) as ConfigMap[K];
     }
     if (key === 'windows_ai_assistant_shortcuts') {
         return normalizeAiAssistantShortcutConfig(value) as ConfigMap[K];

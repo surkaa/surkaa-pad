@@ -39,6 +39,14 @@ function settingsData(theme: 'light' | 'dark' | 'system' = 'dark'): SyncedSettin
     pinnedDiaryIds: ['8215021834823'],
     windows: {
       editorShortcuts: {
+        bold: 'Ctrl+KeyB',
+        underline: 'Ctrl+KeyU',
+        strike: 'Ctrl+Shift+KeyS',
+        heading1: 'Ctrl+Digit1',
+        heading2: 'Ctrl+Digit2',
+        heading3: 'Ctrl+Digit3',
+        taskList: 'Ctrl+KeyT',
+        summary: 'Ctrl+Alt+KeyS',
         insertPhoto: 'Ctrl+Alt+KeyP',
         insertAudio: 'Ctrl+Alt+KeyA',
         audioRecording: 'Ctrl+Alt+KeyR',

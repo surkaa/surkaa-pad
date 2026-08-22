@@ -51,28 +51,31 @@
           </q-item-section>
         </template>
 
-        <q-item
-          v-for="action in EDITOR_SHORTCUT_ACTIONS"
-          :key="action"
-          class="settings-item shortcut-settings-item shortcut-action-item"
-        >
-          <q-item-section avatar class="settings-icon-section">
-            <q-icon :name="editorShortcutIcons[action]"/>
-          </q-item-section>
-          <q-item-section>
-            <q-item-label class="label-text text-weight-medium">
-              {{ EDITOR_SHORTCUT_LABELS[action] }}
-            </q-item-label>
-          </q-item-section>
-          <q-item-section side>
-            <ShortcutRecorder
-              :model-value="editorShortcuts[action]"
-              :label="EDITOR_SHORTCUT_LABELS[action]"
-              @update:model-value="shortcut => updateEditorShortcut(action, shortcut)"
-              @invalid="notifyInvalidShortcut"
-            />
-          </q-item-section>
-        </q-item>
+        <template v-for="group in editorShortcutGroups" :key="group.label">
+          <q-item-label header class="shortcut-group-label">{{ group.label }}</q-item-label>
+          <q-item
+            v-for="action in group.actions"
+            :key="action"
+            class="settings-item shortcut-settings-item shortcut-action-item"
+          >
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon :name="editorShortcutIcons[action]"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">
+                {{ EDITOR_SHORTCUT_LABELS[action] }}
+              </q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <ShortcutRecorder
+                :model-value="editorShortcuts[action]"
+                :label="EDITOR_SHORTCUT_LABELS[action]"
+                @update:model-value="shortcut => updateEditorShortcut(action, shortcut)"
+                @invalid="notifyInvalidShortcut"
+              />
+            </q-item-section>
+          </q-item>
+        </template>
       </q-expansion-item>
 
       <q-expansion-item group="shortcut-page">
@@ -118,11 +121,16 @@ import {useQuasar} from 'quasar';
 import ShortcutRecorder from '../../components/ShortcutRecorder.vue';
 import {useConfigStore} from '../../stores/config';
 import {
+  EDITOR_ATTACHMENT_SHORTCUT_ACTIONS,
   EDITOR_SHORTCUT_ACTIONS,
   EDITOR_SHORTCUT_LABELS,
   findEditorShortcutConflict,
   type EditorShortcutAction,
 } from '../../utils/editorShortcuts';
+import {
+  EDITOR_TOOLBAR_ACTIONS,
+  EDITOR_TOOLBAR_ICONS,
+} from '../../utils/editorToolbar';
 import {
   DIARY_LIST_SHORTCUT_ACTIONS,
   DIARY_LIST_SHORTCUT_LABELS,
@@ -141,7 +149,15 @@ const configStore = useConfigStore();
 const editorShortcuts = configStore.useTauriConfig('windows_editor_shortcuts');
 const diaryListShortcuts = configStore.useTauriConfig('windows_diary_list_shortcuts');
 const aiAssistantShortcuts = configStore.useTauriConfig('windows_ai_assistant_shortcuts');
+const editorShortcutGroups: ReadonlyArray<{
+  label: string;
+  actions: readonly EditorShortcutAction[];
+}> = [
+  {label: '文字与结构', actions: EDITOR_TOOLBAR_ACTIONS},
+  {label: '附件', actions: EDITOR_ATTACHMENT_SHORTCUT_ACTIONS},
+];
 const editorShortcutIcons: Record<EditorShortcutAction, string> = {
+  ...EDITOR_TOOLBAR_ICONS,
   insertPhoto: 'image',
   insertAudio: 'audiotrack',
   audioRecording: 'mic',
@@ -205,6 +221,14 @@ function notifyInvalidShortcut() {
 .shortcut-action-item {
   background: color-mix(in srgb, var(--pad-bg-color-100) 36%, transparent);
   border-top: 1px solid var(--pad-border-color-100);
+}
+
+.shortcut-group-label {
+  min-height: 34px;
+  padding: 10px 16px 6px;
+  color: var(--pad-text-color-400);
+  background: var(--pad-bg-color-100);
+  font-size: 12px;
 }
 
 @media (max-width: 600px) {

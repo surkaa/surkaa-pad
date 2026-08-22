@@ -27,6 +27,10 @@ import {
   DiaryLocationError,
 } from '../../utils/diaryLocation';
 import LocationConfirmDialog from '../../components/LocationConfirmDialog.vue';
+import {
+  runEditorToolbarAction,
+  type EditorToolbarAction,
+} from '../../utils/editorToolbar';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -122,6 +126,14 @@ async function openLocation(location: DiaryLocation) {
   }
 }
 
+function runToolbarShortcut(action: EditorToolbarAction) {
+  runEditorToolbarAction(
+    tiptapEditorRef.value?.editor,
+    action,
+    () => tiptapEditorRef.value?.openSummaryDialog(),
+  );
+}
+
 useDiaryEditorShortcuts({
   shortcuts: editorShortcuts,
   showToolbarPanel,
@@ -136,6 +148,14 @@ useDiaryEditorShortcuts({
     || showLocationDialog.value
   ),
   handlers: {
+    bold: () => runToolbarShortcut('bold'),
+    underline: () => runToolbarShortcut('underline'),
+    strike: () => runToolbarShortcut('strike'),
+    heading1: () => runToolbarShortcut('heading1'),
+    heading2: () => runToolbarShortcut('heading2'),
+    heading3: () => runToolbarShortcut('heading3'),
+    taskList: () => runToolbarShortcut('taskList'),
+    summary: () => runToolbarShortcut('summary'),
     insertPhoto: () => void mediaAction.insertPhoto(),
     insertAudio: () => void mediaAction.insertAudio(),
     audioRecording: mediaAction.audioRecording,

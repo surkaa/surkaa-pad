@@ -1,3 +1,5 @@
+import type {Editor} from '@tiptap/vue-3';
+
 export const EDITOR_TOOLBAR_ACTIONS = [
   'bold',
   'underline',
@@ -66,4 +68,27 @@ export function moveEditorToolbarAction(
   if (currentIndex < 0 || targetIndex < 0 || targetIndex >= next.length) return next;
   [next[currentIndex], next[targetIndex]] = [next[targetIndex], next[currentIndex]];
   return next;
+}
+
+export function runEditorToolbarAction(
+  editor: Editor | null | undefined,
+  action: EditorToolbarAction,
+  openSummary: () => void,
+): boolean {
+  if (!editor) return false;
+  if (action === 'summary') {
+    openSummary();
+    return true;
+  }
+
+  const chain = editor.chain().focus();
+  switch (action) {
+    case 'bold': return chain.toggleBold().run();
+    case 'underline': return chain.toggleUnderline().run();
+    case 'strike': return chain.toggleStrike().run();
+    case 'heading1': return chain.toggleHeading({level: 1}).run();
+    case 'heading2': return chain.toggleHeading({level: 2}).run();
+    case 'heading3': return chain.toggleHeading({level: 3}).run();
+    case 'taskList': return chain.toggleTaskList().run();
+  }
 }

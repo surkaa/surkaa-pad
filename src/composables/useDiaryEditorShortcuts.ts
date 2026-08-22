@@ -4,6 +4,8 @@ import { platform } from '@tauri-apps/plugin-os'
 import { useRoute } from 'vue-router'
 import {
   findEditorShortcutAction,
+  findReassignedNativeEditorShortcut,
+  isEditorToolbarShortcutAction,
   type EditorShortcutAction,
   type EditorShortcutConfig,
 } from '../utils/editorShortcuts'
@@ -23,6 +25,11 @@ export function isEditableFieldOutsideDiaryEditor(target: EventTarget | null) {
   return Boolean(element.closest('input, textarea, select, [contenteditable="true"]'))
 }
 
+export function isDiaryEditorTarget(target: EventTarget | null) {
+  const element = target instanceof Element ? target : null
+  return Boolean(element?.closest('.ProseMirror'))
+}
+
 export function useDiaryEditorShortcuts(options: DiaryEditorShortcutOptions) {
   if (platform() !== 'windows') return
 
@@ -37,7 +44,18 @@ export function useDiaryEditorShortcuts(options: DiaryEditorShortcutOptions) {
     ) return
 
     const action = findEditorShortcutAction(event, options.shortcuts.value)
-    if (!action) return
+    const targetsEditor = isDiaryEditorTarget(event.target)
+    if (!action) {
+      if (
+        targetsEditor
+        && findReassignedNativeEditorShortcut(event, options.shortcuts.value)
+      ) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      return
+    }
+    if (isEditorToolbarShortcutAction(action) && !targetsEditor) return
 
     event.preventDefault()
     event.stopPropagation()

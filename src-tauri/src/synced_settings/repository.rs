@@ -112,13 +112,7 @@ mod tests {
             },
             pinned_diary_ids: vec!["8215021834823".into()],
             windows: WindowsSettings {
-                editor_shortcuts: EditorShortcutSettings {
-                    insert_photo: "Ctrl+Alt+KeyP".into(),
-                    insert_audio: "Ctrl+Alt+KeyA".into(),
-                    audio_recording: "Ctrl+Alt+KeyR".into(),
-                    insert_video: "Ctrl+Alt+KeyV".into(),
-                    insert_file: "Ctrl+Alt+KeyF".into(),
-                },
+                editor_shortcuts: EditorShortcutSettings::default(),
                 diary_list_shortcuts: DiaryListShortcutSettings {
                     create_diary: "Ctrl+KeyN".into(),
                     ai_assistant: "Ctrl+Alt+KeyA".into(),

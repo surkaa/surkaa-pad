@@ -59,13 +59,41 @@ pub struct AttachmentSettings {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct EditorShortcutSettings {
+    pub bold: String,
+    pub underline: String,
+    pub strike: String,
+    pub heading1: String,
+    pub heading2: String,
+    pub heading3: String,
+    pub task_list: String,
+    pub summary: String,
     pub insert_photo: String,
     pub insert_audio: String,
     pub audio_recording: String,
     pub insert_video: String,
     pub insert_file: String,
+}
+
+impl Default for EditorShortcutSettings {
+    fn default() -> Self {
+        Self {
+            bold: "Ctrl+KeyB".into(),
+            underline: "Ctrl+KeyU".into(),
+            strike: "Ctrl+Shift+KeyS".into(),
+            heading1: "Ctrl+Digit1".into(),
+            heading2: "Ctrl+Digit2".into(),
+            heading3: "Ctrl+Digit3".into(),
+            task_list: "Ctrl+KeyT".into(),
+            summary: "Ctrl+Alt+KeyS".into(),
+            insert_photo: "Ctrl+Alt+KeyP".into(),
+            insert_audio: "Ctrl+Alt+KeyA".into(),
+            audio_recording: "Ctrl+Alt+KeyR".into(),
+            insert_video: "Ctrl+Alt+KeyV".into(),
+            insert_file: "Ctrl+Alt+KeyF".into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
@@ -175,10 +203,18 @@ impl SyncedSettingsData {
         Ok(())
     }
 
-    fn shortcuts(&self) -> [(&'static str, &str); 10] {
+    fn shortcuts(&self) -> Vec<(&'static str, &str)> {
         let editor = &self.windows.editor_shortcuts;
         let diary_list = &self.windows.diary_list_shortcuts;
-        [
+        vec![
+            ("bold", &editor.bold),
+            ("underline", &editor.underline),
+            ("strike", &editor.strike),
+            ("heading1", &editor.heading1),
+            ("heading2", &editor.heading2),
+            ("heading3", &editor.heading3),
+            ("taskList", &editor.task_list),
+            ("summary", &editor.summary),
             ("insertPhoto", &editor.insert_photo),
             ("insertAudio", &editor.insert_audio),
             ("audioRecording", &editor.audio_recording),
@@ -242,13 +278,7 @@ mod tests {
             },
             pinned_diary_ids: vec!["8215021834823".into()],
             windows: WindowsSettings {
-                editor_shortcuts: EditorShortcutSettings {
-                    insert_photo: "Ctrl+Alt+KeyP".into(),
-                    insert_audio: "Ctrl+Alt+KeyA".into(),
-                    audio_recording: "Ctrl+Alt+KeyR".into(),
-                    insert_video: "Ctrl+Alt+KeyV".into(),
-                    insert_file: "Ctrl+Alt+KeyF".into(),
-                },
+                editor_shortcuts: EditorShortcutSettings::default(),
                 diary_list_shortcuts: DiaryListShortcutSettings {
                     create_diary: "Ctrl+KeyN".into(),
                     ai_assistant: "Ctrl+Alt+KeyA".into(),
@@ -310,5 +340,34 @@ mod tests {
             invalid.validate(),
             Err(SyncedSettingsError::InvalidData(_))
         ));
+    }
+
+    #[test]
+    fn fills_toolbar_shortcuts_when_loading_an_older_v1_document() {
+        let mut value = serde_json::to_value(SyncedSettingsDocument {
+            version: CURRENT_SYNCED_SETTINGS_VERSION,
+            updated_at: 123,
+            data: sample_settings(),
+        })
+        .unwrap();
+        let shortcuts = value["windows"]["editorShortcuts"].as_object_mut().unwrap();
+        for field in [
+            "bold",
+            "underline",
+            "strike",
+            "heading1",
+            "heading2",
+            "heading3",
+            "taskList",
+            "summary",
+        ] {
+            shortcuts.remove(field);
+        }
+
+        let document = deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(
+            document.data.windows.editor_shortcuts,
+            EditorShortcutSettings::default()
+        );
     }
 }

@@ -11,6 +11,7 @@ import {
 import {
   EDITOR_TOOLBAR_LABELS,
   normalizeEditorToolbarOrder,
+  runEditorToolbarAction,
   type EditorToolbarAction,
 } from '../utils/editorToolbar';
 
@@ -58,17 +59,7 @@ function isToolbarActionActive(action: EditorToolbarAction): boolean {
 }
 
 function runToolbarAction(action: EditorToolbarAction) {
-  if (!editor) return;
-  switch (action) {
-    case 'bold': editor.chain().focus().toggleBold().run(); break;
-    case 'underline': editor.chain().focus().toggleUnderline().run(); break;
-    case 'strike': editor.chain().focus().toggleStrike().run(); break;
-    case 'heading1': editor.chain().focus().toggleHeading({level: 1}).run(); break;
-    case 'heading2': editor.chain().focus().toggleHeading({level: 2}).run(); break;
-    case 'heading3': editor.chain().focus().toggleHeading({level: 3}).run(); break;
-    case 'taskList': editor.chain().focus().toggleTaskList().run(); break;
-    case 'summary': emit('editSummary'); break;
-  }
+  runEditorToolbarAction(editor, action, () => emit('editSummary'));
 }
 
 function toolbarActionText(action: EditorToolbarAction): string {
@@ -90,6 +81,10 @@ function attachmentActionTitle(label: string, action: EditorShortcutAction) {
   return `${label}（${formatEditorShortcut(shortcut)}）`;
 }
 
+function toolbarActionTitle(action: EditorToolbarAction) {
+  return attachmentActionTitle(EDITOR_TOOLBAR_LABELS[action], action);
+}
+
 </script>
 
 <template>
@@ -104,7 +99,7 @@ function attachmentActionTitle(label: string, action: EditorShortcutAction) {
               :key="action"
               class="tool-btn"
               :class="{ 'is-active': isToolbarActionActive(action) }"
-              :title="EDITOR_TOOLBAR_LABELS[action]"
+              :title="toolbarActionTitle(action)"
               :aria-label="EDITOR_TOOLBAR_LABELS[action]"
               @click.stop="runToolbarAction(action)"
             >
