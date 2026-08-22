@@ -27,7 +27,7 @@ import {
 
 const STORAGE_PREFIX = 'config:';
 
-type ConfigMap = {
+export type ConfigMap = {
     "app-theme": ThemeType;
     "biometric_enabled": boolean;
     "biometric_dek": string | null;
@@ -68,9 +68,9 @@ const DEFAULT_CONFIG = {
     "editor_toolbar_order": [...DEFAULT_EDITOR_TOOLBAR_ORDER],
 } satisfies ConfigMap;
 
-type ConfigKey = keyof ConfigMap;
+export type ConfigKey = keyof ConfigMap;
 
-function storageKey(key: ConfigKey): string {
+export function configStorageKey(key: ConfigKey): string {
     return `${STORAGE_PREFIX}${key}`;
 }
 
@@ -91,7 +91,7 @@ function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): Conf
 }
 
 function readFromStorage<K extends ConfigKey>(key: K): ConfigMap[K] {
-    const raw = localStorage.getItem(storageKey(key));
+    const raw = localStorage.getItem(configStorageKey(key));
     if (raw === null) {
         return DEFAULT_CONFIG[key];
     }
@@ -103,26 +103,26 @@ function readFromStorage<K extends ConfigKey>(key: K): ConfigMap[K] {
 }
 
 /** 同窗口自定义事件名，解决 storage 事件不通知自身窗口的问题 */
-const SAME_WINDOW_EVENT = 'config:local-change';
+export const CONFIG_LOCAL_CHANGE_EVENT = 'config:local-change';
 
-interface ConfigChangeDetail {
+export interface ConfigChangeDetail {
     key: string;
     newValue: string | null; // null = 已删除
 }
 
 function writeToStorage(key: ConfigKey, value: unknown) {
-    const sk = storageKey(key);
+    const sk = configStorageKey(key);
     const json = JSON.stringify(normalizeConfigValue(key, value));
     localStorage.setItem(sk, json);
-    window.dispatchEvent(new CustomEvent<ConfigChangeDetail>(SAME_WINDOW_EVENT, {
+    window.dispatchEvent(new CustomEvent<ConfigChangeDetail>(CONFIG_LOCAL_CHANGE_EVENT, {
         detail: { key: sk, newValue: json }
     }));
 }
 
 function removeFromStorage(key: ConfigKey) {
-    const sk = storageKey(key);
+    const sk = configStorageKey(key);
     localStorage.removeItem(sk);
-    window.dispatchEvent(new CustomEvent<ConfigChangeDetail>(SAME_WINDOW_EVENT, {
+    window.dispatchEvent(new CustomEvent<ConfigChangeDetail>(CONFIG_LOCAL_CHANGE_EVENT, {
         detail: { key: sk, newValue: null }
     }));
 }
@@ -175,7 +175,7 @@ export const useConfigStore = defineStore('config', () => {
 
         // 跨窗口同步（storage 事件只在其他窗口触发）
         const onStorage = (e: StorageEvent) => {
-            if (e.key === storageKey(key)) {
+            if (e.key === configStorageKey(key)) {
                 handleChange(e.newValue);
             }
         };
@@ -184,15 +184,15 @@ export const useConfigStore = defineStore('config', () => {
         // 同窗口同步（storage 事件不通知自身窗口，用自定义事件弥补）
         const onLocalChange = (e: Event) => {
             const detail = (e as CustomEvent<ConfigChangeDetail>).detail;
-            if (detail.key === storageKey(key)) {
+            if (detail.key === configStorageKey(key)) {
                 handleChange(detail.newValue);
             }
         };
-        window.addEventListener(SAME_WINDOW_EVENT, onLocalChange);
+        window.addEventListener(CONFIG_LOCAL_CHANGE_EVENT, onLocalChange);
 
         onScopeDispose(() => {
             window.removeEventListener('storage', onStorage);
-            window.removeEventListener(SAME_WINDOW_EVENT, onLocalChange);
+            window.removeEventListener(CONFIG_LOCAL_CHANGE_EVENT, onLocalChange);
         });
 
         return tauriRef;
@@ -213,7 +213,7 @@ export const useConfigStore = defineStore('config', () => {
                 return false;
             }
         }
-        return localStorage.getItem(storageKey('encrypted_oss_config')) !== null;
+        return localStorage.getItem(configStorageKey('encrypted_oss_config')) !== null;
     }
 
     async function deleteLegacyRemoteEnabled(): Promise<void> {

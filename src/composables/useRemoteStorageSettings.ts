@@ -13,6 +13,7 @@ import {
   reduceSyncProgressDisplay,
   type SyncProgressDisplay,
 } from '../utils/syncProgress';
+import {initializeSyncedSettingsSync} from '../utils/syncedSettings';
 
 export function useRemoteStorageSettings() {
   const $q = useQuasar();
@@ -151,6 +152,12 @@ export function useRemoteStorageSettings() {
 
       await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
       remoteEnabled.value = true;
+      try {
+        await initializeSyncedSettingsSync();
+      } catch (error) {
+        console.warn(`[settings sync] initialization failed: ${formatError(error)}`);
+        $q.notify({type: 'warning', message: '云同步已启用，但应用设置同步失败，将稍后重试'});
+      }
       dataStore.invalidateDiaryList();
       localStorageRefreshRevision.value += 1;
       $q.notify({type: 'positive', message: '云同步已启用'});

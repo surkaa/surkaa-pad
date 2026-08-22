@@ -242,6 +242,34 @@ async cmdRestoreRemoteStorage() : Promise<Result<boolean, AppError>> {
 }
 },
 /**
+ * 读取云端加密的可同步应用设置。
+ * # Returns
+ * * `Result<Option<SyncedSettingsDocument>, AppError>` - 尚未创建设置对象时返回 `None`
+ */
+async cmdLoadSyncedSettings() : Promise<Result<SyncedSettingsDocument | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_load_synced_settings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 验证并加密保存可跨设备同步的应用设置。
+ * # Arguments
+ * * `settings` - 不含设备凭据、缓存限制等本机配置的设置数据
+ * # Returns
+ * * `Result<SyncedSettingsDocument, AppError>` - 包含后端生成版本号与更新时间的完整文档
+ */
+async cmdSaveSyncedSettings(settings: SyncedSettingsData) : Promise<Result<SyncedSettingsDocument, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_save_synced_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 获取当前本地对象存储位置和数据规模。
  */
 async cmdGetLocalStorageInfo() : Promise<Result<LocalStorageInfo, AppError>> {
@@ -846,6 +874,7 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "conversationSource"; data: AiConversationSource } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
 export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null }
 export type AiAssistantRecordState = "completed" | "failed" | "cancelled"
+export type AiAssistantShortcutSettings = { focusInput: string }
 export type AiConversationSource = { model: string; messages: AiConversationSourceMessage[] }
 export type AiConversationSourceMessage = { role: "system"; content: string } | { role: "user"; content: string } | { role: "assistant"; reasoning_content: string | null; content: string | null; tool_calls: AiConversationSourceToolCall[] } | { role: "tool"; tool_call_id: string; content: string }
 export type AiConversationSourceToolCall = { id: string; name: string; arguments: string }
@@ -888,6 +917,7 @@ export type AttachmentProcessEvent = { event: "started" } |
  * 不返回数据但仍成功的场景
  */
 { event: "completedWithoutData" } | { event: "error"; data: string }
+export type AttachmentSettings = { defaultImageSizeIsSmall: boolean; encryptImageAttachments: boolean; encryptAudioAttachments: boolean; encryptVideoAttachments: boolean; encryptFileAttachments: boolean }
 export type AttachmentTypeFilter = "image" | "audio" | "video" | "other"
 export type ChunkedUploadChunkResult = { partNumber: number; etag: string; uploadedBytes: number; totalBytes: number }
 export type ChunkedUploadFinishResult = { attachment: AttachmentMeta; url: string }
@@ -904,6 +934,7 @@ export type DiaryContentNode = { type: "markdown"; text: string } | { type: "sum
  * 仅在进入日记编辑页后加载的完整详情。
  */
 export type DiaryDetail = { summary: DiarySummary; manifestSize: number; content: DiaryContent; attachments: AttachmentMeta[]; attachmentUrls: Partial<{ [key in string]: string }> }
+export type DiaryListShortcutSettings = { createDiary: string; aiAssistant: string; search: string; settings: string }
 export type DiaryLocation = { coordinateSystem: CoordinateSystem; latitude: number; longitude: number; horizontalAccuracyMeters: number | null; capturedAt: number; placeName: string | null; altitudeMeters: number | null; verticalAccuracyMeters: number | null }
 export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: DiaryContent; created: number; updated: number; attachments: AttachmentMeta[]; version: number }
 export type DiarySummary = { id: string; created: number; updated: number; 
@@ -932,6 +963,9 @@ export type DiaryVersionItemOutcome = "current" | "legacy" | "newer" | "failed"
 export type DiaryVersionReport = { scope: DiaryVersionStorageScope; currentVersion: number; totalDiaries: number; processedDiaries: number; currentDiaries: number; legacyDiaries: number; newerDiaries: number; failedDiaries: number; failedDiaryIds: string[] }
 export type DiaryVersionStorageScope = "local" | "cloud"
 export type DisableRemoteStoragePlan = { localStoragePath: string; remoteFiles: number; remoteBytes: number; skippedFiles: number; skippedBytes: number; downloadFiles: number; downloadBytes: number; availableBytes: number; hasSufficientSpace: boolean }
+export type EditorSettings = { toolbarOrder: EditorToolbarAction[] }
+export type EditorShortcutSettings = { insertPhoto: string; insertAudio: string; audioRecording: string; insertVideo: string; insertFile: string }
+export type EditorToolbarAction = "bold" | "underline" | "strike" | "heading1" | "heading2" | "heading3" | "taskList" | "summary"
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
 export type LocalStorageInfo = { currentPath: string; configuredPath: string; isDefault: boolean; migrationPending: boolean; totalFiles: number; totalBytes: number }
@@ -943,7 +977,12 @@ export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { even
 export type SyncDirection = "upload" | "download"
 export type SyncPhase = "preparing" | "attachments" | "aiMessages" | "manifests" | "aiSessions"
 export type SyncProgressEvent = { event: "preparing"; data: { direction: SyncDirection } } | { event: "started"; data: { direction: SyncDirection; totalFiles: number; totalBytes: number; skippedFiles: number } } | { event: "progress"; data: { direction: SyncDirection; phase: SyncPhase; currentFile: string; currentFileIndex: number; totalFiles: number; currentFileBytes: number; currentFileSize: number; transferredBytes: number; totalBytes: number } } | { event: "completed"; data: { direction: SyncDirection; transferredFiles: number; skippedFiles: number; transferredBytes: number } } | { event: "error"; data: { direction: SyncDirection; phase: SyncPhase; currentFile: string | null; message: string } }
+export type SyncedAppearanceSettings = { theme: SyncedTheme }
+export type SyncedSettingsData = { appearance: SyncedAppearanceSettings; attachments: AttachmentSettings; editor: EditorSettings; pinnedDiaryIds: string[]; windows: WindowsSettings }
+export type SyncedSettingsDocument = ({ appearance: SyncedAppearanceSettings; attachments: AttachmentSettings; editor: EditorSettings; pinnedDiaryIds: string[]; windows: WindowsSettings }) & { version: number; updatedAt: number }
+export type SyncedTheme = "light" | "dark" | "system"
 export type TAURI_CHANNEL<TSend> = null
+export type WindowsSettings = { editorShortcuts: EditorShortcutSettings; diaryListShortcuts: DiaryListShortcutSettings; aiAssistantShortcuts: AiAssistantShortcutSettings }
 
 /** tauri-specta globals **/
 

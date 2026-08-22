@@ -89,6 +89,7 @@ import {
   VAULT_VERIFIER_TEXT,
 } from '../../utils/vault';
 import {logStartupError, logStartupPhase} from '../../utils/startupLog';
+import {initializeSyncedSettingsSync} from '../../utils/syncedSettings';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -141,6 +142,15 @@ async function refreshBiometricUnlockAllowed() {
 
   const lastPasswordUnlockAt = await configStore.getNormalConfig('last_password_unlock_at');
   biometricUnlockAllowed.value = canUseBiometricUnlock(lastPasswordUnlockAt);
+}
+
+async function syncPortableSettings() {
+  try {
+    await initializeSyncedSettingsSync();
+  } catch (error) {
+    console.warn(`[settings sync] initialization failed: ${formatError(error)}`);
+    $q.notify({type: 'warning', message: '应用设置云同步失败，将在后续修改或下次启动时重试'});
+  }
 }
 
 async function createVaultVerifier() {
@@ -237,6 +247,7 @@ async function saveConfigAndLogin() {
     const {akid, aks, bucket, endpoint} = ossConfig.value;
     await api.cmdEnableRemoteStorage(event, akid, aks, bucket, endpoint);
     await configStore.deleteLegacyRemoteEnabled();
+    await syncPortableSettings();
   } catch (e) {
     $q.notify({type: "negative", message: `初始化 OSS 客户端失败: ${formatError(e)}`});
     await configStore.deleteConfig('encrypted_oss_config');
@@ -290,7 +301,8 @@ async function unlock() {
         return;
       }
     }
-    await api.cmdRestoreRemoteStorage();
+    const restoredRemote = await api.cmdRestoreRemoteStorage();
+    if (restoredRemote) await syncPortableSettings();
 
     if (vaultVerifier.value.length === 0) {
       await createVaultVerifier();
@@ -375,7 +387,8 @@ async function tryBiometricUnlock() {
         return;
       }
     }
-    await api.cmdRestoreRemoteStorage();
+    const restoredRemote = await api.cmdRestoreRemoteStorage();
+    if (restoredRemote) await syncPortableSettings();
 
     if (vaultVerifier.value.length === 0) {
       await createVaultVerifier();

@@ -13,6 +13,7 @@ import {
     logStartupError,
     logStartupPhase,
 } from './utils/startupLog';
+import {startSyncedSettingsSync} from './utils/syncedSettings';
 
 installStartupErrorHandlers();
 logStartupPhase('frontend entry evaluated');
@@ -23,6 +24,7 @@ app.config.errorHandler = (error, _instance, info) => {
 };
 logStartupPhase('Vue app created');
 app.use(createPinia());
+startSyncedSettingsSync();
 logStartupPhase('Pinia installed');
 app.use(router);
 logStartupPhase('Router installed');
