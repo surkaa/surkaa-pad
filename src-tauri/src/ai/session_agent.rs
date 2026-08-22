@@ -2,7 +2,8 @@ use super::{
     AiAgent, AiAgentEvent, AiAgentResponse, AiAssistantMessage, AiAssistantRecordState,
     AiConversationSource, AiConversationSourceMessage, AiError, AiMessage, AiModelProvider,
     AiProcessStepKind, AiProcessStepRecord, AiProcessStepState, AiSessionMessage,
-    AiSessionMessagePayload, AiSessionRepository, AiSessionRepositoryError, AiToolExecutor,
+    AiSessionMessagePayload, AiSessionRepository, AiSessionRepositoryError, AiToolDefinition,
+    AiToolExecutor,
 };
 use chrono::{FixedOffset, Local, TimeZone, Utc};
 use std::collections::HashSet;
@@ -383,12 +384,14 @@ fn conversation_history(
 pub(crate) fn persisted_conversation_source(
     model: &str,
     messages: &[AiSessionMessage],
+    tools: &[AiToolDefinition],
 ) -> Result<AiConversationSource, AiSessionAgentError> {
     let complete_len = messages.len() - messages.len() % 2;
     let history = conversation_history(&messages[..complete_len], false)?;
     Ok(super::agent::conversation_source_for_history(
         model,
         &history.messages,
+        tools,
     ))
 }
 

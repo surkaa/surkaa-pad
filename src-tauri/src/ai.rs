@@ -39,6 +39,6 @@ pub use session_types::{
 pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor};
 pub use types::{
     AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiConversationSource,
-    AiConversationSourceMessage, AiConversationSourceToolCall, AiConversationTurn, AiMessage,
-    AiModel, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
+    AiConversationSourceMessage, AiConversationSourceToolCall, AiConversationSourceToolDefinition,
+    AiConversationTurn, AiMessage, AiModel, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
 };

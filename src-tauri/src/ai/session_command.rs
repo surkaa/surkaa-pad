@@ -1,4 +1,7 @@
-use super::{session_agent::persisted_conversation_source, AiSessionDetail, AiSessionMeta};
+use super::{
+    session_agent::persisted_conversation_source, AiSessionDetail, AiSessionMeta, AiToolExecutor,
+    DiaryReadTools,
+};
 use crate::error::AppError;
 use crate::state::AppState;
 use chrono::Utc;
@@ -118,7 +121,8 @@ async fn get_ai_session(
         .load_session(session_id)
         .await?
         .map(|(meta, messages)| {
-            let conversation_source = persisted_conversation_source(&meta.model, &messages)
+            let tools = DiaryReadTools::new_with_locked_storage(state.clone()).definitions();
+            let conversation_source = persisted_conversation_source(&meta.model, &messages, &tools)
                 .map_err(|error| {
                     tauri_plugin_log::log::warn!(
                         "重建 AI 会话源码失败: session_id={}, error={}",
@@ -277,6 +281,7 @@ mod tests {
         let source = detail.conversation_source.unwrap();
 
         assert_eq!(source.model, "test-model");
+        assert_eq!(source.tools.len(), 4);
         assert_eq!(source.messages.len(), 4);
         assert!(matches!(
             source.messages[0],

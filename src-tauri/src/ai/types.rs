@@ -23,6 +23,7 @@ pub struct AiConversationTurn {
 pub struct AiConversationSource {
     pub model: String,
     pub messages: Vec<AiConversationSourceMessage>,
+    pub tools: Vec<AiConversationSourceToolDefinition>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
@@ -57,13 +58,33 @@ pub struct AiConversationSourceToolCall {
     pub arguments: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConversationSourceToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: String,
+}
+
 impl AiConversationSource {
-    pub(crate) fn from_messages(model: &str, messages: &[AiMessage]) -> Self {
+    pub(crate) fn from_messages(
+        model: &str,
+        messages: &[AiMessage],
+        tools: &[AiToolDefinition],
+    ) -> Self {
         Self {
             model: model.to_owned(),
             messages: messages
                 .iter()
                 .map(AiConversationSourceMessage::from)
+                .collect(),
+            tools: tools
+                .iter()
+                .map(|tool| AiConversationSourceToolDefinition {
+                    name: tool.name.clone(),
+                    description: tool.description.clone(),
+                    parameters: tool.parameters.to_string(),
+                })
                 .collect(),
         }
     }

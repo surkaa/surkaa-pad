@@ -8,6 +8,16 @@
       <q-card-section class="row items-center q-pb-sm">
         <div class="text-h6">当前对话完整源码</div>
         <q-space/>
+        <q-btn
+          flat
+          dense
+          no-caps
+          icon="data_object"
+          color="primary"
+          :label="expandJsonStrings ? '原始字符串' : '展开嵌套 JSON'"
+          :aria-label="expandJsonStrings ? '按原始字符串显示 JSON' : '展开字符串中的 JSON 对象'"
+          @click="expandJsonStrings = !expandJsonStrings"
+        />
         <q-btn icon="close" flat round dense v-close-popup aria-label="关闭对话源码弹窗"/>
       </q-card-section>
       <q-separator/>
@@ -31,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed} from 'vue';
+import {computed, ref} from 'vue';
 import {useQuasar} from 'quasar';
 import type {AiConversationSource} from '../../bindings';
 import {formatAiConversationSource} from '../../utils/aiAssistant';
@@ -44,12 +54,18 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{(event: 'update:modelValue', value: boolean): void}>();
 const $q = useQuasar();
-const sourceText = computed(() => props.source ? formatAiConversationSource(props.source) : '');
+const expandJsonStrings = ref(true);
+const sourceText = computed(() => (
+  props.source ? formatAiConversationSource(props.source, expandJsonStrings.value) : ''
+));
+const rawSourceText = computed(() => (
+  props.source ? formatAiConversationSource(props.source) : ''
+));
 
 async function copySource() {
-  if (!sourceText.value) return;
+  if (!rawSourceText.value) return;
   try {
-    await copyTextToClipboard(sourceText.value);
+    await copyTextToClipboard(rawSourceText.value);
     $q.notify({type: 'positive', message: '当前对话完整源码已复制'});
   } catch (error) {
     $q.notify({type: 'negative', message: `复制对话源码失败：${formatError(error)}`});

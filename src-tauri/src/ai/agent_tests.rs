@@ -254,6 +254,13 @@ async fn conversation_source_contains_tool_calls_raw_results_and_final_answer() 
         .await
         .unwrap();
 
+    assert_eq!(result.source.tools.len(), 1);
+    assert_eq!(result.source.tools[0].name, "read_diary");
+    assert_eq!(result.source.tools[0].description, "读取日记");
+    assert_eq!(
+        serde_json::from_str::<Value>(&result.source.tools[0].parameters).unwrap(),
+        json!({"type": "object"})
+    );
     assert_eq!(result.source.messages.len(), 5);
     assert!(matches!(
         &result.source.messages[2],

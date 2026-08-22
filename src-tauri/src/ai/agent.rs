@@ -224,7 +224,7 @@ impl<'a> AiAgent<'a> {
                         model_rounds: round,
                         usage: total_usage,
                     },
-                    source: AiConversationSource::from_messages(model, &messages),
+                    source: AiConversationSource::from_messages(model, &messages, &definitions),
                 });
             }
 
@@ -282,8 +282,9 @@ impl<'a> AiAgent<'a> {
 pub(crate) fn conversation_source_for_history(
     model: &str,
     history: &[AiMessage],
+    tools: &[super::AiToolDefinition],
 ) -> AiConversationSource {
-    AiConversationSource::from_messages(model, &conversation_messages(history))
+    AiConversationSource::from_messages(model, &conversation_messages(history), tools)
 }
 
 fn conversation_messages(history: &[AiMessage]) -> Vec<AiMessage> {

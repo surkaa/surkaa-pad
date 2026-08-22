@@ -251,6 +251,7 @@ describe('formatAiConversationSource', () => {
   it('formats the complete message chain as readable JSON', () => {
     const source = {
       model: 'qwen3:8b',
+      tools: [],
       messages: [
         {role: 'system' as const, content: '系统提示'},
         {role: 'user' as const, content: '读取日记'},
@@ -263,6 +264,46 @@ describe('formatAiConversationSource', () => {
     };
 
     expect(formatAiConversationSource(source)).toBe(JSON.stringify(source, null, 2));
+  });
+
+  it('optionally expands complete JSON object strings without changing ordinary text', () => {
+    const source = {
+      model: 'qwen3:8b',
+      tools: [{
+        name: 'read_diary',
+        description: '读取日记',
+        parameters: '{"type":"object"}',
+      }],
+      messages: [
+        {
+          role: 'assistant' as const,
+          reasoning_content: null,
+          content: null,
+          tool_calls: [{
+            id: 'call-1',
+            name: 'read_diary',
+            arguments: '{"diaryId":"123"}',
+          }],
+        },
+        {
+          role: 'tool' as const,
+          tool_call_id: 'call-1',
+          content: '{"ok":true,"result":{"nested":"{\\"value\\":1}","text":"普通文本"}}',
+        },
+        {role: 'assistant' as const, reasoning_content: null, content: '[1,2]', tool_calls: []},
+      ],
+    };
+
+    const formatted = JSON.parse(formatAiConversationSource(source, true));
+
+    expect(formatted.messages[0].tool_calls[0].arguments).toEqual({diaryId: '123'});
+    expect(formatted.tools[0].parameters).toEqual({type: 'object'});
+    expect(formatted.messages[1].content).toEqual({
+      ok: true,
+      result: {nested: {value: 1}, text: '普通文本'},
+    });
+    expect(formatted.messages[2].content).toBe('[1,2]');
+    expect(source.messages[0]!.tool_calls![0]!.arguments).toBe('{"diaryId":"123"}');
   });
 });
 
@@ -429,6 +470,7 @@ describe('reduceAiAgentEvent', () => {
     const state = initialAiAgentDisplayState();
     const source = {
       model: 'qwen3:8b',
+      tools: [],
       messages: [{role: 'system' as const, content: '系统提示'}],
     };
 
