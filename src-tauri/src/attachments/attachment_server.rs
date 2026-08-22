@@ -481,6 +481,7 @@ mod tests {
                     nonce,
                     algorithm: Ctr,
                     etag: Some(etag),
+                    content_info: None,
                 }],
                 version: CURRENT_VERSION,
             },

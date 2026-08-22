@@ -13,4 +13,4 @@ pub use attachment_error::AttachmentError;
 pub use attachment_server::{
     bind_attachment_server, start_attachment_server, AttachmentServerHandle,
 };
-pub use attachment_types::AttachmentMeta;
+pub use attachment_types::{AttachmentContentInfo, AttachmentMeta, AudioWaveform};

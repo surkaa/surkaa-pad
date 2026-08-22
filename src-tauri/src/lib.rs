@@ -54,7 +54,8 @@ use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
     cmd_caching_attachment, cmd_delete_attachment, cmd_rotate_image_attachment,
-    cmd_save_decrypt_attachment, cmd_toggle_attachment_encryption, cmd_update_attachment_filename,
+    cmd_save_decrypt_attachment, cmd_toggle_attachment_encryption,
+    cmd_update_attachment_audio_info, cmd_update_attachment_filename,
 };
 use crate::attachments::chunked_upload_command::{
     cmd_abort_chunked_upload, cmd_finish_chunked_upload, cmd_start_chunked_upload, cmd_upload_chunk,
@@ -166,6 +167,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_caching_attachment,
             cmd_save_decrypt_attachment,
             cmd_update_attachment_filename,
+            cmd_update_attachment_audio_info,
             // 分片上传
             cmd_start_chunked_upload,
             cmd_upload_chunk,

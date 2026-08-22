@@ -204,6 +204,147 @@ mod tests {
 }
 
 #[cfg(test)]
+mod diary_audio_info_tests {
+    use crate::attachments::{AttachmentContentInfo, AttachmentMeta, AudioWaveform};
+    use crate::caches::{DiaryMemoryCache, LocalObjectStore};
+    use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
+    use crate::cryptos::Crypto;
+    use crate::diaries::diary::{
+        get_diary, save_diary, update_diary_attachment, update_diary_attachment_audio_info,
+    };
+    use crate::diaries::diary_store::{DiaryStore, LocalStore};
+
+    fn attachment(id: &str) -> AttachmentMeta {
+        AttachmentMeta {
+            id: id.into(),
+            filename: "record.webm".into(),
+            mimetype: "audio/webm".into(),
+            size: 128,
+            encrypted: false,
+            nonce: Vec::new(),
+            algorithm: Gcm,
+            etag: None,
+            content_info: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn audio_info_is_saved_without_changing_diary_updated_time() {
+        let crypto = Crypto::from_env();
+        let cache = DiaryMemoryCache::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::new(LocalObjectStore::new(temp_dir.path().to_path_buf()));
+        let (summary, _) = save_diary(&cache, &crypto, &store, "audio test")
+            .await
+            .unwrap();
+        update_diary_attachment(&cache, &crypto, &store, &summary.id, attachment("audio-1"))
+            .await
+            .unwrap();
+        let before = get_diary(&cache, &crypto, &store, &summary.id)
+            .await
+            .unwrap();
+
+        let waveform = AudioWaveform {
+            version: 1,
+            peaks: vec![0, 20, 255, 80],
+        };
+        let updated_attachment = update_diary_attachment_audio_info(
+            &cache,
+            &crypto,
+            &store,
+            &summary.id,
+            "audio-1",
+            1_234,
+            waveform.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            updated_attachment.content_info,
+            Some(AttachmentContentInfo::Audio {
+                duration_ms: Some(1_234),
+                waveform: Some(waveform.clone()),
+            })
+        );
+        let after = get_diary(&cache, &crypto, &store, &summary.id)
+            .await
+            .unwrap();
+        assert_eq!(after.updated, before.updated);
+
+        let etag_before_noop = store.get_manifest_etag(&summary.id).await.unwrap();
+        let unchanged = update_diary_attachment_audio_info(
+            &cache,
+            &crypto,
+            &store,
+            &summary.id,
+            "audio-1",
+            9_999,
+            AudioWaveform {
+                version: 1,
+                peaks: vec![1, 1, 1],
+            },
+        )
+        .await
+        .unwrap();
+        let etag_after_noop = store.get_manifest_etag(&summary.id).await.unwrap();
+        assert_eq!(etag_after_noop, etag_before_noop);
+        assert_eq!(unchanged.content_info, after.attachments[0].content_info);
+    }
+
+    #[tokio::test]
+    async fn audio_info_rejects_invalid_or_conflicting_metadata() {
+        let crypto = Crypto::from_env();
+        let cache = DiaryMemoryCache::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::new(LocalObjectStore::new(temp_dir.path().to_path_buf()));
+        let (summary, _) = save_diary(&cache, &crypto, &store, "audio test")
+            .await
+            .unwrap();
+        let mut image_attachment = attachment("attachment-1");
+        image_attachment.content_info = Some(AttachmentContentInfo::Image {
+            width: Some(10),
+            height: Some(20),
+            frame_count: Some(1),
+            duration_ms: None,
+        });
+        update_diary_attachment(&cache, &crypto, &store, &summary.id, image_attachment)
+            .await
+            .unwrap();
+
+        let conflict = update_diary_attachment_audio_info(
+            &cache,
+            &crypto,
+            &store,
+            &summary.id,
+            "attachment-1",
+            100,
+            AudioWaveform {
+                version: 1,
+                peaks: vec![1],
+            },
+        )
+        .await;
+        assert!(conflict.is_err());
+
+        let oversized = update_diary_attachment_audio_info(
+            &cache,
+            &crypto,
+            &store,
+            &summary.id,
+            "attachment-1",
+            100,
+            AudioWaveform {
+                version: 1,
+                peaks: vec![0; 2_049],
+            },
+        )
+        .await;
+        assert!(oversized.is_err());
+    }
+}
+
+#[cfg(test)]
 mod diary_list_tests {
     use crate::caches::{DiaryMemoryCache, LocalObjectStore};
     use crate::cryptos::Crypto;
@@ -419,6 +560,7 @@ mod diary_search_tests {
                     nonce: Vec::new(),
                     algorithm: Gcm,
                     etag: None,
+                    content_info: None,
                 },
             )
             .await
@@ -438,6 +580,7 @@ mod diary_search_tests {
                 nonce: Vec::new(),
                 algorithm: Gcm,
                 etag: None,
+                content_info: None,
             },
         )
         .await

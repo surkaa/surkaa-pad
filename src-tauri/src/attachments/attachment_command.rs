@@ -4,7 +4,8 @@ use crate::attachments::attachment::{
     toggle_attachment_encryption_cancelable, update_attachment_filename,
 };
 use crate::attachments::attachment_types::AttachmentProcessEvent;
-use crate::diaries::get_diary;
+use crate::attachments::AudioWaveform;
+use crate::diaries::{get_diary, update_diary_attachment_audio_info};
 use crate::error::AppError;
 use crate::object::STREAM_MIME_TYPE;
 use crate::state::AppState;
@@ -377,4 +378,41 @@ pub async fn cmd_update_attachment_filename(
 ) -> Result<(), AppError> {
     let _storage_guard = state.lock_storage_operation().await;
     Ok(update_attachment_filename(&state, &id, attachment_id, new_filename).await?)
+}
+
+/// 静默保存音频时长和音波，不改变日记的用户编辑时间。
+/// # Arguments
+/// * `id` - 日记 ID
+/// * `attachment_id` - 音频附件 ID
+/// * `duration_ms` - 音频时长（毫秒）
+/// * `waveform` - 归一化后的紧凑音波数据
+/// # Returns
+/// * `Result<AttachmentMeta, AppError>` - 返回更新后的附件元数据
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_update_attachment_audio_info(
+    state: State<'_, AppState>,
+    id: String,
+    attachment_id: String,
+    duration_ms: f64,
+    waveform: AudioWaveform,
+) -> Result<crate::attachments::AttachmentMeta, AppError> {
+    if !duration_ms.is_finite() || duration_ms < 0.0 || duration_ms > u64::MAX as f64 {
+        return Err(AppError {
+            error_type: "attachment".into(),
+            message: "音频时长无效".into(),
+        });
+    }
+    let _storage_guard = state.lock_storage_operation().await;
+    let store = state.diary_store();
+    Ok(update_diary_attachment_audio_info(
+        &state.diary_cache(),
+        &state.crypto(),
+        &*store,
+        &id,
+        &attachment_id,
+        duration_ms.round() as u64,
+        waveform,
+    )
+    .await?)
 }

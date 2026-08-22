@@ -214,6 +214,7 @@ async fn add_attachment_with_result_cancelable(
                     encrypted,
                     algorithm: Ctr,
                     etag: Some(etag),
+                    content_info: None,
                 }),
                 Err(e) => Err(AttachmentError::InvalidOperation(e.to_string())),
             }

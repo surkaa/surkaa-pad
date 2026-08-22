@@ -8,7 +8,7 @@ use specta::Type;
 use std::collections::{HashMap, HashSet};
 
 /// 当前代码唯一支持的日记 Manifest 版本。
-pub const CURRENT_VERSION: u32 = 6;
+pub const CURRENT_VERSION: u32 = 7;
 
 // Manifest 解密后的 Rust 结构体，代表一篇日记的核心信息
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
@@ -217,6 +217,7 @@ mod tests {
                     nonce: Vec::new(),
                     algorithm: Gcm,
                     etag: None,
+                    content_info: None,
                 })
                 .collect(),
             version: CURRENT_VERSION,
@@ -278,6 +279,7 @@ mod tests {
                     nonce: Vec::new(),
                     algorithm: Gcm,
                     etag: None,
+                    content_info: None,
                 },
                 AttachmentMeta {
                     id: "file-1".to_string(),
@@ -288,6 +290,7 @@ mod tests {
                     nonce: Vec::new(),
                     algorithm: Gcm,
                     etag: None,
+                    content_info: None,
                 },
                 AttachmentMeta {
                     id: "unused-image".to_string(),
@@ -298,6 +301,7 @@ mod tests {
                     nonce: Vec::new(),
                     algorithm: Gcm,
                     etag: None,
+                    content_info: None,
                 },
             ],
             version: CURRENT_VERSION,

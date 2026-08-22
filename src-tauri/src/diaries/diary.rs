@@ -1,7 +1,7 @@
 use crate::cryptos::Crypto;
 use crate::state::AppState;
 
-use crate::attachments::AttachmentMeta;
+use crate::attachments::{AttachmentContentInfo, AttachmentMeta, AudioWaveform};
 use crate::caches::DiaryMemoryCache;
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
 use crate::diaries::diary_migration::{migrate_manifest_bytes, MigrationContext};
@@ -239,6 +239,79 @@ pub async fn update_diary_attachment_filename(
     } else {
         Err(DiaryError::AttachmentNotFound(attachment_id))
     }
+}
+
+const CURRENT_AUDIO_WAVEFORM_VERSION: u8 = 1;
+const MAX_AUDIO_WAVEFORM_PEAKS: usize = 2_048;
+
+/// 静默保存从音频附件中提取的信息，不改变日记的用户编辑时间。
+pub async fn update_diary_attachment_audio_info(
+    cache: &DiaryMemoryCache,
+    crypto: &Crypto,
+    store: &dyn DiaryStore,
+    id: &str,
+    attachment_id: &str,
+    duration_ms: u64,
+    waveform: AudioWaveform,
+) -> Result<AttachmentMeta, DiaryError> {
+    if waveform.version != CURRENT_AUDIO_WAVEFORM_VERSION {
+        return Err(DiaryError::InvalidManifest(format!(
+            "Unsupported audio waveform version: {}",
+            waveform.version
+        )));
+    }
+    if waveform.peaks.is_empty() || waveform.peaks.len() > MAX_AUDIO_WAVEFORM_PEAKS {
+        return Err(DiaryError::InvalidManifest(format!(
+            "Audio waveform must contain 1..={MAX_AUDIO_WAVEFORM_PEAKS} peaks"
+        )));
+    }
+
+    let guard = lock_diary_operation(id).await;
+    let mut diary = get_diary_locked(cache, crypto, store, id, &guard).await?;
+    let attachment = diary
+        .attachments
+        .iter_mut()
+        .find(|attachment| attachment.id == attachment_id)
+        .ok_or_else(|| DiaryError::AttachmentNotFound(attachment_id.to_string()))?;
+
+    let changed = match &mut attachment.content_info {
+        None => {
+            attachment.content_info = Some(AttachmentContentInfo::Audio {
+                duration_ms: Some(duration_ms),
+                waveform: Some(waveform),
+            });
+            true
+        }
+        Some(AttachmentContentInfo::Audio {
+            duration_ms: stored_duration,
+            waveform: stored_waveform,
+        }) => {
+            let mut changed = false;
+            if stored_duration.is_none() {
+                *stored_duration = Some(duration_ms);
+                changed = true;
+            }
+            if stored_waveform
+                .as_ref()
+                .is_none_or(|stored| stored.version < waveform.version)
+            {
+                *stored_waveform = Some(waveform);
+                changed = true;
+            }
+            changed
+        }
+        Some(_) => {
+            return Err(DiaryError::InvalidManifest(format!(
+                "Attachment {attachment_id} already contains non-audio content info"
+            )));
+        }
+    };
+    let result = attachment.clone();
+    if changed {
+        // 这是可重新生成的派生信息，不应改变用户可见的日记更新时间。
+        update_diary(cache, crypto, store, &diary).await?;
+    }
+    Ok(result)
 }
 
 pub(crate) async fn delete_diary_attachment_locked(

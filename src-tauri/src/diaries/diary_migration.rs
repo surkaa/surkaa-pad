@@ -27,6 +27,7 @@ struct MigrationRegistry {
 
 struct V4ToV5;
 struct V5ToV6;
+struct V6ToV7;
 
 #[async_trait]
 impl DiaryMigration for V4ToV5 {
@@ -56,6 +57,37 @@ impl DiaryMigration for V5ToV6 {
         _json: &mut Value,
     ) -> Result<(), DiaryError> {
         // V6 新增位置内容节点；已有 V5 节点结构保持不变。
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl DiaryMigration for V6ToV7 {
+    fn source_version(&self) -> u32 {
+        6
+    }
+
+    async fn migrate_json(
+        &self,
+        _context: &MigrationContext<'_>,
+        json: &mut Value,
+    ) -> Result<(), DiaryError> {
+        let attachments = json
+            .get_mut("attachments")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| {
+                DiaryError::InvalidManifest("Manifest attachments must be an array".to_string())
+            })?;
+        for attachment in attachments {
+            let attachment = attachment.as_object_mut().ok_or_else(|| {
+                DiaryError::InvalidManifest(
+                    "Manifest attachment metadata must be an object".to_string(),
+                )
+            })?;
+            attachment
+                .entry("contentInfo".to_string())
+                .or_insert(Value::Null);
+        }
         Ok(())
     }
 }
@@ -102,7 +134,7 @@ impl MigrationRegistry {
 
 fn default_registry() -> MigrationRegistry {
     // V1–V3 的兼容步骤已移除，只保留当前仍需执行的连续迁移步骤。
-    MigrationRegistry::new(vec![Box::new(V4ToV5), Box::new(V5ToV6)])
+    MigrationRegistry::new(vec![Box::new(V4ToV5), Box::new(V5ToV6), Box::new(V6ToV7)])
 }
 
 /// 检查并按注册步骤迁移 Manifest；返回 Some 时由调用方最后提交新版 Manifest。
@@ -193,6 +225,32 @@ mod tests {
         let migrated: Value = serde_json::from_slice(&migrated).unwrap();
         assert_eq!(migrated["version"], CURRENT_VERSION);
         assert_eq!(migrated["content"], v5["content"]);
+
+        let v6 = serde_json::json!({
+            "id": "test",
+            "version": 6,
+            "algorithm": "AES256-GCM_v1",
+            "content": {"nodes": []},
+            "created": 1,
+            "updated": 2,
+            "attachments": [{
+                "id": "audio-1",
+                "filename": "record.webm",
+                "mimetype": "audio/webm",
+                "size": 10,
+                "encrypted": true,
+                "nonce": [],
+                "algorithm": "AES256-CTR_v1",
+                "etag": null
+            }],
+        });
+        let migrated = migrate_manifest_bytes(&context, &serde_json::to_vec(&v6).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        let migrated: Value = serde_json::from_slice(&migrated).unwrap();
+        assert_eq!(migrated["version"], CURRENT_VERSION);
+        assert!(migrated["attachments"][0]["contentInfo"].is_null());
 
         for version in 1..4 {
             let source = serde_json::json!({"id": "test", "version": version});

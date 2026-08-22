@@ -293,6 +293,7 @@ pub async fn cmd_finish_chunked_upload(
         encrypted: upload.encrypted,
         algorithm: Ctr,
         etag: Some(etag),
+        content_info: None,
     };
 
     let manifest_result = update_diary_attachment(

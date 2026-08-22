@@ -199,6 +199,7 @@ fn renders_attachment_placeholders_without_storage_details() {
             nonce: vec![1, 2, 3],
             algorithm: Gcm,
             etag: Some("private-etag".into()),
+            content_info: None,
         }],
         version: CURRENT_VERSION,
     };
