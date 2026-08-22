@@ -12,7 +12,7 @@
     "tauri": "tauri",
     "tauri:msi:dev": "tauri dev --config ./src-tauri/tauri.dev.json",
     "tauri:msi:build": "tauri build",
-    "tauri:android:dev": "tauri android dev --config ./src-tauri/tauri.android-dev.json",
+    "tauri:android:dev": "tauri android dev --host 127.0.0.1 --config ./src-tauri/tauri.android-dev.json",
     "tauri:android:build": "tauri android build --target aarch64 --apk true"
   },
   "dependencies": {

@@ -22,7 +22,6 @@ export default defineConfig(async ({mode}) => {
     const hmr = host ? {
         protocol: "ws",
         host,
-        port: 5174,
     } : undefined;
     return {
         define: {
