@@ -7,7 +7,7 @@ import clickOutsideDirective from './directives/vClickOutside.ts';
 
 import '@quasar/extras/material-icons/material-icons.css'
 import 'quasar/src/css/index.sass'
-import {BottomSheet, Dialog, Notify, Quasar} from 'quasar'
+import {BottomSheet, Dialog, Loading, Notify, Quasar} from 'quasar'
 import {
     installStartupErrorHandlers,
     logStartupError,
@@ -30,7 +30,8 @@ app.use(Quasar, {
     plugins: {
         Notify,
         Dialog,
-        BottomSheet
+        BottomSheet,
+        Loading,
     },
 });
 logStartupPhase('Quasar installed');
