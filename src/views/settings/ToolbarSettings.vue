@@ -7,7 +7,10 @@
           <q-icon name="tune"/>
         </q-item-section>
         <q-item-section>
-          <q-item-label class="label-text text-weight-medium">工具栏按钮顺序</q-item-label>
+          <q-item-label class="label-text text-weight-medium setting-label-with-hint">
+            <span>工具栏按钮顺序</span>
+            <CloudSyncHint/>
+          </q-item-label>
           <q-item-label caption class="desc-text ellipsis order-summary">{{ orderSummary }}</q-item-label>
         </q-item-section>
         <q-item-section side>
@@ -78,6 +81,7 @@ import {
   moveEditorToolbarAction,
   type EditorToolbarAction,
 } from '../../utils/editorToolbar';
+import CloudSyncHint from './CloudSyncHint.vue';
 
 const configStore = useConfigStore();
 const showDialog = ref(false);

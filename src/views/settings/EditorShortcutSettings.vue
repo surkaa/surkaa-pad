@@ -1,6 +1,9 @@
 <template>
   <section class="settings-group settings-section-component">
-    <div class="group-title">快捷键</div>
+    <div class="group-title group-title-with-hint">
+      <span>快捷键</span>
+      <CloudSyncHint/>
+    </div>
     <q-list bordered class="pad-card shortcut-groups">
       <q-expansion-item group="shortcut-page" expand-separator>
         <template #header>
@@ -131,6 +134,7 @@ import {
   AI_ASSISTANT_SHORTCUT_LABELS,
   type AiAssistantShortcutAction,
 } from '../../utils/aiAssistantShortcuts';
+import CloudSyncHint from './CloudSyncHint.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();

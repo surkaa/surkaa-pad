@@ -33,7 +33,10 @@
             <q-icon name="lock"/>
           </q-item-section>
           <q-item-section>
-            <q-item-label class="label-text text-weight-medium">默认加密</q-item-label>
+            <q-item-label class="label-text text-weight-medium setting-label-with-hint">
+              <span>默认加密</span>
+              <CloudSyncHint/>
+            </q-item-label>
             <q-item-label caption class="desc-text">设置四类新上传附件的加密状态</q-item-label>
           </q-item-section>
         </template>
@@ -67,6 +70,7 @@ import {
   MAX_UPLOAD_CONCURRENCY,
   MIN_UPLOAD_CONCURRENCY,
 } from '../../utils/uploadConcurrency';
+import CloudSyncHint from './CloudSyncHint.vue';
 
 const configStore = useConfigStore();
 const uploadConcurrency = configStore.useTauriConfig('attachment_upload_concurrency');

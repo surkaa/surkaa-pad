@@ -10,7 +10,10 @@
               <q-icon name="palette"/>
             </q-item-section>
             <q-item-section>
-              <q-item-label class="label-text text-weight-medium">显示模式</q-item-label>
+              <q-item-label class="label-text text-weight-medium setting-label-with-hint">
+                <span>显示模式</span>
+                <CloudSyncHint/>
+              </q-item-label>
               <q-item-label caption class="desc-text">
                 {{ theme === 'system' ? '自动跟随系统外观' : theme === 'light' ? '始终使用浅色外观' : '始终使用深色外观' }}
               </q-item-label>
@@ -38,7 +41,10 @@
                 <q-icon name="photo_size_select_small"/>
               </q-item-section>
               <q-item-section>
-                <q-item-label class="label-text text-weight-medium">默认使用小图</q-item-label>
+                <q-item-label class="label-text text-weight-medium setting-label-with-hint">
+                  <span>默认使用小图</span>
+                  <CloudSyncHint/>
+                </q-item-label>
                 <q-item-label caption class="desc-text">新插入的单张图片以小图显示</q-item-label>
               </q-item-section>
               <q-item-section side>
@@ -226,6 +232,7 @@ import DiagnosticLogSettings from './DiagnosticLogSettings.vue';
 import EditorShortcutSettings from './EditorShortcutSettings.vue';
 import LocalStorageSettings from './LocalStorageSettings.vue';
 import AboutSettings from './AboutSettings.vue';
+import CloudSyncHint from './CloudSyncHint.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -340,6 +347,13 @@ defineOptions({name: 'Settings'});
 
   .label-text {
     color: var(--pad-text-color-200);
+  }
+
+  .setting-label-with-hint {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .desc-text {

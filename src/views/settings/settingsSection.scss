@@ -6,6 +6,14 @@
   color: var(--pad-text-color-200);
 }
 
+.setting-label-with-hint,
+.group-title-with-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .desc-text {
   color: var(--pad-text-color-400);
 }
