@@ -999,7 +999,7 @@ defineExpose({
     align-items: center;
     gap: 12px;
     box-sizing: border-box;
-    width: min(100%, 620px);
+    width: min(100%, var(--editor-audio-width, 220px));
     min-height: 68px;
     padding: 10px 14px;
     border: 1px solid var(--pad-border-color-200);

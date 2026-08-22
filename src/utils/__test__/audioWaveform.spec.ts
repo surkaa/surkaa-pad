@@ -1,8 +1,11 @@
 import {describe, expect, it} from 'vitest'
 import {
+  calculateAudioPlayerWidth,
+  calculateCenteredWaveformBars,
   decodeSignedWaveformPeaks,
   encodeSignedWaveformPeaks,
   extractSignedWaveformPeaks,
+  MIN_AUDIO_PLAYER_WIDTH_PX,
 } from '../audioWaveform'
 
 describe('audio waveform data', () => {
@@ -37,5 +40,37 @@ describe('audio waveform data', () => {
       expect.closeTo(0.25),
       expect.closeTo(-0.5),
     ])
+  })
+
+  it('grows the player continuously with duration', () => {
+    expect(calculateAudioPlayerWidth(0)).toBe(MIN_AUDIO_PLAYER_WIDTH_PX)
+    expect(calculateAudioPlayerWidth(10_000)).toBe(280)
+    expect(calculateAudioPlayerWidth(30_000)).toBe(400)
+    expect(calculateAudioPlayerWidth(10 * 60_000)).toBe(3_820)
+    expect(calculateAudioPlayerWidth(Number.NaN)).toBe(MIN_AUDIO_PLAYER_WIDTH_PX)
+  })
+
+  it('centers every waveform bar around the horizontal axis', () => {
+    const bars = calculateCenteredWaveformBars([
+      new Float32Array([0.25, -1, 0.5, -0.75]),
+    ], 24, 40)
+
+    expect(bars).toHaveLength(4)
+    for (const bar of bars) {
+      expect(bar.y + bar.height / 2).toBeCloseTo(20)
+    }
+    expect(bars[1].height).toBeGreaterThan(bars[0].height)
+  })
+
+  it('draws silent waveform bars at a centered minimum height', () => {
+    const bars = calculateCenteredWaveformBars([
+      new Float32Array([0, 0, 0]),
+    ], 18, 20)
+
+    expect(bars).toHaveLength(3)
+    for (const bar of bars) {
+      expect(bar.height).toBe(2)
+      expect(bar.y).toBe(9)
+    }
   })
 })

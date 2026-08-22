@@ -3,10 +3,81 @@ import type {AudioWaveform} from '../bindings'
 export const AUDIO_WAVEFORM_VERSION = 1
 export const AUDIO_WAVEFORM_PEAK_COUNT = 128
 export const MAX_AUTO_WAVEFORM_SOURCE_BYTES = 20 * 1024 * 1024
+export const MIN_AUDIO_PLAYER_WIDTH_PX = 220
+
+const AUDIO_PLAYER_WIDTH_PER_SECOND_PX = 6
+const WAVEFORM_BAR_WIDTH_PX = 3
+const WAVEFORM_BAR_GAP_PX = 3
+const WAVEFORM_BAR_MIN_HEIGHT_PX = 2
+const WAVEFORM_BAR_MAX_HEIGHT_RATIO = 0.82
 
 export interface GeneratedAudioWaveform {
   durationMs: number
   waveform: AudioWaveform
+}
+
+export interface CenteredWaveformBar {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export function calculateAudioPlayerWidth(durationMs: number): number {
+  const safeDurationMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0
+  return Math.round(MIN_AUDIO_PLAYER_WIDTH_PX + safeDurationMs / 1_000 * AUDIO_PLAYER_WIDTH_PER_SECOND_PX)
+}
+
+export function calculateCenteredWaveformBars(
+  channels: readonly ArrayLike<number>[],
+  canvasWidth: number,
+  canvasHeight: number,
+  pixelRatio = 1,
+): CenteredWaveformBar[] {
+  const width = Number.isFinite(canvasWidth) ? Math.max(0, canvasWidth) : 0
+  const height = Number.isFinite(canvasHeight) ? Math.max(0, canvasHeight) : 0
+  const ratio = Number.isFinite(pixelRatio) ? Math.max(1, pixelRatio) : 1
+  const sampleCount = channels.reduce((length, channel) => Math.max(length, channel.length), 0)
+  if (!width || !height || !sampleCount) return []
+
+  const barWidth = WAVEFORM_BAR_WIDTH_PX * ratio
+  const barGap = WAVEFORM_BAR_GAP_PX * ratio
+  const availableBarCount = Math.max(1, Math.floor((width + barGap) / (barWidth + barGap)))
+  const barCount = Math.min(availableBarCount, sampleCount)
+  const amplitudes: number[] = []
+  let maxAmplitude = 0
+
+  for (let barIndex = 0; barIndex < barCount; barIndex += 1) {
+    const start = Math.floor(barIndex * sampleCount / barCount)
+    const end = Math.max(start + 1, Math.ceil((barIndex + 1) * sampleCount / barCount))
+    let amplitude = 0
+    for (const channel of channels) {
+      const channelEnd = Math.min(end, channel.length)
+      for (let sampleIndex = start; sampleIndex < channelEnd; sampleIndex += 1) {
+        const sample = channel[sampleIndex]
+        if (Number.isFinite(sample)) amplitude = Math.max(amplitude, Math.abs(sample))
+      }
+    }
+    amplitudes.push(amplitude)
+    maxAmplitude = Math.max(maxAmplitude, amplitude)
+  }
+
+  const totalWidth = barCount * barWidth + (barCount - 1) * barGap
+  const startX = Math.max(0, (width - totalWidth) / 2)
+  const minBarHeight = Math.min(height, WAVEFORM_BAR_MIN_HEIGHT_PX * ratio)
+  const maxBarHeight = Math.max(minBarHeight, height * WAVEFORM_BAR_MAX_HEIGHT_RATIO)
+
+  return amplitudes.map((amplitude, index) => {
+    const barHeight = maxAmplitude > 0
+      ? Math.max(minBarHeight, amplitude / maxAmplitude * maxBarHeight)
+      : minBarHeight
+    return {
+      x: startX + index * (barWidth + barGap),
+      y: (height - barHeight) / 2,
+      width: barWidth,
+      height: barHeight,
+    }
+  })
 }
 
 export function encodeSignedWaveformPeaks(peaks: readonly number[]): number[] {

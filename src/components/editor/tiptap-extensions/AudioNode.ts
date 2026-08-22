@@ -6,6 +6,8 @@ import type {AttachmentMeta, AudioWaveform} from '../../../bindings'
 import {
   AUDIO_WAVEFORM_PEAK_COUNT,
   AUDIO_WAVEFORM_VERSION,
+  calculateAudioPlayerWidth,
+  calculateCenteredWaveformBars,
   decodeSignedWaveformPeaks,
   encodeSignedWaveformPeaks,
   MAX_AUTO_WAVEFORM_SOURCE_BYTES,
@@ -69,6 +71,7 @@ function createAudioNodeView(
   time.className = 'editor-audio-time'
   status.className = 'editor-audio-status'
   dom.append(playButton, waveformContainer, time, status)
+  updatePlayerWidth(0)
 
   const preventFocus = (event: Event) => {
     event.stopPropagation()
@@ -105,6 +108,7 @@ function createAudioNodeView(
     audio.src = src
     audio.dataset.id = String(currentNode.attrs.id || '')
     audio.className = 'editor-audio-native'
+    audio.addEventListener('loadedmetadata', () => updatePlayerWidth(audio.duration), {once: true})
     waveformContainer.append(audio)
     status.textContent = message
     playButton.hidden = true
@@ -136,6 +140,7 @@ function createAudioNodeView(
     const storedDurationSeconds = audioInfo?.durationMs
       ? audioInfo.durationMs / 1_000
       : 0
+    updatePlayerWidth(storedDurationSeconds)
 
     if (!storedWaveform && attachment && attachment.size > MAX_AUTO_WAVEFORM_SOURCE_BYTES) {
       mountNativeFallback(src, '附件较大，暂不自动生成音波')
@@ -194,6 +199,7 @@ function createAudioNodeView(
         barMinHeight: 2,
         normalize: true,
         dragToSeek: true,
+        renderFunction: renderCenteredWaveform,
         peaks: storedWaveform
           ? [decodeSignedWaveformPeaks(storedWaveform.peaks)]
           : undefined,
@@ -234,6 +240,7 @@ function createAudioNodeView(
       if (player !== wavesurfer) return
       status.textContent = ''
       playButton.disabled = false
+      updatePlayerWidth(duration)
       updateTime(0, duration)
       onGenerationSettled?.()
     })
@@ -288,6 +295,11 @@ function createAudioNodeView(
       : formatDuration(duration)
   }
 
+  function updatePlayerWidth(durationSeconds: number) {
+    const durationMs = Number.isFinite(durationSeconds) ? durationSeconds * 1_000 : 0
+    dom.style.setProperty('--editor-audio-width', `${calculateAudioPlayerWidth(durationMs)}px`)
+  }
+
   if (typeof IntersectionObserver === 'function') {
     intersectionObserver = new IntersectionObserver(entries => {
       if (!entries.some(entry => entry.isIntersecting)) return
@@ -326,6 +338,29 @@ function createAudioNodeView(
       playButton.removeEventListener('pointerdown', preventFocus)
     },
   }
+}
+
+function renderCenteredWaveform(
+  peaks: Array<Float32Array | number[]>,
+  context: CanvasRenderingContext2D,
+) {
+  const cssWidth = Number.parseFloat(context.canvas.style.width)
+  const pixelRatio = Number.isFinite(cssWidth) && cssWidth > 0
+    ? context.canvas.width / cssWidth
+    : window.devicePixelRatio || 1
+  const bars = calculateCenteredWaveformBars(
+    peaks,
+    context.canvas.width,
+    context.canvas.height,
+    pixelRatio,
+  )
+  context.beginPath()
+  for (const bar of bars) {
+    const radius = Math.min(bar.width, bar.height) / 2
+    context.roundRect(bar.x, bar.y, bar.width, bar.height, radius)
+  }
+  context.fill()
+  context.closePath()
 }
 
 function formatDuration(seconds: number): string {
