@@ -38,7 +38,8 @@
     "tauri-plugin-native-camera-api": "^0.1.0",
     "uuid": "^13.0.0",
     "vue": "^3.5.13",
-    "vue-router": "^4.6.3"
+    "vue-router": "^4.6.3",
+    "wavesurfer.js": "^7.12.11"
   },
   "devDependencies": {
     "@quasar/vite-plugin": "^1.10.0",
