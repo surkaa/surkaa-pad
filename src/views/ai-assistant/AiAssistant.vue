@@ -162,6 +162,9 @@ async function checkModelAvailability(
       const updated = await api.cmdUpdateAiSessionModel(sessionId, resolution.model);
       if (refreshId !== configRefreshId || activeSessionId.value !== sessionId) return;
       upsertSession(updated);
+      if (conversationSource.value) {
+        conversationSource.value = {...conversationSource.value, model: resolution.model};
+      }
       modelCheckState.value = 'available';
       $q.notify({
         type: 'info',
@@ -227,7 +230,7 @@ async function loadSession(sessionId: string, refreshModel = true) {
       cancelRequested: false,
       processExpanded: restored.state !== 'completed',
     }));
-    conversationSource.value = null;
+    conversationSource.value = detail.conversationSource;
     showConversationSource.value = false;
     question.value = '';
     sessionDrawerOpen.value = false;
@@ -353,7 +356,6 @@ async function submitQuestion() {
   };
   exchanges.value.push(exchange);
   question.value = '';
-  conversationSource.value = null;
   sending.value = true;
   await scrollToBottom();
 

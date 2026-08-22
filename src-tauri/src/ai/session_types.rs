@@ -64,6 +64,7 @@ pub enum AiSessionMessagePayload {
         content: String,
         /// 保存发送消息时的本地时区偏移，使日期变化提示能在不同设备上稳定重建。
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[specta(rename = "timezoneOffsetMinutes")]
         timezone_offset_minutes: Option<i16>,
     },
     Assistant {
