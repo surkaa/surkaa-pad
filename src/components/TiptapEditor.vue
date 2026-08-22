@@ -56,6 +56,7 @@ import {
   topLevelBlockIdentities,
   type DiaryBlockDescriptor,
 } from './editor/blockOrder'
+import {TaskCompletionOrder} from './editor/taskCompletionOrder'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -146,6 +147,7 @@ const editor = useEditor({
         checkboxLabel: (node, checked) => `${checked ? '取消完成' : '标记完成'}：${node.textContent || '待办事项'}`,
       },
     }),
+    TaskCompletionOrder,
     ImageNode,
     VideoNode,
     AudioNode,
