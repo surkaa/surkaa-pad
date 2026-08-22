@@ -70,6 +70,19 @@ describe('shouldPreventEditorFocus', () => {
     expect(shouldPreventEditorFocus(null, 'android')).toBe(false)
   })
 
+  it('prevents mobile summary and location interactions from focusing the editor', () => {
+    for (const className of ['editor-summary', 'editor-location']) {
+      const block = document.createElement('div')
+      block.className = className
+      const child = document.createElement('span')
+      block.append(child)
+
+      expect(shouldPreventEditorFocus(child, 'android')).toBe(true)
+      expect(shouldPreventEditorFocus(block, 'ios')).toBe(true)
+      expect(shouldPreventEditorFocus(child, 'windows')).toBe(false)
+    }
+  })
+
   it('prevents editor focus throughout mobile album image selection', () => {
     const proseMirror = document.createElement('div')
     proseMirror.className = 'ProseMirror'

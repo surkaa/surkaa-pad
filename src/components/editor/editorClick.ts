@@ -39,5 +39,7 @@ export function shouldPreventEditorFocus(
 
   if (albumSelectionActive && target.closest('.ProseMirror')) return true
 
-  return Boolean(target.closest('.editor-image-album[data-display-mode="stackedCards"]'))
+  return Boolean(target.closest(
+    '.editor-image-album[data-display-mode="stackedCards"], .editor-summary, .editor-location',
+  ))
 }
