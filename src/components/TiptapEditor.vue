@@ -998,6 +998,11 @@ defineExpose({
     -webkit-user-drag: none;
   }
 
+  .ProseMirror > img[data-id] {
+    padding-inline: 10px;
+    max-width: calc(100% - 20px);
+  }
+
   .editor-file-attachment {
     display: inline-flex;
     align-items: center;
