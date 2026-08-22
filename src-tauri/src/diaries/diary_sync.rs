@@ -544,6 +544,8 @@ fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
         StoredObject::AiSessionMessageBlock { session_id, .. } => {
             Some((SyncItemKind::AiMessageBlock, session_id))
         }
+        // 设置由独立的合并策略同步，不能参与开启/关闭云存储时的整库搬运。
+        StoredObject::SyncedSettings => None,
     }
 }
 
@@ -855,6 +857,10 @@ mod tests {
         );
         assert_eq!(classify_storage_key("/photo.jpg"), None);
         assert_eq!(classify_storage_key("diaries/123/folder/photo.jpg"), None);
+        assert_eq!(
+            classify_storage_key(ObjectLocations::synced_settings()),
+            None
+        );
         assert_eq!(
             classify_storage_key(&ObjectLocations::diary_attachment_backup(
                 "123",

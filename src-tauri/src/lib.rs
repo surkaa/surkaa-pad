@@ -14,6 +14,7 @@ pub mod object_locations;
 mod state;
 pub mod storage_layout_migration;
 mod stream;
+mod synced_settings;
 mod tasks;
 #[cfg(test)]
 mod test_utils;
@@ -80,6 +81,7 @@ use crate::object::object_command::{
     cmd_set_attachment_cache_max_file_size,
 };
 use crate::state::AppState;
+use crate::synced_settings::{cmd_load_synced_settings, cmd_save_synced_settings};
 use crate::tasks::task_command::cmd_cancel_task;
 use tauri::{App, Manager};
 
@@ -132,6 +134,9 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_set_attachment_cache_max_file_size,
             cmd_migrate_legacy_remote_enabled,
             cmd_restore_remote_storage,
+            // 跨设备应用设置
+            cmd_load_synced_settings,
+            cmd_save_synced_settings,
             // 本地存储位置管理
             cmd_get_local_storage_info,
             cmd_get_local_storage_migration_status,

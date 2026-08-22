@@ -10,6 +10,7 @@ use crate::cryptos::Crypto;
 use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
 use crate::local_storage::LocalStorageManager;
 use crate::object::OssClient;
+use crate::synced_settings::SyncedSettingsRepository;
 use crate::tasks::TaskPool;
 use dashmap::DashMap;
 use std::collections::HashSet;
@@ -35,6 +36,7 @@ pub struct AppState {
     app_config: AppConfigStore,
     local_storage: LocalStorageManager,
     ai_session_repository: AiSessionRepository,
+    synced_settings_repository: SyncedSettingsRepository,
 }
 
 impl AppState {
@@ -57,7 +59,10 @@ impl AppState {
             oss_client.clone(),
             remote_enabled.clone(),
         ));
-        let ai_session_repository = AiSessionRepository::new(app_object_store, crypto.clone());
+        let ai_session_repository =
+            AiSessionRepository::new(app_object_store.clone(), crypto.clone());
+        let synced_settings_repository =
+            SyncedSettingsRepository::new(app_object_store, crypto.clone());
         Self {
             crypto,
             oss_client,
@@ -73,6 +78,7 @@ impl AppState {
             app_config,
             local_storage,
             ai_session_repository,
+            synced_settings_repository,
         }
     }
 
@@ -186,6 +192,10 @@ impl AppState {
         self.ai_session_repository.clone()
     }
 
+    pub fn synced_settings_repository(&self) -> SyncedSettingsRepository {
+        self.synced_settings_repository.clone()
+    }
+
     /// 根据当前存储模式构造 DiaryStore
     pub fn diary_store(&self) -> Box<dyn DiaryStore> {
         if self.remote_enabled.load(Ordering::Relaxed) {
@@ -231,7 +241,10 @@ impl AppState {
             oss_client.clone(),
             remote_enabled.clone(),
         ));
-        let ai_session_repository = AiSessionRepository::new(app_object_store, crypto.clone());
+        let ai_session_repository =
+            AiSessionRepository::new(app_object_store.clone(), crypto.clone());
+        let synced_settings_repository =
+            SyncedSettingsRepository::new(app_object_store, crypto.clone());
         Self {
             crypto,
             oss_client,
@@ -247,6 +260,7 @@ impl AppState {
             app_config,
             local_storage,
             ai_session_repository,
+            synced_settings_repository,
         }
     }
 }

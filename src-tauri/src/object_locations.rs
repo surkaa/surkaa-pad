@@ -6,6 +6,8 @@ const AI_DIRECTORY: &str = "ai";
 const AI_SESSIONS_DIRECTORY: &str = "sessions";
 const AI_SESSION_META_FILENAME: &str = "meta.enc";
 const AI_SESSION_MESSAGES_DIRECTORY: &str = "messages";
+const SETTINGS_DIRECTORY: &str = "settings";
+const SETTINGS_FILENAME: &str = "settings.enc";
 /// `u64` 消息索引最多只需要 0–19 级十进制块。
 /// 极高等级的块理论上可能触及对象存储约 5 GB 的单对象上限，但真实会话几乎不可能
 /// 累积到对应消息数量，现阶段不为这个不可达场景引入按字节再次拆块的复杂度。
@@ -32,6 +34,7 @@ pub enum StoredObject {
         level: u32,
         block_id: u64,
     },
+    SyncedSettings,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,7 +65,9 @@ impl StoredObject {
             Self::DiaryManifest { diary_id }
             | Self::DiaryAttachment { diary_id, .. }
             | Self::DiaryAttachmentBackup { diary_id, .. } => Some(diary_id),
-            Self::AiSessionMeta { .. } | Self::AiSessionMessageBlock { .. } => None,
+            Self::AiSessionMeta { .. }
+            | Self::AiSessionMessageBlock { .. }
+            | Self::SyncedSettings => None,
         }
     }
 }
@@ -101,6 +106,10 @@ impl ObjectLocations {
 
     pub const fn ai_sessions_prefix() -> &'static str {
         "ai/sessions/"
+    }
+
+    pub const fn synced_settings() -> &'static str {
+        "settings/settings.enc"
     }
 
     pub fn ai_session_prefix(session_id: &str) -> String {
@@ -152,10 +161,14 @@ impl ObjectLocations {
                 level,
                 block_id,
             } => Self::ai_session_message_block(session_id, *level, *block_id),
+            StoredObject::SyncedSettings => Self::synced_settings().to_owned(),
         }
     }
 
     pub fn parse(key: &str) -> Option<StoredObject> {
+        if key == format!("{SETTINGS_DIRECTORY}/{SETTINGS_FILENAME}") {
+            return Some(StoredObject::SyncedSettings);
+        }
         if key.starts_with(Self::ai_sessions_prefix()) {
             return Self::parse_ai_session(key);
         }
@@ -321,6 +334,7 @@ mod tests {
             ObjectLocations::ai_session_message_block("8215021834823", 1, 2),
             "ai/sessions/8215021834823/messages/1/2.enc"
         );
+        assert_eq!(ObjectLocations::synced_settings(), "settings/settings.enc");
     }
 
     #[test]
@@ -345,6 +359,7 @@ mod tests {
                 level: 1,
                 block_id: 2,
             },
+            StoredObject::SyncedSettings,
         ];
         for object in objects {
             let key = ObjectLocations::key(&object);
@@ -389,6 +404,8 @@ mod tests {
             "ai/sessions/8215021834823/messages/1/02.enc",
             "ai/sessions/8215021834823/messages/1/not-a-number.enc",
             "ai/sessions/8215021834823/messages/1/2.enc/extra",
+            "settings/v1/settings.enc",
+            "settings/other.enc",
         ] {
             assert_eq!(ObjectLocations::parse(key), None, "key={key}");
         }
