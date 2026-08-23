@@ -321,8 +321,9 @@ impl AiToolExecutor for DiaryReadTools {
     }
 
     fn summarize_result(&self, call: &AiToolCall, result: Result<&Value, &AiToolError>) -> String {
-        let Ok(value) = result else {
-            return "操作失败，AI 将根据现有信息继续处理".into();
+        let value = match result {
+            Ok(value) => value,
+            Err(error) => return format!("操作失败：{}", error.display_reason()),
         };
         match call.name.as_str() {
             LIST_DIARIES_TOOL | LIST_DIARIES_BY_DATE_RANGE_TOOL | SEARCH_DIARIES_TOOL => value

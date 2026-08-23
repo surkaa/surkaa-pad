@@ -72,9 +72,10 @@ fn describes_tool_calls_and_results_without_exposing_raw_payloads() {
         message: "C:\\Users\\name\\private diary.enc not found".into(),
     };
     let failure = tools.summarize_result(&read, Err(&private_error));
-    assert_eq!(failure, "操作失败，AI 将根据现有信息继续处理");
-    assert!(!failure.contains("C:\\Users"));
-    assert!(!failure.contains("private diary.enc"));
+    assert_eq!(
+        failure,
+        "操作失败：C:\\Users\\name\\private diary.enc not found"
+    );
 }
 
 #[test]

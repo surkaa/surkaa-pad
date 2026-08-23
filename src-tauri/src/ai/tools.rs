@@ -3,6 +3,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use thiserror::Error;
 
+const MAX_TOOL_ERROR_DISPLAY_CHARS: usize = 300;
+
 #[async_trait]
 pub trait AiToolExecutor: Send + Sync {
     fn definitions(&self) -> Vec<AiToolDefinition>;
@@ -12,10 +14,9 @@ pub trait AiToolExecutor: Send + Sync {
     }
 
     fn summarize_result(&self, _call: &AiToolCall, result: Result<&Value, &AiToolError>) -> String {
-        if result.is_ok() {
-            "操作完成".into()
-        } else {
-            "操作失败，AI 将根据现有信息继续处理".into()
+        match result {
+            Ok(_) => "操作完成".into(),
+            Err(error) => format!("操作失败：{}", error.display_reason()),
         }
     }
 
@@ -50,6 +51,28 @@ pub enum AiToolError {
 }
 
 impl AiToolError {
+    pub(crate) fn display_reason(&self) -> String {
+        let reason = match self {
+            Self::UnknownTool(tool) => format!("未知工具：{tool}"),
+            Self::InvalidArguments { message, .. } => format!("参数无效：{message}"),
+            Self::ExecutionFailed { message, .. } => message.clone(),
+        };
+        let compact = reason.split_whitespace().collect::<Vec<_>>().join(" ");
+        if compact.is_empty() {
+            return "未提供具体原因".into();
+        }
+        let mut chars = compact.chars();
+        let truncated = chars
+            .by_ref()
+            .take(MAX_TOOL_ERROR_DISPLAY_CHARS)
+            .collect::<String>();
+        if chars.next().is_some() {
+            format!("{truncated}…")
+        } else {
+            truncated
+        }
+    }
+
     pub(crate) fn response_for_model(&self) -> Value {
         match self {
             Self::UnknownTool(tool) => json!({
@@ -74,5 +97,29 @@ impl AiToolError {
                 },
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_bounded_user_visible_tool_failure_reasons() {
+        let invalid = AiToolError::InvalidArguments {
+            tool: "search_diaries".into(),
+            message: "query\n不能为空".into(),
+        };
+        assert_eq!(invalid.display_reason(), "参数无效：query 不能为空");
+
+        let long = AiToolError::ExecutionFailed {
+            tool: "read_diary".into(),
+            message: "错".repeat(MAX_TOOL_ERROR_DISPLAY_CHARS + 20),
+        };
+        assert_eq!(
+            long.display_reason().chars().count(),
+            MAX_TOOL_ERROR_DISPLAY_CHARS + 1
+        );
+        assert!(long.display_reason().ends_with('…'));
     }
 }

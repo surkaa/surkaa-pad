@@ -483,9 +483,10 @@ async fn hides_internal_tool_error_details_from_the_model() {
             _ => None,
         })
         .expect("failed tool event");
-    assert_eq!(failed_event, "操作失败，AI 将根据现有信息继续处理");
-    assert!(!failed_event.contains("C:\\Users"));
-    assert!(!failed_event.contains("private diary.enc"));
+    assert_eq!(
+        failed_event,
+        "操作失败：C:\\Users\\name\\private diary.enc not found"
+    );
 }
 
 #[tokio::test]

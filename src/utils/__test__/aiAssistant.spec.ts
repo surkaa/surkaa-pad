@@ -384,14 +384,18 @@ describe('reduceAiAgentEvent', () => {
       event: 'toolCompleted',
       data: {
         operationId: 1,
-        summary: '操作失败，AI 将根据现有信息继续处理',
+        summary: '操作失败：读取日记主文件时网络连接中断',
         succeeded: false,
         elapsedMs: 40,
       },
     });
 
     expect(state.state).toBe('running');
-    expect(state.processSteps[0]).toMatchObject({state: 'failed', durationMs: 40});
+    expect(state.processSteps[0]).toMatchObject({
+      state: 'failed',
+      durationMs: 40,
+      detail: '操作失败：读取日记主文件时网络连接中断',
+    });
     expect(state.status).toContain('继续处理');
   });
 
