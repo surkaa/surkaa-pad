@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest'
 import {
+  calculateAudioProgress,
   calculateAudioPlayerWidth,
   calculateCenteredWaveformBars,
   decodeSignedWaveformPeaks,
@@ -48,6 +49,14 @@ describe('audio waveform data', () => {
     expect(calculateAudioPlayerWidth(30_000)).toBe(400)
     expect(calculateAudioPlayerWidth(10 * 60_000)).toBe(3_820)
     expect(calculateAudioPlayerWidth(Number.NaN)).toBe(MIN_AUDIO_PLAYER_WIDTH_PX)
+  })
+
+  it('clamps native audio playback progress', () => {
+    expect(calculateAudioProgress(5, 20)).toBe(0.25)
+    expect(calculateAudioProgress(-1, 20)).toBe(0)
+    expect(calculateAudioProgress(30, 20)).toBe(1)
+    expect(calculateAudioProgress(1, 0)).toBe(0)
+    expect(calculateAudioProgress(Number.NaN, 20)).toBe(0)
   })
 
   it('centers every waveform bar around the horizontal axis', () => {

@@ -1,11 +1,13 @@
 import {Node as TiptapNode, mergeAttributes} from '@tiptap/vue-3'
 import type {Node as ProseMirrorNode} from '@tiptap/pm/model'
 import type {NodeView} from '@tiptap/pm/view'
+import {platform} from '@tauri-apps/plugin-os'
 import type WaveSurfer from 'wavesurfer.js'
 import type {AttachmentMeta, AudioWaveform} from '../../../bindings'
 import {
   AUDIO_WAVEFORM_PEAK_COUNT,
   AUDIO_WAVEFORM_VERSION,
+  calculateAudioProgress,
   calculateAudioPlayerWidth,
   calculateCenteredWaveformBars,
   decodeSignedWaveformPeaks,
@@ -43,7 +45,12 @@ function createAudioNodeView(
   options: AudioNodeOptions,
 ): NodeView {
   let currentNode = initialNode
+  const isAndroid = platform() === 'android'
   let wavesurfer: WaveSurfer | null = null
+  let nativeAudio: HTMLAudioElement | null = null
+  let nativeCanvas: HTMLCanvasElement | null = null
+  let nativePeaks: number[] = []
+  let nativeResizeObserver: ResizeObserver | null = null
   let generationStarted = false
   let releaseGeneration: (() => void) | null = null
   let loadVersion = 0
@@ -80,10 +87,20 @@ function createAudioNodeView(
   playButton.addEventListener('click', event => {
     event.preventDefault()
     event.stopPropagation()
-    void wavesurfer?.playPause().catch(error => {
-      console.error('播放音频失败:', error)
-    })
+    if (wavesurfer) {
+      void wavesurfer.playPause().catch(error => {
+        console.error('播放音频失败:', error)
+      })
+    } else if (nativeAudio) {
+      if (nativeAudio.paused) {
+        void nativeAudio.play().catch(error => console.error('播放音频失败:', error))
+      } else {
+        nativeAudio.pause()
+      }
+    }
   })
+  waveformContainer.addEventListener('pointerdown', preventFocus)
+  waveformContainer.addEventListener('click', seekNativeAudio)
 
   function resetPlayer() {
     loadVersion += 1
@@ -91,6 +108,17 @@ function createAudioNodeView(
     releaseGeneration = null
     wavesurfer?.destroy()
     wavesurfer = null
+    nativeResizeObserver?.disconnect()
+    nativeResizeObserver = null
+    if (nativeAudio) {
+      nativeAudio.pause()
+      nativeAudio.removeAttribute('src')
+      nativeAudio.load()
+    }
+    nativeAudio = null
+    nativeCanvas = null
+    nativePeaks = []
+    waveformContainer.classList.remove('editor-audio-waveform--native')
     waveformContainer.replaceChildren()
     time.textContent = '--:--'
     status.textContent = ''
@@ -99,20 +127,124 @@ function createAudioNodeView(
     generationStarted = false
   }
 
-  function mountNativeFallback(src: string, message: string) {
+  function mountNativePlayer(
+    src: string,
+    message: string,
+    waveform: AudioWaveform | null = null,
+    storedDurationSeconds = 0,
+  ) {
     wavesurfer?.destroy()
     wavesurfer = null
     waveformContainer.replaceChildren()
+
+    waveformContainer.classList.add('editor-audio-waveform--native')
+    const canvas = document.createElement('canvas')
+    canvas.className = 'editor-audio-native-waveform'
     const audio = document.createElement('audio')
-    audio.controls = true
+    audio.preload = 'metadata'
     audio.src = src
     audio.dataset.id = String(currentNode.attrs.id || '')
-    audio.className = 'editor-audio-native'
-    audio.addEventListener('loadedmetadata', () => updatePlayerWidth(audio.duration), {once: true})
-    waveformContainer.append(audio)
+    audio.className = 'editor-audio-native-backend'
+    nativeAudio = audio
+    nativeCanvas = canvas
+    nativePeaks = waveform
+      ? decodeSignedWaveformPeaks(waveform.peaks)
+      : Array.from({length: AUDIO_WAVEFORM_PEAK_COUNT}, () => 0)
+    waveformContainer.append(canvas, audio)
+
+    const resolveDuration = () => Number.isFinite(audio.duration) && audio.duration > 0
+      ? audio.duration
+      : storedDurationSeconds
+    const markReady = () => {
+      if (audio !== nativeAudio) return
+      const duration = resolveDuration()
+      playButton.disabled = false
+      updatePlayerWidth(duration)
+      updateTime(audio.currentTime, duration)
+      requestAnimationFrame(drawNativeWaveform)
+    }
+    audio.addEventListener('loadedmetadata', markReady)
+    audio.addEventListener('canplay', markReady)
+    audio.addEventListener('timeupdate', () => {
+      if (audio !== nativeAudio) return
+      updateTime(audio.currentTime, resolveDuration())
+      drawNativeWaveform()
+    })
+    audio.addEventListener('play', () => setPlayingState(true))
+    audio.addEventListener('pause', () => setPlayingState(false))
+    audio.addEventListener('ended', () => setPlayingState(false))
+    audio.addEventListener('error', () => {
+      if (audio !== nativeAudio) return
+      playButton.disabled = true
+      status.textContent = '音频加载失败'
+    })
+    if (typeof ResizeObserver === 'function') {
+      nativeResizeObserver = new ResizeObserver(() => drawNativeWaveform())
+      nativeResizeObserver.observe(waveformContainer)
+    }
+
     status.textContent = message
-    playButton.hidden = true
-    time.hidden = true
+    playButton.hidden = false
+    time.hidden = false
+    if (storedDurationSeconds > 0) {
+      playButton.disabled = false
+      updateTime(0, storedDurationSeconds)
+    }
+    requestAnimationFrame(drawNativeWaveform)
+  }
+
+  function seekNativeAudio(event: MouseEvent) {
+    const audio = nativeAudio
+    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    const bounds = waveformContainer.getBoundingClientRect()
+    if (bounds.width <= 0) return
+    const progress = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width))
+    audio.currentTime = progress * audio.duration
+  }
+
+  function setPlayingState(playing: boolean) {
+    playIcon.textContent = playing ? '❚❚' : '▶'
+    playButton.title = playing ? '暂停录音' : '播放录音'
+    playButton.setAttribute('aria-label', playButton.title)
+  }
+
+  function drawNativeWaveform() {
+    const canvas = nativeCanvas
+    if (!canvas) return
+    const cssWidth = waveformContainer.getBoundingClientRect().width
+    if (cssWidth <= 0) return
+    const cssHeight = 44
+    const pixelRatio = window.devicePixelRatio || 1
+    const width = Math.max(1, Math.round(cssWidth * pixelRatio))
+    const height = Math.max(1, Math.round(cssHeight * pixelRatio))
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width
+      canvas.height = height
+      canvas.style.width = `${cssWidth}px`
+      canvas.style.height = `${cssHeight}px`
+    }
+    const context = canvas.getContext('2d')
+    if (!context) return
+    const styles = getComputedStyle(dom)
+    const waveColor = styles.getPropertyValue('--pad-text-color-400').trim() || '#8292a6'
+    const progressColor = styles.getPropertyValue('--pad-primary-color').trim() || '#c9a37f'
+    const progress = nativeAudio
+      ? calculateAudioProgress(nativeAudio.currentTime, nativeAudio.duration)
+      : 0
+
+    context.clearRect(0, 0, width, height)
+    context.fillStyle = waveColor
+    renderCenteredWaveform([nativePeaks], context)
+    if (progress <= 0) return
+    context.save()
+    context.beginPath()
+    context.rect(0, 0, width * progress, height)
+    context.clip()
+    context.fillStyle = progressColor
+    renderCenteredWaveform([nativePeaks], context)
+    context.restore()
   }
 
   async function initialize(node: ProseMirrorNode) {
@@ -143,7 +275,14 @@ function createAudioNodeView(
     updatePlayerWidth(storedDurationSeconds)
 
     if (!storedWaveform && attachment && attachment.size > MAX_AUTO_WAVEFORM_SOURCE_BYTES) {
-      mountNativeFallback(src, '附件较大，暂不自动生成音波')
+      mountNativePlayer(src, '附件较大，暂不自动生成音波', null, storedDurationSeconds)
+      return
+    }
+
+    // Android WebView 的 Web Audio 解码支持弱于原生媒体播放。已有音波时直接让
+    // 原生 audio 负责播放，自定义 Canvas 负责显示，避免失败后暴露原生控件。
+    if (isAndroid && storedWaveform) {
+      mountNativePlayer(src, '', storedWaveform, storedDurationSeconds)
       return
     }
 
@@ -217,16 +356,29 @@ function createAudioNodeView(
             resolve()
           }
           releaseGeneration = settleGeneration
-          bindWaveSurferEvents(wavesurfer!, attachmentId, false, settleGeneration)
+          bindWaveSurferEvents(
+            wavesurfer!,
+            attachmentId,
+            false,
+            storedWaveform,
+            storedDurationSeconds,
+            settleGeneration,
+          )
         })
         await generationFinished
       } else {
-        bindWaveSurferEvents(wavesurfer, attachmentId, true)
+        bindWaveSurferEvents(
+          wavesurfer,
+          attachmentId,
+          true,
+          storedWaveform,
+          storedDurationSeconds,
+        )
       }
     } catch (error) {
       if (destroyed || version !== loadVersion) return
       console.error('初始化音波失败:', error)
-      mountNativeFallback(src, '音波不可用')
+      mountNativePlayer(src, '音波不可用', storedWaveform, storedDurationSeconds)
     }
   }
 
@@ -234,6 +386,8 @@ function createAudioNodeView(
     player: WaveSurfer,
     attachmentId: string,
     hasStoredWaveform: boolean,
+    fallbackWaveform: AudioWaveform | null,
+    fallbackDurationSeconds: number,
     onGenerationSettled?: () => void,
   ) {
     player.on('ready', duration => {
@@ -283,7 +437,12 @@ function createAudioNodeView(
       if (player !== wavesurfer) return
       console.error('加载音频失败:', error)
       onGenerationSettled?.()
-      mountNativeFallback(String(currentNode.attrs.src || ''), '音频加载失败')
+      mountNativePlayer(
+        String(currentNode.attrs.src || ''),
+        '音波不可用',
+        fallbackWaveform,
+        fallbackDurationSeconds,
+      )
     })
   }
 
@@ -336,6 +495,8 @@ function createAudioNodeView(
       intersectionObserver = null
       resetPlayer()
       playButton.removeEventListener('pointerdown', preventFocus)
+      waveformContainer.removeEventListener('pointerdown', preventFocus)
+      waveformContainer.removeEventListener('click', seekNativeAudio)
     },
   }
 }

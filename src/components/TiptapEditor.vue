@@ -1051,6 +1051,16 @@ defineExpose({
       min-width: 0;
       overflow: hidden;
       border-radius: var(--pad-radius-md);
+
+      &--native {
+        cursor: pointer;
+      }
+    }
+
+    .editor-audio-native-waveform {
+      display: block;
+      width: 100%;
+      height: 44px;
     }
 
     .editor-audio-time {
@@ -1069,23 +1079,12 @@ defineExpose({
       font-size: 10px;
     }
 
-    .editor-audio-native {
-      box-sizing: border-box;
-      width: 100%;
-      max-width: 100%;
-      padding: 0;
-    }
-
-    &:has(.editor-audio-native) {
-      grid-template-columns: 1fr;
-
-      .editor-audio-waveform {
-        width: 100%;
-      }
+    .editor-audio-native-backend {
+      display: none;
     }
   }
 
-  audio[data-id]:not(.editor-audio-native) {
+  audio[data-id]:not(.editor-audio-native-backend) {
     width: 90%;
     margin: 10px auto;
   }

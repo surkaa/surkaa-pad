@@ -28,6 +28,13 @@ export function calculateAudioPlayerWidth(durationMs: number): number {
   return Math.round(MIN_AUDIO_PLAYER_WIDTH_PX + safeDurationMs / 1_000 * AUDIO_PLAYER_WIDTH_PER_SECOND_PX)
 }
 
+export function calculateAudioProgress(currentSeconds: number, durationSeconds: number): number {
+  if (!Number.isFinite(currentSeconds) || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return 0
+  }
+  return Math.max(0, Math.min(1, currentSeconds / durationSeconds))
+}
+
 export function calculateCenteredWaveformBars(
   channels: readonly ArrayLike<number>[],
   canvasWidth: number,
