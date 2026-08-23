@@ -15,6 +15,7 @@ import {
   withLocalStorageMigrationError,
 } from './utils/localStorageMigration';
 import {logStartupError, logStartupPhase} from './utils/startupLog';
+import AndroidShareImportCoordinator from './components/AndroidShareImportCoordinator.vue';
 
 const configStore = useConfigStore();
 const p = platform();
@@ -138,6 +139,7 @@ async function resumeLocalStorageMigration() {
   <router-view v-slot="{ Component }">
     <component :is="Component"/>
   </router-view>
+  <AndroidShareImportCoordinator/>
   <LocalStorageMigrationDialog
     v-model="showLocalStorageMigration"
     title="继续迁移本地数据位置"

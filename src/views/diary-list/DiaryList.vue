@@ -19,10 +19,13 @@ import {useRouter} from 'vue-router';
 import {useDiaryListShortcuts} from '../../composables/useDiaryListShortcuts';
 import {formatEditorShortcut} from '../../utils/editorShortcuts';
 import {platform} from '@tauri-apps/plugin-os';
+import {useAndroidShareStore} from '../../stores/androidShare';
 
 const $q = useQuasar();
 const router = useRouter();
 const isWindows = platform() === 'windows';
+const androidShareStore = useAndroidShareStore();
+const {selectingTarget} = storeToRefs(androidShareStore);
 const timeoutStore = useTimeoutStore();
 const dataStore = useDataStore();
 const {
@@ -62,6 +65,19 @@ function openAiAssistant() {
 
 function openSettings() {
   void router.push({name: 'Settings'});
+}
+
+async function handleDiaryClick(id: string) {
+  if (selectingTarget.value) {
+    const batchId = androidShareStore.selectTarget(id);
+    dataStore.currentId = id;
+    await router.push({
+      name: 'DiaryDetail',
+      query: {shareImport: batchId},
+    });
+    return;
+  }
+  await openDiary(id);
 }
 
 useDiaryListShortcuts(diaryListShortcuts, {
@@ -202,6 +218,13 @@ onDeactivated(() => {
   <div id="diary-list">
     <div class="main-content">
       <section id="list" class="scroll-container" ref="scrollContainer">
+        <q-banner v-if="selectingTarget" rounded class="share-target-banner q-mb-md">
+          <template #avatar><q-icon name="ios_share"/></template>
+          请选择要添加分享内容的日记
+          <template #action>
+            <q-btn flat label="取消" @click="androidShareStore.cancelTargetSelection()"/>
+          </template>
+        </q-banner>
         <q-infinite-scroll
             ref="infiniteScrollRef"
             scroll-target="#list"
@@ -214,7 +237,7 @@ onDeactivated(() => {
               :key="id"
               :diary="diarySummaries[id]"
               :pinned="pinnedDiaryIds.includes(id)"
-              @click="openDiary(id)"
+              @click="handleDiaryClick(id)"
               @visible="handleCardVisible(id)"
           />
 
@@ -231,7 +254,7 @@ onDeactivated(() => {
       </section>
     </div>
 
-    <q-page-sticky position="bottom-right" :offset="[24, 38]" class="z-fab">
+    <q-page-sticky v-if="!selectingTarget" position="bottom-right" :offset="[24, 38]" class="z-fab">
       <q-btn
           fab
           icon="add"
@@ -247,7 +270,7 @@ onDeactivated(() => {
       </q-btn>
     </q-page-sticky>
 
-    <Teleport v-if="isActivating" defer to="#header-actions">
+    <Teleport v-if="isActivating && !selectingTarget" defer to="#header-actions">
       <q-btn flat round dense icon="auto_awesome" aria-label="AI 助手" @click="openAiAssistant">
         <q-tooltip v-if="isWindows">
           AI 助手（{{ formatEditorShortcut(diaryListShortcuts.aiAssistant) }}）
@@ -290,6 +313,12 @@ onDeactivated(() => {
     overflow-y: auto;
     overflow-x: hidden;
     padding: 24px 24px 100px 24px;
+  }
+
+  .share-target-banner {
+    border: 1px solid var(--pad-border-color-200);
+    background: var(--pad-bg-color-200);
+    color: var(--pad-text-color-100);
   }
 
   .pad-fab-gradient {
