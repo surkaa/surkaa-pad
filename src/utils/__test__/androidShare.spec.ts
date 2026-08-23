@@ -5,6 +5,7 @@ import {
   androidShareText,
   appendAndroidShareToDiaryContent,
   attachmentInsertionsToDiaryNodes,
+  createAndroidShareResumeRefresher,
   sharedAttachmentNodeKind,
 } from '../androidShare';
 
@@ -25,6 +26,37 @@ function uploaded(
 }
 
 describe('Android share content planning', () => {
+  it('refreshes immediately and retries briefly when the app resumes', async () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn(async () => undefined);
+    const refresher = createAndroidShareResumeRefresher(refresh, [0, 100, 300]);
+
+    refresher.trigger();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(200);
+    expect(refresh).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
+
+  it('replaces pending resume retries and cancels them when disposed', async () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn(async () => undefined);
+    const refresher = createAndroidShareResumeRefresher(refresh, [0, 100]);
+
+    refresher.trigger();
+    refresher.trigger();
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    refresher.dispose();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it('combines subject and text without duplicating an existing subject', () => {
     expect(androidShareText('标题', '正文')).toBe('标题\n\n正文');
     expect(androidShareText('标题', '标题\n正文')).toBe('标题\n正文');

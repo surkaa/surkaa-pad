@@ -44,8 +44,8 @@ private data class PendingShareBatch(
 /**
  * Android 系统分享收件箱。
  *
- * Intent 会先进入原生内存队列，WebView 事件仅用于提醒前端重新读取；即使冷启动时
- * 监听器尚未注册，内容也会一直保留到前端明确确认或用户丢弃。
+ * Intent 会先进入原生内存队列；前端在 WebView 恢复前台时主动读取，因此即使冷启动时
+ * 页面尚未建立，内容也会一直保留到前端明确确认或用户丢弃。
  */
 @TauriPlugin
 class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
@@ -54,13 +54,13 @@ class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
     private val receivedBatchIds = LinkedHashSet<String>()
 
     override fun load(webView: WebView) {
-        enqueueIntent(activity.intent, notifyWebView = false)
+        enqueueIntent(activity.intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         // 让 Activity 在进程被临时重建时尽可能保留最近一次分享 Intent。
         activity.intent = intent
-        enqueueIntent(intent, notifyWebView = true)
+        enqueueIntent(intent)
     }
 
     @Command
@@ -83,7 +83,7 @@ class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(JSObject().apply { put("acknowledged", acknowledged) })
     }
 
-    private fun enqueueIntent(intent: Intent?, notifyWebView: Boolean) {
+    private fun enqueueIntent(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND && intent?.action != Intent.ACTION_SEND_MULTIPLE) {
             return
         }
@@ -95,7 +95,7 @@ class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
             ?: UUID.randomUUID().toString().also { intent.putExtra(SHARE_BATCH_ID_EXTRA, it) }
         if (isAcknowledged(batchId)) return
         val batch = parseIntent(intent, batchId) ?: return
-        val pendingCount = synchronized(queueLock) {
+        synchronized(queueLock) {
             if (!receivedBatchIds.add(batchId)) {
                 return
             }
@@ -104,11 +104,6 @@ class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
             while (receivedBatchIds.size > 64) {
                 receivedBatchIds.remove(receivedBatchIds.first())
             }
-            pendingBatches.size
-        }
-
-        if (notifyWebView) {
-            trigger("pending-share", JSObject().apply { put("pendingCount", pendingCount) })
         }
     }
 

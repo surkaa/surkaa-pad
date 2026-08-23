@@ -11,6 +11,40 @@ import {
   type UploadedAttachment,
 } from './attachmentInsertion';
 
+export const ANDROID_SHARE_RESUME_REFRESH_DELAYS_MS = [0, 150, 600] as const;
+
+/**
+ * Android 从来源应用返回时，原生 onNewIntent 与 WebView 恢复前台的先后顺序并不固定。
+ * 立即读取一次并短暂重试，既覆盖生命周期时序，又避免在前台持续轮询。
+ */
+export function createAndroidShareResumeRefresher(
+  refresh: () => void | Promise<void>,
+  delays: readonly number[] = ANDROID_SHARE_RESUME_REFRESH_DELAYS_MS,
+) {
+  let timers: ReturnType<typeof setTimeout>[] = [];
+
+  function cancelPending() {
+    timers.forEach(timer => clearTimeout(timer));
+    timers = [];
+  }
+
+  function trigger() {
+    cancelPending();
+    for (const delay of delays) {
+      if (delay <= 0) {
+        void refresh();
+      } else {
+        timers.push(setTimeout(() => void refresh(), delay));
+      }
+    }
+  }
+
+  return {
+    trigger,
+    dispose: cancelPending,
+  };
+}
+
 /**
  * Android 来源声明的音视频类型优先，避免例如 M4A 被内容探测为 video/mp4；
  * 来源未提供具体媒体类型时才退回后端探测结果。

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import {addPluginListener, type PluginListener} from '@tauri-apps/api/core';
 import {platform} from '@tauri-apps/plugin-os';
 import {storeToRefs} from 'pinia';
 import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
@@ -9,6 +8,7 @@ import {useAndroidShareStore} from '../stores/androidShare';
 import {useDataStore} from '../stores/data';
 import {formatBytes} from '../utils/format';
 import {formatError} from '../utils/formatError';
+import {createAndroidShareResumeRefresher} from '../utils/androidShare';
 
 const isAndroid = platform() === 'android';
 const $q = useQuasar();
@@ -19,7 +19,7 @@ const dataStore = useDataStore();
 const {pendingBatches, pendingCount, importRequest, selectingTarget} = storeToRefs(shareStore);
 const {currentId, currentDiary} = storeToRefs(dataStore);
 const dialogDismissed = ref(false);
-let pluginListener: PluginListener | null = null;
+let resumeRefresher: ReturnType<typeof createAndroidShareResumeRefresher> | null = null;
 
 const unlocked = computed(() => route.name !== 'Unlock');
 const activeBatch = computed(() => pendingBatches.value[0] ?? null);
@@ -132,25 +132,28 @@ watch(() => activeBatch.value?.id, (batchId, previousBatchId) => {
 
 onMounted(async () => {
   if (!isAndroid) return;
+  resumeRefresher = createAndroidShareResumeRefresher(() => {
+    dialogDismissed.value = false;
+    return refresh();
+  });
+  window.addEventListener('focus', resumeRefresher.trigger);
+  window.addEventListener('pageshow', resumeRefresher.trigger);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
   await refresh(true);
-  try {
-    pluginListener = await addPluginListener<{pendingCount: number}>(
-      'android-share-target',
-      'pending-share',
-      () => {
-        dialogDismissed.value = false;
-        void refresh(true);
-      },
-    );
-  } catch (error) {
-    console.error('监听 Android 分享事件失败:', error);
-  }
 });
 
 onBeforeUnmount(() => {
-  void pluginListener?.unregister();
-  pluginListener = null;
+  if (!isAndroid || !resumeRefresher) return;
+  window.removeEventListener('focus', resumeRefresher.trigger);
+  window.removeEventListener('pageshow', resumeRefresher.trigger);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+  resumeRefresher.dispose();
+  resumeRefresher = null;
 });
+
+function handleVisibilityChange() {
+  if (!document.hidden) resumeRefresher?.trigger();
+}
 </script>
 
 <template>
