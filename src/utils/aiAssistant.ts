@@ -122,6 +122,7 @@ export function buildPersistedAiExchanges(
           answer: message.payload.content,
           modelRounds: processSteps.filter(step => step.kind === 'model').length,
           usage: message.payload.usage,
+          contextTokens: message.payload.contextTokens ?? null,
         }
         : null,
       error: message.payload.error,
@@ -335,8 +336,8 @@ export function nextAiProcessExpanded(
 }
 
 export function formatAiResponseMeta(response: AiAgentResponse): string {
-  if (!response.usage) return '';
-  return `输入 ${response.usage.promptTokens} Token · 输出 ${response.usage.completionTokens} Token`;
+  if (response.contextTokens === null) return '';
+  return `上下文已使用 ${response.contextTokens.toLocaleString('zh-CN')} Token`;
 }
 
 export function formatAiProcessSummary(steps: AiProcessStep[]): string {

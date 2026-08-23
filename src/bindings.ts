@@ -890,7 +890,7 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 /** user-defined types **/
 
 export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "conversationSource"; data: AiConversationSource } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
-export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null }
+export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null; contextTokens: number | null }
 export type AiAssistantRecordState = "completed" | "failed" | "cancelled"
 export type AiAssistantShortcutSettings = { focusInput: string }
 export type AiConversationSource = { model: string; messages: AiConversationSourceMessage[]; tools: AiConversationSourceToolDefinition[] }
@@ -904,7 +904,7 @@ export type AiProcessStepRecord = { id: string; kind: AiProcessStepKind; title: 
 export type AiProcessStepState = "completed" | "failed" | "cancelled"
 export type AiSessionDetail = { meta: AiSessionMeta; messages: AiSessionMessage[]; conversationSource: AiConversationSource | null }
 export type AiSessionMessage = { index: number; createdAt: number; payload: AiSessionMessagePayload }
-export type AiSessionMessagePayload = { role: "user"; content: string; timezoneOffsetMinutes?: number | null } | { role: "assistant"; state: AiAssistantRecordState; content: string; error: string | null; model: string; usage: AiUsage | null; processSteps: AiProcessStepRecord[]; trace: AiConversationSourceMessage[] }
+export type AiSessionMessagePayload = { role: "user"; content: string; timezoneOffsetMinutes?: number | null } | { role: "assistant"; state: AiAssistantRecordState; content: string; error: string | null; model: string; usage: AiUsage | null; contextTokens?: number | null; processSteps: AiProcessStepRecord[]; trace: AiConversationSourceMessage[] }
 export type AiSessionMeta = { version: number; id: string; title: string; aiTitle: string | null; model: string; createdAt: number; updatedAt: number; committedMessageCount: number }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"

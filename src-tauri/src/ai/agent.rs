@@ -30,6 +30,8 @@ pub struct AiAgentResponse {
     #[specta(type = f64)]
     pub model_rounds: usize,
     pub usage: Option<AiUsage>,
+    #[specta(rename = "contextTokens", type = Option<f64>)]
+    pub context_tokens: Option<u64>,
 }
 
 pub(crate) struct AiAgentRunResult {
@@ -207,6 +209,7 @@ impl<'a> AiAgent<'a> {
                 tool_count,
                 elapsed_ms: elapsed_millis(model_started_at.elapsed()),
             })?;
+            let context_tokens = completion.usage.map(|usage| usage.total_tokens);
             accumulate_usage(&mut total_usage, completion.usage);
 
             let assistant_message = completion.message;
@@ -223,6 +226,7 @@ impl<'a> AiAgent<'a> {
                         answer,
                         model_rounds: round,
                         usage: total_usage,
+                        context_tokens,
                     },
                     source: AiConversationSource::from_messages(model, &messages, &definitions),
                 });

@@ -348,6 +348,7 @@ async fn executes_tools_and_feeds_results_back_to_the_model() {
             total_tokens: 36,
         })
     );
+    assert_eq!(response.context_tokens, Some(24));
     let requests = provider.requests();
     assert_eq!(requests.len(), 2);
     assert!(matches!(

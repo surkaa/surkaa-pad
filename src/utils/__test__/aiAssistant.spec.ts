@@ -104,6 +104,7 @@ describe('buildPersistedAiExchanges', () => {
           error: null,
           model: 'qwen3:8b',
           usage: {promptTokens: 20, completionTokens: 8, totalTokens: 28},
+          contextTokens: 28,
           processSteps: [{
             id: 'model-1',
             kind: 'model' as const,
@@ -131,6 +132,7 @@ describe('buildPersistedAiExchanges', () => {
           error: '连接断开',
           model: 'qwen3:8b',
           usage: null,
+          contextTokens: null,
           processSteps: [],
           trace: [],
         },
@@ -150,6 +152,7 @@ describe('buildPersistedAiExchanges', () => {
           error: null,
           model: 'qwen3:8b',
           usage: null,
+          contextTokens: null,
           processSteps: [],
           trace: [],
         },
@@ -165,6 +168,7 @@ describe('buildPersistedAiExchanges', () => {
           answer: '第一答',
           modelRounds: 1,
           usage: {promptTokens: 20, completionTokens: 8, totalTokens: 28},
+          contextTokens: 28,
         },
       }),
       expect.objectContaining({
@@ -192,6 +196,7 @@ describe('buildPersistedAiExchanges', () => {
           error: null,
           model: 'qwen3:8b',
           usage: null,
+          contextTokens: null,
           processSteps: [],
           trace: [],
         },
@@ -330,7 +335,7 @@ describe('reduceAiAgentEvent', () => {
     expect(state.answer).toBe('最终回答');
     expect(state.processSteps[2].title).toBe('生成回答');
 
-    const response = {answer: '最终回答', modelRounds: 2, usage: null};
+    const response = {answer: '最终回答', modelRounds: 2, usage: null, contextTokens: null};
     state = reduceAiAgentEvent(state, {event: 'completed', data: response});
     expect(state).toEqual({
       state: 'completed',
@@ -470,13 +475,19 @@ describe('process visibility', () => {
 });
 
 describe('formatAiResponseMeta', () => {
-  it('shows input, output, and total token usage when available', () => {
+  it('shows the latest model call context usage when available', () => {
     expect(formatAiResponseMeta({
       answer: '回答',
       modelRounds: 3,
       usage: {promptTokens: 20, completionTokens: 8, totalTokens: 28},
-    })).toBe('输入 20 Token · 输出 8 Token');
-    expect(formatAiResponseMeta({answer: '回答', modelRounds: 1, usage: null}))
+      contextTokens: 12_345,
+    })).toBe('上下文已使用 12,345 Token');
+    expect(formatAiResponseMeta({
+      answer: '回答',
+      modelRounds: 1,
+      usage: null,
+      contextTokens: null,
+    }))
       .toBe('');
   });
 });

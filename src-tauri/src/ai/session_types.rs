@@ -73,6 +73,10 @@ pub enum AiSessionMessagePayload {
         error: Option<String>,
         model: String,
         usage: Option<AiUsage>,
+        /// 最后一次模型请求实际使用的上下文 Token；旧版 V1 消息没有该字段时保持为空。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[specta(rename = "contextTokens", type = Option<f64>)]
+        context_tokens: Option<u64>,
         #[specta(rename = "processSteps")]
         process_steps: Vec<AiProcessStepRecord>,
         /// 本轮新产生的 assistant/tool 消息，不重复保存系统提示和历史轮次。
@@ -374,6 +378,7 @@ mod tests {
                         completion_tokens: 5,
                         total_tokens: 25,
                     }),
+                    context_tokens: Some(25),
                     process_steps: vec![],
                     trace: vec![AiConversationSourceMessage::Assistant {
                         reasoning_content: Some("需要总结".into()),

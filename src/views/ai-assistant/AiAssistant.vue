@@ -659,7 +659,7 @@ async function scrollToBottom() {
               <span>{{ exchange.status }}</span>
             </div>
             <template v-if="exchange.state === 'completed' && exchange.response">
-              <div v-if="exchange.response.usage" class="answer-meta">
+              <div v-if="exchange.response.contextTokens !== null" class="answer-meta">
                 {{ formatAiResponseMeta(exchange.response) }}
               </div>
             </template>

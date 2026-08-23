@@ -266,6 +266,7 @@ mod tests {
                     error: None,
                     model: "test-model".into(),
                     usage: None,
+                    context_tokens: None,
                     process_steps: vec![],
                     trace: vec![AiConversationSourceMessage::Assistant {
                         reasoning_content: Some("思考内容".into()),
