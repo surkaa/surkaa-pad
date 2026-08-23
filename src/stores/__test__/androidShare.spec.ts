@@ -24,6 +24,7 @@ function batch(id: string): PendingAndroidShare {
 describe('Android share store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    localStorage.clear();
     apiMocks.listPending.mockReset();
     apiMocks.acknowledge.mockReset();
   });
@@ -36,7 +37,11 @@ describe('Android share store', () => {
     store.requestImport('share-1', 'diary-1');
 
     expect(store.pendingBatches).toHaveLength(2);
-    expect(store.importRequest).toEqual({batchId: 'share-1', targetDiaryId: 'diary-1'});
+    expect(store.importRequest).toEqual({
+      batchId: 'share-1',
+      targetDiaryId: 'diary-1',
+      phase: 'pending',
+    });
     expect(store.importingBatch?.id).toBe('share-1');
     expect(apiMocks.acknowledge).not.toHaveBeenCalled();
   });
@@ -51,7 +56,11 @@ describe('Android share store', () => {
 
     expect(store.selectTarget('diary-2')).toBe('share-1');
     expect(store.selectingTarget).toBe(false);
-    expect(store.importRequest).toEqual({batchId: 'share-1', targetDiaryId: 'diary-2'});
+    expect(store.importRequest).toEqual({
+      batchId: 'share-1',
+      targetDiaryId: 'diary-2',
+      phase: 'pending',
+    });
   });
 
   it('only removes a batch after the native inbox acknowledges it', async () => {
@@ -60,6 +69,9 @@ describe('Android share store', () => {
     const store = useAndroidShareStore();
     await store.refresh();
     store.requestImport('share-1', null);
+    store.markImportAwaitingAcknowledgement('share-1');
+
+    expect(store.importRequest?.phase).toBe('acknowledging');
 
     await store.acknowledge('share-1');
 
@@ -75,5 +87,22 @@ describe('Android share store', () => {
 
     expect(() => store.requestImport('missing', null)).toThrow('已经不存在');
     expect(() => store.beginTargetSelection('missing')).toThrow('已经不存在');
+  });
+
+  it('only retries acknowledgement after restart when diary content was already saved', async () => {
+    apiMocks.listPending.mockResolvedValue([batch('share-1')]);
+    apiMocks.acknowledge.mockResolvedValue();
+    const firstStore = useAndroidShareStore();
+    await firstStore.refresh();
+    firstStore.requestImport('share-1', 'diary-1');
+    firstStore.markImportAwaitingAcknowledgement('share-1');
+
+    setActivePinia(createPinia());
+    const restoredStore = useAndroidShareStore();
+    await restoredStore.refresh();
+
+    expect(apiMocks.acknowledge).toHaveBeenCalledWith('share-1');
+    expect(restoredStore.pendingBatches).toEqual([]);
+    expect(restoredStore.importRequest).toBeNull();
   });
 });

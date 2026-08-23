@@ -31,6 +31,11 @@ import {
   runEditorToolbarAction,
   type EditorToolbarAction,
 } from '../../utils/editorToolbar';
+import {storeToRefs} from 'pinia';
+import {v4 as uuidv4} from 'uuid';
+import {useAndroidShareStore} from '../../stores/androidShare';
+import {appendAndroidShareToDiaryContent} from '../../utils/androidShare';
+import {formatError} from '../../utils/formatError';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -49,10 +54,13 @@ const toolbarOrder = configStore.useTauriConfig('editor_toolbar_order');
 const isAndroid = platform() === 'android';
 const showLocationDialog = ref(false);
 const pendingLocation = ref<DiaryLocation | null>(null);
+const androidShareStore = useAndroidShareStore();
+const {importRequest, importingBatch} = storeToRefs(androidShareStore);
+const shareImportRunning = ref(false);
 
 const {
   diaryId, diary, attachments, diaryManifestSize, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
-  loadDiaryInfo, deleteDiary, flushPendingSave
+  loadDiaryInfo, deleteDiary, ensureDiaryCreated, flushPendingSave
 } = useDiaryCore();
 
 // UI交互
@@ -71,6 +79,98 @@ const {
   cancelAllUploads,
   showAudioDrawer,
 } = mediaAction;
+
+function cloneDiaryContent() {
+  return JSON.parse(JSON.stringify(diaryContent.value)) as typeof diaryContent.value;
+}
+
+async function acknowledgeImportedShare(batchId: string) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await androidShareStore.acknowledge(batchId);
+      return true;
+    } catch (error) {
+      lastError = error;
+      await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+  }
+  console.error('确认 Android 分享导入完成失败:', lastError);
+  $q.notify({
+    type: 'warning',
+    message: '内容已经保存，但清理系统分享队列失败；应用会保留完成状态以避免重复导入',
+  });
+  return false;
+}
+
+async function runPendingShareImport() {
+  const request = importRequest.value;
+  const batch = importingBatch.value;
+  if (!request || !batch || !isInitialLoaded.value || shareImportRunning.value) return;
+
+  if (request.phase === 'acknowledging') {
+    shareImportRunning.value = true;
+    try {
+      await acknowledgeImportedShare(batch.id);
+    } finally {
+      shareImportRunning.value = false;
+    }
+    return;
+  }
+
+  const targetsThisDiary = request.targetDiaryId === null
+    ? isNew.value
+    : request.targetDiaryId === diaryId.value;
+  if (!targetsThisDiary) return;
+
+  shareImportRunning.value = true;
+  let uploaded: Awaited<ReturnType<typeof mediaAction.uploadAndroidSharedAttachments>> = [];
+  let snapshot = cloneDiaryContent();
+  try {
+    if (!(await ensureDiaryCreated())) {
+      androidShareStore.clearImportRequest(batch.id);
+      return;
+    }
+    snapshot = cloneDiaryContent();
+    uploaded = await mediaAction.uploadAndroidSharedAttachments(batch.items);
+    if (uploaded === null) {
+      throw new Error('附件上传未全部完成');
+    }
+
+    for (const item of uploaded) {
+      attachmentMap.value[item.attachmentId] = item.url;
+    }
+    diaryContent.value = appendAndroidShareToDiaryContent(
+      diaryContent.value,
+      batch,
+      uploaded,
+      uuidv4,
+    );
+    await nextTick();
+    if (!(await flushPendingSave())) {
+      throw new Error('保存导入后的日记正文失败');
+    }
+
+    androidShareStore.markImportAwaitingAcknowledgement(batch.id);
+    const acknowledged = await acknowledgeImportedShare(batch.id);
+    $q.notify({
+      type: acknowledged ? 'positive' : 'warning',
+      message: acknowledged ? '分享内容已添加到日记末尾' : '分享内容已保存',
+    });
+  } catch (error) {
+    console.error('导入 Android 分享内容失败:', error);
+    diaryContent.value = snapshot;
+    await nextTick();
+    const contentRestored = await flushPendingSave();
+    if (contentRestored && uploaded?.length) {
+      await mediaAction.deleteImportedAttachments(uploaded);
+    }
+    androidShareStore.clearImportRequest(batch.id);
+    $q.notify({type: 'negative', message: `导入分享内容失败：${formatError(error)}`});
+  } finally {
+    shareImportRunning.value = false;
+  }
+}
 const {
   showRenameDialog,
   oldFilename,
@@ -224,8 +324,10 @@ const {
 });
 
 onMounted(async () => {
-  const shouldFocusEditor = isNew.value;
-  if (!shouldFocusEditor) {
+  const newDiary = isNew.value;
+  // 从 Android 分享进入新日记时先完成导入，不主动拉起软键盘。
+  const shouldFocusEditor = newDiary && typeof route.query.shareImport !== 'string';
+  if (!newDiary) {
     await loadDiaryInfo();
   } else {
     // 新建日记，直接标记加载完成，允许保存
@@ -243,6 +345,12 @@ watch(() => tiptapEditorRef.value?.editor, (newEditor) => {
     editorDomRef.value = newEditor.view.dom as HTMLElement;
   }
 });
+
+watch(
+  [isInitialLoaded, importRequest, importingBatch],
+  () => void runPendingShareImport(),
+  {immediate: true},
+);
 
 onActivated(async () => {
   await nextTick();

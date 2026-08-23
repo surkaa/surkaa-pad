@@ -1,6 +1,11 @@
 import {Channel} from "@tauri-apps/api/core";
 import {platform} from "@tauri-apps/plugin-os";
-import {AttachmentMeta, AttachmentProcessEvent, type AudioWaveform} from "../bindings.ts";
+import {
+    AttachmentMeta,
+    AttachmentProcessEvent,
+    type AudioWaveform,
+    type PendingAndroidShareItem,
+} from "../bindings.ts";
 import {Ref, ref} from "vue";
 import {open, PickerMode} from "@tauri-apps/plugin-dialog";
 import {useQuasar} from "quasar";
@@ -22,6 +27,7 @@ import {
     type UploadedAttachment,
 } from "../utils/attachmentInsertion";
 import {useAttachmentUploader} from './useAttachmentUploader';
+import {sharedAttachmentNodeKind} from '../utils/androidShare';
 
 export type {UploadTask} from './useAttachmentUploader';
 
@@ -61,6 +67,7 @@ export function useMediaAction(
         cancelUploadTask,
         cancelAllUploads,
         uploadAttachment,
+        uploadSharedAttachment,
         uploadAttachmentChunked,
         uploadMemoryAttachmentChunked,
     } = useAttachmentUploader(diaryId);
@@ -100,6 +107,71 @@ export function useMediaAction(
             editor,
             atEnd,
         );
+    }
+
+    async function deleteImportedAttachments(results: readonly UploadedAttachment[]) {
+        const failures: string[] = [];
+        for (const result of results) {
+            try {
+                await api.cmdDeleteAttachment(diaryId.value, result.attachmentId);
+                dataStore.deleteAttachment(diaryId.value, [result.attachmentId]);
+                delete currentDiaryAttachmentUrlMap.value[result.attachmentId];
+            } catch (error) {
+                failures.push(result.filename);
+                console.error(`回滚分享附件 ${result.filename} 失败:`, error);
+            }
+        }
+        if (failures.length) {
+            $q.notify({
+                type: 'negative',
+                message: `${failures.length} 个分享附件未能自动清理，请在日记详情中处理未使用附件`,
+            });
+            return false;
+        }
+        return true;
+    }
+
+    async function uploadAndroidSharedAttachments(
+        items: readonly PendingAndroidShareItem[],
+    ): Promise<UploadedAttachment[] | null> {
+        if (!items.length) return [];
+        if (!resetUploadTasks()) {
+            showUploadDialog.value = true;
+            $q.notify({type: 'warning', message: '请先等待当前文件处理完成或取消任务'});
+            return null;
+        }
+
+        showUploadDialog.value = true;
+        const queuedUploads = items.map(item => ({
+            item,
+            taskId: createTask(item.displayName, true),
+        }));
+        const results = await batchUploadAll(queuedUploads, ({item, taskId}) => {
+            const hintedNodeKind = attachmentNodeKindFromMimeType(item.mimeType || '');
+            return promisifyUpload<UploadedAttachment>((onSuccess, onError) => {
+                void uploadSharedAttachment(
+                    item,
+                    attachmentEncryptionByKind[hintedNodeKind].value,
+                    (meta, url) => onSuccess({
+                        // Android ContentProvider 提供的类型优先用于区分音视频；缺失或为
+                        // 普通文件时，再采用后端基于内容探测出的 MIME。
+                        nodeKind: sharedAttachmentNodeKind(item.mimeType, meta.mimetype),
+                        attachmentId: meta.id,
+                        filename: meta.filename,
+                        url,
+                    }),
+                    () => onError(),
+                    taskId,
+                );
+            });
+        }, uploadConcurrency.value);
+
+        const successful = results.filter((item): item is UploadedAttachment => item !== null);
+        if (successful.length !== items.length) {
+            await deleteImportedAttachments(successful);
+            return null;
+        }
+        return successful;
     }
 
     async function saveAttachmentAudioInfo(
@@ -417,5 +489,7 @@ export function useMediaAction(
                 url: currentDiaryAttachmentUrlMap.value[attachment.id] || '',
             })), true);
         },
+        uploadAndroidSharedAttachments,
+        deleteImportedAttachments,
     };
 }

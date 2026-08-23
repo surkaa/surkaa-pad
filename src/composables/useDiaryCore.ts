@@ -89,6 +89,17 @@ export function useDiaryCore() {
         );
     }
 
+    async function ensureDiaryCreated(): Promise<boolean> {
+        if (!isNew.value) return true;
+        try {
+            await persistDiary(cloneContent(diaryContent.value));
+            return true;
+        } catch (error) {
+            $q.notify({type: 'negative', message: `创建日记失败: ${formatError(error)}`});
+            return false;
+        }
+    }
+
     const saveQueue = new LatestTaskQueue<DiaryContent>(persistDiary);
 
     async function flushPendingSave(): Promise<boolean> {
@@ -198,6 +209,7 @@ export function useDiaryCore() {
         loadDiaryInfo,
         deleteDiary,
         updateContent,
+        ensureDiaryCreated,
         flushPendingSave,
     };
 }
