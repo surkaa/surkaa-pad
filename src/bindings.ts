@@ -96,6 +96,31 @@ async cmdEncryptInfo() : Promise<Result<number, AppError>> {
 }
 },
 /**
+ * 查看尚未导入的 Android 系统分享内容。
+ * Windows 端始终返回空数组。读取不会消费队列；成功导入或明确放弃后需调用
+ * [`cmd_ack_pending_android_share`]。
+ */
+async cmdListPendingAndroidShares() : Promise<Result<PendingAndroidShare[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_list_pending_android_shares") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 确认某批 Android 系统分享已完成导入或已被用户明确放弃。
+ * 该操作是幂等的，批次已经不存在时也会成功返回。
+ */
+async cmdAckPendingAndroidShare(batchId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_ack_pending_android_share", { batchId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 初始化 OSS 客户端
  * # Arguments
  * * `akid` - 访问密钥 ID
@@ -1009,6 +1034,14 @@ export type LocalStorageMigrationEvent = { event: "preparing"; data: { sourcePat
 export type LocalStorageMigrationPhase = "preparing" | "copying" | "verifying" | "switching" | "cleaning"
 export type LocalStorageMigrationPlan = { sourcePath: string; targetPath: string; totalFiles: number; totalBytes: number; availableBytes: number; requiredBytes: number; fastMove: boolean }
 export type LocalStorageMigrationStatus = { migrationPending: boolean; unavailablePath: string | null; unavailableReason: string | null }
+/**
+ * Android 分享面板交给应用、但尚未导入日记的一批内容。
+ */
+export type PendingAndroidShare = { id: string; subject?: string | null; text?: string | null; items: PendingAndroidShareItem[] }
+/**
+ * 分享批次中的一个文件。`uri` 仅作为 Android 临时授权的读取入口，不会被持久化。
+ */
+export type PendingAndroidShareItem = { id: string; uri: string; displayName: string; mimeType?: string | null; size?: number | null }
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 export type SyncDirection = "upload" | "download"
 export type SyncPhase = "preparing" | "attachments" | "aiMessages" | "manifests" | "aiSessions"

@@ -1,4 +1,5 @@
 pub mod ai;
+mod android_share;
 mod app_config;
 pub mod app_object_store;
 mod attachments;
@@ -50,6 +51,7 @@ use crate::ai::session_command::{
     cmd_create_ai_session, cmd_delete_ai_session, cmd_get_ai_session, cmd_list_ai_sessions,
     cmd_update_ai_session_ai_title, cmd_update_ai_session_model,
 };
+use crate::android_share::{cmd_ack_pending_android_share, cmd_list_pending_android_shares};
 use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
@@ -123,6 +125,9 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_valid_password,
             cmd_biometric_unlock,
             cmd_encrypt_info,
+            // Android 系统分享收件箱（Windows 返回空数据）
+            cmd_list_pending_android_shares,
+            cmd_ack_pending_android_share,
             // 客户端初始化
             cmd_init_oss_client,
             // 远程存储管理
@@ -241,7 +246,8 @@ pub fn run() {
         .plugin(tauri_plugin_biometric::init())
         .plugin(tauri_plugin_native_camera::init())
         .plugin(tauri_plugin_geolocation::init())
-        .plugin(location::init_android_plugin());
+        .plugin(location::init_android_plugin())
+        .plugin(android_share::init_android_plugin());
 
     app_builder
         .invoke_handler(builder.invoke_handler())
