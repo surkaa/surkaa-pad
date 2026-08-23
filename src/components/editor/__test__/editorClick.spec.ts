@@ -83,6 +83,17 @@ describe('shouldPreventEditorFocus', () => {
     }
   })
 
+  it('allows native text selection inside Summary content on mobile', () => {
+    const summary = document.createElement('details')
+    summary.className = 'editor-summary'
+    const content = document.createElement('div')
+    content.className = 'editor-summary-content'
+    summary.append(content)
+
+    expect(shouldPreventEditorFocus(content, 'android')).toBe(false)
+    expect(shouldPreventEditorFocus(summary, 'android')).toBe(true)
+  })
+
   it('prevents editor focus throughout mobile album image selection', () => {
     const proseMirror = document.createElement('div')
     proseMirror.className = 'ProseMirror'

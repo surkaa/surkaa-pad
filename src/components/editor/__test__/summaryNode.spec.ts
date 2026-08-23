@@ -26,6 +26,13 @@ describe('SummaryNode', () => {
       .toBe('外显文字');
     expect(element.querySelector('.editor-summary-content')?.textContent)
       .toBe('第一行\n第二行');
+    const details = element.querySelector('details.editor-summary') as HTMLDetailsElement;
+    const content = details.querySelector('.editor-summary-content') as HTMLElement;
+    content.dispatchEvent(new MouseEvent('pointerdown', {bubbles: true}));
+    expect(details.draggable).toBe(false);
+    (details.querySelector('summary') as HTMLElement)
+      .dispatchEvent(new MouseEvent('pointerdown', {bubbles: true}));
+    expect(details.draggable).toBe(true);
 
     editor.destroy();
     element.remove();

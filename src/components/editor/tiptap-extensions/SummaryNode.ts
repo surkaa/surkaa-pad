@@ -65,6 +65,17 @@ function createSummaryNodeView(
   };
   editButton.addEventListener('click', handleEdit);
 
+  const disableDraggingForContentSelection = () => {
+    dom.draggable = false;
+  };
+  const enableDraggingFromSummary = () => {
+    dom.draggable = true;
+  };
+  content.addEventListener('pointerdown', disableDraggingForContentSelection);
+  content.addEventListener('mousedown', disableDraggingForContentSelection);
+  summary.addEventListener('pointerdown', enableDraggingFromSummary);
+  summary.addEventListener('mousedown', enableDraggingFromSummary);
+
   const handleToggle = (event: MouseEvent) => {
     if (editButton.contains(event.target as Node)) return;
     event.preventDefault();
@@ -113,11 +124,18 @@ function createSummaryNodeView(
       sync(node);
       return true;
     },
-    stopEvent: event => editButton.contains(event.target as Node),
+    stopEvent: event => {
+      const target = event.target as Node;
+      return editButton.contains(target) || content.contains(target);
+    },
     ignoreMutation: () => true,
     destroy() {
       toggleAnimation?.cancel();
       editButton.removeEventListener('click', handleEdit);
+      content.removeEventListener('pointerdown', disableDraggingForContentSelection);
+      content.removeEventListener('mousedown', disableDraggingForContentSelection);
+      summary.removeEventListener('pointerdown', enableDraggingFromSummary);
+      summary.removeEventListener('mousedown', enableDraggingFromSummary);
       summary.removeEventListener('click', handleToggle);
     },
   };

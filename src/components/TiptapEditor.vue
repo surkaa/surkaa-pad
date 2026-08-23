@@ -652,7 +652,10 @@ defineExpose({
       padding: 10px 12px 12px;
       border-top: 1px solid var(--pad-border-color-100);
       color: var(--pad-text-color-300);
+      cursor: text;
       line-height: 1.55;
+      user-select: text;
+      -webkit-user-select: text;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
