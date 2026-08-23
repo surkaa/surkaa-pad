@@ -24,15 +24,19 @@ pub fn file_size(file: &File) -> Result<u64, io::Error> {
     Ok(metadata.len())
 }
 
-pub fn file_mimetype(mut file: File) -> Result<(String, File), UtilsError> {
+pub fn detect_file_mimetype(file: &mut File) -> Result<String, UtilsError> {
     let mut buffer = [0; 128];
     let n = file.read(&mut buffer)?;
     if n == 0 {
         return Err(UtilsError::EmptyFile);
     }
-    let mimetype = infer::get(&buffer[..n])
+    Ok(infer::get(&buffer[..n])
         .map(|t| t.mime_type().to_string())
-        .unwrap_or_else(|| STREAM_MIME_TYPE.to_string());
+        .unwrap_or_else(|| STREAM_MIME_TYPE.to_string()))
+}
+
+pub fn file_mimetype(mut file: File) -> Result<(String, File), UtilsError> {
+    let mimetype = detect_file_mimetype(&mut file)?;
 
     file.seek(io::SeekFrom::Start(0))?;
 

@@ -2,7 +2,11 @@ import {Channel} from '@tauri-apps/api/core';
 import {useQuasar} from 'quasar';
 import {computed, onUnmounted, type Ref, ref} from 'vue';
 import {v4 as uuidv4} from 'uuid';
-import type {AttachmentMeta, AttachmentProcessEvent} from '../bindings';
+import type {
+  AttachmentMeta,
+  AttachmentProcessEvent,
+  PendingAndroidShareItem,
+} from '../bindings';
 import {useDataStore} from '../stores/data';
 import api from '../utils/api';
 import {formatError} from '../utils/formatError';
@@ -282,8 +286,11 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     completedCallback?: AttachmentProcessSuccess,
     errorCallback?: (errorMessage: string) => void,
     queuedTaskId?: string,
+    originalFilename?: string,
   ) {
-    const rawName = accessPath.split(/[\\/]/).pop() || '未知文件';
+    const rawName = originalFilename?.trim()
+      || accessPath.split(/[\\/]/).pop()
+      || '未知文件';
     const key = queuedTaskId ?? createTask(rawName);
     const event = createUploadChannel(key, completedCallback, errorCallback);
     if (skipCanceledTaskBeforeStart(key, errorCallback)) return;
@@ -302,6 +309,39 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
       registerCancelableTask(key, token);
     } catch (error) {
       console.error('调用 Rust 后端失败:', error);
+      failTask(key, error, errorCallback);
+    }
+  }
+
+  async function uploadSharedAttachment(
+    item: PendingAndroidShareItem,
+    encrypted: boolean,
+    completedCallback?: AttachmentProcessSuccess,
+    errorCallback?: (errorMessage: string) => void,
+    queuedTaskId?: string,
+  ) {
+    const key = queuedTaskId ?? createTask(item.displayName);
+    const event = createUploadChannel(key, completedCallback, errorCallback);
+    if (skipCanceledTaskBeforeStart(key, errorCallback)) return;
+    const task = uploadTaskMap.value[key];
+    if (!task) throw new Error(`找不到预先登记的上传任务：${key}`);
+    task.status = 'pending';
+
+    try {
+      const token = await api.cmdAddSharedAttachment(
+        event,
+        diaryId.value,
+        encrypted,
+        {
+          uri: item.uri,
+          originalFilename: item.displayName,
+          declaredSize: item.size ?? null,
+          declaredMimetype: item.mimeType ?? null,
+        },
+      );
+      registerCancelableTask(key, token);
+    } catch (error) {
+      console.error('读取 Android 分享附件失败:', error);
       failTask(key, error, errorCallback);
     }
   }
@@ -424,6 +464,7 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     cancelUploadTask,
     cancelAllUploads,
     uploadAttachment,
+    uploadSharedAttachment,
     uploadAttachmentChunked,
     uploadMemoryAttachmentChunked,
   };

@@ -518,6 +518,27 @@ async cmdAddAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string,
 }
 },
 /**
+ * 将 Android 系统分享的 ContentProvider URI 添加为日记附件。
+ * 
+ * 分享来源提供的 MIME 与大小用于兼容不可 seek、无法通过文件描述符取得长度的
+ * ContentProvider；文件描述符本身能提供长度时仍以实际长度为准。
+ * # Arguments
+ * * `event` - 接收上传进度与结果事件的通道
+ * * `id` - 日记 ID
+ * * `encrypted` - 是否需要加密
+ * * `source` - ContentProvider URI、展示文件名、大小与 MIME 类型
+ * # Returns
+ * * `Result<String, AppError>` - 后台上传任务令牌，可用于取消任务
+ */
+async cmdAddSharedAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, encrypted: boolean, source: SharedAttachmentSource) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_add_shared_attachment", { event, id, encrypted, source }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 直接传字节数据给日记添加附件
  * # Arguments
  * * `event` - 接收上传进度与结果事件的通道
@@ -1043,6 +1064,10 @@ export type PendingAndroidShare = { id: string; subject?: string | null; text?: 
  */
 export type PendingAndroidShareItem = { id: string; uri: string; displayName: string; mimeType?: string | null; size?: number | null }
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
+/**
+ * Android ContentProvider 提供的分享附件信息。
+ */
+export type SharedAttachmentSource = { uri: string; originalFilename: string; declaredSize: number | null; declaredMimetype: string | null }
 export type SyncDirection = "upload" | "download"
 export type SyncPhase = "preparing" | "attachments" | "aiMessages" | "manifests" | "aiSessions"
 export type SyncProgressEvent = { event: "preparing"; data: { direction: SyncDirection } } | { event: "started"; data: { direction: SyncDirection; totalFiles: number; totalBytes: number; skippedFiles: number } } | { event: "progress"; data: { direction: SyncDirection; phase: SyncPhase; currentFile: string; currentFileIndex: number; totalFiles: number; currentFileBytes: number; currentFileSize: number; transferredBytes: number; totalBytes: number } } | { event: "completed"; data: { direction: SyncDirection; transferredFiles: number; skippedFiles: number; transferredBytes: number } } | { event: "error"; data: { direction: SyncDirection; phase: SyncPhase; currentFile: string | null; message: string } }

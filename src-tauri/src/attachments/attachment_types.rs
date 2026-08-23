@@ -22,6 +22,17 @@ pub enum AttachmentProcessEvent {
     Error(String),
 }
 
+/// Android ContentProvider 提供的分享附件信息。
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedAttachmentSource {
+    pub uri: String,
+    pub original_filename: String,
+    #[specta(type = Option<f64>)]
+    pub declared_size: Option<u64>,
+    pub declared_mimetype: Option<String>,
+}
+
 // 单个附件的元数据
 #[derive(Deserialize, Serialize, Clone, Debug, Type)]
 #[serde(rename_all = "camelCase")]

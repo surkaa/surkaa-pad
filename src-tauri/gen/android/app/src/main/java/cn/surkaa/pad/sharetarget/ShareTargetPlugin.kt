@@ -16,6 +16,11 @@ import app.tauri.plugin.Plugin
 import org.json.JSONArray
 import java.util.UUID
 
+private const val ACKNOWLEDGED_SHARES_PREFS = "android-share-target"
+private const val ACKNOWLEDGED_SHARE_IDS = "acknowledged-share-ids"
+private const val MAX_ACKNOWLEDGED_SHARE_IDS = 128
+private const val SHARE_BATCH_ID_EXTRA = "cn.surkaa.pad.sharetarget.BATCH_ID"
+
 @InvokeArg
 class AckPendingShareArgs {
     var batchId: String = ""
@@ -46,7 +51,7 @@ private data class PendingShareBatch(
 class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
     private val queueLock = Any()
     private val pendingBatches = mutableListOf<PendingShareBatch>()
-    private val receivedIntentFingerprints = LinkedHashSet<String>()
+    private val receivedBatchIds = LinkedHashSet<String>()
 
     override fun load(webView: WebView) {
         enqueueIntent(activity.intent, notifyWebView = false)
@@ -74,6 +79,7 @@ class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
         val acknowledged = synchronized(queueLock) {
             pendingBatches.removeAll { it.id == args.batchId }
         }
+        if (acknowledged) rememberAcknowledged(args.batchId)
         invoke.resolve(JSObject().apply { put("acknowledged", acknowledged) })
     }
 
@@ -82,16 +88,21 @@ class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
             return
         }
 
-        val fingerprint = intent.toUri(Intent.URI_INTENT_SCHEME)
-        val batch = parseIntent(intent) ?: return
+        // 把随机批次 ID 写回当前 Activity Intent：进程重建时仍是同一批次，
+        // 但用户以后主动重复分享相同文件会获得新 ID，不会被历史确认记录误拦截。
+        val batchId = intent.getStringExtra(SHARE_BATCH_ID_EXTRA)
+            ?.takeIf { runCatching { UUID.fromString(it) }.isSuccess }
+            ?: UUID.randomUUID().toString().also { intent.putExtra(SHARE_BATCH_ID_EXTRA, it) }
+        if (isAcknowledged(batchId)) return
+        val batch = parseIntent(intent, batchId) ?: return
         val pendingCount = synchronized(queueLock) {
-            if (!receivedIntentFingerprints.add(fingerprint)) {
+            if (!receivedBatchIds.add(batchId)) {
                 return
             }
             pendingBatches.add(batch)
             // 仅用于进程内防止系统重复派发同一 Intent，限制集合避免无界增长。
-            while (receivedIntentFingerprints.size > 64) {
-                receivedIntentFingerprints.remove(receivedIntentFingerprints.first())
+            while (receivedBatchIds.size > 64) {
+                receivedBatchIds.remove(receivedBatchIds.first())
             }
             pendingBatches.size
         }
@@ -101,7 +112,7 @@ class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    private fun parseIntent(intent: Intent): PendingShareBatch? {
+    private fun parseIntent(intent: Intent, batchId: String): PendingShareBatch? {
         val subject = intent.getCharSequenceExtra(Intent.EXTRA_SUBJECT)
             ?.toString()
             ?.trim()
@@ -115,11 +126,31 @@ class ShareTargetPlugin(private val activity: Activity) : Plugin(activity) {
         }
 
         return PendingShareBatch(
-            id = UUID.randomUUID().toString(),
+            id = batchId,
             subject = subject,
             text = text,
             items = items,
         )
+    }
+
+    private fun isAcknowledged(batchId: String): Boolean = activity
+        .getSharedPreferences(ACKNOWLEDGED_SHARES_PREFS, Activity.MODE_PRIVATE)
+        .getStringSet(ACKNOWLEDGED_SHARE_IDS, emptySet())
+        ?.contains(batchId) == true
+
+    private fun rememberAcknowledged(batchId: String) {
+        val preferences = activity.getSharedPreferences(
+            ACKNOWLEDGED_SHARES_PREFS,
+            Activity.MODE_PRIVATE,
+        )
+        val acknowledged = LinkedHashSet(
+            preferences.getStringSet(ACKNOWLEDGED_SHARE_IDS, emptySet()).orEmpty(),
+        )
+        acknowledged.add(batchId)
+        while (acknowledged.size > MAX_ACKNOWLEDGED_SHARE_IDS) {
+            acknowledged.remove(acknowledged.first())
+        }
+        preferences.edit().putStringSet(ACKNOWLEDGED_SHARE_IDS, acknowledged).apply()
     }
 
     private fun extractText(intent: Intent): String? {

@@ -55,8 +55,8 @@ use crate::android_share::{cmd_ack_pending_android_share, cmd_list_pending_andro
 use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
-    cmd_caching_attachment, cmd_delete_attachment, cmd_rotate_image_attachment,
-    cmd_save_decrypt_attachment, cmd_toggle_attachment_encryption,
+    cmd_add_shared_attachment, cmd_caching_attachment, cmd_delete_attachment,
+    cmd_rotate_image_attachment, cmd_save_decrypt_attachment, cmd_toggle_attachment_encryption,
     cmd_update_attachment_audio_info, cmd_update_attachment_filename,
 };
 use crate::attachments::chunked_upload_command::{
@@ -164,6 +164,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_reverse_geocode,
             // 附件相关操作
             cmd_add_attachment,
+            cmd_add_shared_attachment,
             cmd_add_attachment_memory,
             cmd_delete_attachment,
             cmd_add_image_attachment_from_camera,
