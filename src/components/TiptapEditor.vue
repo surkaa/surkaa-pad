@@ -1049,6 +1049,7 @@ defineExpose({
 
     .editor-audio-waveform {
       min-width: 0;
+      height: 44px;
       overflow: hidden;
       border-radius: var(--pad-radius-md);
 

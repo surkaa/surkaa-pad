@@ -23,6 +23,17 @@ export interface CenteredWaveformBar {
   height: number
 }
 
+export async function fetchAudioBlob(sourceUrl: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(sourceUrl, {
+    cache: 'no-store',
+    signal,
+  })
+  if (!response.ok) {
+    throw new Error(`附件 HTTP 服务返回 ${response.status}`)
+  }
+  return response.blob()
+}
+
 export function calculateAudioPlayerWidth(durationMs: number): number {
   const safeDurationMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0
   return Math.round(MIN_AUDIO_PLAYER_WIDTH_PX + safeDurationMs / 1_000 * AUDIO_PLAYER_WIDTH_PER_SECOND_PX)

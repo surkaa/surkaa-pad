@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 import {
   calculateAudioProgress,
   calculateAudioPlayerWidth,
@@ -6,10 +6,39 @@ import {
   decodeSignedWaveformPeaks,
   encodeSignedWaveformPeaks,
   extractSignedWaveformPeaks,
+  fetchAudioBlob,
   MIN_AUDIO_PLAYER_WIDTH_PX,
 } from '../audioWaveform'
 
 describe('audio waveform data', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('downloads the complete audio source without using browser cache', async () => {
+    const source = new Uint8Array([1, 2, 3, 4])
+    const fetchMock = vi.fn(async () => new Response(source, {
+      status: 200,
+      headers: {'Content-Type': 'audio/wav'},
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    const blob = await fetchAudioBlob('http://127.0.0.1:1234/audio', controller.signal)
+
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:1234/audio', {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    expect(blob.type).toBe('audio/wav')
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(source)
+  })
+
+  it('reports the attachment HTTP status when waveform source loading fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('failed', {status: 500})))
+
+    await expect(fetchAudioBlob('http://127.0.0.1:1234/audio'))
+      .rejects.toThrow('附件 HTTP 服务返回 500')
+  })
+
   it('round-trips signed peaks through compact bytes', () => {
     const source = [-1, -0.5, 0, 0.5, 1]
     const encoded = encodeSignedWaveformPeaks(source)

@@ -1,8 +1,6 @@
 import {Node as TiptapNode, mergeAttributes} from '@tiptap/vue-3'
 import type {Node as ProseMirrorNode} from '@tiptap/pm/model'
 import type {NodeView} from '@tiptap/pm/view'
-import {platform} from '@tauri-apps/plugin-os'
-import type WaveSurfer from 'wavesurfer.js'
 import type {AttachmentMeta, AudioWaveform} from '../../../bindings'
 import {
   AUDIO_WAVEFORM_PEAK_COUNT,
@@ -11,7 +9,8 @@ import {
   calculateAudioPlayerWidth,
   calculateCenteredWaveformBars,
   decodeSignedWaveformPeaks,
-  encodeSignedWaveformPeaks,
+  fetchAudioBlob,
+  generateAudioWaveform,
   MAX_AUTO_WAVEFORM_SOURCE_BYTES,
 } from '../../../utils/audioWaveform'
 
@@ -45,14 +44,11 @@ function createAudioNodeView(
   options: AudioNodeOptions,
 ): NodeView {
   let currentNode = initialNode
-  const isAndroid = platform() === 'android'
-  let wavesurfer: WaveSurfer | null = null
   let nativeAudio: HTMLAudioElement | null = null
   let nativeCanvas: HTMLCanvasElement | null = null
   let nativePeaks: number[] = []
   let nativeResizeObserver: ResizeObserver | null = null
-  let generationStarted = false
-  let releaseGeneration: (() => void) | null = null
+  let generationAbortController: AbortController | null = null
   let loadVersion = 0
   let destroyed = false
   let visible = false
@@ -87,11 +83,7 @@ function createAudioNodeView(
   playButton.addEventListener('click', event => {
     event.preventDefault()
     event.stopPropagation()
-    if (wavesurfer) {
-      void wavesurfer.playPause().catch(error => {
-        console.error('播放音频失败:', error)
-      })
-    } else if (nativeAudio) {
+    if (nativeAudio) {
       if (nativeAudio.paused) {
         void nativeAudio.play().catch(error => console.error('播放音频失败:', error))
       } else {
@@ -104,10 +96,8 @@ function createAudioNodeView(
 
   function resetPlayer() {
     loadVersion += 1
-    releaseGeneration?.()
-    releaseGeneration = null
-    wavesurfer?.destroy()
-    wavesurfer = null
+    generationAbortController?.abort()
+    generationAbortController = null
     nativeResizeObserver?.disconnect()
     nativeResizeObserver = null
     if (nativeAudio) {
@@ -124,7 +114,6 @@ function createAudioNodeView(
     status.textContent = ''
     playButton.disabled = true
     playIcon.textContent = '▶'
-    generationStarted = false
   }
 
   function mountNativePlayer(
@@ -133,8 +122,6 @@ function createAudioNodeView(
     waveform: AudioWaveform | null = null,
     storedDurationSeconds = 0,
   ) {
-    wavesurfer?.destroy()
-    wavesurfer = null
     waveformContainer.replaceChildren()
 
     waveformContainer.classList.add('editor-audio-waveform--native')
@@ -279,9 +266,9 @@ function createAudioNodeView(
       return
     }
 
-    // Android WebView 的 Web Audio 解码支持弱于原生媒体播放。已有音波时直接让
-    // 原生 audio 负责播放，自定义 Canvas 负责显示，避免失败后暴露原生控件。
-    if (isAndroid && storedWaveform) {
+    // 已有音波时无需再次下载和解码；所有平台统一使用原生 audio 播放、Canvas 绘制，
+    // 避免 WaveSurfer 的内部滚动容器造成双层波形和滚动条。
+    if (storedWaveform) {
       mountNativePlayer(src, '', storedWaveform, storedDurationSeconds)
       return
     }
@@ -291,159 +278,51 @@ function createAudioNodeView(
       await enqueueWaveformGeneration(async () => {
         if (destroyed || version !== loadVersion) return
         status.textContent = '正在生成音波…'
-        await mountWaveSurfer(
+        await generateAndMountWaveform(
           version,
           attachmentId,
           src,
-          null,
-          0,
+          storedDurationSeconds,
         )
       })
       return
     }
-
-    status.textContent = '正在加载…'
-    await mountWaveSurfer(
-      version,
-      attachmentId,
-      src,
-      storedWaveform,
-      storedDurationSeconds,
-    )
   }
 
-  async function mountWaveSurfer(
+  async function generateAndMountWaveform(
     version: number,
     attachmentId: string,
     src: string,
-    storedWaveform: AudioWaveform | null,
     storedDurationSeconds: number,
   ) {
+    const abortController = new AbortController()
+    generationAbortController = abortController
     try {
-      const WaveSurfer = (await import('wavesurfer.js')).default
+      const source = await fetchAudioBlob(src, abortController.signal)
       if (destroyed || version !== loadVersion) return
-      const styles = getComputedStyle(dom)
-      const waveColor = styles.getPropertyValue('--pad-text-color-400').trim() || '#8292a6'
-      const progressColor = styles.getPropertyValue('--pad-primary-color').trim() || '#c9a37f'
-      wavesurfer = WaveSurfer.create({
-        container: waveformContainer,
-        url: src,
-        height: 44,
-        waveColor,
-        progressColor,
-        cursorWidth: 0,
-        barWidth: 3,
-        barGap: 3,
-        barRadius: 3,
-        barMinHeight: 2,
-        normalize: true,
-        dragToSeek: true,
-        renderFunction: renderCenteredWaveform,
-        peaks: storedWaveform
-          ? [decodeSignedWaveformPeaks(storedWaveform.peaks)]
-          : undefined,
-        duration: storedWaveform && storedDurationSeconds > 0
-          ? storedDurationSeconds
-          : undefined,
-      })
-      if (!storedWaveform) {
-        const generationFinished = new Promise<void>(resolve => {
-          let released = false
-          const settleGeneration = () => {
-            if (released) return
-            released = true
-            releaseGeneration = null
-            resolve()
-          }
-          releaseGeneration = settleGeneration
-          bindWaveSurferEvents(
-            wavesurfer!,
-            attachmentId,
-            false,
-            storedWaveform,
-            storedDurationSeconds,
-            settleGeneration,
-          )
-        })
-        await generationFinished
-      } else {
-        bindWaveSurferEvents(
-          wavesurfer,
-          attachmentId,
-          true,
-          storedWaveform,
-          storedDurationSeconds,
-        )
-      }
-    } catch (error) {
+      const generated = await generateAudioWaveform(source)
       if (destroyed || version !== loadVersion) return
-      console.error('初始化音波失败:', error)
-      mountNativePlayer(src, '音波不可用', storedWaveform, storedDurationSeconds)
-    }
-  }
 
-  function bindWaveSurferEvents(
-    player: WaveSurfer,
-    attachmentId: string,
-    hasStoredWaveform: boolean,
-    fallbackWaveform: AudioWaveform | null,
-    fallbackDurationSeconds: number,
-    onGenerationSettled?: () => void,
-  ) {
-    player.on('ready', duration => {
-      if (player !== wavesurfer) return
-      status.textContent = ''
-      playButton.disabled = false
-      updatePlayerWidth(duration)
-      updateTime(0, duration)
-      onGenerationSettled?.()
-    })
-    player.on('play', () => {
-      playIcon.textContent = '❚❚'
-      playButton.title = '暂停录音'
-      playButton.setAttribute('aria-label', '暂停录音')
-    })
-    player.on('pause', () => {
-      playIcon.textContent = '▶'
-      playButton.title = '播放录音'
-      playButton.setAttribute('aria-label', '播放录音')
-    })
-    player.on('timeupdate', currentTime => updateTime(currentTime, player.getDuration()))
-    player.on('loading', progress => {
-      if (hasStoredWaveform) status.textContent = `正在加载 ${progress}%`
-    })
-    player.on('decode', duration => {
-      if (hasStoredWaveform || generationStarted || player !== wavesurfer) return
-      generationStarted = true
-      try {
-        const peaks = player.exportPeaks({channels: 1, maxLength: AUDIO_WAVEFORM_PEAK_COUNT})[0]
-        const waveform: AudioWaveform = {
-          version: AUDIO_WAVEFORM_VERSION,
-          peaks: encodeSignedWaveformPeaks(peaks),
-        }
-        if (!waveform.peaks.length) return
-        void Promise.resolve(options.onAudioInfoGenerated(
-          attachmentId,
-          Math.max(0, Math.round(duration * 1_000)),
-          waveform,
-        )).catch(error => console.error('静默保存音波失败:', error))
-      } catch (error) {
-        console.error('生成音波数据失败:', error)
-      } finally {
-        onGenerationSettled?.()
-      }
-    })
-    player.on('error', error => {
-      if (player !== wavesurfer) return
-      console.error('加载音频失败:', error)
-      onGenerationSettled?.()
       mountNativePlayer(
-        String(currentNode.attrs.src || ''),
-        '音波不可用',
-        fallbackWaveform,
-        fallbackDurationSeconds,
+        src,
+        '',
+        generated.waveform,
+        generated.durationMs / 1_000,
       )
-    })
+      void Promise.resolve(options.onAudioInfoGenerated(
+        attachmentId,
+        generated.durationMs,
+        generated.waveform,
+      )).catch(error => console.error('静默保存音波失败:', error))
+    } catch (error) {
+      if (abortController.signal.aborted || destroyed || version !== loadVersion) return
+      console.error('生成音波失败:', error)
+      mountNativePlayer(src, '音波不可用', null, storedDurationSeconds)
+    } finally {
+      if (generationAbortController === abortController) {
+        generationAbortController = null
+      }
+    }
   }
 
   function updateTime(currentSeconds: number, durationSeconds: number) {
