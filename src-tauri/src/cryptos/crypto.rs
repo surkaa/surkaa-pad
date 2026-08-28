@@ -182,6 +182,17 @@ impl Crypto {
             .map_err(|error| VaultBootstrapError::InvalidConfiguration(error.to_string()))
     }
 
+    pub fn derive_and_verify_ciphertext(
+        &self,
+        password: String,
+        parameters: KeyDerivationParameters,
+        encrypted_probe: &[u8],
+    ) -> Result<(), CryptoError> {
+        let derived_key = derive_key(password, &parameters)?;
+        decrypt_with_key(&derived_key, encrypted_probe)?;
+        self.set_derived_key(derived_key, parameters)
+    }
+
     pub fn active_kdf_parameters(&self) -> Result<KeyDerivationParameters, CryptoError> {
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
         Ok(guard
@@ -199,6 +210,28 @@ impl Crypto {
         let candidate = derive_key(password, parameters)?;
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
         let active = guard.as_ref().ok_or(CryptoError::NotInitialized)?;
+        Ok(candidate.0 == active.key.0)
+    }
+
+    pub fn validate_bootstrap_for_active_key(
+        &self,
+        password: String,
+        bootstrap: &VaultBootstrap,
+    ) -> Result<bool, VaultBootstrapError> {
+        bootstrap.validate()?;
+        let candidate = derive_key(password, &bootstrap.kdf)
+            .map_err(|error| VaultBootstrapError::InvalidConfiguration(error.to_string()))?;
+        let verifier = bootstrap.decode_verifier()?;
+        let plaintext = decrypt_with_key(&candidate, &verifier)
+            .map_err(|_| VaultBootstrapError::VerifierMismatch)?;
+        if plaintext != VAULT_VERIFIER_TEXT.as_bytes() {
+            return Err(VaultBootstrapError::VerifierMismatch);
+        }
+        let guard = self
+            .inner
+            .read()
+            .map_err(|_| VaultBootstrapError::Storage("加密状态锁已损坏".into()))?;
+        let active = guard.as_ref().ok_or(VaultBootstrapError::NotInitialized)?;
         Ok(candidate.0 == active.key.0)
     }
 

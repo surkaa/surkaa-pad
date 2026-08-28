@@ -222,7 +222,14 @@ async function saveConfigAndLogin() {
   }
 
   try {
-    await api.cmdUnlock(masterPassword.value);
+    const {akid, aks, bucket, endpoint} = ossConfig.value;
+    await api.cmdPrepareRemoteVault(
+        masterPassword.value,
+        akid,
+        aks,
+        bucket,
+        endpoint,
+    );
     await recordPasswordUnlock();
   } catch (e) {
     $q.notify({type: 'negative', message: `主密码验证失败: ${formatError(e)}`});
@@ -294,6 +301,7 @@ async function unlock() {
   try {
     await api.cmdUnlock(masterPassword.value);
     await verifyCurrentVault();
+    await api.cmdCommitVaultBootstrap();
 
     const remoteEnabled = await migrateRemoteStoragePreference();
     if (remoteEnabled) {
@@ -332,6 +340,7 @@ async function startLocalOnly() {
     await api.cmdRestoreRemoteStorage();
 
     await createVaultVerifier();
+    await api.cmdCommitVaultBootstrap();
 
     console.log('Local-only Unlock Successful');
     setTimeoutForCloseApp();
@@ -380,6 +389,7 @@ async function tryBiometricUnlock() {
 
     await api.cmdBiometricUnlock(data);
     await verifyCurrentVault();
+    await api.cmdCommitVaultBootstrap();
 
     const remoteEnabled = await migrateRemoteStoragePreference();
     if (remoteEnabled) {

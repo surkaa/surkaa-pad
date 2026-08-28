@@ -96,6 +96,81 @@ async cmdEncryptInfo() : Promise<Result<number, AppError>> {
 }
 },
 /**
+ * 在旧版密码校验成功后，为当前 Vault 补建并持久化密钥派生引导配置。
+ * # Returns
+ * * `Result<VaultBootstrap, AppError>` - 当前 Vault 的完整引导配置
+ */
+async cmdCommitVaultBootstrap() : Promise<Result<VaultBootstrap, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_commit_vault_bootstrap") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 获取当前 Vault 的密钥派生引导配置。
+ * # Returns
+ * * `Result<VaultBootstrap, AppError>` - 当前配置；尚未完成旧版迁移时返回错误
+ */
+async cmdGetVaultBootstrap() : Promise<Result<VaultBootstrap, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_vault_bootstrap") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 导出可复制的密钥派生引导配置 JSON。内容不包含主密码或派生密钥。
+ * # Returns
+ * * `Result<String, AppError>` - 格式化后的 JSON
+ */
+async cmdExportVaultBootstrap() : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_export_vault_bootstrap") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 导入密钥派生引导配置。只有配置能通过主密码校验且与当前已解锁密钥一致时才会保存。
+ * # Arguments
+ * * `json` - 从其他设备复制的完整引导配置 JSON
+ * * `master_password` - 用于验证导入配置的当前主密码
+ * # Returns
+ * * `Result<VaultBootstrap, AppError>` - 验证并保存后的配置
+ */
+async cmdImportVaultBootstrap(json: string, masterPassword: string) : Promise<Result<VaultBootstrap, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_import_vault_bootstrap", { json, masterPassword }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 首次在当前设备连接云端 Vault 时，先读取并验证云端引导配置，再建立解密密钥。
+ * 旧桶没有引导配置时，会使用当前编译模式对应的旧版参数验证一份已有加密对象。
+ * # Arguments
+ * * `master_password` - 主密码
+ * * `akid` - 访问密钥 ID
+ * * `aks` - 访问密钥 Secret
+ * * `bucket` - 存储桶名称
+ * * `endpoint` - OSS 端点
+ * # Returns
+ * * `Result<VaultBootstrap, AppError>` - 已验证并保存在本地的引导配置
+ */
+async cmdPrepareRemoteVault(masterPassword: string, akid: string, aks: string, bucket: string, endpoint: string) : Promise<Result<VaultBootstrap, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_prepare_remote_vault", { masterPassword, akid, aks, bucket, endpoint }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 查看尚未导入的 Android 系统分享内容。
  * Windows 端始终返回空数组。读取不会消费队列；成功导入或明确放弃后需调用
  * [`cmd_ack_pending_android_share`]。
@@ -1050,6 +1125,8 @@ export type EditorShortcutSettings = { bold: string; underline: string; strike: 
 export type EditorToolbarAction = "bold" | "underline" | "strike" | "heading1" | "heading2" | "heading3" | "taskList" | "summary"
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
+export type KeyDerivationAlgorithm = "argon2id"
+export type KeyDerivationParameters = { algorithm: KeyDerivationAlgorithm; algorithmVersion: number; salt: string; memoryCostKib: number; timeCost: number; parallelism: number; outputLength: number }
 export type LocalStorageInfo = { currentPath: string; configuredPath: string; isDefault: boolean; migrationPending: boolean; totalFiles: number; totalBytes: number }
 export type LocalStorageMigrationEvent = { event: "preparing"; data: { sourcePath: string; targetPath: string } } | { event: "started"; data: { totalFiles: number; totalBytes: number; fastMove: boolean } } | { event: "phase"; data: { phase: LocalStorageMigrationPhase } } | { event: "progress"; data: { phase: LocalStorageMigrationPhase; currentFile: string; currentFileIndex: number; totalFiles: number; currentFileBytes: number; currentFileSize: number; processedBytes: number; totalBytes: number } } | { event: "completed"; data: { targetPath: string; migratedFiles: number; migratedBytes: number; cleanupWarning: string | null } } | { event: "error"; data: { phase: LocalStorageMigrationPhase; currentFile: string | null; message: string } }
 export type LocalStorageMigrationPhase = "preparing" | "copying" | "verifying" | "switching" | "cleaning"
@@ -1076,6 +1153,7 @@ export type SyncedSettingsData = { appearance: SyncedAppearanceSettings; attachm
 export type SyncedSettingsDocument = ({ appearance: SyncedAppearanceSettings; attachments: AttachmentSettings; editor: EditorSettings; pinnedDiaryIds: string[]; windows: WindowsSettings }) & { version: number; updatedAt: number }
 export type SyncedTheme = "light" | "dark" | "system"
 export type TAURI_CHANNEL<TSend> = null
+export type VaultBootstrap = { schemaVersion: number; vaultId: string; kdf: KeyDerivationParameters; encryptedVerifier: string }
 export type WindowsSettings = { editorShortcuts: EditorShortcutSettings; diaryListShortcuts: DiaryListShortcutSettings; aiAssistantShortcuts: AiAssistantShortcutSettings }
 
 /** tauri-specta globals **/

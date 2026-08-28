@@ -545,7 +545,7 @@ fn classify_storage_key(key: &str) -> Option<(SyncItemKind, String)> {
             Some((SyncItemKind::AiMessageBlock, session_id))
         }
         // 设置由独立的合并策略同步，不能参与开启/关闭云存储时的整库搬运。
-        StoredObject::SyncedSettings => None,
+        StoredObject::SyncedSettings | StoredObject::VaultBootstrap => None,
     }
 }
 

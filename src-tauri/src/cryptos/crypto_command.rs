@@ -15,13 +15,14 @@ pub async fn cmd_unlock(
     state: State<'_, AppState>,
     master_password: String,
 ) -> Result<(), AppError> {
-    let parameters = state
-        .vault_bootstrap()
-        .map(|bootstrap| bootstrap.kdf)
-        .unwrap_or_else(KeyDerivationParameters::legacy_current);
+    if let Some(bootstrap) = state.vault_bootstrap() {
+        return Ok(state
+            .crypto()
+            .derive_and_verify_bootstrap(master_password, &bootstrap)?);
+    }
     Ok(state
         .crypto()
-        .derive_dek_with_parameters(master_password, parameters)?)
+        .derive_dek_with_parameters(master_password, KeyDerivationParameters::legacy_current())?)
 }
 
 /// 验证密码获取密钥
@@ -46,13 +47,18 @@ pub async fn cmd_valid_password(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_biometric_unlock(state: State<'_, AppState>, dek: String) -> Result<(), AppError> {
+    let has_bootstrap = state.vault_bootstrap().is_some();
     let parameters = state
         .vault_bootstrap()
         .map(|bootstrap| bootstrap.kdf)
         .unwrap_or_else(KeyDerivationParameters::legacy_current);
-    Ok(state
+    state
         .crypto()
-        .init_by_dek_string_with_parameters(dek, parameters)?)
+        .init_by_dek_string_with_parameters(dek, parameters)?;
+    if has_bootstrap {
+        state.vault_bootstrap_repository().commit_active()?;
+    }
+    Ok(())
 }
 
 /// 加密数据

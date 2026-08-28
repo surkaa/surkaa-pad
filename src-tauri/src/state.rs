@@ -12,7 +12,7 @@ use crate::local_storage::LocalStorageManager;
 use crate::object::OssClient;
 use crate::synced_settings::SyncedSettingsRepository;
 use crate::tasks::TaskPool;
-use crate::vault_bootstrap::VaultBootstrap;
+use crate::vault_bootstrap::{VaultBootstrap, VaultBootstrapRepository};
 use dashmap::DashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -38,6 +38,7 @@ pub struct AppState {
     local_storage: LocalStorageManager,
     ai_session_repository: AiSessionRepository,
     synced_settings_repository: SyncedSettingsRepository,
+    vault_bootstrap_repository: VaultBootstrapRepository,
 }
 
 impl AppState {
@@ -64,6 +65,8 @@ impl AppState {
             AiSessionRepository::new(app_object_store.clone(), crypto.clone());
         let synced_settings_repository =
             SyncedSettingsRepository::new(app_object_store, crypto.clone());
+        let vault_bootstrap_repository =
+            VaultBootstrapRepository::new(app_config.clone(), oss_client.clone(), crypto.clone());
         Self {
             crypto,
             oss_client,
@@ -80,6 +83,7 @@ impl AppState {
             local_storage,
             ai_session_repository,
             synced_settings_repository,
+            vault_bootstrap_repository,
         }
     }
 
@@ -205,6 +209,10 @@ impl AppState {
         self.synced_settings_repository.clone()
     }
 
+    pub fn vault_bootstrap_repository(&self) -> VaultBootstrapRepository {
+        self.vault_bootstrap_repository.clone()
+    }
+
     /// 根据当前存储模式构造 DiaryStore
     pub fn diary_store(&self) -> Box<dyn DiaryStore> {
         if self.remote_enabled.load(Ordering::Relaxed) {
@@ -254,6 +262,8 @@ impl AppState {
             AiSessionRepository::new(app_object_store.clone(), crypto.clone());
         let synced_settings_repository =
             SyncedSettingsRepository::new(app_object_store, crypto.clone());
+        let vault_bootstrap_repository =
+            VaultBootstrapRepository::new(app_config.clone(), oss_client.clone(), crypto.clone());
         Self {
             crypto,
             oss_client,
@@ -270,6 +280,7 @@ impl AppState {
             local_storage,
             ai_session_repository,
             synced_settings_repository,
+            vault_bootstrap_repository,
         }
     }
 }

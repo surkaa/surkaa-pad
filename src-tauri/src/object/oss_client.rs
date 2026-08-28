@@ -346,6 +346,32 @@ impl OssClient {
         Ok(etag)
     }
 
+    /// 仅在对象不存在时创建，避免多个设备首次迁移同一份不可变引导配置时互相覆盖。
+    /// 返回 `true` 表示本次创建成功，`false` 表示对象已经存在。
+    pub async fn upload_bytes_if_absent(
+        &self,
+        key: &str,
+        data: &[u8],
+    ) -> Result<bool, ObjectError> {
+        let bucket = self.inner()?;
+        let key = self.physical_key(key);
+        let response = bucket
+            .put_object_builder(&key, data)
+            .with_content_type("application/json")
+            .with_header("x-oss-forbid-overwrite", "true")
+            .map_err(|error| ObjectError::OperationFailed(error.to_string()))?
+            .execute()
+            .await
+            .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
+        match response.status_code() {
+            200..=299 => Ok(true),
+            409 | 412 => Ok(false),
+            status => Err(ObjectError::OperationFailed(format!(
+                "Conditional PUT failed: HTTP {status}"
+            ))),
+        }
+    }
+
     /// 在同一 Bucket 内复制对象。该操作由 OSS 服务端完成，不会把对象内容
     /// 下载到应用进程；调用方必须自行确保目标 Key 可以安全写入。
     pub async fn copy_object(&self, source_key: &str, target_key: &str) -> Result<(), ObjectError> {

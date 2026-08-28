@@ -139,6 +139,26 @@ pub async fn cmd_enable_remote_storage(
         });
     }
 
+    if let Err(error) = state
+        .vault_bootstrap_repository()
+        .ensure_remote_for_active_key()
+        .await
+    {
+        let message = error.to_string();
+        log::error!("[remote] Vault bootstrap validation failed: {message}");
+        let _ = event.send(SyncProgressEvent::Error {
+            direction,
+            phase: SyncPhase::Preparing,
+            current_file: None,
+            message: message.clone(),
+        });
+        state.oss_client().reset();
+        return Err(AppError {
+            error_type: "vault_bootstrap".into(),
+            message,
+        });
+    }
+
     // 2. 同步本地数据到云端
     let summary = match sync_local_to_cloud(
         &state.local_object_store(),
@@ -463,6 +483,12 @@ pub async fn cmd_restore_remote_storage(state: State<'_, AppState>) -> Result<bo
             error_type: "oss_not_initialized".into(),
             message: "远程存储已配置，但 OSS 客户端尚未初始化".into(),
         });
+    }
+    if enabled {
+        state
+            .vault_bootstrap_repository()
+            .ensure_remote_for_active_key()
+            .await?;
     }
     state.set_remote_enabled(enabled);
     if enabled {
