@@ -232,7 +232,7 @@ async function saveConfigAndLogin() {
     );
     await recordPasswordUnlock();
   } catch (e) {
-    $q.notify({type: 'negative', message: `主密码验证失败: ${formatError(e)}`});
+    $q.notify({type: 'negative', message: `连接云端 Vault 失败: ${formatError(e)}`});
     loading.value = false;
     return;
   }

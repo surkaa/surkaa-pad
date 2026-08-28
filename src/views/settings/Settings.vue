@@ -117,6 +117,7 @@
               :refresh-revision="localStorageRefreshRevision"
           />
           <DiaryVersionSettings :remote-enabled="remoteEnabled"/>
+          <VaultBootstrapSettings :remote-enabled="remoteEnabled"/>
           <DiagnosticLogSettings/>
         </q-list>
         </section>
@@ -228,6 +229,7 @@ import AttachmentCacheSettings from './AttachmentCacheSettings.vue';
 import AiSettings from './AiSettings.vue';
 import DisableRemoteStorageDialog from '../../components/DisableRemoteStorageDialog.vue';
 import DiaryVersionSettings from './DiaryVersionSettings.vue';
+import VaultBootstrapSettings from './VaultBootstrapSettings.vue';
 import DiagnosticLogSettings from './DiagnosticLogSettings.vue';
 import EditorShortcutSettings from './EditorShortcutSettings.vue';
 import LocalStorageSettings from './LocalStorageSettings.vue';
