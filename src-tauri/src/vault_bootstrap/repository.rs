@@ -3,9 +3,10 @@ use super::{
     VAULT_VERIFIER_TEXT,
 };
 use crate::app_config::AppConfigStore;
+use crate::caches::LocalObjectStore;
 use crate::cryptos::Crypto;
 use crate::object::OssClient;
-use crate::object_locations::ObjectLocations;
+use crate::object_locations::{ObjectLocations, StoredObject};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 
@@ -18,7 +19,7 @@ pub struct VaultBootstrapRepository {
     crypto: Crypto,
 }
 
-struct RemoteInventory {
+struct VaultInventory {
     encrypted_probe: Option<Vec<u8>>,
     has_objects: bool,
 }
@@ -148,20 +149,37 @@ impl VaultBootstrapRepository {
         &self,
         json: &str,
         master_password: String,
+        local_object_store: &LocalObjectStore,
     ) -> Result<VaultBootstrap, VaultBootstrapError> {
         let imported = VaultBootstrap::from_json(json)?;
-        if !self
-            .crypto
-            .validate_bootstrap_for_active_key(master_password, &imported)?
-        {
-            return Err(VaultBootstrapError::VaultMismatch);
+        if let Some(local) = self.get_local() {
+            if !local.same_vault_definition(&imported) {
+                return Err(VaultBootstrapError::VaultMismatch);
+            }
+            if self
+                .crypto
+                .is_initialized()
+                .map_err(|error| VaultBootstrapError::Storage(error.to_string()))?
+            {
+                if !self
+                    .crypto
+                    .validate_bootstrap_for_active_key(master_password.clone(), &imported)?
+                {
+                    return Err(VaultBootstrapError::VaultMismatch);
+                }
+            } else {
+                self.crypto
+                    .derive_and_verify_bootstrap(master_password.clone(), &imported)?;
+            }
+        } else {
+            // 配置缺失时不能信任内存里可能由一次失败解锁留下的旧版临时密钥，
+            // 必须按导入参数重新派生，再用现有业务密文确认归属。
+            self.crypto
+                .derive_and_verify_bootstrap(master_password.clone(), &imported)?;
         }
-        if self
-            .get_local()
-            .is_some_and(|local| !local.same_vault_definition(&imported))
-        {
-            return Err(VaultBootstrapError::VaultMismatch);
-        }
+
+        let local_inventory = Self::inspect_local_inventory(local_object_store).await?;
+        self.verify_inventory_probe(&local_inventory)?;
 
         if self.oss_client.is_initialized() {
             if let Some(remote) = self.load_remote().await? {
@@ -215,7 +233,14 @@ impl VaultBootstrapRepository {
         }
     }
 
-    fn verify_remote_probe(&self, inventory: &RemoteInventory) -> Result<(), VaultBootstrapError> {
+    fn verify_remote_probe(&self, inventory: &VaultInventory) -> Result<(), VaultBootstrapError> {
+        self.verify_inventory_probe(inventory)
+    }
+
+    fn verify_inventory_probe(
+        &self,
+        inventory: &VaultInventory,
+    ) -> Result<(), VaultBootstrapError> {
         if let Some(probe) = inventory.encrypted_probe.as_deref() {
             self.crypto
                 .decrypt(probe)
@@ -328,14 +353,48 @@ impl VaultBootstrapRepository {
         Ok(existing)
     }
 
-    async fn inspect_remote_inventory(&self) -> Result<RemoteInventory, VaultBootstrapError> {
+    async fn inspect_local_inventory(
+        local_object_store: &LocalObjectStore,
+    ) -> Result<VaultInventory, VaultBootstrapError> {
+        let entries = local_object_store
+            .get_all_entries()
+            .await
+            .map_err(storage_error)?;
+        let has_objects = !entries.is_empty();
+        let probe_key = entries.iter().find_map(|entry| {
+            matches!(
+                ObjectLocations::parse(&entry.key),
+                Some(
+                    StoredObject::DiaryManifest { .. }
+                        | StoredObject::AiSessionMeta { .. }
+                        | StoredObject::SyncedSettings
+                )
+            )
+            .then_some(entry.key.as_str())
+        });
+        let encrypted_probe = match probe_key {
+            Some(key) => Some(
+                local_object_store
+                    .get_data(key)
+                    .await
+                    .map_err(storage_error)?,
+            ),
+            None => None,
+        };
+        Ok(VaultInventory {
+            encrypted_probe,
+            has_objects,
+        })
+    }
+
+    async fn inspect_remote_inventory(&self) -> Result<VaultInventory, VaultBootstrapError> {
         if self
             .oss_client
             .object_exists(ObjectLocations::synced_settings())
             .await
             .map_err(storage_error)?
         {
-            return Ok(RemoteInventory {
+            return Ok(VaultInventory {
                 encrypted_probe: Some(
                     self.oss_client
                         .download_bytes(ObjectLocations::synced_settings())
@@ -363,7 +422,7 @@ impl VaultBootstrapRepository {
                 .await
                 .map_err(storage_error)?
             {
-                return Ok(RemoteInventory {
+                return Ok(VaultInventory {
                     encrypted_probe: Some(
                         self.oss_client
                             .download_bytes(&key)
@@ -391,7 +450,7 @@ impl VaultBootstrapRepository {
                 .await
                 .map_err(storage_error)?
             {
-                return Ok(RemoteInventory {
+                return Ok(VaultInventory {
                     encrypted_probe: Some(
                         self.oss_client
                             .download_bytes(&key)
@@ -408,7 +467,7 @@ impl VaultBootstrapRepository {
             .list("", None)
             .await
             .map_err(storage_error)?;
-        Ok(RemoteInventory {
+        Ok(VaultInventory {
             encrypted_probe: None,
             has_objects: !objects.is_empty() || next_token.is_some(),
         })
@@ -423,6 +482,7 @@ fn storage_error(error: impl std::fmt::Display) -> VaultBootstrapError {
 mod tests {
     use super::*;
     use crate::app_config::AppConfig;
+    use crate::caches::LocalObjectStore;
     use crate::test_utils::TestOssGuard;
 
     fn repository() -> VaultBootstrapRepository {
@@ -490,18 +550,119 @@ mod tests {
         let repository = repository();
         let bootstrap = repository.commit_active().unwrap();
         let json = bootstrap.to_pretty_json().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let local = LocalObjectStore::new(temp_dir.path().to_path_buf());
 
         assert_eq!(
             repository
-                .import_json(&json, "password".into())
+                .import_json(&json, "password".into(), &local)
                 .await
                 .unwrap(),
             bootstrap
         );
         assert!(repository
-            .import_json(&json, "wrong password".into())
+            .import_json(&json, "wrong password".into(), &local)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn import_recovers_an_uninitialized_device_and_validates_local_ciphertext() {
+        let source_crypto = Crypto::new();
+        let source = VaultBootstrapRepository::new(
+            AppConfigStore::in_memory(AppConfig::default()),
+            OssClient::new(),
+            source_crypto.clone(),
+        );
+        let bootstrap = source
+            .initialize_new(
+                "recovery password".into(),
+                KeyDerivationParameters::legacy_debug().memory_cost_kib,
+            )
+            .unwrap();
+        let encrypted_manifest = source_crypto.encrypt(b"existing diary").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let local = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        local
+            .save_bytes(
+                &ObjectLocations::diary_manifest("8210000000000"),
+                &encrypted_manifest,
+            )
+            .await
+            .unwrap();
+
+        let recovered_crypto = Crypto::new();
+        recovered_crypto
+            .derive_dek_with_parameters(
+                "recovery password".into(),
+                KeyDerivationParameters::legacy_debug(),
+            )
+            .unwrap();
+        let recovered = VaultBootstrapRepository::new(
+            AppConfigStore::in_memory(AppConfig::default()),
+            OssClient::new(),
+            recovered_crypto.clone(),
+        );
+        assert_eq!(
+            recovered
+                .import_json(
+                    &bootstrap.to_pretty_json().unwrap(),
+                    "recovery password".into(),
+                    &local,
+                )
+                .await
+                .unwrap(),
+            bootstrap
+        );
+        assert_eq!(
+            recovered_crypto.decrypt(&encrypted_manifest).unwrap(),
+            b"existing diary"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_rejects_a_valid_configuration_for_different_local_data() {
+        let first_crypto = Crypto::new();
+        let first = VaultBootstrapRepository::new(
+            AppConfigStore::in_memory(AppConfig::default()),
+            OssClient::new(),
+            first_crypto.clone(),
+        );
+        first
+            .initialize_new(
+                "same password".into(),
+                KeyDerivationParameters::legacy_debug().memory_cost_kib,
+            )
+            .unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let local = LocalObjectStore::new(temp_dir.path().to_path_buf());
+        local
+            .save_bytes(
+                &ObjectLocations::diary_manifest("8210000000000"),
+                &first_crypto.encrypt(b"first vault diary").unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let second = uninitialized_repository();
+        let other_bootstrap = second
+            .initialize_new(
+                "same password".into(),
+                KeyDerivationParameters::legacy_debug().memory_cost_kib,
+            )
+            .unwrap();
+        let target = uninitialized_repository();
+        assert!(matches!(
+            target
+                .import_json(
+                    &other_bootstrap.to_pretty_json().unwrap(),
+                    "same password".into(),
+                    &local,
+                )
+                .await,
+            Err(VaultBootstrapError::VaultMismatch)
+        ));
+        assert!(target.get_local().is_none());
     }
 
     #[tokio::test]

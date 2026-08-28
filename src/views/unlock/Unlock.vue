@@ -30,6 +30,7 @@
             @update:memory-cost-kib="selectVaultMemoryCost"
             @submit="startLocalOnly"
             @configure-remote="pipeline = 'config'"
+            @import-bootstrap="showBootstrapImport = true"
         />
 
         <PasswordLoginForm
@@ -41,6 +42,7 @@
             @submit="unlock"
             @biometric-unlock="tryBiometricUnlock"
             @reset="confirmReset"
+            @import-bootstrap="showBootstrapImport = true"
         />
 
         <RemoteSetupForm
@@ -64,6 +66,12 @@
       </q-card-section>
     </q-card>
   </main>
+
+  <VaultBootstrapImportDialog
+    v-model="showBootstrapImport"
+    :initial-password="masterPassword"
+    @imported="handleBootstrapImported"
+  />
 </template>
 
 <script setup lang="ts">
@@ -95,6 +103,8 @@ import {
 import {logStartupError, logStartupPhase} from '../../utils/startupLog';
 import {initializeSyncedSettingsSync} from '../../utils/syncedSettings';
 import {defaultNewVaultMemoryCost} from '../../utils/vaultKdfSetup';
+import VaultBootstrapImportDialog from '../../components/VaultBootstrapImportDialog.vue';
+import type {VaultBootstrap} from '../../bindings';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -122,6 +132,7 @@ const vaultMemoryCostCustomized = ref(false);
 const isAndroid = platform() === 'android';
 const biometricEnabled = ref(false);
 const biometricUnlockAllowed = ref(false);
+const showBootstrapImport = ref(false);
 
 function validateInitialPasswordSetup(): boolean {
   const error = masterPasswordConfirmationError(
@@ -136,6 +147,12 @@ function validateInitialPasswordSetup(): boolean {
 function selectVaultMemoryCost(memoryCostKib: number) {
   vaultMemoryCostKib.value = memoryCostKib;
   vaultMemoryCostCustomized.value = true;
+}
+
+function handleBootstrapImported(_bootstrap: VaultBootstrap, password: string) {
+  masterPassword.value = password;
+  confirmMasterPassword.value = '';
+  pipeline.value = 'login';
 }
 
 async function recordPasswordUnlock() {

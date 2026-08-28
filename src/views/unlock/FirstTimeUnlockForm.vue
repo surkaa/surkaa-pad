@@ -39,6 +39,7 @@
       unelevated
     />
     <div class="q-mt-md row justify-center">
+      <q-btn flat color="primary" size="sm" label="导入密钥配置" :disable="loading" @click="emit('importBootstrap')"/>
       <q-btn flat color="primary" size="sm" label="配置云存储" :disable="loading" @click="emit('configureRemote')"/>
     </div>
   </q-form>
@@ -57,7 +58,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'update:masterPassword' | 'update:confirmPassword', value: string): void;
   (event: 'update:memoryCostKib', value: number): void;
-  (event: 'submit' | 'configureRemote'): void;
+  (event: 'submit' | 'configureRemote' | 'importBootstrap'): void;
 }>();
 
 function confirmPasswordRule(value: string) {

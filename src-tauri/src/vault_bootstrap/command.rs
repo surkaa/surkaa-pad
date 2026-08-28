@@ -89,7 +89,7 @@ pub async fn cmd_import_vault_bootstrap(
     let _storage_guard = state.lock_storage_operation().await;
     Ok(state
         .vault_bootstrap_repository()
-        .import_json(&json, master_password)
+        .import_json(&json, master_password, &state.local_object_store())
         .await?)
 }
 

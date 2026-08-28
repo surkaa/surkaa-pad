@@ -202,6 +202,11 @@ impl Crypto {
             .clone())
     }
 
+    pub fn is_initialized(&self) -> Result<bool, CryptoError> {
+        let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
+        Ok(guard.is_some())
+    }
+
     pub fn candidate_matches_active_key(
         &self,
         password: String,

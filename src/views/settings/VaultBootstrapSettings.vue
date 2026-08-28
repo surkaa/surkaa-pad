@@ -74,47 +74,7 @@
     copy-success-message="密钥派生配置已复制"
   />
 
-  <q-dialog v-model="showImport" persistent no-refocus>
-    <q-card class="import-dialog">
-      <q-card-section>
-        <div class="text-h6 title-text">导入密钥派生配置</div>
-        <div class="text-caption desc-text">
-          粘贴完整 JSON 并输入当前主密码。验证全部通过前不会修改本地或云端配置。
-        </div>
-      </q-card-section>
-      <q-card-section class="q-pt-none q-gutter-y-md">
-        <q-input
-          v-model="importJson"
-          type="textarea"
-          outlined
-          autogrow
-          label="配置 JSON"
-          :disable="importing"
-          class="themed-input"
-        />
-        <q-input
-          v-model="importPassword"
-          type="password"
-          outlined
-          label="当前主密码"
-          :disable="importing"
-          class="themed-input"
-          @keyup.enter="importConfig"
-        />
-      </q-card-section>
-      <q-card-actions align="right" class="q-px-md q-pb-md">
-        <q-btn flat label="取消" class="secondary-action" :disable="importing" v-close-popup/>
-        <q-btn
-          unelevated
-          label="验证并导入"
-          color="primary"
-          :loading="importing"
-          :disable="!importJson.trim() || !importPassword"
-          @click="importConfig"
-        />
-      </q-card-actions>
-    </q-card>
-  </q-dialog>
+  <VaultBootstrapImportDialog v-model="showImport" @imported="handleImported"/>
 </template>
 
 <script setup lang="ts">
@@ -126,6 +86,7 @@ import {copyTextToClipboard} from '../../utils/clipboard';
 import {formatError} from '../../utils/formatError';
 import {formatKiB} from '../../utils';
 import api from '../../utils/api';
+import VaultBootstrapImportDialog from '../../components/VaultBootstrapImportDialog.vue';
 
 const props = defineProps<{remoteEnabled: boolean}>();
 const $q = useQuasar();
@@ -135,9 +96,6 @@ const loadError = ref('');
 const showDialog = ref(false);
 const showJson = ref(false);
 const showImport = ref(false);
-const importJson = ref('');
-const importPassword = ref('');
-const importing = ref(false);
 
 const entrySummary = computed(() => {
   if (!bootstrap.value) return loadError.value || '查看、复制或导入当前 Vault 的派生参数';
@@ -173,28 +131,11 @@ async function copyConfig() {
 }
 
 function openImportDialog() {
-  importJson.value = '';
-  importPassword.value = '';
   showImport.value = true;
 }
 
-async function importConfig() {
-  if (!importJson.value.trim() || !importPassword.value || importing.value) return;
-  importing.value = true;
-  try {
-    bootstrap.value = await api.cmdImportVaultBootstrap(
-      importJson.value.trim(),
-      importPassword.value,
-    );
-    showImport.value = false;
-    importJson.value = '';
-    importPassword.value = '';
-    $q.notify({type: 'positive', message: '密钥派生配置验证并导入成功'});
-  } catch (error) {
-    $q.notify({type: 'negative', message: `导入配置失败：${formatError(error)}`});
-  } finally {
-    importing.value = false;
-  }
+function handleImported(value: VaultBootstrap) {
+  bootstrap.value = value;
 }
 
 onMounted(refresh);
@@ -202,8 +143,7 @@ onMounted(refresh);
 
 <style scoped lang="scss" src="./settingsSection.scss"></style>
 <style scoped lang="scss">
-.bootstrap-dialog,
-.import-dialog {
+.bootstrap-dialog {
   width: min(620px, calc(100vw - 24px));
   max-width: 620px;
   color: var(--pad-text-color-100);
@@ -263,16 +203,6 @@ onMounted(refresh);
   border: 1px solid var(--pad-border-color-100);
   border-radius: 10px;
   font-size: 0.82rem;
-}
-
-.themed-input :deep(.q-field__native),
-.themed-input :deep(.q-field__input),
-.themed-input :deep(.q-field__label) {
-  color: var(--pad-text-color-200);
-}
-
-.themed-input :deep(.q-field__control::before) {
-  border-color: var(--pad-border-color-100);
 }
 
 @media (max-width: 600px) {
