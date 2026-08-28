@@ -25,7 +25,9 @@
             v-else-if="pipeline === 'first-time'"
             v-model:master-password="masterPassword"
             v-model:confirm-password="confirmMasterPassword"
+            :memory-cost-kib="vaultMemoryCostKib"
             :loading="loading"
+            @update:memory-cost-kib="selectVaultMemoryCost"
             @submit="startLocalOnly"
             @configure-remote="pipeline = 'config'"
         />
@@ -47,7 +49,9 @@
             v-model:confirm-password="confirmMasterPassword"
             v-model:oss-config="ossConfig"
             v-model:quick-config="quickConfig"
+            :memory-cost-kib="vaultMemoryCostKib"
             :loading="loading"
+            @update:memory-cost-kib="selectVaultMemoryCost"
             @submit="saveConfigAndLogin"
         />
 
@@ -90,6 +94,7 @@ import {
 } from '../../utils/vault';
 import {logStartupError, logStartupPhase} from '../../utils/startupLog';
 import {initializeSyncedSettingsSync} from '../../utils/syncedSettings';
+import {defaultNewVaultMemoryCost} from '../../utils/vaultKdfSetup';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -112,6 +117,8 @@ const loading = ref<boolean>(false);
 const version = ref('0.0.0');
 const appName = ref('App Name');
 const encryptedMemoryCost = ref(0);
+const vaultMemoryCostKib = ref(defaultNewVaultMemoryCost());
+const vaultMemoryCostCustomized = ref(false);
 const isAndroid = platform() === 'android';
 const biometricEnabled = ref(false);
 const biometricUnlockAllowed = ref(false);
@@ -124,6 +131,11 @@ function validateInitialPasswordSetup(): boolean {
   if (!error) return true;
   $q.notify({type: 'warning', message: error});
   return false;
+}
+
+function selectVaultMemoryCost(memoryCostKib: number) {
+  vaultMemoryCostKib.value = memoryCostKib;
+  vaultMemoryCostCustomized.value = true;
 }
 
 async function recordPasswordUnlock() {
@@ -229,6 +241,7 @@ async function saveConfigAndLogin() {
         aks,
         bucket,
         endpoint,
+        vaultMemoryCostKib.value,
     );
     await recordPasswordUnlock();
   } catch (e) {
@@ -333,15 +346,13 @@ async function startLocalOnly() {
   loading.value = true;
 
   try {
-    await api.cmdUnlock(masterPassword.value);
+    await api.cmdInitializeNewVault(masterPassword.value, vaultMemoryCostKib.value);
     await recordPasswordUnlock();
     await api.cmdMigrateLegacyRemoteEnabled(false);
     await configStore.deleteLegacyRemoteEnabled();
     await api.cmdRestoreRemoteStorage();
 
     await createVaultVerifier();
-    await api.cmdCommitVaultBootstrap();
-
     console.log('Local-only Unlock Successful');
     setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
@@ -431,6 +442,9 @@ async function loadAppMetadata() {
     version.value = appVersion;
     appName.value = productName;
     encryptedMemoryCost.value = memoryCost;
+    if (!vaultMemoryCostCustomized.value) {
+      vaultMemoryCostKib.value = memoryCost;
+    }
     logStartupPhase('Unlock metadata loading completed');
   } catch (error) {
     logStartupError('Unlock metadata loading failed', error);
@@ -440,9 +454,10 @@ async function loadAppMetadata() {
 
 async function initializeUnlockPipeline() {
   logStartupPhase('Unlock pipeline initialization started');
-  const [verifier, ec] = await Promise.all([
+  const [verifier, ec, hasVaultBootstrap] = await Promise.all([
     configStore.getNormalConfig('vault_verifier'),
     configStore.getNormalConfig('encrypted_oss_config'),
+    api.cmdHasVaultBootstrap(),
   ]);
   vaultVerifier.value = verifier ?? [];
   encryptedConfig.value = ec ?? [];
@@ -459,7 +474,7 @@ async function initializeUnlockPipeline() {
     }
   }
 
-  if (requiresVaultLogin(!!verifier, !!ec, hasLegacyLocalVault)) {
+  if (requiresVaultLogin(!!verifier, !!ec, hasLegacyLocalVault || hasVaultBootstrap)) {
     if (import.meta.env.DEV) {
       masterPassword.value = '1';
     }

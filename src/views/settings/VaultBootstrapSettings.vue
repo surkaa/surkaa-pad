@@ -37,6 +37,7 @@
       <q-card-section v-else-if="bootstrap" class="bootstrap-content">
         <div class="detail-grid">
           <span>算法</span><strong>Argon2id v{{ bootstrap.kdf.algorithmVersion }}</strong>
+          <span>盐</span><code>{{ bootstrap.kdf.salt }}</code>
           <span>内存成本</span><strong>{{ formatKiB(bootstrap.kdf.memoryCostKib) }}</strong>
           <span>时间成本</span><strong>{{ bootstrap.kdf.timeCost }}</strong>
           <span>并行度</span><strong>{{ bootstrap.kdf.parallelism }}</strong>
@@ -286,4 +287,3 @@ onMounted(refresh);
   }
 }
 </style>
-

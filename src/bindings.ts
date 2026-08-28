@@ -122,6 +122,14 @@ async cmdGetVaultBootstrap() : Promise<Result<VaultBootstrap, AppError>> {
 }
 },
 /**
+ * 判断当前设备是否已经保存 Vault 密钥派生配置。
+ * # Returns
+ * * `bool` - 已保存时为 `true`
+ */
+async cmdHasVaultBootstrap() : Promise<boolean> {
+    return await TAURI_INVOKE("cmd_has_vault_bootstrap");
+},
+/**
  * 导出可复制的密钥派生引导配置 JSON。内容不包含主密码或派生密钥。
  * # Returns
  * * `Result<String, AppError>` - 格式化后的 JSON
@@ -151,6 +159,22 @@ async cmdImportVaultBootstrap(json: string, masterPassword: string) : Promise<Re
 }
 },
 /**
+ * 初始化一个确认没有历史对象的新 Vault，并使用随机盐派生密钥。
+ * # Arguments
+ * * `master_password` - 新 Vault 的主密码
+ * * `memory_cost_kib` - 用户选择的 Argon2id 内存成本（KiB）
+ * # Returns
+ * * `Result<VaultBootstrap, AppError>` - 创建并保存在本地的引导配置
+ */
+async cmdInitializeNewVault(masterPassword: string, memoryCostKib: number) : Promise<Result<VaultBootstrap, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_initialize_new_vault", { masterPassword, memoryCostKib }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 首次在当前设备连接云端 Vault 时，先读取并验证云端引导配置，再建立解密密钥。
  * 旧桶没有引导配置时，会使用当前编译模式对应的旧版参数验证一份已有加密对象。
  * # Arguments
@@ -159,12 +183,13 @@ async cmdImportVaultBootstrap(json: string, masterPassword: string) : Promise<Re
  * * `aks` - 访问密钥 Secret
  * * `bucket` - 存储桶名称
  * * `endpoint` - OSS 端点
+ * * `new_vault_memory_cost_kib` - 仅在云端和本地都为空时用于创建新 Vault
  * # Returns
  * * `Result<VaultBootstrap, AppError>` - 已验证并保存在本地的引导配置
  */
-async cmdPrepareRemoteVault(masterPassword: string, akid: string, aks: string, bucket: string, endpoint: string) : Promise<Result<VaultBootstrap, AppError>> {
+async cmdPrepareRemoteVault(masterPassword: string, akid: string, aks: string, bucket: string, endpoint: string, newVaultMemoryCostKib: number) : Promise<Result<VaultBootstrap, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_prepare_remote_vault", { masterPassword, akid, aks, bucket, endpoint }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_prepare_remote_vault", { masterPassword, akid, aks, bucket, endpoint, newVaultMemoryCostKib }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

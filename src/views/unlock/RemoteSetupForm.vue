@@ -1,6 +1,6 @@
 <template>
   <q-form class="q-gutter-y-md" @submit.prevent="emit('submit')">
-    <div class="text-h6 text-weight-bold text-grey-9 q-mb-sm">首次配置</div>
+    <div class="text-h6 text-weight-bold form-title q-mb-sm">首次配置</div>
     <q-input
       :model-value="masterPassword"
       type="password"
@@ -27,6 +27,12 @@
     >
       <template #prepend><q-icon name="verified_user"/></template>
     </q-input>
+    <VaultKdfMemoryField
+      :model-value="memoryCostKib"
+      :loading="loading"
+      remote-setup
+      @update:model-value="emit('update:memoryCostKib', $event)"
+    />
     <div class="row justify-center q-pb-sm">
       <q-btn
         flat
@@ -34,7 +40,7 @@
         color="primary"
         :icon="showQuickInput ? 'list' : 'bolt'"
         :label="showQuickInput ? '使用常规配置' : '使用快速配置'"
-        class="bg-grey-2"
+        class="quick-mode-button"
         size="sm"
         @click="showQuickInput = !showQuickInput"
       />
@@ -85,17 +91,20 @@
 import {ref} from 'vue';
 import type {OssConfigType} from '../../types';
 import {masterPasswordConfirmationError} from '../../utils/masterPasswordSetup';
+import VaultKdfMemoryField from './VaultKdfMemoryField.vue';
 
 const props = defineProps<{
   masterPassword: string;
   confirmPassword: string;
   ossConfig: OssConfigType;
   quickConfig: string;
+  memoryCostKib: number;
   loading: boolean;
 }>();
 const emit = defineEmits<{
   (event: 'update:masterPassword' | 'update:confirmPassword' | 'update:quickConfig', value: string): void;
   (event: 'update:ossConfig', value: OssConfigType): void;
+  (event: 'update:memoryCostKib', value: number): void;
   (event: 'submit'): void;
 }>();
 const showQuickInput = ref(false);
@@ -117,6 +126,15 @@ function updateText(
 </script>
 
 <style scoped lang="scss">
+.form-title {
+  color: var(--pad-text-color-200);
+}
+
+.quick-mode-button {
+  color: var(--pad-primary-dark) !important;
+  background: var(--pad-bg-color-100) !important;
+}
+
 .primary-gradient-btn {
   background: var(--pad-primary-gradient) !important;
   border-radius: var(--pad-radius-lg);

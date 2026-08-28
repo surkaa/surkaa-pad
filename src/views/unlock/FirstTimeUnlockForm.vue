@@ -24,6 +24,11 @@
       lazy-rules
       @update:model-value="updateText('update:confirmPassword', $event)"
     />
+    <VaultKdfMemoryField
+      :model-value="memoryCostKib"
+      :loading="loading"
+      @update:model-value="emit('update:memoryCostKib', $event)"
+    />
     <q-btn
       type="submit"
       color="primary"
@@ -41,10 +46,17 @@
 
 <script setup lang="ts">
 import {masterPasswordConfirmationError} from '../../utils/masterPasswordSetup';
+import VaultKdfMemoryField from './VaultKdfMemoryField.vue';
 
-const props = defineProps<{masterPassword: string; confirmPassword: string; loading: boolean}>();
+const props = defineProps<{
+  masterPassword: string;
+  confirmPassword: string;
+  memoryCostKib: number;
+  loading: boolean;
+}>();
 const emit = defineEmits<{
   (event: 'update:masterPassword' | 'update:confirmPassword', value: string): void;
+  (event: 'update:memoryCostKib', value: number): void;
   (event: 'submit' | 'configureRemote'): void;
 }>();
 
