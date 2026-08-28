@@ -111,6 +111,7 @@
               />
             </q-item-section>
           </q-item>
+          <PinnedDiarySettings/>
           <AttachmentCacheSettings v-if="remoteEnabled"/>
           <LocalStorageSettings
               v-if="isWindows"
@@ -235,6 +236,7 @@ import EditorShortcutSettings from './EditorShortcutSettings.vue';
 import LocalStorageSettings from './LocalStorageSettings.vue';
 import AboutSettings from './AboutSettings.vue';
 import CloudSyncHint from './CloudSyncHint.vue';
+import PinnedDiarySettings from './PinnedDiarySettings.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();

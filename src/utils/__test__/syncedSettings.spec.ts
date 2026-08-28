@@ -116,6 +116,7 @@ describe('synced settings', () => {
     await applySyncedSettings(store, settingsData());
 
     await expect(store.getNormalConfig('app-theme')).resolves.toBe('dark');
+    await expect(store.getNormalConfig('pinned_diary_ids')).resolves.toEqual(['8215021834823']);
     await expect(store.getNormalConfig('biometric_enabled')).resolves.toBe(true);
     await expect(store.getNormalConfig('encrypted_oss_config')).resolves.toEqual([1, 2, 3]);
     await expect(store.getNormalConfig('attachment_upload_concurrency')).resolves.toBe(17);
@@ -168,6 +169,7 @@ describe('synced settings', () => {
   it('recognizes only the explicitly portable config keys', () => {
     expect(isSyncedConfigStorageKey(configStorageKey('app-theme'))).toBe(true);
     expect(isSyncedConfigStorageKey(configStorageKey('editor_toolbar_order'))).toBe(true);
+    expect(isSyncedConfigStorageKey(configStorageKey('pinned_diary_ids'))).toBe(true);
     expect(isSyncedConfigStorageKey(configStorageKey('biometric_dek'))).toBe(false);
     expect(isSyncedConfigStorageKey(configStorageKey('encrypted_oss_config'))).toBe(false);
     expect(isSyncedConfigStorageKey(configStorageKey('attachment_upload_concurrency'))).toBe(false);
