@@ -44,6 +44,22 @@ impl VaultBootstrapRepository {
         self.get_required()?.to_pretty_json()
     }
 
+    /// 为确认没有历史数据的新 Vault 生成随机盐，并立即持久化可验证的引导配置。
+    pub fn initialize_new(
+        &self,
+        master_password: String,
+        memory_cost_kib: u32,
+    ) -> Result<VaultBootstrap, VaultBootstrapError> {
+        if self.get_local().is_some() {
+            return Err(VaultBootstrapError::AlreadyInitialized);
+        }
+        let parameters = KeyDerivationParameters::new_random(memory_cost_kib)?;
+        self.crypto
+            .derive_dek_with_parameters(master_password, parameters)
+            .map_err(|error| VaultBootstrapError::InvalidConfiguration(error.to_string()))?;
+        self.commit_active()
+    }
+
     /// 在旧版 Vault 已经由原有校验链路确认密码正确后，补建完整的引导配置。
     pub fn commit_active(&self) -> Result<VaultBootstrap, VaultBootstrapError> {
         if let Some(existing) = self.get_local() {
@@ -59,6 +75,8 @@ impl VaultBootstrapRepository {
     pub async fn prepare_remote(
         &self,
         master_password: String,
+        new_vault_memory_cost_kib: u32,
+        may_create_new_vault: bool,
     ) -> Result<VaultBootstrap, VaultBootstrapError> {
         if let Some(remote) = self.load_remote().await? {
             if self
@@ -91,12 +109,19 @@ impl VaultBootstrapRepository {
                 "云端包含对象，但没有可用于确认旧版密钥的日记、设置或 AI 会话".into(),
             ));
         } else {
+            if !may_create_new_vault {
+                return Err(VaultBootstrapError::ExistingLocalData);
+            }
             self.crypto
                 .derive_dek_with_parameters(
-                    master_password,
-                    KeyDerivationParameters::legacy_current(),
+                    master_password.clone(),
+                    KeyDerivationParameters::new_random(new_vault_memory_cost_kib)?,
                 )
                 .map_err(|error| VaultBootstrapError::InvalidConfiguration(error.to_string()))?;
+            let bootstrap = self.commit_active()?;
+            return self
+                .create_remote_for_new_vault(bootstrap, master_password)
+                .await;
         }
 
         let bootstrap = self.commit_active()?;
@@ -277,6 +302,32 @@ impl VaultBootstrapRepository {
         Ok(existing)
     }
 
+    /// 空桶可能被两台新设备同时初始化。条件写入失败时，当前设备尚无业务数据，
+    /// 因此可以用同一主密码验证并采用胜出的云端配置。
+    async fn create_remote_for_new_vault(
+        &self,
+        bootstrap: VaultBootstrap,
+        master_password: String,
+    ) -> Result<VaultBootstrap, VaultBootstrapError> {
+        let data = serde_json::to_vec_pretty(&bootstrap)?;
+        if self
+            .oss_client
+            .upload_bytes_if_absent(ObjectLocations::vault_bootstrap(), &data)
+            .await
+            .map_err(storage_error)?
+        {
+            return Ok(bootstrap);
+        }
+
+        let existing = self.load_remote().await?.ok_or_else(|| {
+            VaultBootstrapError::Storage("云端引导配置创建冲突后仍无法读取".into())
+        })?;
+        self.crypto
+            .derive_and_verify_bootstrap(master_password, &existing)?;
+        self.persist_local(existing.clone())?;
+        Ok(existing)
+    }
+
     async fn inspect_remote_inventory(&self) -> Result<RemoteInventory, VaultBootstrapError> {
         if self
             .oss_client
@@ -386,6 +437,43 @@ mod tests {
         )
     }
 
+    fn uninitialized_repository() -> VaultBootstrapRepository {
+        VaultBootstrapRepository::new(
+            AppConfigStore::in_memory(AppConfig::default()),
+            OssClient::new(),
+            Crypto::new(),
+        )
+    }
+
+    #[test]
+    fn initializes_a_new_vault_once_with_random_parameters() {
+        let first_repository = uninitialized_repository();
+        let first = first_repository
+            .initialize_new(
+                "password".into(),
+                KeyDerivationParameters::legacy_debug().memory_cost_kib,
+            )
+            .unwrap();
+        assert_eq!(first_repository.get_local(), Some(first.clone()));
+        assert_ne!(first.kdf.salt, KeyDerivationParameters::legacy_debug().salt);
+        assert!(matches!(
+            first_repository.initialize_new(
+                "password".into(),
+                KeyDerivationParameters::legacy_debug().memory_cost_kib,
+            ),
+            Err(VaultBootstrapError::AlreadyInitialized)
+        ));
+
+        let second = uninitialized_repository()
+            .initialize_new(
+                "password".into(),
+                KeyDerivationParameters::legacy_debug().memory_cost_kib,
+            )
+            .unwrap();
+        assert_ne!(first.kdf.salt, second.kdf.salt);
+        assert_ne!(first.encrypted_verifier, second.encrypted_verifier);
+    }
+
     #[test]
     fn commit_creates_stable_local_bootstrap() {
         let repository = repository();
@@ -420,22 +508,22 @@ mod tests {
     async fn cloud_bootstrap_is_adopted_before_deriving_the_new_device_key() {
         let client = OssClient::from_env();
         let (client, guard) = TestOssGuard::new(client).await;
-        let first_crypto = Crypto::new();
-        first_crypto
-            .derive_dek_with_parameters(
-                "shared password".into(),
-                KeyDerivationParameters::legacy_debug(),
-            )
-            .unwrap();
         let first = VaultBootstrapRepository::new(
             AppConfigStore::in_memory(AppConfig::default()),
             client.clone(),
-            first_crypto,
+            Crypto::new(),
         );
-        let expected = first.commit_active().unwrap();
-        assert_eq!(
-            first.ensure_remote_for_active_key().await.unwrap(),
-            expected
+        let expected = first
+            .prepare_remote(
+                "shared password".into(),
+                KeyDerivationParameters::legacy_debug().memory_cost_kib,
+                true,
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            expected.kdf.salt,
+            KeyDerivationParameters::legacy_debug().salt
         );
         assert!(!client
             .upload_bytes_if_absent(ObjectLocations::vault_bootstrap(), b"must not overwrite")
@@ -456,12 +544,48 @@ mod tests {
             Crypto::new(),
         );
         let adopted = second
-            .prepare_remote("shared password".into())
+            .prepare_remote(
+                "shared password".into(),
+                KeyDerivationParameters::legacy_debug().memory_cost_kib,
+                true,
+            )
             .await
             .unwrap();
         assert_eq!(adopted, expected);
         assert_eq!(second.get_local(), Some(expected));
 
+        guard.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn old_cloud_without_bootstrap_keeps_the_legacy_profile() {
+        let client = OssClient::from_env();
+        let (client, guard) = TestOssGuard::new(client).await;
+        let legacy_crypto = Crypto::new();
+        legacy_crypto
+            .derive_dek_with_parameters(
+                "legacy password".into(),
+                KeyDerivationParameters::legacy_current(),
+            )
+            .unwrap();
+        let encrypted_probe = legacy_crypto.encrypt(b"legacy synced settings").unwrap();
+        client
+            .upload_bytes(ObjectLocations::synced_settings(), &encrypted_probe)
+            .await
+            .unwrap();
+
+        let repository = VaultBootstrapRepository::new(
+            AppConfigStore::in_memory(AppConfig::default()),
+            client,
+            Crypto::new(),
+        );
+        let bootstrap = repository
+            .prepare_remote("legacy password".into(), 64 * 1024, true)
+            .await
+            .unwrap();
+
+        assert_eq!(bootstrap.kdf, KeyDerivationParameters::legacy_current());
+        assert_eq!(repository.get_local(), Some(bootstrap));
         guard.cleanup().await;
     }
 }

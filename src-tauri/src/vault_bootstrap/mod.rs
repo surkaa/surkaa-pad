@@ -4,7 +4,8 @@ mod types;
 
 pub use command::{
     cmd_commit_vault_bootstrap, cmd_export_vault_bootstrap, cmd_get_vault_bootstrap,
-    cmd_import_vault_bootstrap, cmd_prepare_remote_vault,
+    cmd_has_vault_bootstrap, cmd_import_vault_bootstrap, cmd_initialize_new_vault,
+    cmd_prepare_remote_vault,
 };
 pub use repository::VaultBootstrapRepository;
 pub use types::{

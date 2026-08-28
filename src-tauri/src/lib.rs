@@ -89,7 +89,8 @@ use crate::synced_settings::{cmd_load_synced_settings, cmd_save_synced_settings}
 use crate::tasks::task_command::cmd_cancel_task;
 use crate::vault_bootstrap::{
     cmd_commit_vault_bootstrap, cmd_export_vault_bootstrap, cmd_get_vault_bootstrap,
-    cmd_import_vault_bootstrap, cmd_prepare_remote_vault,
+    cmd_has_vault_bootstrap, cmd_import_vault_bootstrap, cmd_initialize_new_vault,
+    cmd_prepare_remote_vault,
 };
 use tauri::{App, Manager};
 
@@ -132,8 +133,10 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_encrypt_info,
             cmd_commit_vault_bootstrap,
             cmd_get_vault_bootstrap,
+            cmd_has_vault_bootstrap,
             cmd_export_vault_bootstrap,
             cmd_import_vault_bootstrap,
+            cmd_initialize_new_vault,
             cmd_prepare_remote_vault,
             // Android 系统分享收件箱（Windows 返回空数据）
             cmd_list_pending_android_shares,

@@ -16,6 +16,7 @@ pub const LEGACY_DEBUG_MEMORY_COST_KIB: u32 = 1024;
 pub const LEGACY_RELEASE_MEMORY_COST_KIB: u32 = 256 * 1024;
 pub const VAULT_VERIFIER_TEXT: &str = "surkaa-pad:vault-verifier:v1";
 
+const NEW_VAULT_SALT_BYTES: usize = 16;
 const MAX_MEMORY_COST_KIB: u32 = 256 * 1024;
 const MAX_TIME_COST: u32 = 10;
 const MAX_PARALLELISM: u32 = 8;
@@ -40,6 +41,25 @@ pub struct KeyDerivationParameters {
 }
 
 impl KeyDerivationParameters {
+    pub fn new_random(memory_cost_kib: u32) -> Result<Self, VaultBootstrapError> {
+        let mut salt_bytes = [0_u8; NEW_VAULT_SALT_BYTES];
+        getrandom::fill(&mut salt_bytes)
+            .map_err(|error| VaultBootstrapError::Storage(error.to_string()))?;
+        let parameters = Self {
+            algorithm: KeyDerivationAlgorithm::Argon2id,
+            algorithm_version: ARGON2_VERSION_13,
+            salt: SaltString::encode_b64(&salt_bytes)
+                .map_err(|error| VaultBootstrapError::InvalidConfiguration(error.to_string()))?
+                .to_string(),
+            memory_cost_kib,
+            time_cost: LEGACY_TIME_COST,
+            parallelism: LEGACY_PARALLELISM,
+            output_length: KEY_LEN as u32,
+        };
+        parameters.validate()?;
+        Ok(parameters)
+    }
+
     pub fn legacy_current() -> Self {
         Self::legacy_with_memory_cost(MEMORY_COST_KIB)
     }
@@ -184,6 +204,10 @@ pub enum VaultBootstrapError {
     VerifierMismatch,
     #[error("尚未建立密钥派生配置")]
     NotInitialized,
+    #[error("当前 Vault 已经建立密钥派生配置，不能重新初始化")]
+    AlreadyInitialized,
+    #[error("检测到已有本地对象，不能按新 Vault 生成随机密钥派生参数")]
+    ExistingLocalData,
     #[error("读取或保存密钥派生配置失败: {0}")]
     Storage(String),
 }
@@ -224,6 +248,18 @@ mod tests {
             KeyDerivationParameters::legacy_release().memory_cost_kib,
             LEGACY_RELEASE_MEMORY_COST_KIB
         );
+    }
+
+    #[test]
+    fn new_vault_profiles_use_independent_random_salts() {
+        let first = KeyDerivationParameters::new_random(LEGACY_DEBUG_MEMORY_COST_KIB).unwrap();
+        let second = KeyDerivationParameters::new_random(LEGACY_DEBUG_MEMORY_COST_KIB).unwrap();
+
+        assert_ne!(first.salt, second.salt);
+        assert_ne!(first.salt, DERIVE_SALT);
+        assert_eq!(first.memory_cost_kib, LEGACY_DEBUG_MEMORY_COST_KIB);
+        first.validate().unwrap();
+        second.validate().unwrap();
     }
 
     #[test]
