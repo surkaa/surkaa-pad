@@ -1,8 +1,10 @@
-use super::crypto_types::{
-    Aes256Ctr, DerivedKey, CTR_NONCE_LEN, KEY_LEN, MEMORY_COST_KIB, NONCE_LEN,
-};
+use super::crypto_types::{Aes256Ctr, DerivedKey, CTR_NONCE_LEN, KEY_LEN, NONCE_LEN};
 use crate::cryptos::CryptoError;
 use crate::stream::ByteStream;
+use crate::vault_bootstrap::{
+    KeyDerivationAlgorithm, KeyDerivationParameters, VaultBootstrap, VaultBootstrapError,
+    ARGON2_VERSION_13, VAULT_VERIFIER_TEXT,
+};
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::aes::cipher::crypto_common::rand_core::RngCore;
@@ -23,7 +25,12 @@ impl std::ops::Deref for DerivedKey {
 
 #[derive(Clone)]
 pub struct Crypto {
-    inner: Arc<RwLock<Option<DerivedKey>>>,
+    inner: Arc<RwLock<Option<CryptoState>>>,
+}
+
+struct CryptoState {
+    key: DerivedKey,
+    kdf: KeyDerivationParameters,
 }
 
 impl Crypto {
@@ -51,8 +58,8 @@ impl Crypto {
         }
         let (nonce_bytes, ciphertext) = encrypted.split_at(NONCE_LEN);
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
-        let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
-        let cipher = Aes256Gcm::new_from_slice(dek.as_ref())
+        let state = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
+        let cipher = Aes256Gcm::new_from_slice(state.key.as_ref())
             .map_err(|e| CryptoError::InvalidKey(format!("{:?}", e)))?;
 
         let nonce = Nonce::from_slice(nonce_bytes);
@@ -70,13 +77,13 @@ impl Crypto {
         stream: ByteStream,
     ) -> Result<(ByteStream, Vec<u8>), CryptoError> {
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
-        let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
+        let state = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
 
         // 生成随机NONCE
         let mut nonce = [0u8; CTR_NONCE_LEN];
         OsRng.fill_bytes(&mut nonce);
 
-        let cipher = Aes256Ctr::new(dek.as_ref().into(), (&nonce).into());
+        let cipher = Aes256Ctr::new(state.key.as_ref().into(), (&nonce).into());
 
         let mapped_stream = ctr_stream_cipher(stream, cipher);
 
@@ -87,12 +94,12 @@ impl Crypto {
     /// 返回 (cipher, nonce_bytes)，调用方通过 cipher.apply_keystream 逐块加密
     pub fn create_ctr_cipher(&self) -> Result<(Aes256Ctr, Vec<u8>), CryptoError> {
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
-        let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
+        let state = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
 
         let mut nonce = [0u8; CTR_NONCE_LEN];
         OsRng.fill_bytes(&mut nonce);
 
-        let cipher = Aes256Ctr::new(dek.as_ref().into(), (&nonce).into());
+        let cipher = Aes256Ctr::new(state.key.as_ref().into(), (&nonce).into());
         Ok((cipher, nonce.to_vec()))
     }
 
@@ -104,7 +111,7 @@ impl Crypto {
         start_offset: u64,
     ) -> Result<ByteStream, CryptoError> {
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
-        let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
+        let state = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
 
         if nonce.len() != CTR_NONCE_LEN {
             return Err(CryptoError::InvalidNonceLength {
@@ -113,7 +120,7 @@ impl Crypto {
             });
         }
 
-        let mut cipher = Aes256Ctr::new(dek.as_ref().into(), nonce.into());
+        let mut cipher = Aes256Ctr::new(state.key.as_ref().into(), nonce.into());
 
         // 计算初始计数器值：start_offset / 16（块大小）
         cipher.seek(start_offset);
@@ -126,8 +133,8 @@ impl Crypto {
     /// 使用提供的派生密钥对给定数据进行加密。
     pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
-        let dek = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
-        let cipher = Aes256Gcm::new_from_slice(dek.as_ref())
+        let state = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
+        let cipher = Aes256Gcm::new_from_slice(state.key.as_ref())
             .map_err(|e| CryptoError::InvalidKey(format!("{:?}", e)))?;
 
         let mut nonce_bytes = [0u8; NONCE_LEN];
@@ -143,24 +150,81 @@ impl Crypto {
 
     /// 从给定的密码和盐中推导出数据加密密钥（DEK）
     pub fn derive_dek(&self, password: String, salt: &str) -> Result<(), CryptoError> {
-        let derived_key = derive_key(password, salt)?;
+        let mut parameters = KeyDerivationParameters::legacy_current();
+        parameters.salt = salt.to_owned();
+        self.derive_dek_with_parameters(password, parameters)
+    }
 
-        // 使用写锁进行覆盖赋值
-        if let Ok(mut guard) = self.inner.write() {
-            *guard = Some(derived_key);
+    pub fn derive_dek_with_parameters(
+        &self,
+        password: String,
+        parameters: KeyDerivationParameters,
+    ) -> Result<(), CryptoError> {
+        let derived_key = derive_key(password, &parameters)?;
+        self.set_derived_key(derived_key, parameters)
+    }
+
+    pub fn derive_and_verify_bootstrap(
+        &self,
+        password: String,
+        bootstrap: &VaultBootstrap,
+    ) -> Result<(), VaultBootstrapError> {
+        bootstrap.validate()?;
+        let derived_key = derive_key(password, &bootstrap.kdf)
+            .map_err(|error| VaultBootstrapError::InvalidConfiguration(error.to_string()))?;
+        let verifier = bootstrap.decode_verifier()?;
+        let plaintext = decrypt_with_key(&derived_key, &verifier)
+            .map_err(|_| VaultBootstrapError::VerifierMismatch)?;
+        if plaintext != VAULT_VERIFIER_TEXT.as_bytes() {
+            return Err(VaultBootstrapError::VerifierMismatch);
         }
+        self.set_derived_key(derived_key, bootstrap.kdf.clone())
+            .map_err(|error| VaultBootstrapError::InvalidConfiguration(error.to_string()))
+    }
+
+    pub fn active_kdf_parameters(&self) -> Result<KeyDerivationParameters, CryptoError> {
+        let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
+        Ok(guard
+            .as_ref()
+            .ok_or(CryptoError::KeyNotDerived)?
+            .kdf
+            .clone())
+    }
+
+    pub fn candidate_matches_active_key(
+        &self,
+        password: String,
+        parameters: &KeyDerivationParameters,
+    ) -> Result<bool, CryptoError> {
+        let candidate = derive_key(password, parameters)?;
+        let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
+        let active = guard.as_ref().ok_or(CryptoError::NotInitialized)?;
+        Ok(candidate.0 == active.key.0)
+    }
+
+    fn set_derived_key(
+        &self,
+        derived_key: DerivedKey,
+        parameters: KeyDerivationParameters,
+    ) -> Result<(), CryptoError> {
+        let mut guard = self.inner.write().map_err(|_| CryptoError::LockPoisoned)?;
+        *guard = Some(CryptoState {
+            key: derived_key,
+            kdf: parameters,
+        });
         Ok(())
     }
 
     /// 验证密码获取加密密钥
-    pub fn valid_password(&self, password: String, salt: &str) -> Result<String, CryptoError> {
-        let derived_key = derive_key(password, salt)?;
+    pub fn valid_password(&self, password: String) -> Result<String, CryptoError> {
+        let parameters = self.active_kdf_parameters()?;
+        let derived_key = derive_key(password, &parameters)?;
 
         // 获取读锁，错误直接返回
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
 
         // 取出已存储的密钥引用
-        let stored_key = guard.as_ref().ok_or(CryptoError::NotInitialized)?;
+        let stored_key = &guard.as_ref().ok_or(CryptoError::NotInitialized)?.key;
 
         // 比较内部字节数组
         if derived_key.0 == stored_key.0 {
@@ -172,6 +236,14 @@ impl Crypto {
 
     /// 使用密钥字符串初始化
     pub fn init_by_dek_string(&self, dek: String) -> Result<(), CryptoError> {
+        self.init_by_dek_string_with_parameters(dek, KeyDerivationParameters::legacy_current())
+    }
+
+    pub fn init_by_dek_string_with_parameters(
+        &self,
+        dek: String,
+        parameters: KeyDerivationParameters,
+    ) -> Result<(), CryptoError> {
         let dek_bytes: Vec<u8> =
             hex::decode(&dek).map_err(|e| CryptoError::InvalidDekHex(e.to_string()))?;
         if dek_bytes.len() != KEY_LEN {
@@ -184,10 +256,7 @@ impl Crypto {
         dek_array.copy_from_slice(&dek_bytes);
         let derived_key = DerivedKey(dek_array);
 
-        // 使用写锁进行覆盖赋值
-        if let Ok(mut guard) = self.inner.write() {
-            *guard = Some(derived_key);
-        }
+        self.set_derived_key(derived_key, parameters)?;
 
         dek_array.zeroize();
         Ok(())
@@ -195,17 +264,35 @@ impl Crypto {
 }
 
 /// 派生密钥
-fn derive_key(password: String, salt: &str) -> Result<DerivedKey, CryptoError> {
+pub(crate) fn derive_key(
+    password: String,
+    parameters: &KeyDerivationParameters,
+) -> Result<DerivedKey, CryptoError> {
+    parameters
+        .validate()
+        .map_err(|error| CryptoError::DeriveFailed(error.to_string()))?;
     let params = ParamsBuilder::new()
-        .t_cost(2)
-        .m_cost(MEMORY_COST_KIB)
-        .p_cost(4)
-        .output_len(KEY_LEN)
+        .t_cost(parameters.time_cost)
+        .m_cost(parameters.memory_cost_kib)
+        .p_cost(parameters.parallelism)
+        .output_len(parameters.output_length as usize)
         .build()
         .map_err(|e| CryptoError::DeriveFailed(e.to_string()))?;
 
-    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-    let salt = SaltString::from_b64(salt).map_err(|e| CryptoError::InvalidSalt(e.to_string()))?;
+    let algorithm = match parameters.algorithm {
+        KeyDerivationAlgorithm::Argon2id => Algorithm::Argon2id,
+    };
+    let version = match parameters.algorithm_version {
+        ARGON2_VERSION_13 => Version::V0x13,
+        version => {
+            return Err(CryptoError::DeriveFailed(format!(
+                "不支持的 Argon2 版本: {version}"
+            )))
+        }
+    };
+    let argon2 = Argon2::new(algorithm, version, params);
+    let salt = SaltString::from_b64(&parameters.salt)
+        .map_err(|e| CryptoError::InvalidSalt(e.to_string()))?;
     let hash = argon2
         .hash_password(password.as_bytes(), &salt)
         .map_err(|e| CryptoError::DeriveFailed(e.to_string()))?;
@@ -222,6 +309,18 @@ fn derive_key(password: String, salt: &str) -> Result<DerivedKey, CryptoError> {
     let mut dek_array = [0u8; KEY_LEN];
     dek_array.copy_from_slice(dek.as_bytes());
     Ok(DerivedKey(dek_array))
+}
+
+fn decrypt_with_key(key: &DerivedKey, encrypted: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    if encrypted.len() < NONCE_LEN {
+        return Err(CryptoError::CiphertextTooShort);
+    }
+    let (nonce_bytes, ciphertext) = encrypted.split_at(NONCE_LEN);
+    let cipher = Aes256Gcm::new_from_slice(key.as_ref())
+        .map_err(|error| CryptoError::InvalidKey(format!("{error:?}")))?;
+    cipher
+        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+        .map_err(|error| CryptoError::DecryptionFailed(format!("{error:?}")))
 }
 
 fn ctr_stream_cipher(stream: ByteStream, mut cipher: Aes256Ctr) -> ByteStream {

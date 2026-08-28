@@ -1,6 +1,7 @@
-use crate::cryptos::crypto_types::{DERIVE_SALT, MEMORY_COST_KIB};
+use crate::cryptos::crypto_types::MEMORY_COST_KIB;
 use crate::error::AppError;
 use crate::state::AppState;
+use crate::vault_bootstrap::KeyDerivationParameters;
 use tauri::State;
 
 /// 解锁加密管理器
@@ -14,7 +15,13 @@ pub async fn cmd_unlock(
     state: State<'_, AppState>,
     master_password: String,
 ) -> Result<(), AppError> {
-    Ok(state.crypto().derive_dek(master_password, DERIVE_SALT)?)
+    let parameters = state
+        .vault_bootstrap()
+        .map(|bootstrap| bootstrap.kdf)
+        .unwrap_or_else(KeyDerivationParameters::legacy_current);
+    Ok(state
+        .crypto()
+        .derive_dek_with_parameters(master_password, parameters)?)
 }
 
 /// 验证密码获取密钥
@@ -28,9 +35,7 @@ pub async fn cmd_valid_password(
     state: State<'_, AppState>,
     master_password: String,
 ) -> Result<String, AppError> {
-    Ok(state
-        .crypto()
-        .valid_password(master_password, DERIVE_SALT)?)
+    Ok(state.crypto().valid_password(master_password)?)
 }
 
 /// 生物解锁，传入dek解锁
@@ -41,7 +46,13 @@ pub async fn cmd_valid_password(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_biometric_unlock(state: State<'_, AppState>, dek: String) -> Result<(), AppError> {
-    Ok(state.crypto().init_by_dek_string(dek)?)
+    let parameters = state
+        .vault_bootstrap()
+        .map(|bootstrap| bootstrap.kdf)
+        .unwrap_or_else(KeyDerivationParameters::legacy_current);
+    Ok(state
+        .crypto()
+        .init_by_dek_string_with_parameters(dek, parameters)?)
 }
 
 /// 加密数据
@@ -82,6 +93,9 @@ pub async fn cmd_decrypt_data(
 /// * `Result<u32, AppError>` - Argon2 内存成本（KiB）
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_encrypt_info() -> Result<u32, AppError> {
-    Ok(MEMORY_COST_KIB)
+pub async fn cmd_encrypt_info(state: State<'_, AppState>) -> Result<u32, AppError> {
+    Ok(state
+        .vault_bootstrap()
+        .map(|bootstrap| bootstrap.kdf.memory_cost_kib)
+        .unwrap_or(MEMORY_COST_KIB))
 }

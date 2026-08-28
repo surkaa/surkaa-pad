@@ -20,6 +20,7 @@ mod tasks;
 #[cfg(test)]
 mod test_utils;
 mod utils;
+mod vault_bootstrap;
 
 #[cfg(target_os = "android")]
 mod android_tls {

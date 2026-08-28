@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::vault_bootstrap::VaultBootstrap;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -93,6 +94,8 @@ pub struct AppConfig {
     attachment_cache_max_file_size_bytes: u64,
     #[serde(rename = "pendingLocalStorageMigration", default)]
     pending_local_storage_migration: Option<PendingLocalStorageMigration>,
+    #[serde(rename = "vaultBootstrap", default)]
+    vault_bootstrap: Option<VaultBootstrap>,
 }
 
 impl Default for AppConfig {
@@ -104,6 +107,7 @@ impl Default for AppConfig {
             attachment_cache_limit_bytes: DEFAULT_ATTACHMENT_CACHE_LIMIT_BYTES,
             attachment_cache_max_file_size_bytes: DEFAULT_ATTACHMENT_CACHE_MAX_FILE_SIZE_BYTES,
             pending_local_storage_migration: None,
+            vault_bootstrap: None,
         }
     }
 }
@@ -127,6 +131,10 @@ impl AppConfig {
 
     pub fn pending_local_storage_migration(&self) -> Option<&PendingLocalStorageMigration> {
         self.pending_local_storage_migration.as_ref()
+    }
+
+    pub fn vault_bootstrap(&self) -> Option<&VaultBootstrap> {
+        self.vault_bootstrap.as_ref()
     }
 
     #[cfg(test)]
@@ -218,6 +226,12 @@ impl AppConfigStore {
     ) -> Result<(), AppConfigError> {
         let mut next = self.current();
         next.attachment_cache_max_file_size_bytes = limit_bytes;
+        self.save(next)
+    }
+
+    pub fn set_vault_bootstrap(&self, bootstrap: VaultBootstrap) -> Result<(), AppConfigError> {
+        let mut next = self.current();
+        next.vault_bootstrap = Some(bootstrap);
         self.save(next)
     }
 
@@ -483,5 +497,33 @@ mod tests {
             AppConfigStore::load(path),
             Err(AppConfigError::UnsupportedVersion(999))
         ));
+    }
+
+    #[test]
+    fn vault_bootstrap_is_optional_and_persisted() {
+        use crate::vault_bootstrap::KeyDerivationParameters;
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join(APP_CONFIG_FILENAME);
+        fs::write(
+            &path,
+            br#"{"version":1,"localStorageLocation":{"type":"default"}}"#,
+        )
+        .unwrap();
+        let store = AppConfigStore::load(path.clone()).unwrap();
+        assert!(store.current().vault_bootstrap().is_none());
+
+        let bootstrap = VaultBootstrap {
+            schema_version: 1,
+            vault_id: "00112233445566778899aabbccddeeff".into(),
+            kdf: KeyDerivationParameters::legacy_debug(),
+            encrypted_verifier: STANDARD.encode(vec![0; 28]),
+        };
+        store.set_vault_bootstrap(bootstrap.clone()).unwrap();
+
+        let reloaded = AppConfigStore::load(path).unwrap();
+        assert_eq!(reloaded.current().vault_bootstrap(), Some(&bootstrap));
     }
 }

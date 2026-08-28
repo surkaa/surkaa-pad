@@ -12,6 +12,7 @@ use crate::local_storage::LocalStorageManager;
 use crate::object::OssClient;
 use crate::synced_settings::SyncedSettingsRepository;
 use crate::tasks::TaskPool;
+use crate::vault_bootstrap::VaultBootstrap;
 use dashmap::DashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -156,6 +157,14 @@ impl AppState {
 
     pub fn persist_remote_enabled(&self, enabled: bool) -> Result<(), AppConfigError> {
         self.app_config.set_remote_enabled(enabled)
+    }
+
+    pub fn vault_bootstrap(&self) -> Option<VaultBootstrap> {
+        self.app_config.current().vault_bootstrap().cloned()
+    }
+
+    pub fn persist_vault_bootstrap(&self, bootstrap: VaultBootstrap) -> Result<(), AppConfigError> {
+        self.app_config.set_vault_bootstrap(bootstrap)
     }
 
     pub fn attachment_cache_limit_bytes(&self) -> u64 {
