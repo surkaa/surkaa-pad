@@ -540,40 +540,6 @@ async function migrateRemoteStoragePreference(): Promise<boolean> {
   animation: container-enter 0.5s ease-out;
 }
 
-.content-area {
-  color: var(--pad-text-color-200);
-
-  :deep(.q-field__control) {
-    background: var(--pad-bg-color-100);
-  }
-
-  :deep(.q-field__native),
-  :deep(.q-field__input) {
-    color: var(--pad-text-color-200);
-    caret-color: var(--pad-primary-dark);
-
-    &::placeholder {
-      color: var(--pad-text-color-400);
-      opacity: 1;
-    }
-  }
-
-  :deep(.q-field__label),
-  :deep(.q-field__marginal) {
-    color: var(--pad-text-color-400);
-  }
-
-  :deep(.q-field--outlined .q-field__control::before) {
-    border-color: var(--pad-border-color-100);
-  }
-
-  :deep(input:-webkit-autofill) {
-    -webkit-text-fill-color: var(--pad-text-color-200);
-    caret-color: var(--pad-primary-dark);
-    box-shadow: 0 0 0 1000px var(--pad-bg-color-100) inset;
-  }
-}
-
 .app-header {
   background: var(--pad-primary-gradient);
   color: var(--pad-text-color-light);

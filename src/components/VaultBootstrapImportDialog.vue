@@ -20,7 +20,6 @@
           autogrow
           label="配置 JSON"
           :disable="importing"
-          class="themed-input"
         />
         <q-input
           v-model="importPassword"
@@ -28,7 +27,6 @@
           outlined
           label="对应的主密码"
           :disable="importing"
-          class="themed-input"
           @keyup.enter="importConfig"
         />
       </q-card-section>
@@ -113,13 +111,4 @@ async function importConfig() {
   color: var(--pad-text-color-400);
 }
 
-.themed-input :deep(.q-field__native),
-.themed-input :deep(.q-field__input),
-.themed-input :deep(.q-field__label) {
-  color: var(--pad-text-color-200);
-}
-
-.themed-input :deep(.q-field__control::before) {
-  border-color: var(--pad-border-color-100);
-}
 </style>

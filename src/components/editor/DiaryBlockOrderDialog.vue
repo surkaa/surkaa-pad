@@ -300,14 +300,5 @@ function confirmOrder() {
     background: var(--pad-bg-color-100);
   }
 
-  .q-field__native,
-  .q-field__input {
-    color: var(--pad-text-color-200);
-  }
-
-  .q-field__label,
-  .q-field__marginal {
-    color: var(--pad-text-color-400);
-  }
 }
 </style>

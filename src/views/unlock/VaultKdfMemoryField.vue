@@ -10,7 +10,6 @@
       options-dense
       color="primary"
       :disable="loading"
-      popup-content-class="vault-kdf-options"
       @update:model-value="emit('update:modelValue', Number($event))"
     >
       <template #prepend><q-icon name="memory"/></template>
@@ -52,22 +51,4 @@ const options = newVaultMemoryOptions();
   text-align: left;
 }
 
-:deep(.q-field__native),
-:deep(.q-field__input),
-:deep(.q-field__label),
-:deep(.q-field__marginal) {
-  color: var(--pad-text-color-200);
-}
-
-:deep(.q-field__control::before) {
-  border-color: var(--pad-border-color-100);
-}
-</style>
-
-<style lang="scss">
-.vault-kdf-options {
-  color: var(--pad-text-color-200);
-  background: var(--pad-bg-color-200);
-  border: 1px solid var(--pad-border-color-100);
-}
 </style>

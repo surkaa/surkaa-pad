@@ -82,7 +82,6 @@
               emit-value
               map-options
               options-dense
-              popup-content-class="pad-ai-model-menu"
               class="col model-select"
               :disable="modelOptions.length === 0"
             />
@@ -279,20 +278,6 @@ async function clearConfig() {
     background-color: var(--pad-bg-color-200);
   }
 
-  :deep(.q-field__native),
-  :deep(.q-field__input),
-  :deep(.q-field__label) {
-    color: var(--pad-text-color-200) !important;
-  }
-
-  :deep(.q-field__marginal),
-  :deep(.q-field__bottom) {
-    color: var(--pad-text-color-400);
-  }
-
-  :deep(.q-field--outlined .q-field__control::before) {
-    border-color: var(--pad-border-color-100);
-  }
 }
 
 .model-select {

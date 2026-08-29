@@ -23,7 +23,6 @@
         dense
         outlined
         options-dense
-        popup-content-class="pad-attachment-cache-menu"
         aria-label="本地附件缓存上限"
         class="cache-limit-select"
         :loading="loading"
@@ -52,7 +51,6 @@
         dense
         outlined
         options-dense
-        popup-content-class="pad-attachment-cache-menu"
         aria-label="单个附件缓存上限"
         class="cache-limit-select"
         :loading="loading"
@@ -126,14 +124,5 @@ onMounted(refresh);
 <style scoped lang="scss">
 .cache-limit-select {
   width: 104px;
-
-  :deep(.q-field__native),
-  :deep(.q-field__input) {
-    color: var(--pad-text-color-200) !important;
-  }
-
-  :deep(.q-field__marginal) {
-    color: var(--pad-text-color-300) !important;
-  }
 }
 </style>

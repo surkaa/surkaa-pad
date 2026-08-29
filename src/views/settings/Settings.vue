@@ -467,8 +467,6 @@ defineOptions({name: 'Settings'});
   }
 }
 
-// QDialog 会将内容 Teleport 到页面根节点之外，因此这里不能依赖
-// #settings-page 祖先选择器来设置弹窗内输入框的主题颜色。
 .oss-config-modal {
   background-color: var(--pad-bg-color-100);
   color: var(--pad-text-color-100);
@@ -486,18 +484,5 @@ defineOptions({name: 'Settings'});
     background-color: var(--pad-bg-color-200);
   }
 
-  :deep(.q-field__native),
-  :deep(.q-field__input) {
-    color: var(--pad-text-color-200) !important;
-  }
-
-  :deep(.q-field__label),
-  :deep(.q-field__marginal) {
-    color: var(--pad-text-color-300);
-  }
-
-  :deep(.q-field--outlined .q-field__control::before) {
-    border-color: var(--pad-border-color-100);
-  }
 }
 </style>

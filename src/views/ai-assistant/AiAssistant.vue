@@ -1205,14 +1205,6 @@ async function scrollToBottom() {
     background: var(--pad-bg-color-100);
   }
 
-  :deep(.q-field__native),
-  :deep(.q-field__input) {
-    color: var(--pad-text-color-200);
-  }
-
-  :deep(.q-field--outlined .q-field__control::before) {
-    border-color: var(--pad-border-color-200);
-  }
 }
 
 .model-label,

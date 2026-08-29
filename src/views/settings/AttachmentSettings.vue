@@ -20,7 +20,6 @@
             dense
             outlined
             options-dense
-            popup-content-class="pad-upload-concurrency-menu"
             aria-label="同时上传数量"
             class="concurrency-select"
           />
@@ -115,15 +114,6 @@ const encryptionSettings = [
 <style scoped lang="scss">
 .concurrency-select {
   width: 76px;
-
-  :deep(.q-field__native),
-  :deep(.q-field__input) {
-    color: var(--pad-text-color-200) !important;
-  }
-
-  :deep(.q-field__marginal) {
-    color: var(--pad-text-color-300) !important;
-  }
 }
 
 .encryption-expansion {

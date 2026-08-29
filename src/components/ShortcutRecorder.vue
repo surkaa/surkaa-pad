@@ -99,14 +99,7 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 .shortcut-recorder :deep(.q-field__native) {
-  color: var(--pad-text-color-200) !important;
   cursor: pointer;
-}
-
-.shortcut-recorder :deep(.q-field__label),
-.shortcut-recorder :deep(.q-field__prepend),
-.shortcut-recorder :deep(.q-field__append) {
-  color: var(--pad-text-color-300);
 }
 
 .shortcut-recorder.is-recording :deep(.q-field__control) {
