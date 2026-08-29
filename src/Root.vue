@@ -2,6 +2,7 @@
 import {Channel} from '@tauri-apps/api/core';
 import {relaunch} from '@tauri-apps/plugin-process';
 import {platform} from "@tauri-apps/plugin-os";
+import {Dark} from 'quasar';
 import {useEventListener} from "@vueuse/core";
 import {useConfigStore} from "./stores/config.ts";
 import {onMounted, ref, watchEffect} from "vue";
@@ -16,6 +17,7 @@ import {
 } from './utils/localStorageMigration';
 import {logStartupError, logStartupPhase} from './utils/startupLog';
 import AndroidShareImportCoordinator from './components/AndroidShareImportCoordinator.vue';
+import {resolveQuasarDarkMode} from './utils/theme';
 
 const configStore = useConfigStore();
 const p = platform();
@@ -54,32 +56,12 @@ if (p === 'windows') {
 }
 
 const theme = configStore.useTauriConfig('app-theme');
-const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
-// DOM 副作用交给 watchEffect 托管，theme 变化时自动重新执行
-watchEffect((onCleanup) => {
-  const applySystemTheme = (e: MediaQueryListEvent | MediaQueryList) => {
-    document.body.classList.toggle('body--dark', e.matches);
-  };
-
-  switch (theme.value) {
-    case "dark":
-      document.body.classList.add('body--dark');
-      break;
-    case "light":
-      document.body.classList.remove('body--dark');
-      break;
-    default:
-      // 只有 system 或 undefined 时挂载系统级监听
-      applySystemTheme(mediaQuery);
-      mediaQuery.addEventListener('change', applySystemTheme);
-
-      // onCleanup 用于在这个 watchEffect 重新执行前清理上一次的事件监听器
-      onCleanup(() => {
-        mediaQuery.removeEventListener('change', applySystemTheme);
-      });
-      break;
-  }
+// 必须同步 Quasar 自身的暗色状态。仅切换 body--dark 类只能更新项目 CSS
+// 变量，QInput、QSelect 等组件仍会按浅色模式渲染，Teleport 到根节点的
+// QDialog 内容尤其容易暴露这个问题。
+watchEffect(() => {
+  Dark.set(resolveQuasarDarkMode(theme.value));
 });
 
 onMounted(() => {
