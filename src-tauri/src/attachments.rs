@@ -5,9 +5,12 @@ mod attachment_server;
 mod attachment_types;
 pub mod chunked_upload;
 pub mod chunked_upload_command;
+mod embedded_media;
 
 #[cfg(test)]
 mod attachment_tests;
+#[cfg(test)]
+mod embedded_media_tests;
 
 pub use attachment_error::AttachmentError;
 pub use attachment_server::{

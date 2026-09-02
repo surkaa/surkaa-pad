@@ -1,13 +1,21 @@
-use crate::attachments::AttachmentError;
+use crate::attachments::embedded_media::{
+    has_isobmff_file_type_box, parse_motion_photo_layout, MotionPhotoLayout,
+    MOTION_PHOTO_XMP_PROBE_BYTES,
+};
+use crate::attachments::{AttachmentError, AttachmentMeta};
 use crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm;
-use crate::cryptos::CryptoError;
-use crate::diaries::{get_diary, DiaryError};
+use crate::cryptos::{Crypto, CryptoError};
+use crate::diaries::{get_diary, DiaryError, DiaryStore};
 use crate::object::ObjectError;
 use crate::state::AppState;
-use crate::stream::collect_data_with_capacity;
+use crate::stream::{collect_data_with_capacity, ByteStream};
 use bytes::Bytes;
-use http_body_util::Full;
+use dashmap::DashMap;
+use futures_util::TryStreamExt;
+use http_body_util::combinators::UnsyncBoxBody;
+use http_body_util::{BodyExt, Full, StreamBody};
 use http_range_header::parse_range_header;
+use hyper::body::Frame;
 use hyper::body::Incoming;
 use hyper::header::{
     ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
@@ -27,11 +35,33 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri_plugin_log::log;
 
 const MAX_CHUNK_SIZE: u64 = 1024 * 1024;
+const MOTION_PHOTO_VIEW: &str = "motion-photo-video";
+type ResponseBody = UnsyncBoxBody<Bytes, io::Error>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AttachmentView {
+    Original,
+    MotionPhotoVideo,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CachedMotionPhoto {
+    NotMotionPhoto,
+    MotionPhoto(MotionPhotoLayout),
+}
+
+#[derive(Clone, Debug)]
+struct MotionPhotoCacheEntry {
+    etag: String,
+    object_size: u64,
+    value: CachedMotionPhoto,
+}
 
 #[derive(Clone, Debug)]
 pub struct AttachmentServerHandle {
     origin: Arc<str>,
     token: Arc<str>,
+    motion_photo_cache: Arc<DashMap<(String, String), MotionPhotoCacheEntry>>,
 }
 
 impl AttachmentServerHandle {
@@ -39,6 +69,7 @@ impl AttachmentServerHandle {
         Self {
             origin: format!("http://{}", address).into(),
             token: token.into(),
+            motion_photo_cache: Arc::new(DashMap::new()),
         }
     }
 
@@ -66,6 +97,7 @@ impl AttachmentServerHandle {
         Self {
             origin: "http://127.0.0.1:1".into(),
             token: "test-token".into(),
+            motion_photo_cache: Arc::new(DashMap::new()),
         }
     }
 }
@@ -129,7 +161,7 @@ async fn handle_request(
     state: AppState,
     token: Arc<str>,
     request: Request<Incoming>,
-) -> Result<Response<Full<Bytes>>, Infallible> {
+) -> Result<Response<ResponseBody>, Infallible> {
     let response = process_attachment(state, &token, request)
         .await
         .unwrap_or_else(|error| {
@@ -150,7 +182,7 @@ enum ServerError {
 }
 
 impl ServerError {
-    fn into_response(self) -> Response<Full<Bytes>> {
+    fn into_response(self) -> Response<ResponseBody> {
         let (status, message) = match self {
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message.to_string()),
             Self::Forbidden(message) => (StatusCode::FORBIDDEN, message.to_string()),
@@ -162,14 +194,14 @@ impl ServerError {
             Self::RangeNotSatisfiable(size) => {
                 return response_builder_with_status(StatusCode::RANGE_NOT_SATISFIABLE)
                     .header(CONTENT_RANGE, format!("bytes */{size}"))
-                    .body(Full::new(Bytes::new()))
-                    .unwrap_or_else(|_| Response::new(Full::new(Bytes::new())));
+                    .body(full_body(Bytes::new()))
+                    .unwrap_or_else(|_| Response::new(full_body(Bytes::new())));
             }
             Self::Internal(message) => (StatusCode::INTERNAL_SERVER_ERROR, message),
         };
         response_builder_with_status(status)
-            .body(Full::new(Bytes::from(message)))
-            .unwrap_or_else(|_| Response::new(Full::new(Bytes::new())))
+            .body(full_body(Bytes::from(message)))
+            .unwrap_or_else(|_| Response::new(full_body(Bytes::new())))
     }
 }
 
@@ -223,15 +255,16 @@ async fn process_attachment(
     state: AppState,
     expected_token: &str,
     request: Request<Incoming>,
-) -> Result<Response<Full<Bytes>>, ServerError> {
+) -> Result<Response<ResponseBody>, ServerError> {
     if request.method() == Method::OPTIONS {
         return response_builder_with_status(StatusCode::NO_CONTENT)
-            .body(Full::new(Bytes::new()))
+            .body(full_body(Bytes::new()))
             .map_err(|error| ServerError::Internal(error.to_string()));
     }
     if request.method() != Method::GET && request.method() != Method::HEAD {
         return Err(ServerError::MethodNotAllowed);
     }
+    let attachment_view = parse_attachment_view(request.uri().query())?;
 
     let path = request.uri().path().trim_start_matches('/');
     let segments: Vec<&str> = path.split('/').collect();
@@ -276,19 +309,42 @@ async fn process_attachment(
                 .map_err(|_| ServerError::BadRequest("Invalid Range header"))
         })
         .transpose()?;
-    // Range 和 HEAD 的响应头必须在读取正文前确定，因此从存储对象获取真实长度。
-    // 普通 GET 继续直接下载，避免图片加载额外增加一次远端 HEAD。
-    let mut file_size = if raw_range.is_some() || request.method() == Method::HEAD {
+    // Range、HEAD 和内嵌媒体响应必须先取得真实对象长度。普通图片 GET 继续使用
+    // Manifest 长度，避免图片列表加载额外增加一次远端 HEAD。
+    let mut file_size = if raw_range.is_some()
+        || request.method() == Method::HEAD
+        || attachment_view == AttachmentView::MotionPhotoVideo
+    {
         store
             .get_attachment_size(&id, &attachment_id, attachment.etag.as_deref())
             .await?
     } else {
         attachment.size
     };
-    let range = resolve_range(raw_range, file_size)?;
+    let (resource_offset, resource_size, resource_mimetype, is_virtual) = match attachment_view {
+        AttachmentView::Original => (0, file_size, attachment.mimetype.as_str(), false),
+        AttachmentView::MotionPhotoVideo => {
+            let layout = resolve_motion_photo_layout(
+                &state.attachment_server(),
+                &*store,
+                &crypto,
+                &id,
+                attachment,
+                file_size,
+            )
+            .await?;
+            (
+                layout.video_start,
+                layout.video_length,
+                layout.mime_type,
+                true,
+            )
+        }
+    };
+    let range = resolve_range(raw_range, resource_size)?;
     let selected_length = range
         .map(|(start, end)| end.saturating_sub(start) + 1)
-        .unwrap_or(file_size);
+        .unwrap_or(resource_size);
     let status = if range.is_some() {
         StatusCode::PARTIAL_CONTENT
     } else {
@@ -298,32 +354,62 @@ async fn process_attachment(
     if request.method() == Method::HEAD {
         return build_attachment_response(
             status,
-            &attachment.mimetype,
+            resource_mimetype,
             range,
-            file_size,
+            resource_size,
             selected_length,
             Bytes::new(),
         );
     }
 
+    let physical_range = if is_virtual {
+        let (start, end) = range.unwrap_or((0, resource_size.saturating_sub(1)));
+        Some((
+            resource_offset
+                .checked_add(start)
+                .ok_or(ServerError::Internal(
+                    "Embedded media range overflow".into(),
+                ))?,
+            resource_offset
+                .checked_add(end)
+                .ok_or(ServerError::Internal(
+                    "Embedded media range overflow".into(),
+                ))?,
+        ))
+    } else {
+        range
+    };
     let stream = store
-        .download_attachment(&id, &attachment_id, range, attachment.etag.as_deref())
+        .download_attachment(
+            &id,
+            &attachment_id,
+            physical_range,
+            attachment.etag.as_deref(),
+        )
         .await?;
-    let start = range.map(|(start, _)| start).unwrap_or(0);
+    let start = physical_range.map(|(start, _)| start).unwrap_or(0);
     let stream = if attachment.encrypted {
         crypto.decrypt_streaming(stream, &attachment.nonce, start)?
     } else {
         stream
     };
+    if is_virtual && range.is_none() {
+        return build_attachment_stream_response(
+            status,
+            resource_mimetype,
+            selected_length,
+            stream,
+        );
+    }
     let capacity = min(selected_length, MAX_CHUNK_SIZE) as usize;
     let data = collect_data_with_capacity(stream, capacity).await?;
     let actual_length = data.len() as u64;
-    if range.is_some() && actual_length != selected_length {
+    if (is_virtual || range.is_some()) && actual_length != selected_length {
         return Err(ServerError::Internal(format!(
             "Attachment length mismatch: expected {selected_length}, got {actual_length}"
         )));
     }
-    if range.is_none() && actual_length != file_size {
+    if !is_virtual && range.is_none() && actual_length != file_size {
         log::warn!(
             "附件 Manifest 长度与对象不一致，使用对象实际长度: diary_id={}, attachment_id={}, manifest_size={}, actual_size={}",
             id,
@@ -340,12 +426,141 @@ async fn process_attachment(
 
     build_attachment_response(
         status,
-        &attachment.mimetype,
+        resource_mimetype,
         actual_range,
-        file_size,
+        if is_virtual { resource_size } else { file_size },
         actual_length,
         Bytes::from(data),
     )
+}
+
+fn parse_attachment_view(query: Option<&str>) -> Result<AttachmentView, ServerError> {
+    let mut requested_view = None;
+    for component in query.unwrap_or_default().split('&') {
+        let Some((name, value)) = component.split_once('=') else {
+            continue;
+        };
+        if name != "view" {
+            continue;
+        }
+        if requested_view.replace(value).is_some() {
+            return Err(ServerError::BadRequest("Duplicate attachment view"));
+        }
+    }
+
+    match requested_view {
+        None => Ok(AttachmentView::Original),
+        Some(MOTION_PHOTO_VIEW) => Ok(AttachmentView::MotionPhotoVideo),
+        Some(_) => Err(ServerError::BadRequest("Unsupported attachment view")),
+    }
+}
+
+async fn resolve_motion_photo_layout(
+    server: &AttachmentServerHandle,
+    store: &dyn DiaryStore,
+    crypto: &Crypto,
+    diary_id: &str,
+    attachment: &AttachmentMeta,
+    object_size: u64,
+) -> Result<MotionPhotoLayout, ServerError> {
+    let cache_key = (diary_id.to_owned(), attachment.id.clone());
+    if let Some(etag) = attachment.etag.as_deref() {
+        if let Some(entry) = server.motion_photo_cache.get(&cache_key) {
+            if entry.etag == etag && entry.object_size == object_size {
+                return match entry.value {
+                    CachedMotionPhoto::MotionPhoto(layout) => Ok(layout),
+                    CachedMotionPhoto::NotMotionPhoto => {
+                        Err(ServerError::NotFound("motion photo video"))
+                    }
+                };
+            }
+        }
+    }
+
+    let value =
+        detect_motion_photo_layout(store, crypto, diary_id, attachment, object_size).await?;
+    if let Some(etag) = attachment.etag.as_deref() {
+        server.motion_photo_cache.insert(
+            cache_key,
+            MotionPhotoCacheEntry {
+                etag: etag.to_owned(),
+                object_size,
+                value,
+            },
+        );
+    }
+
+    match value {
+        CachedMotionPhoto::MotionPhoto(layout) => Ok(layout),
+        CachedMotionPhoto::NotMotionPhoto => Err(ServerError::NotFound("motion photo video")),
+    }
+}
+
+async fn detect_motion_photo_layout(
+    store: &dyn DiaryStore,
+    crypto: &Crypto,
+    diary_id: &str,
+    attachment: &AttachmentMeta,
+    object_size: u64,
+) -> Result<CachedMotionPhoto, ServerError> {
+    if object_size == 0 {
+        return Ok(CachedMotionPhoto::NotMotionPhoto);
+    }
+    let probe_end = min(object_size, MOTION_PHOTO_XMP_PROBE_BYTES) - 1;
+    let header =
+        read_plain_attachment_range(store, crypto, diary_id, attachment, (0, probe_end)).await?;
+    let Some(layout) = parse_motion_photo_layout(&header, object_size) else {
+        return Ok(CachedMotionPhoto::NotMotionPhoto);
+    };
+
+    let signature_end = min(
+        layout.video_start.saturating_add(11),
+        object_size.saturating_sub(1),
+    );
+    let signature = read_plain_attachment_range(
+        store,
+        crypto,
+        diary_id,
+        attachment,
+        (layout.video_start, signature_end),
+    )
+    .await?;
+    if !has_isobmff_file_type_box(&signature) {
+        return Ok(CachedMotionPhoto::NotMotionPhoto);
+    }
+    Ok(CachedMotionPhoto::MotionPhoto(layout))
+}
+
+async fn read_plain_attachment_range(
+    store: &dyn DiaryStore,
+    crypto: &Crypto,
+    diary_id: &str,
+    attachment: &AttachmentMeta,
+    range: (u64, u64),
+) -> Result<Vec<u8>, ServerError> {
+    let expected_length = range.1.saturating_sub(range.0) + 1;
+    let stream = store
+        .download_attachment(
+            diary_id,
+            &attachment.id,
+            Some(range),
+            attachment.etag.as_deref(),
+        )
+        .await?;
+    let stream = if attachment.encrypted {
+        crypto.decrypt_streaming(stream, &attachment.nonce, range.0)?
+    } else {
+        stream
+    };
+    let data =
+        collect_data_with_capacity(stream, min(expected_length, MAX_CHUNK_SIZE) as usize).await?;
+    if data.len() as u64 != expected_length {
+        return Err(ServerError::Internal(format!(
+            "Attachment length mismatch: expected {expected_length}, got {}",
+            data.len()
+        )));
+    }
+    Ok(data)
 }
 
 fn resolve_range(
@@ -375,7 +590,7 @@ fn build_attachment_response(
     file_size: u64,
     content_length: u64,
     body: Bytes,
-) -> Result<Response<Full<Bytes>>, ServerError> {
+) -> Result<Response<ResponseBody>, ServerError> {
     let mut builder = response_builder_with_status(status)
         .header(CONTENT_TYPE, mimetype)
         .header(ACCEPT_RANGES, "bytes")
@@ -384,8 +599,32 @@ fn build_attachment_response(
         builder = builder.header(CONTENT_RANGE, format!("bytes {start}-{end}/{file_size}"));
     }
     builder
-        .body(Full::new(body))
+        .body(full_body(body))
         .map_err(|error| ServerError::Internal(error.to_string()))
+}
+
+fn build_attachment_stream_response(
+    status: StatusCode,
+    mimetype: &str,
+    content_length: u64,
+    stream: ByteStream,
+) -> Result<Response<ResponseBody>, ServerError> {
+    response_builder_with_status(status)
+        .header(CONTENT_TYPE, mimetype)
+        .header(ACCEPT_RANGES, "bytes")
+        .header(CONTENT_LENGTH, content_length)
+        .body(stream_body(stream))
+        .map_err(|error| ServerError::Internal(error.to_string()))
+}
+
+fn full_body(body: Bytes) -> ResponseBody {
+    Full::new(body)
+        .map_err(|never: Infallible| match never {})
+        .boxed_unsync()
+}
+
+fn stream_body(stream: ByteStream) -> ResponseBody {
+    StreamBody::new(stream.map_ok(Frame::data)).boxed_unsync()
 }
 
 #[cfg(test)]
@@ -398,7 +637,7 @@ mod tests {
     use crate::diaries::{DiaryContent, DiaryManifest, DiaryStore, LocalStore, CURRENT_VERSION};
     use crate::object::OssClient;
     use crate::stream::{collect_data, create_mock_stream};
-    use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, RANGE};
+    use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
     use tempfile::TempDir;
 
     struct TestServer {
@@ -497,6 +736,30 @@ mod tests {
         }
     }
 
+    fn motion_photo_fixture(video_length: usize) -> (Vec<u8>, Vec<u8>) {
+        let image_length = 192 * 1024;
+        let mut video: Vec<u8> = (0..video_length).map(|index| (index % 251) as u8).collect();
+        video[..12].copy_from_slice(b"\0\0\0\x18ftypmp42");
+
+        let mut attachment = vec![0_u8; image_length + video_length];
+        let xmp = format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+                xmlns:Camera="http://ns.google.com/photos/1.0/camera/">
+                <rdf:Description Camera:MicroVideo="1"
+                  Camera:MicroVideoOffset="{video_length}"/>
+              </rdf:RDF>
+            </x:xmpmeta>"#
+        );
+        attachment[256..256 + xmp.len()].copy_from_slice(xmp.as_bytes());
+        attachment[image_length..].copy_from_slice(&video);
+        (attachment, video)
+    }
+
+    fn motion_photo_video_url(attachment_url: &str) -> String {
+        format!("{attachment_url}&view={MOTION_PHOTO_VIEW}")
+    }
+
     #[test]
     fn generated_url_is_loopback_only_and_encodes_path_segments() {
         let (listener, handle) = bind_attachment_server().unwrap();
@@ -528,6 +791,114 @@ mod tests {
             resolve_range(Some("not-a-range"), 100),
             Err(ServerError::BadRequest(_))
         ));
+    }
+
+    #[test]
+    fn parses_attachment_view_without_interfering_with_cache_buster() {
+        assert_eq!(
+            parse_attachment_view(Some("t=123&view=motion-photo-video")).unwrap(),
+            AttachmentView::MotionPhotoVideo
+        );
+        assert_eq!(
+            parse_attachment_view(Some("t=123")).unwrap(),
+            AttachmentView::Original
+        );
+        assert!(matches!(
+            parse_attachment_view(Some("view=unknown")),
+            Err(ServerError::BadRequest(_))
+        ));
+        assert!(matches!(
+            parse_attachment_view(Some("view=motion-photo-video&view=motion-photo-video")),
+            Err(ServerError::BadRequest(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn serves_motion_photo_video_ranges_for_plain_and_encrypted_attachments() {
+        let (attachment, video) = motion_photo_fixture(1_700_000);
+        let client = reqwest::Client::new();
+
+        for encrypted in [false, true] {
+            let server = start_test_server(
+                if encrypted {
+                    "motion-ctr"
+                } else {
+                    "motion-plain"
+                },
+                "motion.jpg",
+                "image/jpeg",
+                &attachment,
+                encrypted,
+            )
+            .await;
+            let url = motion_photo_video_url(&server.handle.url(
+                if encrypted {
+                    "motion-ctr"
+                } else {
+                    "motion-plain"
+                },
+                "motion.jpg",
+            ));
+
+            let response = client.head(&url).send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[CONTENT_TYPE], "video/mp4");
+            assert_eq!(response.headers()[CONTENT_LENGTH], video.len().to_string());
+
+            let response = client
+                .get(&url)
+                .header(RANGE, "bytes=12345-13344")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+            assert_eq!(
+                response.headers()[CONTENT_RANGE],
+                format!("bytes 12345-13344/{}", video.len())
+            );
+            assert_eq!(
+                response.bytes().await.unwrap().as_ref(),
+                &video[12_345..13_345]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn streams_motion_photo_video_without_an_initial_range_request() {
+        let (attachment, video) = motion_photo_fixture(MAX_CHUNK_SIZE as usize + 97);
+        let server = start_test_server(
+            "motion-capped",
+            "motion.jpg",
+            "image/jpeg",
+            &attachment,
+            false,
+        )
+        .await;
+        let url = motion_photo_video_url(&server.handle.url("motion-capped", "motion.jpg"));
+
+        let response = reqwest::get(url).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[CONTENT_LENGTH], video.len().to_string());
+        assert_eq!(response.bytes().await.unwrap().as_ref(), video);
+    }
+
+    #[tokio::test]
+    async fn rejects_residual_motion_photo_metadata_without_a_video_signature() {
+        let (mut attachment, _) = motion_photo_fixture(4096);
+        let video_start = attachment.len() - 4096;
+        attachment[video_start..video_start + 12].fill(0);
+        let server = start_test_server(
+            "motion-residual",
+            "edited.jpg",
+            "image/jpeg",
+            &attachment,
+            false,
+        )
+        .await;
+        let url = motion_photo_video_url(&server.handle.url("motion-residual", "edited.jpg"));
+
+        let response = reqwest::get(url).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
