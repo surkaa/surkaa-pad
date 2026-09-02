@@ -21,6 +21,7 @@
     >
       <img
           v-if="!imageError"
+          v-show="!motionReady"
           ref="imageRef"
           :src="src"
           alt="图片预览"
@@ -31,8 +32,30 @@
           @error="imageError = true"
           @click.stop
       >
-      <div v-else class="image-preview__error">
+      <video
+          v-if="motionVideoUrl && !motionUnavailable"
+          v-show="motionReady"
+          :key="motionVideoUrl"
+          ref="videoRef"
+          :src="motionVideoUrl"
+          class="image-preview__video"
+          :style="imageStyle"
+          autoplay
+          muted
+          loop
+          playsinline
+          preload="auto"
+          @canplay="handleMotionCanPlay"
+          @error="handleMotionError"
+          @click.stop
+      />
+      <div v-if="imageError && !motionReady" class="image-preview__error">
         图片加载失败
+      </div>
+
+      <div v-if="motionReady" class="image-preview__motion-badge">
+        <q-icon name="motion_photos_on" size="18px"/>
+        动态照片
       </div>
 
       <q-btn
@@ -93,6 +116,7 @@ import {
   type ImagePreviewTransform,
   type Point,
 } from '../utils/imagePreviewTransform';
+import {buildMotionPhotoVideoUrl} from '../utils/motionPhoto';
 
 const props = defineProps<{
   src: string;
@@ -105,7 +129,10 @@ defineEmits([
 const {dialogRef, onDialogHide, onDialogCancel} = useDialogPluginComponent();
 const viewportRef = ref<HTMLElement>();
 const imageRef = ref<HTMLImageElement>();
+const videoRef = ref<HTMLVideoElement>();
 const imageError = ref(false);
+const motionReady = ref(false);
+const motionUnavailable = ref(false);
 const isManipulating = ref(false);
 const transform = reactive<ImagePreviewTransform>({scale: 1, x: 0, y: 0});
 const pointers = new Map<number, Point>();
@@ -118,6 +145,8 @@ let pinchStart: {
 } | undefined;
 let gestureMoved = false;
 
+const motionVideoUrl = computed(() => buildMotionPhotoVideoUrl(props.src));
+
 const imageStyle = computed(() => ({
   transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
 }));
@@ -128,12 +157,12 @@ function resetTransform() {
 
 function dimensions() {
   const viewport = viewportRef.value;
-  const image = imageRef.value;
-  if (!viewport || !image) return undefined;
+  const media = motionReady.value ? videoRef.value : imageRef.value;
+  if (!viewport || !media) return undefined;
 
   return {
     viewport: {width: viewport.clientWidth, height: viewport.clientHeight},
-    content: {width: image.clientWidth, height: image.clientHeight},
+    content: {width: media.clientWidth, height: media.clientHeight},
   };
 }
 
@@ -170,13 +199,13 @@ function zoomFromCenter(delta: number) {
 }
 
 function handleWheel(event: WheelEvent) {
-  if (imageError.value) return;
+  if (imageError.value && !motionReady.value) return;
   const scaleFactor = Math.exp(-event.deltaY * 0.002);
   zoomAt(transform.scale * scaleFactor, viewportPoint(event));
 }
 
 function handleDoubleClick(event: MouseEvent) {
-  if (imageError.value) return;
+  if (imageError.value && !motionReady.value) return;
   zoomAt(transform.scale > 1 ? 1 : 2, viewportPoint(event));
 }
 
@@ -205,7 +234,7 @@ function beginPinch() {
 }
 
 function handlePointerDown(event: PointerEvent) {
-  if (imageError.value || event.button !== 0) return;
+  if ((imageError.value && !motionReady.value) || event.button !== 0) return;
   const point = viewportPoint(event);
   pointers.set(event.pointerId, point);
   viewportRef.value?.setPointerCapture(event.pointerId);
@@ -299,10 +328,26 @@ function handleResize() {
   ));
 }
 
+function handleMotionCanPlay() {
+  const video = videoRef.value;
+  if (!video) return;
+  motionReady.value = true;
+  resetTransform();
+  video.muted = true;
+  void video.play().catch(error => console.warn('自动播放动态照片失败:', error));
+}
+
+function handleMotionError() {
+  motionReady.value = false;
+  motionUnavailable.value = true;
+}
+
 watch(() => props.src, () => {
   imageError.value = false;
+  motionReady.value = false;
+  motionUnavailable.value = false;
   resetTransform();
-});
+}, {immediate: true});
 
 window.addEventListener('resize', handleResize);
 onBeforeUnmount(() => window.removeEventListener('resize', handleResize));
@@ -332,7 +377,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', handleResize));
   }
 }
 
-.image-preview__image {
+.image-preview__image,
+.image-preview__video {
   display: block;
   max-width: 95vw;
   max-height: 95vh;
@@ -342,8 +388,26 @@ onBeforeUnmount(() => window.removeEventListener('resize', handleResize));
   -webkit-user-drag: none;
 }
 
-.image-preview:not(.is-manipulating) .image-preview__image {
+.image-preview:not(.is-manipulating) .image-preview__image,
+.image-preview:not(.is-manipulating) .image-preview__video {
   transition: transform 120ms ease-out;
+}
+
+.image-preview__motion-badge {
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--pad-preview-control-border);
+  border-radius: var(--pad-radius-full);
+  color: var(--pad-preview-text-color);
+  background: var(--pad-preview-control-background);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
 }
 
 .image-preview__error {
