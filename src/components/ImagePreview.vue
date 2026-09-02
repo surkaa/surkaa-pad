@@ -21,20 +21,19 @@
     >
       <img
           v-if="!imageError"
-          v-show="!motionReady"
+          v-show="!showingMotionVideo"
           ref="imageRef"
           :src="src"
           alt="图片预览"
           class="image-preview__image"
           :style="imageStyle"
           draggable="false"
-          @load="resetTransform"
           @error="imageError = true"
           @click.stop
       >
       <video
           v-if="motionVideoUrl && !motionUnavailable"
-          v-show="motionReady"
+          v-show="showingMotionVideo"
           :key="motionVideoUrl"
           ref="videoRef"
           :src="motionVideoUrl"
@@ -49,14 +48,22 @@
           @error="handleMotionError"
           @click.stop
       />
-      <div v-if="imageError && !motionReady" class="image-preview__error">
+      <div v-if="imageError && !showingMotionVideo" class="image-preview__error">
         图片加载失败
       </div>
 
-      <div v-if="motionReady" class="image-preview__motion-badge">
-        <q-icon name="motion_photos_on" size="18px"/>
-        动态照片
-      </div>
+      <q-btn
+          v-if="motionReady"
+          flat
+          no-caps
+          dense
+          :icon="showingMotionVideo ? 'photo' : 'motion_photos_on'"
+          :label="showingMotionVideo ? '查看照片' : '播放动态照片'"
+          class="image-preview__motion-toggle"
+          :aria-label="showingMotionVideo ? '切换为静态照片' : '播放动态照片'"
+          @pointerdown.stop
+          @click.stop="toggleMotionMedia"
+      />
 
       <q-btn
           flat
@@ -133,6 +140,7 @@ const videoRef = ref<HTMLVideoElement>();
 const imageError = ref(false);
 const motionReady = ref(false);
 const motionUnavailable = ref(false);
+const showMotionVideo = ref(true);
 const isManipulating = ref(false);
 const transform = reactive<ImagePreviewTransform>({scale: 1, x: 0, y: 0});
 const pointers = new Map<number, Point>();
@@ -146,6 +154,8 @@ let pinchStart: {
 let gestureMoved = false;
 
 const motionVideoUrl = computed(() => buildMotionPhotoVideoUrl(props.src));
+const showingMotionVideo = computed(() => motionReady.value && showMotionVideo.value);
+const visibleMediaFailed = computed(() => imageError.value && !showingMotionVideo.value);
 
 const imageStyle = computed(() => ({
   transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
@@ -157,7 +167,7 @@ function resetTransform() {
 
 function dimensions() {
   const viewport = viewportRef.value;
-  const media = motionReady.value ? videoRef.value : imageRef.value;
+  const media = showingMotionVideo.value ? videoRef.value : imageRef.value;
   if (!viewport || !media) return undefined;
 
   return {
@@ -199,13 +209,13 @@ function zoomFromCenter(delta: number) {
 }
 
 function handleWheel(event: WheelEvent) {
-  if (imageError.value && !motionReady.value) return;
+  if (visibleMediaFailed.value) return;
   const scaleFactor = Math.exp(-event.deltaY * 0.002);
   zoomAt(transform.scale * scaleFactor, viewportPoint(event));
 }
 
 function handleDoubleClick(event: MouseEvent) {
-  if (imageError.value && !motionReady.value) return;
+  if (visibleMediaFailed.value) return;
   zoomAt(transform.scale > 1 ? 1 : 2, viewportPoint(event));
 }
 
@@ -234,7 +244,7 @@ function beginPinch() {
 }
 
 function handlePointerDown(event: PointerEvent) {
-  if ((imageError.value && !motionReady.value) || event.button !== 0) return;
+  if (visibleMediaFailed.value || event.button !== 0) return;
   const point = viewportPoint(event);
   pointers.set(event.pointerId, point);
   viewportRef.value?.setPointerCapture(event.pointerId);
@@ -332,9 +342,12 @@ function handleMotionCanPlay() {
   const video = videoRef.value;
   if (!video) return;
   motionReady.value = true;
-  resetTransform();
   video.muted = true;
-  void video.play().catch(error => console.warn('自动播放动态照片失败:', error));
+  if (showMotionVideo.value) {
+    void video.play().catch(error => console.warn('自动播放动态照片失败:', error));
+  } else {
+    video.pause();
+  }
 }
 
 function handleMotionError() {
@@ -342,10 +355,21 @@ function handleMotionError() {
   motionUnavailable.value = true;
 }
 
+function toggleMotionMedia() {
+  const video = videoRef.value;
+  showMotionVideo.value = !showMotionVideo.value;
+  if (showMotionVideo.value) {
+    if (video) void video.play().catch(error => console.warn('播放动态照片失败:', error));
+  } else {
+    video?.pause();
+  }
+}
+
 watch(() => props.src, () => {
   imageError.value = false;
   motionReady.value = false;
   motionUnavailable.value = false;
+  showMotionVideo.value = true;
   resetTransform();
 }, {immediate: true});
 
@@ -393,21 +417,16 @@ onBeforeUnmount(() => window.removeEventListener('resize', handleResize));
   transition: transform 120ms ease-out;
 }
 
-.image-preview__motion-badge {
+.image-preview__motion-toggle {
   position: absolute;
   z-index: 2;
   top: 16px;
   left: 16px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
   border: 1px solid var(--pad-preview-control-border);
   border-radius: var(--pad-radius-full);
   color: var(--pad-preview-text-color);
   background: var(--pad-preview-control-background);
   backdrop-filter: blur(8px);
-  pointer-events: none;
 }
 
 .image-preview__error {
