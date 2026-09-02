@@ -41,7 +41,6 @@
           :style="imageStyle"
           autoplay
           muted
-          loop
           playsinline
           preload="auto"
           @canplay="handleMotionCanPlay"
@@ -359,7 +358,10 @@ function toggleMotionMedia() {
   const video = videoRef.value;
   showMotionVideo.value = !showMotionVideo.value;
   if (showMotionVideo.value) {
-    if (video) void video.play().catch(error => console.warn('播放动态照片失败:', error));
+    if (video) {
+      if (video.ended) video.currentTime = 0;
+      void video.play().catch(error => console.warn('播放动态照片失败:', error));
+    }
   } else {
     video?.pause();
   }
