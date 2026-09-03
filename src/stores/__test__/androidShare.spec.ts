@@ -46,6 +46,24 @@ describe('Android share store', () => {
     expect(apiMocks.acknowledge).not.toHaveBeenCalled();
   });
 
+  it('coalesces concurrent inbox refreshes and lets every caller await the result', async () => {
+    let resolveList!: (batches: PendingAndroidShare[]) => void;
+    apiMocks.listPending.mockImplementation(() => new Promise(resolve => {
+      resolveList = resolve;
+    }));
+    const store = useAndroidShareStore();
+
+    const first = store.refresh();
+    const second = store.refresh();
+    expect(apiMocks.listPending).toHaveBeenCalledTimes(1);
+
+    resolveList([batch('share-1')]);
+    await Promise.all([first, second]);
+
+    expect(store.pendingBatches.map(item => item.id)).toEqual(['share-1']);
+    expect(store.loading).toBe(false);
+  });
+
   it('supports the two-step existing diary selection flow', async () => {
     apiMocks.listPending.mockResolvedValue([batch('share-1')]);
     const store = useAndroidShareStore();

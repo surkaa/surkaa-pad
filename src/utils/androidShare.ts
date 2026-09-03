@@ -45,6 +45,14 @@ export function createAndroidShareResumeRefresher(
   };
 }
 
+/** 恢复前台后只让新到达的分享重新打开弹窗，保留用户对旧批次的“稍后处理”选择。 */
+export function hasNewAndroidShareBatch(
+  previousBatchIds: ReadonlySet<string>,
+  currentBatches: readonly Pick<PendingAndroidShare, 'id'>[],
+): boolean {
+  return currentBatches.some(batch => !previousBatchIds.has(batch.id));
+}
+
 /**
  * Android 来源声明的音视频类型优先，避免例如 M4A 被内容探测为 video/mp4；
  * 来源未提供具体媒体类型时才退回后端探测结果。

@@ -6,6 +6,7 @@ import {
   appendAndroidShareToDiaryContent,
   attachmentInsertionsToDiaryNodes,
   createAndroidShareResumeRefresher,
+  hasNewAndroidShareBatch,
   sharedAttachmentNodeKind,
 } from '../androidShare';
 
@@ -55,6 +56,16 @@ describe('Android share content planning', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(refresh).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
+  });
+
+  it('reopens a dismissed dialog only when a new share batch arrives', () => {
+    const previous = new Set(['old-batch']);
+
+    expect(hasNewAndroidShareBatch(previous, [{id: 'old-batch'}])).toBe(false);
+    expect(hasNewAndroidShareBatch(previous, [
+      {id: 'old-batch'},
+      {id: 'new-batch'},
+    ])).toBe(true);
   });
 
   it('combines subject and text without duplicating an existing subject', () => {

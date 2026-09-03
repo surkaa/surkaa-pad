@@ -27,6 +27,7 @@ export const useAndroidShareStore = defineStore('android-share', () => {
   const importRequest = ref<AndroidShareImportRequest | null>(null);
   const selectingTargetBatchId = ref<string | null>(null);
   const completedBatchIds = ref(loadCompletedBatchIds());
+  let refreshPromise: Promise<void> | null = null;
 
   const pendingCount = computed(() => pendingBatches.value.length);
   const importingBatch = computed(() => importRequest.value
@@ -34,41 +35,45 @@ export const useAndroidShareStore = defineStore('android-share', () => {
     : null);
   const selectingTarget = computed(() => selectingTargetBatchId.value !== null);
 
-  async function refresh() {
-    if (loading.value) return;
+  function refresh(): Promise<void> {
+    if (refreshPromise) return refreshPromise;
     loading.value = true;
-    try {
-      const batches = await api.cmdListPendingAndroidShares();
-      const visibleBatches: PendingAndroidShare[] = [];
-      for (const batch of batches) {
-        if (!completedBatchIds.value.has(batch.id)) {
-          visibleBatches.push(batch);
-          continue;
+    refreshPromise = (async () => {
+      try {
+        const batches = await api.cmdListPendingAndroidShares();
+        const visibleBatches: PendingAndroidShare[] = [];
+        for (const batch of batches) {
+          if (!completedBatchIds.value.has(batch.id)) {
+            visibleBatches.push(batch);
+            continue;
+          }
+          // 正文已经保存但上次确认被中断时，只重试确认，不再次展示和导入。
+          try {
+            await api.cmdAckPendingAndroidShare(batch.id);
+            forgetCompletedBatch(batch.id);
+          } catch (error) {
+            console.error('重试确认已完成的 Android 分享失败:', error);
+          }
         }
-        // 正文已经保存但上次确认被中断时，只重试确认，不再次展示和导入。
-        try {
-          await api.cmdAckPendingAndroidShare(batch.id);
-          forgetCompletedBatch(batch.id);
-        } catch (error) {
-          console.error('重试确认已完成的 Android 分享失败:', error);
+        pendingBatches.value = visibleBatches;
+        if (
+          importRequest.value
+          && !pendingBatches.value.some(batch => batch.id === importRequest.value?.batchId)
+        ) {
+          importRequest.value = null;
         }
+        if (
+          selectingTargetBatchId.value
+          && !pendingBatches.value.some(batch => batch.id === selectingTargetBatchId.value)
+        ) {
+          selectingTargetBatchId.value = null;
+        }
+      } finally {
+        loading.value = false;
+        refreshPromise = null;
       }
-      pendingBatches.value = visibleBatches;
-      if (
-        importRequest.value
-        && !pendingBatches.value.some(batch => batch.id === importRequest.value?.batchId)
-      ) {
-        importRequest.value = null;
-      }
-      if (
-        selectingTargetBatchId.value
-        && !pendingBatches.value.some(batch => batch.id === selectingTargetBatchId.value)
-      ) {
-        selectingTargetBatchId.value = null;
-      }
-    } finally {
-      loading.value = false;
-    }
+    })();
+    return refreshPromise;
   }
 
   function requestImport(batchId: string, targetDiaryId: string | null) {

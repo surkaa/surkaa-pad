@@ -8,7 +8,10 @@ import {useAndroidShareStore} from '../stores/androidShare';
 import {useDataStore} from '../stores/data';
 import {formatBytes} from '../utils/format';
 import {formatError} from '../utils/formatError';
-import {createAndroidShareResumeRefresher} from '../utils/androidShare';
+import {
+  createAndroidShareResumeRefresher,
+  hasNewAndroidShareBatch,
+} from '../utils/androidShare';
 
 const isAndroid = platform() === 'android';
 const $q = useQuasar();
@@ -132,9 +135,12 @@ watch(() => activeBatch.value?.id, (batchId, previousBatchId) => {
 
 onMounted(async () => {
   if (!isAndroid) return;
-  resumeRefresher = createAndroidShareResumeRefresher(() => {
-    dialogDismissed.value = false;
-    return refresh();
+  resumeRefresher = createAndroidShareResumeRefresher(async () => {
+    const previousBatchIds = new Set(pendingBatches.value.map(batch => batch.id));
+    await refresh();
+    if (hasNewAndroidShareBatch(previousBatchIds, pendingBatches.value)) {
+      dialogDismissed.value = false;
+    }
   });
   window.addEventListener('focus', resumeRefresher.trigger);
   window.addEventListener('pageshow', resumeRefresher.trigger);
