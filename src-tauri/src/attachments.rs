@@ -14,7 +14,7 @@ mod attachment_tests;
 mod embedded_media_tests;
 
 pub use attachment_error::AttachmentError;
-pub use attachment_open::cleanup_stale_external_open_files;
+pub use attachment_open::cleanup_legacy_html_temp_files;
 pub use attachment_server::{
     bind_attachment_server, start_attachment_server, AttachmentServerHandle,
 };

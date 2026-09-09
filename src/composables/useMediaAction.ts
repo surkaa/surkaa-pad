@@ -287,26 +287,19 @@ export function useMediaAction(
         }
 
         $q.dialog({
-            title: '使用外部应用打开 HTML',
-            message: 'HTML 中的脚本将会运行，并会生成临时解密副本。请仅打开可信文件。',
+            title: '使用浏览器打开 HTML',
+            message: 'HTML 中的脚本将会运行，并可能访问网络。请仅打开可信文件。',
             persistent: true,
             ok: {label: '继续打开', color: 'primary'},
             cancel: {label: '取消', flat: true},
         }).onOk(async () => {
-            if (!resetUploadTasks()) {
-                showUploadDialog.value = true;
-                $q.notify({type: 'warning', message: '请先等待当前文件处理完成或取消任务'});
-                return;
-            }
-
-            const key = createTask(attachment.filename, false, 'open');
-            const event = createUploadChannel(key);
             try {
-                const token = await api.cmdOpenHtmlAttachment(event, diaryId.value, attachmentId);
-                showUploadDialog.value = true;
-                registerCancelableTask(key, token);
+                await api.cmdOpenHtmlAttachment(diaryId.value, attachmentId);
             } catch (error) {
-                failTask(key, error);
+                $q.notify({
+                    type: 'negative',
+                    message: `打开 HTML 附件失败：${formatError(error)}`,
+                });
             }
         });
     }

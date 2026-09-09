@@ -760,18 +760,17 @@ async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
 }
 },
 /**
- * 将 HTML 附件流式解密到受控临时目录，并交给系统浏览器或其他兼容应用打开。
- * 前端只能提供日记和附件 ID，不能指定输出路径；后端也会再次校验附件类型。
+ * 使用附件专属的本地 HTTP URL 将 HTML 交给系统浏览器打开。
+ * 前端只能提供日记和附件 ID，后端会再次校验附件类型。
  * # Arguments
- * * `event` - 接收附件准备进度与结果事件的通道
  * * `id` - 日记 ID
  * * `attachment_id` - HTML 附件 ID
  * # Returns
- * * `Result<String, AppError>` - 后台任务令牌，可用于取消准备过程
+ * * `Result<(), AppError>` - 成功时已将受限 URL 交给系统浏览器
  */
-async cmdOpenHtmlAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentId: string) : Promise<Result<string, AppError>> {
+async cmdOpenHtmlAttachment(id: string, attachmentId: string) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_open_html_attachment", { event, id, attachmentId }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_open_html_attachment", { id, attachmentId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

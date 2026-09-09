@@ -1,3 +1,4 @@
+use crate::attachments::attachment_open::is_html_attachment;
 use crate::attachments::embedded_media::{
     has_isobmff_file_type_box, parse_motion_photo_layout, MotionPhotoLayout,
     MOTION_PHOTO_XMP_PROBE_BYTES,
@@ -21,7 +22,7 @@ use hyper::body::Incoming;
 use hyper::header::{
     ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
     ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_EXPOSE_HEADERS, CACHE_CONTROL, CONTENT_LENGTH,
-    CONTENT_RANGE, CONTENT_TYPE, RANGE,
+    CONTENT_RANGE, CONTENT_TYPE, RANGE, REFERRER_POLICY,
 };
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -38,12 +39,14 @@ use tauri_plugin_log::log;
 
 const MAX_CHUNK_SIZE: u64 = 1024 * 1024;
 const MOTION_PHOTO_VIEW: &str = "motion-photo-video";
+const HTML_VIEW: &str = "html";
 type ResponseBody = UnsyncBoxBody<Bytes, io::Error>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AttachmentView {
     Original,
     MotionPhotoVideo,
+    Html,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -59,7 +62,7 @@ struct MotionPhotoCacheEntry {
     value: CachedMotionPhoto,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AttachmentServerHandle {
     origin: Arc<str>,
     token_secret: Arc<[u8; 32]>,
@@ -88,6 +91,10 @@ impl AttachmentServerHandle {
             urlencoding::encode(attachment_id),
             timestamp
         )
+    }
+
+    pub fn html_url(&self, diary_id: &str, attachment_id: &str) -> String {
+        format!("{}&view={HTML_VIEW}", self.url(diary_id, attachment_id))
     }
 
     fn token_for(&self, diary_id: &str, attachment_id: &str) -> String {
@@ -268,6 +275,7 @@ fn response_builder() -> hyper::http::response::Builder {
             ACCESS_CONTROL_EXPOSE_HEADERS,
             "Accept-Ranges, Content-Length, Content-Range",
         )
+        .header(REFERRER_POLICY, "no-referrer")
         .header(CACHE_CONTROL, "no-store")
 }
 
@@ -319,6 +327,9 @@ async fn process_attachment(
         .iter()
         .find(|attachment| attachment.id == attachment_id)
         .ok_or(ServerError::NotFound("attachment"))?;
+    if attachment_view == AttachmentView::Html && !is_html_attachment(attachment) {
+        return Err(ServerError::Forbidden("HTML view is not allowed"));
+    }
     if attachment.algorithm == Gcm {
         return Err(ServerError::Forbidden("GCM decryption is not supported"));
     }
@@ -337,6 +348,7 @@ async fn process_attachment(
     let mut file_size = if raw_range.is_some()
         || request.method() == Method::HEAD
         || attachment_view == AttachmentView::MotionPhotoVideo
+        || attachment_view == AttachmentView::Html
     {
         store
             .get_attachment_size(&id, &attachment_id, attachment.etag.as_deref())
@@ -346,6 +358,7 @@ async fn process_attachment(
     };
     let (resource_offset, resource_size, resource_mimetype, is_virtual) = match attachment_view {
         AttachmentView::Original => (0, file_size, attachment.mimetype.as_str(), false),
+        AttachmentView::Html => (0, file_size, "text/html; charset=utf-8", false),
         AttachmentView::MotionPhotoVideo => {
             let layout = resolve_motion_photo_layout(
                 &state.attachment_server(),
@@ -416,7 +429,7 @@ async fn process_attachment(
     } else {
         stream
     };
-    if is_virtual && range.is_none() {
+    if (is_virtual || attachment_view == AttachmentView::Html) && range.is_none() {
         return build_attachment_stream_response(
             status,
             resource_mimetype,
@@ -474,6 +487,7 @@ fn parse_attachment_view(query: Option<&str>) -> Result<AttachmentView, ServerEr
     match requested_view {
         None => Ok(AttachmentView::Original),
         Some(MOTION_PHOTO_VIEW) => Ok(AttachmentView::MotionPhotoVideo),
+        Some(HTML_VIEW) => Ok(AttachmentView::Html),
         Some(_) => Err(ServerError::BadRequest("Unsupported attachment view")),
     }
 }
@@ -835,6 +849,10 @@ mod tests {
             parse_attachment_view(Some("t=123")).unwrap(),
             AttachmentView::Original
         );
+        assert_eq!(
+            parse_attachment_view(Some("t=123&view=html")).unwrap(),
+            AttachmentView::Html
+        );
         assert!(matches!(
             parse_attachment_view(Some("view=unknown")),
             Err(ServerError::BadRequest(_))
@@ -1090,6 +1108,36 @@ mod tests {
         let response = reqwest::get(forged_url).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn serves_plain_and_encrypted_html_inline_without_referrer() {
+        let body = b"<!doctype html><script>globalThis.answer = 42</script>";
+        for encrypted in [false, true] {
+            let server =
+                start_test_server("diary-html", "page.bin", "text/html", body, encrypted).await;
+
+            let response = reqwest::get(server.handle.html_url("diary-html", "page.bin"))
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
+            assert_eq!(response.headers()[REFERRER_POLICY], "no-referrer");
+            assert_eq!(response.bytes().await.unwrap().as_ref(), body);
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_html_view_for_non_html_attachments() {
+        let server =
+            start_test_server("diary-text", "notes.txt", "text/plain", b"notes", false).await;
+
+        let response = reqwest::get(server.handle.html_url("diary-text", "notes.txt"))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

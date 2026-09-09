@@ -1,5 +1,4 @@
 pub mod ai;
-mod android_attachment_opener;
 mod android_share;
 mod app_config;
 pub mod app_object_store;
@@ -99,9 +98,9 @@ use tauri::{App, Manager};
 fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     tauri_plugin_log::log::info!("[startup] Rust setup started");
     let paths = app.handle().path();
-    if let Err(error) = attachments::cleanup_stale_external_open_files(&paths.app_cache_dir()?) {
+    if let Err(error) = attachments::cleanup_legacy_html_temp_files(&paths.app_cache_dir()?) {
         tauri_plugin_log::log::warn!(
-            "[attachment open] failed to clean stale temporary files: {error}"
+            "[attachment open] failed to clean legacy HTML files: {error}"
         );
     }
     let app_config = AppConfigStore::load(paths.app_config_dir()?.join(APP_CONFIG_FILENAME))?;
@@ -269,8 +268,7 @@ pub fn run() {
         .plugin(tauri_plugin_native_camera::init())
         .plugin(tauri_plugin_geolocation::init())
         .plugin(location::init_android_plugin())
-        .plugin(android_share::init_android_plugin())
-        .plugin(android_attachment_opener::init_android_plugin());
+        .plugin(android_share::init_android_plugin());
 
     app_builder
         .invoke_handler(builder.invoke_handler())

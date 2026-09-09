@@ -1,7 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {
   applyUploadTaskEvent,
-  attachmentTaskOperationLabel,
   createQueuedUploadTask,
   createUploadTask,
   hasActiveUploadTasks,
@@ -34,16 +33,6 @@ describe('upload task domain model', () => {
     expect(uploadTaskStatusText(queued)).toBe('等待下载');
     queued.status = 'error';
     expect(uploadTaskStatusText(queued)).toBe('下载失败');
-  });
-
-  it('uses preparation wording for externally opened attachments', () => {
-    const task = createUploadTask('open', 'page.html', 'open');
-    applyUploadTaskEvent(task, {event: 'started'});
-    applyUploadTaskEvent(task, {event: 'progress', data: 42});
-    expect(uploadTaskStatusText(task)).toBe('正在准备 42%');
-    applyUploadTaskEvent(task, {event: 'finalizing'});
-    expect(uploadTaskStatusText(task)).toBe('即将完成：交给外部应用');
-    expect(attachmentTaskOperationLabel('open')).toBe('打开');
   });
 
   it('tracks transfer and finalization progress', () => {
