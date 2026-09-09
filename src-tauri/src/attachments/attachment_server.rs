@@ -17,12 +17,11 @@ use hmac::{Hmac, Mac};
 use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt, Full, StreamBody};
 use http_range_header::parse_range_header;
-use hyper::body::Frame;
-use hyper::body::Incoming;
+use hyper::body::{Body, Frame, Incoming, SizeHint};
 use hyper::header::{
     ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
     ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_EXPOSE_HEADERS, CACHE_CONTROL, CONTENT_LENGTH,
-    CONTENT_RANGE, CONTENT_TYPE, RANGE, REFERRER_POLICY,
+    CONTENT_RANGE, CONTENT_TYPE, RANGE, REFERRER_POLICY, RETRY_AFTER,
 };
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -33,11 +32,16 @@ use std::cmp::min;
 use std::convert::Infallible;
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri_plugin_log::log;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 const MAX_CHUNK_SIZE: u64 = 1024 * 1024;
+const MAX_CONCURRENT_REQUESTS: usize = 32;
+const MAX_CONCURRENT_REQUESTS_PER_ATTACHMENT: usize = 4;
 const MOTION_PHOTO_VIEW: &str = "motion-photo-video";
 const HTML_VIEW: &str = "html";
 type ResponseBody = UnsyncBoxBody<Bytes, io::Error>;
@@ -63,10 +67,22 @@ struct MotionPhotoCacheEntry {
 }
 
 #[derive(Clone)]
+struct AttachmentRequestLimiter {
+    global: Arc<Semaphore>,
+    per_attachment: Arc<DashMap<(String, String), Arc<Semaphore>>>,
+}
+
+struct AttachmentRequestPermit {
+    _global: OwnedSemaphorePermit,
+    _attachment: OwnedSemaphorePermit,
+}
+
+#[derive(Clone)]
 pub struct AttachmentServerHandle {
     origin: Arc<str>,
     token_secret: Arc<[u8; 32]>,
     motion_photo_cache: Arc<DashMap<(String, String), MotionPhotoCacheEntry>>,
+    request_limiter: AttachmentRequestLimiter,
 }
 
 impl AttachmentServerHandle {
@@ -75,6 +91,10 @@ impl AttachmentServerHandle {
             origin: format!("http://{}", address).into(),
             token_secret: Arc::new(token_secret),
             motion_photo_cache: Arc::new(DashMap::new()),
+            request_limiter: AttachmentRequestLimiter {
+                global: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
+                per_attachment: Arc::new(DashMap::new()),
+            },
         }
     }
 
@@ -122,12 +142,46 @@ impl AttachmentServerHandle {
         mac.verify_slice(&token).is_ok()
     }
 
+    fn try_acquire_global_request(&self) -> Result<OwnedSemaphorePermit, ServerError> {
+        self.request_limiter
+            .global
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ServerError::TooManyRequests)
+    }
+
+    fn try_acquire_attachment_request(
+        &self,
+        global: OwnedSemaphorePermit,
+        diary_id: &str,
+        attachment_id: &str,
+    ) -> Result<AttachmentRequestPermit, ServerError> {
+        let key = (diary_id.to_owned(), attachment_id.to_owned());
+        let semaphore = self
+            .request_limiter
+            .per_attachment
+            .entry(key)
+            .or_insert_with(|| Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS_PER_ATTACHMENT)))
+            .clone();
+        let attachment = semaphore
+            .try_acquire_owned()
+            .map_err(|_| ServerError::TooManyRequests)?;
+        Ok(AttachmentRequestPermit {
+            _global: global,
+            _attachment: attachment,
+        })
+    }
+
     #[cfg(test)]
     pub fn for_test() -> Self {
         Self {
             origin: "http://127.0.0.1:1".into(),
             token_secret: Arc::new([7; 32]),
             motion_photo_cache: Arc::new(DashMap::new()),
+            request_limiter: AttachmentRequestLimiter {
+                global: Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS)),
+                per_attachment: Arc::new(DashMap::new()),
+            },
         }
     }
 }
@@ -193,12 +247,20 @@ async fn handle_request(
     attachment_server: AttachmentServerHandle,
     request: Request<Incoming>,
 ) -> Result<Response<ResponseBody>, Infallible> {
-    let response = process_attachment(state, &attachment_server, request)
-        .await
-        .unwrap_or_else(|error| {
+    let response = match attachment_server.try_acquire_global_request() {
+        Ok(global_permit) => {
+            process_attachment(state, &attachment_server, global_permit, request).await
+        }
+        Err(error) => Err(error),
+    }
+    .unwrap_or_else(|error| {
+        if matches!(error, ServerError::TooManyRequests) {
+            log::debug!("附件 HTTP 请求超过并发限制");
+        } else {
             log::error!("附件 HTTP 请求失败: {error:?}");
-            error.into_response()
-        });
+        }
+        error.into_response()
+    });
     Ok(response)
 }
 
@@ -208,6 +270,7 @@ enum ServerError {
     Forbidden(&'static str),
     NotFound(&'static str),
     MethodNotAllowed,
+    TooManyRequests,
     RangeNotSatisfiable(u64),
     Internal(String),
 }
@@ -222,6 +285,14 @@ impl ServerError {
                 StatusCode::METHOD_NOT_ALLOWED,
                 "Method not allowed".to_string(),
             ),
+            Self::TooManyRequests => {
+                return response_builder_with_status(StatusCode::TOO_MANY_REQUESTS)
+                    .header(RETRY_AFTER, "1")
+                    .body(full_body(Bytes::from_static(
+                        b"Too many concurrent attachment requests",
+                    )))
+                    .unwrap_or_else(|_| Response::new(full_body(Bytes::new())));
+            }
             Self::RangeNotSatisfiable(size) => {
                 return response_builder_with_status(StatusCode::RANGE_NOT_SATISFIABLE)
                     .header(CONTENT_RANGE, format!("bytes */{size}"))
@@ -286,6 +357,7 @@ fn response_builder_with_status(status: StatusCode) -> hyper::http::response::Bu
 async fn process_attachment(
     state: AppState,
     attachment_server: &AttachmentServerHandle,
+    global_permit: OwnedSemaphorePermit,
     request: Request<Incoming>,
 ) -> Result<Response<ResponseBody>, ServerError> {
     if request.method() == Method::OPTIONS {
@@ -312,6 +384,8 @@ async fn process_attachment(
     if !attachment_server.validates_token(token, &id, &attachment_id) {
         return Err(ServerError::NotFound("attachment"));
     }
+    let request_permit =
+        attachment_server.try_acquire_attachment_request(global_permit, &id, &attachment_id)?;
 
     // 整个 HTTP 请求固定使用进入时的存储模式，避免读取 Manifest 后切换到另一存储。
     let _storage_guard = state.lock_storage_operation().await;
@@ -388,13 +462,16 @@ async fn process_attachment(
     };
 
     if request.method() == Method::HEAD {
-        return build_attachment_response(
-            status,
-            resource_mimetype,
-            range,
-            resource_size,
-            selected_length,
-            Bytes::new(),
+        return hold_request_permit(
+            build_attachment_response(
+                status,
+                resource_mimetype,
+                range,
+                resource_size,
+                selected_length,
+                Bytes::new(),
+            ),
+            request_permit,
         );
     }
 
@@ -430,11 +507,9 @@ async fn process_attachment(
         stream
     };
     if (is_virtual || attachment_view == AttachmentView::Html) && range.is_none() {
-        return build_attachment_stream_response(
-            status,
-            resource_mimetype,
-            selected_length,
-            stream,
+        return hold_request_permit(
+            build_attachment_stream_response(status, resource_mimetype, selected_length, stream),
+            request_permit,
         );
     }
     let capacity = min(selected_length, MAX_CHUNK_SIZE) as usize;
@@ -460,13 +535,16 @@ async fn process_attachment(
         (start, end)
     });
 
-    build_attachment_response(
-        status,
-        resource_mimetype,
-        actual_range,
-        if is_virtual { resource_size } else { file_size },
-        actual_length,
-        Bytes::from(data),
+    hold_request_permit(
+        build_attachment_response(
+            status,
+            resource_mimetype,
+            actual_range,
+            if is_virtual { resource_size } else { file_size },
+            actual_length,
+            Bytes::from(data),
+        ),
+        request_permit,
     )
 }
 
@@ -664,6 +742,46 @@ fn stream_body(stream: ByteStream) -> ResponseBody {
     StreamBody::new(stream.map_ok(Frame::data)).boxed_unsync()
 }
 
+struct PermitBody {
+    inner: ResponseBody,
+    _request_permit: AttachmentRequestPermit,
+}
+
+impl Body for PermitBody {
+    type Data = Bytes;
+    type Error = io::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        Pin::new(&mut self.inner).poll_frame(context)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+fn hold_request_permit(
+    response: Result<Response<ResponseBody>, ServerError>,
+    request_permit: AttachmentRequestPermit,
+) -> Result<Response<ResponseBody>, ServerError> {
+    response.map(|response| {
+        let (parts, body) = response.into_parts();
+        let body = PermitBody {
+            inner: body,
+            _request_permit: request_permit,
+        }
+        .boxed_unsync();
+        Response::from_parts(parts, body)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -816,6 +934,86 @@ mod tests {
             "diary id",
             "another.jpg"
         ));
+    }
+
+    #[test]
+    fn global_request_limit_releases_capacity_after_request_finishes() {
+        let handle = AttachmentServerHandle::for_test();
+        let mut permits = (0..MAX_CONCURRENT_REQUESTS)
+            .map(|_| handle.try_acquire_global_request().unwrap())
+            .collect::<Vec<_>>();
+
+        assert!(matches!(
+            handle.try_acquire_global_request(),
+            Err(ServerError::TooManyRequests)
+        ));
+
+        permits.pop();
+        assert!(handle.try_acquire_global_request().is_ok());
+    }
+
+    #[test]
+    fn attachment_request_limit_is_scoped_to_one_attachment() {
+        let handle = AttachmentServerHandle::for_test();
+        let mut permits = (0..MAX_CONCURRENT_REQUESTS_PER_ATTACHMENT)
+            .map(|_| {
+                let global = handle.try_acquire_global_request().unwrap();
+                handle
+                    .try_acquire_attachment_request(global, "diary", "one.jpg")
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let global = handle.try_acquire_global_request().unwrap();
+        assert!(matches!(
+            handle.try_acquire_attachment_request(global, "diary", "one.jpg"),
+            Err(ServerError::TooManyRequests)
+        ));
+
+        let global = handle.try_acquire_global_request().unwrap();
+        assert!(handle
+            .try_acquire_attachment_request(global, "diary", "two.jpg")
+            .is_ok());
+
+        permits.pop();
+        let global = handle.try_acquire_global_request().unwrap();
+        assert!(handle
+            .try_acquire_attachment_request(global, "diary", "one.jpg")
+            .is_ok());
+    }
+
+    #[test]
+    fn request_permit_is_held_until_response_body_is_dropped() {
+        let handle = AttachmentServerHandle::for_test();
+        let responses = (0..MAX_CONCURRENT_REQUESTS_PER_ATTACHMENT)
+            .map(|_| {
+                let global = handle.try_acquire_global_request().unwrap();
+                let permit = handle
+                    .try_acquire_attachment_request(global, "diary", "stream.mp4")
+                    .unwrap();
+                hold_request_permit(Ok(Response::new(full_body(Bytes::new()))), permit).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let global = handle.try_acquire_global_request().unwrap();
+        assert!(matches!(
+            handle.try_acquire_attachment_request(global, "diary", "stream.mp4"),
+            Err(ServerError::TooManyRequests)
+        ));
+
+        drop(responses);
+        let global = handle.try_acquire_global_request().unwrap();
+        assert!(handle
+            .try_acquire_attachment_request(global, "diary", "stream.mp4")
+            .is_ok());
+    }
+
+    #[test]
+    fn rate_limit_response_can_be_retried() {
+        let response = ServerError::TooManyRequests.into_response();
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers()[RETRY_AFTER], "1");
     }
 
     #[test]
