@@ -29,6 +29,8 @@ markdown.renderer.rules.image = (tokens, index) => {
   return `<span class="ai-markdown-image-placeholder">[图片：${markdown.utils.escapeHtml(alt)}]</span>`;
 };
 
-export function renderAiMarkdown(source: string): string {
+export function renderSafeMarkdown(source: string): string {
   return markdown.render(source);
 }
+
+export const renderAiMarkdown = renderSafeMarkdown;

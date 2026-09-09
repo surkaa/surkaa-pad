@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {renderAiMarkdown} from '../aiMarkdown';
+import {renderAiMarkdown, renderSafeMarkdown} from '../aiMarkdown';
 
 describe('renderAiMarkdown', () => {
   it('renders common answer formatting including tables', () => {
@@ -37,5 +37,11 @@ describe('renderAiMarkdown', () => {
     expect(html).not.toContain('<img');
     expect(html).not.toContain('private.png');
     expect(html).toContain('[图片：测试图]');
+  });
+
+  it('uses the same safe renderer for attachment Markdown', () => {
+    const html = renderSafeMarkdown('<img src="https://example.com/leak">');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img src=&quot;');
   });
 });

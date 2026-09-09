@@ -4,6 +4,7 @@ import { Menu, MenuItem } from '@tauri-apps/api/menu'
 import { useQuasar } from 'quasar'
 import type { AttachmentMeta } from '../bindings'
 import { isHtmlAttachment } from '../utils/attachmentOpen'
+import { attachmentPreviewKind } from '../utils/attachmentPreview'
 import {
   findAttachmentNode,
   type AttachmentNodeMatch,
@@ -35,6 +36,7 @@ interface AttachmentContextMenuOptions {
   ) => void
   saveDecrypted: (attachmentId: string) => void
   openHtml: (attachmentId: string) => void
+  previewAttachment: (attachmentId: string) => void
   showImage: (url: string) => void
 }
 
@@ -55,11 +57,18 @@ export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) 
     if (!attachment) return
 
     const buttons: MenuAction[] = []
-    if (found.type === 'file' && isHtmlAttachment(attachment)) {
-      buttons.push({
-        label: '使用浏览器打开',
-        action: () => options.openHtml(found.attachmentId),
-      })
+    if (found.type === 'file') {
+      if (isHtmlAttachment(attachment)) {
+        buttons.push({
+          label: '使用浏览器打开',
+          action: () => options.openHtml(found.attachmentId),
+        })
+      } else if (attachmentPreviewKind(attachment)) {
+        buttons.push({
+          label: '预览',
+          action: () => options.previewAttachment(found.attachmentId),
+        })
+      }
     }
     buttons.push(
       {

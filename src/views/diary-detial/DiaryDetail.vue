@@ -36,6 +36,8 @@ import {v4 as uuidv4} from 'uuid';
 import {useAndroidShareStore} from '../../stores/androidShare';
 import {appendAndroidShareToDiaryContent} from '../../utils/androidShare';
 import {formatError} from '../../utils/formatError';
+import type {AttachmentMeta} from '../../bindings';
+import AttachmentPreviewDialog from '../../components/AttachmentPreviewDialog.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -62,6 +64,11 @@ const {
   diaryId, diary, attachments, diaryManifestSize, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
   loadDiaryInfo, deleteDiary, ensureDiaryCreated, flushPendingSave
 } = useDiaryCore();
+const showAttachmentPreview = ref(false);
+const previewAttachment = ref<AttachmentMeta | null>(null);
+const previewAttachmentUrl = computed(() => (
+  previewAttachment.value ? attachmentMap.value[previewAttachment.value.id] : undefined
+));
 
 // UI交互
 const {
@@ -246,6 +253,7 @@ useDiaryEditorShortcuts({
     || showUploadDialog.value
     || showAudioDrawer.value
     || showLocationDialog.value
+    || showAttachmentPreview.value
   ),
   handlers: {
     bold: () => runToolbarShortcut('bold'),
@@ -280,6 +288,16 @@ function showImage(src: string) {
     component: ImagePreview,
     componentProps: {src}
   })
+}
+
+function openAttachmentPreview(attachmentId: string) {
+  const attachment = attachments.value.find(item => item.id === attachmentId);
+  if (!attachment || !attachmentMap.value[attachmentId]) {
+    $q.notify({type: 'negative', message: '无法读取附件预览地址'});
+    return;
+  }
+  previewAttachment.value = attachment;
+  showAttachmentPreview.value = true;
 }
 
 async function pinnedDiary() {
@@ -380,6 +398,7 @@ onActivated(async () => {
         @renameAttachment="renameAttachment"
         @saveDecryptAttachment="mediaAction.saveDecryptAttachment"
         @openHtmlAttachment="mediaAction.openHtmlAttachment"
+        @previewAttachment="openAttachmentPreview"
         @audioInfoGenerated="mediaAction.saveAttachmentAudioInfo"
         @openLocation="openLocation"
         style="width: 100%; flex: 1; padding: 16px"
@@ -457,6 +476,12 @@ onActivated(async () => {
     />
 
     <DiarySourceDialog v-model="showSourceDialog" :diary-id="diaryId"/>
+
+    <AttachmentPreviewDialog
+        v-model="showAttachmentPreview"
+        :attachment="previewAttachment"
+        :url="previewAttachmentUrl"
+    />
 
     <UploadTasksDialog
         v-model="showUploadDialog"

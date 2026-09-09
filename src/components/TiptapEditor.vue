@@ -64,6 +64,7 @@ import {
 } from './editor/blockOrder'
 import {TaskCompletionOrder} from './editor/taskCompletionOrder'
 import {isHtmlAttachment} from '../utils/attachmentOpen'
+import {attachmentPreviewKind} from '../utils/attachmentPreview'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -82,6 +83,7 @@ const emit = defineEmits<{
   (e: 'renameAttachment', attachmentId: string, filename: string, cb: (newFilename: string) => void): void
   (e: 'saveDecryptAttachment', attachmentId: string): void
   (e: 'openHtmlAttachment', attachmentId: string): void
+  (e: 'previewAttachment', attachmentId: string): void
   (e: 'openLocation', location: DiaryLocation): void
   (e: 'audioInfoGenerated', attachmentId: string, durationMs: number, waveform: AudioWaveform): void
   (e: 'editorFocused'): void
@@ -244,6 +246,7 @@ const { handleContextMenu } = useAttachmentContextMenu({
   },
   saveDecrypted: attachmentId => emit('saveDecryptAttachment', attachmentId),
   openHtml: attachmentId => emit('openHtmlAttachment', attachmentId),
+  previewAttachment: attachmentId => emit('previewAttachment', attachmentId),
   showImage: url => emit('showImage', url),
 })
 
@@ -290,6 +293,11 @@ function handleWrapperClick(e: MouseEvent) {
     if (attachment && isHtmlAttachment(attachment)) {
       if (currentPlatform === 'android') editor.value?.commands.blur()
       emit('openHtmlAttachment', found.attachmentId)
+      return
+    }
+    if (attachment && attachmentPreviewKind(attachment)) {
+      if (currentPlatform === 'android') editor.value?.commands.blur()
+      emit('previewAttachment', found.attachmentId)
       return
     }
   }
