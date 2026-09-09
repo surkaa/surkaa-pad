@@ -12,6 +12,7 @@ use crate::stream::{collect_data_with_capacity, ByteStream};
 use bytes::Bytes;
 use dashmap::DashMap;
 use futures_util::TryStreamExt;
+use hmac::{Hmac, Mac};
 use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt, Full, StreamBody};
 use http_range_header::parse_range_header;
@@ -26,6 +27,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
+use sha2::Sha256;
 use std::cmp::min;
 use std::convert::Infallible;
 use std::io;
@@ -60,15 +62,15 @@ struct MotionPhotoCacheEntry {
 #[derive(Clone, Debug)]
 pub struct AttachmentServerHandle {
     origin: Arc<str>,
-    token: Arc<str>,
+    token_secret: Arc<[u8; 32]>,
     motion_photo_cache: Arc<DashMap<(String, String), MotionPhotoCacheEntry>>,
 }
 
 impl AttachmentServerHandle {
-    fn new(address: SocketAddr, token: String) -> Self {
+    fn new(address: SocketAddr, token_secret: [u8; 32]) -> Self {
         Self {
             origin: format!("http://{}", address).into(),
-            token: token.into(),
+            token_secret: Arc::new(token_secret),
             motion_photo_cache: Arc::new(DashMap::new()),
         }
     }
@@ -81,22 +83,43 @@ impl AttachmentServerHandle {
         format!(
             "{}/{}/{}/{}?t={}",
             self.origin,
-            self.token,
+            self.token_for(diary_id, attachment_id),
             urlencoding::encode(diary_id),
             urlencoding::encode(attachment_id),
             timestamp
         )
     }
 
-    fn token(&self) -> Arc<str> {
-        self.token.clone()
+    fn token_for(&self, diary_id: &str, attachment_id: &str) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(self.token_secret.as_ref())
+            .expect("HMAC-SHA256 accepts keys of any length");
+        mac.update(b"surkaa-pad-attachment-token-v1\0");
+        mac.update(&(diary_id.len() as u64).to_be_bytes());
+        mac.update(diary_id.as_bytes());
+        mac.update(&(attachment_id.len() as u64).to_be_bytes());
+        mac.update(attachment_id.as_bytes());
+        hex::encode(mac.finalize().into_bytes())
+    }
+
+    fn validates_token(&self, token: &str, diary_id: &str, attachment_id: &str) -> bool {
+        let Ok(token) = hex::decode(token) else {
+            return false;
+        };
+        let mut mac = Hmac::<Sha256>::new_from_slice(self.token_secret.as_ref())
+            .expect("HMAC-SHA256 accepts keys of any length");
+        mac.update(b"surkaa-pad-attachment-token-v1\0");
+        mac.update(&(diary_id.len() as u64).to_be_bytes());
+        mac.update(diary_id.as_bytes());
+        mac.update(&(attachment_id.len() as u64).to_be_bytes());
+        mac.update(attachment_id.as_bytes());
+        mac.verify_slice(&token).is_ok()
     }
 
     #[cfg(test)]
     pub fn for_test() -> Self {
         Self {
             origin: "http://127.0.0.1:1".into(),
-            token: "test-token".into(),
+            token_secret: Arc::new([7; 32]),
             motion_photo_cache: Arc::new(DashMap::new()),
         }
     }
@@ -106,9 +129,9 @@ pub fn bind_attachment_server() -> io::Result<(TcpListener, AttachmentServerHand
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
     listener.set_nonblocking(true)?;
 
-    let mut token = [0_u8; 32];
-    getrandom::fill(&mut token).map_err(|error| io::Error::other(error.to_string()))?;
-    let handle = AttachmentServerHandle::new(listener.local_addr()?, hex::encode(token));
+    let mut token_secret = [0_u8; 32];
+    getrandom::fill(&mut token_secret).map_err(|error| io::Error::other(error.to_string()))?;
+    let handle = AttachmentServerHandle::new(listener.local_addr()?, token_secret);
     Ok((listener, handle))
 }
 
@@ -117,7 +140,7 @@ pub fn start_attachment_server(listener: TcpListener, state: AppState) {
 }
 
 async fn run_attachment_server(listener: TcpListener, state: AppState) {
-    let token = state.attachment_server().token();
+    let attachment_server = state.attachment_server();
     let address = match listener.local_addr() {
         Ok(address) => address,
         Err(error) => {
@@ -143,10 +166,11 @@ async fn run_attachment_server(listener: TcpListener, state: AppState) {
             }
         };
         let state = state.clone();
-        let token = token.clone();
+        let attachment_server = attachment_server.clone();
         tokio::spawn(async move {
-            let service =
-                service_fn(move |request| handle_request(state.clone(), token.clone(), request));
+            let service = service_fn(move |request| {
+                handle_request(state.clone(), attachment_server.clone(), request)
+            });
             if let Err(error) = http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), service)
                 .await
@@ -159,10 +183,10 @@ async fn run_attachment_server(listener: TcpListener, state: AppState) {
 
 async fn handle_request(
     state: AppState,
-    token: Arc<str>,
+    attachment_server: AttachmentServerHandle,
     request: Request<Incoming>,
 ) -> Result<Response<ResponseBody>, Infallible> {
-    let response = process_attachment(state, &token, request)
+    let response = process_attachment(state, &attachment_server, request)
         .await
         .unwrap_or_else(|error| {
             log::error!("附件 HTTP 请求失败: {error:?}");
@@ -253,7 +277,7 @@ fn response_builder_with_status(status: StatusCode) -> hyper::http::response::Bu
 
 async fn process_attachment(
     state: AppState,
-    expected_token: &str,
+    attachment_server: &AttachmentServerHandle,
     request: Request<Incoming>,
 ) -> Result<Response<ResponseBody>, ServerError> {
     if request.method() == Method::OPTIONS {
@@ -271,16 +295,15 @@ async fn process_attachment(
     let [token, encoded_id, encoded_attachment_id] = segments.as_slice() else {
         return Err(ServerError::BadRequest("Invalid URI path structure"));
     };
-    if *token != expected_token {
-        return Err(ServerError::NotFound("attachment"));
-    }
-
     let id = urlencoding::decode(encoded_id)
         .map_err(|_| ServerError::BadRequest("Invalid URL encoding in diary id"))?
         .into_owned();
     let attachment_id = urlencoding::decode(encoded_attachment_id)
         .map_err(|_| ServerError::BadRequest("Invalid URL encoding in attachment id"))?
         .into_owned();
+    if !attachment_server.validates_token(token, &id, &attachment_id) {
+        return Err(ServerError::NotFound("attachment"));
+    }
 
     // 整个 HTTP 请求固定使用进入时的存储模式，避免读取 Manifest 后切换到另一存储。
     let _storage_guard = state.lock_storage_operation().await;
@@ -769,7 +792,16 @@ mod tests {
         assert!(url.starts_with("http://127.0.0.1:"));
         assert!(url.contains("/diary%20id/"));
         assert!(url.contains("%E4%B8%AD%E6%96%87%20image%20%231.jpg"));
-        assert!(!url.contains("test-token"));
+        assert!(handle.validates_token(
+            &handle.token_for("diary id", "中文 image #1.jpg"),
+            "diary id",
+            "中文 image #1.jpg"
+        ));
+        assert!(!handle.validates_token(
+            &handle.token_for("diary id", "中文 image #1.jpg"),
+            "diary id",
+            "another.jpg"
+        ));
     }
 
     #[test]
@@ -1026,7 +1058,8 @@ mod tests {
         let data = b"short";
         let server = start_test_server("diary-3", "audio.mp3", "audio/mpeg", data, true).await;
         let valid_url = server.handle.url("diary-3", "audio.mp3");
-        let invalid_url = valid_url.replacen(server.handle.token.as_ref(), "wrong-token", 1);
+        let valid_token = server.handle.token_for("diary-3", "audio.mp3");
+        let invalid_url = valid_url.replacen(&valid_token, "wrong-token", 1);
         let client = reqwest::Client::new();
 
         let response = client.get(invalid_url).send().await.unwrap();
@@ -1043,6 +1076,20 @@ mod tests {
             response.headers()[CONTENT_RANGE],
             format!("bytes */{}", data.len())
         );
+    }
+
+    #[tokio::test]
+    async fn rejects_a_valid_token_issued_for_another_attachment() {
+        let server =
+            start_test_server("diary-4", "private.html", "text/html", b"private", true).await;
+        let valid_url = server.handle.url("diary-4", "private.html");
+        let own_token = server.handle.token_for("diary-4", "private.html");
+        let other_token = server.handle.token_for("diary-4", "other.html");
+        let forged_url = valid_url.replacen(&own_token, &other_token, 1);
+
+        let response = reqwest::get(forged_url).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

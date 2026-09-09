@@ -53,6 +53,7 @@ http-body-util = "0.1"
 getrandom = "0.3"
 hmac = "0.12.1"
 sha1 = "0.10.6"
+sha2 = "0.10.9"
 quick-xml = { version = "0.39", features = ["serialize"] }
 base64 = "0.22.1"
 md5 = "0.8"
