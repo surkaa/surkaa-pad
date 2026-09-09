@@ -28,6 +28,7 @@ import {
 } from "../utils/attachmentInsertion";
 import {useAttachmentUploader} from './useAttachmentUploader';
 import {sharedAttachmentNodeKind} from '../utils/androidShare';
+import {isHtmlAttachment} from '../utils/attachmentOpen';
 
 export type {UploadTask} from './useAttachmentUploader';
 
@@ -277,6 +278,39 @@ export function useMediaAction(
         }
     }
 
+    function openHtmlAttachment(attachmentId: string) {
+        const attachment = currentDiaryAttachments.value
+            .find(item => item.id === attachmentId);
+        if (!attachment || !isHtmlAttachment(attachment)) {
+            $q.notify({type: 'negative', message: '当前附件不是可打开的 HTML 文件'});
+            return;
+        }
+
+        $q.dialog({
+            title: '使用外部应用打开 HTML',
+            message: 'HTML 中的脚本将会运行，并会生成临时解密副本。请仅打开可信文件。',
+            persistent: true,
+            ok: {label: '继续打开', color: 'primary'},
+            cancel: {label: '取消', flat: true},
+        }).onOk(async () => {
+            if (!resetUploadTasks()) {
+                showUploadDialog.value = true;
+                $q.notify({type: 'warning', message: '请先等待当前文件处理完成或取消任务'});
+                return;
+            }
+
+            const key = createTask(attachment.filename, false, 'open');
+            const event = createUploadChannel(key);
+            try {
+                const token = await api.cmdOpenHtmlAttachment(event, diaryId.value, attachmentId);
+                showUploadDialog.value = true;
+                registerCancelableTask(key, token);
+            } catch (error) {
+                failTask(key, error);
+            }
+        });
+    }
+
     return {
         uploadTasks,
         showUploadDialog,
@@ -285,6 +319,7 @@ export function useMediaAction(
         cancelUploadTask,
         cancelAllUploads,
         showAudioDrawer,
+        openHtmlAttachment,
         saveAttachmentAudioInfo,
         handleAudioRecorded: async (
             mimetype: string,

@@ -1,4 +1,5 @@
 pub mod ai;
+mod android_attachment_opener;
 mod android_share;
 mod app_config;
 pub mod app_object_store;
@@ -57,8 +58,9 @@ use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
     cmd_add_shared_attachment, cmd_caching_attachment, cmd_delete_attachment,
-    cmd_rotate_image_attachment, cmd_save_decrypt_attachment, cmd_toggle_attachment_encryption,
-    cmd_update_attachment_audio_info, cmd_update_attachment_filename,
+    cmd_open_html_attachment, cmd_rotate_image_attachment, cmd_save_decrypt_attachment,
+    cmd_toggle_attachment_encryption, cmd_update_attachment_audio_info,
+    cmd_update_attachment_filename,
 };
 use crate::attachments::chunked_upload_command::{
     cmd_abort_chunked_upload, cmd_finish_chunked_upload, cmd_start_chunked_upload, cmd_upload_chunk,
@@ -97,6 +99,11 @@ use tauri::{App, Manager};
 fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     tauri_plugin_log::log::info!("[startup] Rust setup started");
     let paths = app.handle().path();
+    if let Err(error) = attachments::cleanup_stale_external_open_files(&paths.app_cache_dir()?) {
+        tauri_plugin_log::log::warn!(
+            "[attachment open] failed to clean stale temporary files: {error}"
+        );
+    }
     let app_config = AppConfigStore::load(paths.app_config_dir()?.join(APP_CONFIG_FILENAME))?;
     tauri_plugin_log::log::info!("[startup] app config loaded");
     let local_storage =
@@ -185,6 +192,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_rotate_image_attachment,
             cmd_caching_attachment,
             cmd_save_decrypt_attachment,
+            cmd_open_html_attachment,
             cmd_update_attachment_filename,
             cmd_update_attachment_audio_info,
             // 分片上传
@@ -261,7 +269,8 @@ pub fn run() {
         .plugin(tauri_plugin_native_camera::init())
         .plugin(tauri_plugin_geolocation::init())
         .plugin(location::init_android_plugin())
-        .plugin(android_share::init_android_plugin());
+        .plugin(android_share::init_android_plugin())
+        .plugin(android_attachment_opener::init_android_plugin());
 
     app_builder
         .invoke_handler(builder.invoke_handler())

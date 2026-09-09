@@ -12,6 +12,7 @@ import api from '../utils/api';
 import {formatError} from '../utils/formatError';
 import {
   applyUploadTaskEvent,
+  attachmentTaskOperationLabel,
   createQueuedUploadTask,
   createUploadTask,
   hasActiveUploadTasks,
@@ -127,7 +128,10 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     settleTask(key);
     if (task.status === 'error') {
       if (notify) {
-        $q.notify({type: 'negative', message: `${task.filename} 上传失败: ${message}`});
+        $q.notify({
+          type: 'negative',
+          message: `${task.filename} ${attachmentTaskOperationLabel(task.direction)}失败: ${message}`,
+        });
       }
       errorCallback?.(message);
     }
@@ -162,7 +166,10 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
         case 'error':
           settleTask(key);
           if (task.status === 'error') {
-            $q.notify({type: 'negative', message: `${task.filename} 上传失败: ${message.data}`});
+            $q.notify({
+              type: 'negative',
+              message: `${task.filename} ${attachmentTaskOperationLabel(task.direction)}失败: ${message.data}`,
+            });
             onError?.(message.data);
           }
           break;

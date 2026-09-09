@@ -63,6 +63,7 @@ import {
   type DiaryBlockDescriptor,
 } from './editor/blockOrder'
 import {TaskCompletionOrder} from './editor/taskCompletionOrder'
+import {isHtmlAttachment} from '../utils/attachmentOpen'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -80,6 +81,7 @@ const emit = defineEmits<{
   (e: 'rotateAttachment', attachmentId: string, rotation: number): void
   (e: 'renameAttachment', attachmentId: string, filename: string, cb: (newFilename: string) => void): void
   (e: 'saveDecryptAttachment', attachmentId: string): void
+  (e: 'openHtmlAttachment', attachmentId: string): void
   (e: 'openLocation', location: DiaryLocation): void
   (e: 'audioInfoGenerated', attachmentId: string, durationMs: number, waveform: AudioWaveform): void
   (e: 'editorFocused'): void
@@ -241,6 +243,7 @@ const { handleContextMenu } = useAttachmentContextMenu({
     emit('renameAttachment', attachmentId, filename, callback)
   },
   saveDecrypted: attachmentId => emit('saveDecryptAttachment', attachmentId),
+  openHtml: attachmentId => emit('openHtmlAttachment', attachmentId),
   showImage: url => emit('showImage', url),
 })
 
@@ -281,6 +284,14 @@ function handleWrapperClick(e: MouseEvent) {
     const url = props.attachmentMap[found.attachmentId]
     if (url) emit('showImage', url)
     return
+  }
+  if (found?.type === 'file') {
+    const attachment = getAttachmentMeta(found.attachmentId)
+    if (attachment && isHtmlAttachment(attachment)) {
+      if (currentPlatform === 'android') editor.value?.commands.blur()
+      emit('openHtmlAttachment', found.attachmentId)
+      return
+    }
   }
   if (albumAnchor.value) return
   // 点击编辑器空白区域（如底部）时聚焦到末尾

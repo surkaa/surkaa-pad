@@ -3,6 +3,7 @@ import type { Ref, ShallowRef } from 'vue'
 import { Menu, MenuItem } from '@tauri-apps/api/menu'
 import { useQuasar } from 'quasar'
 import type { AttachmentMeta } from '../bindings'
+import { isHtmlAttachment } from '../utils/attachmentOpen'
 import {
   findAttachmentNode,
   type AttachmentNodeMatch,
@@ -33,6 +34,7 @@ interface AttachmentContextMenuOptions {
     callback: (newFilename: string) => void,
   ) => void
   saveDecrypted: (attachmentId: string) => void
+  openHtml: (attachmentId: string) => void
   showImage: (url: string) => void
 }
 
@@ -52,7 +54,14 @@ export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) 
     const attachment = options.getAttachment(found.attachmentId)
     if (!attachment) return
 
-    const buttons: MenuAction[] = [
+    const buttons: MenuAction[] = []
+    if (found.type === 'file' && isHtmlAttachment(attachment)) {
+      buttons.push({
+        label: '使用浏览器打开',
+        action: () => options.openHtml(found.attachmentId),
+      })
+    }
+    buttons.push(
       {
         label: `转成${attachment.encrypted ? '普通' : '加密'}附件`,
         action: () => options.toggleEncryption(found.attachmentId),
@@ -61,7 +70,7 @@ export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) 
         label: '保存到本地',
         action: () => options.saveDecrypted(found.attachmentId),
       },
-    ]
+    )
 
     if (found.type === 'image') {
       addImageActions(buttons, found)

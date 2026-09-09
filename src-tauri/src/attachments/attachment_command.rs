@@ -3,6 +3,7 @@ use crate::attachments::attachment::{
     rotate_image_attachment_cancelable, save_decrypt_attachment,
     toggle_attachment_encryption_cancelable, update_attachment_filename,
 };
+use crate::attachments::attachment_open::open_html_attachment;
 use crate::attachments::attachment_types::AttachmentProcessEvent;
 use crate::attachments::AudioWaveform;
 use crate::attachments::SharedAttachmentSource;
@@ -17,7 +18,7 @@ use crate::utils::{detect_file_mimetype, file_mimetype, file_size};
 use std::str::FromStr;
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_fs::{FilePath, FsExt, OpenOptions};
 
@@ -455,6 +456,47 @@ pub async fn cmd_save_decrypt_attachment(
             attachment_id,
             attachment,
             file,
+        )
+        .await;
+    }))
+}
+
+/// 将 HTML 附件流式解密到受控临时目录，并交给系统浏览器或其他兼容应用打开。
+/// 前端只能提供日记和附件 ID，不能指定输出路径；后端也会再次校验附件类型。
+/// # Arguments
+/// * `event` - 接收附件准备进度与结果事件的通道
+/// * `id` - 日记 ID
+/// * `attachment_id` - HTML 附件 ID
+/// # Returns
+/// * `Result<String, AppError>` - 后台任务令牌，可用于取消准备过程
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_open_html_attachment(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    event: Channel<AttachmentProcessEvent>,
+    id: String,
+    attachment_id: String,
+) -> Result<String, AppError> {
+    let cache_root = app_handle
+        .path()
+        .app_cache_dir()
+        .map_err(|error| AppError {
+            error_type: "io".into(),
+            message: error.to_string(),
+        })?;
+    let task_pool = state.task_pool();
+    let state = state.inner().clone();
+    Ok(task_pool.spawn_cancelable(move |cancellation| async move {
+        let _storage_guard = state.lock_storage_operation().await;
+        open_html_attachment(
+            &app_handle,
+            &state,
+            Arc::new(event),
+            &cache_root,
+            &id,
+            &attachment_id,
+            cancellation,
         )
         .await;
     }))

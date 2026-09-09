@@ -1,6 +1,7 @@
 mod attachment;
 pub mod attachment_command;
 mod attachment_error;
+mod attachment_open;
 mod attachment_server;
 mod attachment_types;
 pub mod chunked_upload;
@@ -13,6 +14,7 @@ mod attachment_tests;
 mod embedded_media_tests;
 
 pub use attachment_error::AttachmentError;
+pub use attachment_open::cleanup_stale_external_open_files;
 pub use attachment_server::{
     bind_attachment_server, start_attachment_server, AttachmentServerHandle,
 };

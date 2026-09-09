@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- 保留相机等既有原生流程使用的路径；HTML 打开命令还会在 Kotlin 层
+       强制校验文件必须位于 open-attachments。 -->
   <external-path name="my_images" path="." />
   <cache-path name="my_cache_images" path="." />
+  <cache-path name="open_attachments" path="open-attachments/" />
 </paths>

@@ -10,7 +10,7 @@ export type UploadTaskStatus =
   | 'error';
 
 export type UploadTaskPhase = 'preparing' | 'transferring' | 'finalizing';
-export type AttachmentTransferDirection = 'upload' | 'download';
+export type AttachmentTransferDirection = 'upload' | 'download' | 'open';
 
 export interface UploadTask {
   id: string;
@@ -124,16 +124,29 @@ export function isUploadTaskProgressIndeterminate(task: UploadTask): boolean {
 
 export function uploadTaskStatusText(task: UploadTask): string {
   const isDownload = task.direction === 'download';
+  const isOpen = task.direction === 'open';
   if (task.status === 'completed') return '已完成';
   if (task.status === 'canceled') return '已取消';
   if (task.status === 'canceling') return '正在取消';
   if (task.status === 'error') {
-    return task.error ? `失败：${task.error}` : (isDownload ? '下载失败' : '上传失败');
+    return task.error
+      ? `失败：${task.error}`
+      : (isOpen ? '打开失败' : (isDownload ? '下载失败' : '上传失败'));
   }
   if (task.phase === 'finalizing') {
+    if (isOpen) return '即将完成：交给外部应用';
     return isDownload ? '即将完成：写入本地缓存' : '即将完成：提交附件并保存日记';
   }
-  if (task.status === 'queued') return isDownload ? '等待下载' : '等待上传';
+  if (task.status === 'queued') {
+    return isOpen ? '等待准备' : (isDownload ? '等待下载' : '等待上传');
+  }
   if (task.status === 'pending') return '准备中';
+  if (isOpen) return `正在准备 ${Math.round(task.progress * 100)}%`;
   return `${isDownload ? '下载' : '上传'}中 ${Math.round(task.progress * 100)}%`;
+}
+
+export function attachmentTaskOperationLabel(direction: AttachmentTransferDirection): string {
+  if (direction === 'open') return '打开';
+  if (direction === 'download') return '下载';
+  return '上传';
 }

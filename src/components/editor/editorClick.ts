@@ -41,6 +41,6 @@ export function shouldPreventEditorFocus(
   if (target.closest('.editor-summary-content')) return false
 
   return Boolean(target.closest(
-    '.editor-image-album[data-display-mode="stackedCards"], .editor-summary, .editor-location, .editor-audio-attachment',
+    '.editor-image-album[data-display-mode="stackedCards"], .editor-summary, .editor-location, .editor-audio-attachment, .editor-file-attachment',
   ))
 }
