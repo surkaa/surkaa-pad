@@ -1,15 +1,29 @@
 <template>
   <q-dialog
     no-refocus
-    :maximized="$q.screen.lt.sm"
+    :maximized="isMaximized"
     :model-value="modelValue"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <q-card class="attachment-preview-card">
+    <q-card
+      class="attachment-preview-card"
+      :class="{'attachment-preview-card--maximized': isMaximized}"
+    >
       <q-card-section class="attachment-preview-header row items-center no-wrap">
         <q-icon :name="previewIcon" size="24px" color="primary"/>
         <div class="attachment-preview-title ellipsis">{{ attachment?.filename || '附件预览' }}</div>
         <q-space/>
+        <q-btn
+          v-if="!$q.screen.lt.sm"
+          flat
+          round
+          dense
+          :icon="manuallyMaximized ? 'fullscreen_exit' : 'fullscreen'"
+          :aria-label="manuallyMaximized ? '退出全屏' : '全屏预览'"
+          @click="manuallyMaximized = !manuallyMaximized"
+        >
+          <q-tooltip>{{ manuallyMaximized ? '退出全屏' : '全屏预览' }}</q-tooltip>
+        </q-btn>
         <q-btn flat round dense icon="close" aria-label="关闭附件预览" v-close-popup/>
       </q-card-section>
       <q-separator/>
@@ -87,6 +101,7 @@ const props = defineProps<{
 const emit = defineEmits<{(event: 'update:modelValue', value: boolean): void}>();
 const $q = useQuasar();
 const loading = ref(false);
+const manuallyMaximized = ref(false);
 const sourceText = ref('');
 const jsonSource = shallowRef<unknown>();
 const jsonParsed = ref(false);
@@ -98,6 +113,7 @@ let loadRevision = 0;
 const kind = computed<AttachmentPreviewKind | null>(() => (
   props.attachment ? attachmentPreviewKind(props.attachment) : null
 ));
+const isMaximized = computed(() => $q.screen.lt.sm || manuallyMaximized.value);
 const previewIcons: Record<AttachmentPreviewKind, string> = {
   pdf: 'picture_as_pdf',
   markdown: 'markdown',
@@ -111,6 +127,7 @@ watch(
   ([visible]) => {
     if (visible) void loadPreview();
     else {
+      manuallyMaximized.value = false;
       cancelLoad();
       resetPreview();
     }
@@ -202,6 +219,14 @@ async function openMarkdownLink(event: MouseEvent) {
   overflow: hidden;
   color: var(--pad-text-color-100);
   background: var(--pad-bg-color-200);
+}
+
+.attachment-preview-card--maximized {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
 }
 
 .attachment-preview-header {
