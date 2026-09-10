@@ -22,6 +22,10 @@
         <q-icon name="error_outline" size="36px"/>
         <span>{{ fatalError }}</span>
       </div>
+      <PdfAttachmentPreview
+        v-else-if="modelValue && kind === 'pdf' && url"
+        :url="buildPdfPreviewUrl(url)"
+      />
       <template v-else-if="kind === 'json'">
         <q-banner v-if="jsonError" class="attachment-preview-warning" dense>
           JSON 格式错误，已按普通文本显示：{{ jsonError }}
@@ -58,12 +62,13 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onBeforeUnmount, ref, shallowRef, watch} from 'vue';
+import {computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {openUrl} from '@tauri-apps/plugin-opener';
 import type {AttachmentMeta} from '../bindings';
 import {
   attachmentPreviewKind,
+  buildPdfPreviewUrl,
   fetchAttachmentText,
   type AttachmentPreviewKind,
 } from '../utils/attachmentPreview';
@@ -71,6 +76,8 @@ import {renderSafeMarkdown} from '../utils/aiMarkdown';
 import {copyTextToClipboard} from '../utils/clipboard';
 import {formatError} from '../utils/formatError';
 import JsonTreeViewer from './JsonTreeViewer.vue';
+
+const PdfAttachmentPreview = defineAsyncComponent(() => import('./PdfAttachmentPreview.vue'));
 
 const props = defineProps<{
   modelValue: boolean;

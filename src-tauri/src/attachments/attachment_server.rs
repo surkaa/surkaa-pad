@@ -1,4 +1,4 @@
-use crate::attachments::attachment_open::is_html_attachment;
+use crate::attachments::attachment_open::{is_html_attachment, is_pdf_attachment};
 use crate::attachments::embedded_media::{
     has_isobmff_file_type_box, parse_motion_photo_layout, MotionPhotoLayout,
     MOTION_PHOTO_XMP_PROBE_BYTES,
@@ -44,6 +44,7 @@ const MAX_CONCURRENT_REQUESTS: usize = 32;
 const MAX_CONCURRENT_REQUESTS_PER_ATTACHMENT: usize = 4;
 const MOTION_PHOTO_VIEW: &str = "motion-photo-video";
 const HTML_VIEW: &str = "html";
+const PDF_VIEW: &str = "pdf";
 type ResponseBody = UnsyncBoxBody<Bytes, io::Error>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +52,7 @@ enum AttachmentView {
     Original,
     MotionPhotoVideo,
     Html,
+    Pdf,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -115,6 +117,11 @@ impl AttachmentServerHandle {
 
     pub fn html_url(&self, diary_id: &str, attachment_id: &str) -> String {
         format!("{}&view={HTML_VIEW}", self.url(diary_id, attachment_id))
+    }
+
+    #[cfg(test)]
+    fn pdf_url(&self, diary_id: &str, attachment_id: &str) -> String {
+        format!("{}&view={PDF_VIEW}", self.url(diary_id, attachment_id))
     }
 
     fn token_for(&self, diary_id: &str, attachment_id: &str) -> String {
@@ -404,6 +411,9 @@ async fn process_attachment(
     if attachment_view == AttachmentView::Html && !is_html_attachment(attachment) {
         return Err(ServerError::Forbidden("HTML view is not allowed"));
     }
+    if attachment_view == AttachmentView::Pdf && !is_pdf_attachment(attachment) {
+        return Err(ServerError::Forbidden("PDF view is not allowed"));
+    }
     if attachment.algorithm == Gcm {
         return Err(ServerError::Forbidden("GCM decryption is not supported"));
     }
@@ -423,6 +433,7 @@ async fn process_attachment(
         || request.method() == Method::HEAD
         || attachment_view == AttachmentView::MotionPhotoVideo
         || attachment_view == AttachmentView::Html
+        || attachment_view == AttachmentView::Pdf
     {
         store
             .get_attachment_size(&id, &attachment_id, attachment.etag.as_deref())
@@ -433,6 +444,7 @@ async fn process_attachment(
     let (resource_offset, resource_size, resource_mimetype, is_virtual) = match attachment_view {
         AttachmentView::Original => (0, file_size, attachment.mimetype.as_str(), false),
         AttachmentView::Html => (0, file_size, "text/html; charset=utf-8", false),
+        AttachmentView::Pdf => (0, file_size, "application/pdf", false),
         AttachmentView::MotionPhotoVideo => {
             let layout = resolve_motion_photo_layout(
                 &state.attachment_server(),
@@ -506,7 +518,9 @@ async fn process_attachment(
     } else {
         stream
     };
-    if (is_virtual || attachment_view == AttachmentView::Html) && range.is_none() {
+    if (is_virtual || matches!(attachment_view, AttachmentView::Html | AttachmentView::Pdf))
+        && range.is_none()
+    {
         return hold_request_permit(
             build_attachment_stream_response(status, resource_mimetype, selected_length, stream),
             request_permit,
@@ -566,6 +580,7 @@ fn parse_attachment_view(query: Option<&str>) -> Result<AttachmentView, ServerEr
         None => Ok(AttachmentView::Original),
         Some(MOTION_PHOTO_VIEW) => Ok(AttachmentView::MotionPhotoVideo),
         Some(HTML_VIEW) => Ok(AttachmentView::Html),
+        Some(PDF_VIEW) => Ok(AttachmentView::Pdf),
         Some(_) => Err(ServerError::BadRequest("Unsupported attachment view")),
     }
 }
@@ -1051,6 +1066,10 @@ mod tests {
             parse_attachment_view(Some("t=123&view=html")).unwrap(),
             AttachmentView::Html
         );
+        assert_eq!(
+            parse_attachment_view(Some("t=123&view=pdf")).unwrap(),
+            AttachmentView::Pdf
+        );
         assert!(matches!(
             parse_attachment_view(Some("view=unknown")),
             Err(ServerError::BadRequest(_))
@@ -1332,6 +1351,41 @@ mod tests {
             start_test_server("diary-text", "notes.txt", "text/plain", b"notes", false).await;
 
         let response = reqwest::get(server.handle.html_url("diary-text", "notes.txt"))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn streams_plain_and_encrypted_pdf_attachments() {
+        let body = [b"%PDF-1.7\n".as_slice(), &vec![42; 1024 * 1024 + 31]].concat();
+        for encrypted in [false, true] {
+            let server = start_test_server(
+                "diary-pdf",
+                "document.pdf",
+                "application/pdf",
+                &body,
+                encrypted,
+            )
+            .await;
+
+            let response = reqwest::get(server.handle.pdf_url("diary-pdf", "document.pdf"))
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[CONTENT_TYPE], "application/pdf");
+            assert_eq!(response.bytes().await.unwrap().as_ref(), body);
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_pdf_view_for_non_pdf_attachments() {
+        let server =
+            start_test_server("diary-text", "notes.txt", "text/plain", b"notes", false).await;
+
+        let response = reqwest::get(server.handle.pdf_url("diary-text", "notes.txt"))
             .await
             .unwrap();
 

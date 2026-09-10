@@ -3,6 +3,7 @@ import type {AttachmentMeta} from '../../bindings';
 import {
   attachmentPreviewKind,
   AttachmentPreviewError,
+  buildPdfPreviewUrl,
   decodeText,
   fetchAttachmentText,
   readBoundedResponseBytes,
@@ -43,6 +44,11 @@ describe('attachmentPreviewKind', () => {
   it('does not treat arbitrary binary files as text', () => {
     expect(attachmentPreviewKind(attachment('archive.zip', 'application/octet-stream'))).toBeNull();
   });
+});
+
+it('builds a PDF view URL without losing the attachment token or cache buster', () => {
+  expect(buildPdfPreviewUrl('http://127.0.0.1:1234/token/diary/file?t=42'))
+    .toBe('http://127.0.0.1:1234/token/diary/file?t=42&view=pdf');
 });
 
 describe('bounded text loading', () => {

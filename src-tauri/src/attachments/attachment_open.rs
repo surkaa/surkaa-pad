@@ -54,6 +54,17 @@ pub(super) fn is_html_attachment(attachment: &AttachmentMeta) -> bool {
     filename.ends_with(".html") || filename.ends_with(".htm") || filename.ends_with(".xhtml")
 }
 
+pub(super) fn is_pdf_attachment(attachment: &AttachmentMeta) -> bool {
+    let mimetype = attachment
+        .mimetype
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    mimetype == "application/pdf" || attachment.filename.to_ascii_lowercase().ends_with(".pdf")
+}
+
 pub fn cleanup_legacy_html_temp_files(app_cache_dir: &Path) -> std::io::Result<()> {
     let path = app_cache_dir.join(LEGACY_EXTERNAL_OPEN_DIRECTORY);
     match fs::remove_dir_all(path) {
@@ -92,6 +103,22 @@ mod tests {
             "application/octet-stream"
         )));
         assert!(!is_html_attachment(&attachment("page.txt", "text/plain")));
+    }
+
+    #[test]
+    fn recognizes_pdf_by_mimetype_or_filename() {
+        assert!(is_pdf_attachment(&attachment(
+            "document.bin",
+            "application/pdf; version=1.7"
+        )));
+        assert!(is_pdf_attachment(&attachment(
+            "document.PDF",
+            "application/octet-stream"
+        )));
+        assert!(!is_pdf_attachment(&attachment(
+            "document.txt",
+            "text/plain"
+        )));
     }
 
     #[test]

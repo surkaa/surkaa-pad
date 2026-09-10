@@ -48,6 +48,12 @@ export function attachmentPreviewKind(
   return null;
 }
 
+export function buildPdfPreviewUrl(attachmentUrl: string): string {
+  const url = new URL(attachmentUrl);
+  url.searchParams.set('view', 'pdf');
+  return url.toString();
+}
+
 export async function fetchAttachmentText(
   url: string,
   declaredSize: number,
