@@ -58,6 +58,10 @@ import type {
 } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {formatError} from '../utils/formatError';
+import {
+  calculatePdfOutputScale,
+  calculatePdfPageWidth,
+} from '../utils/pdfPreviewLayout';
 
 const props = defineProps<{url: string}>();
 
@@ -97,10 +101,7 @@ const loadProgressText = computed(() => (
     ? `正在载入 PDF… ${Math.round(loadProgress.value * 100)}%`
     : '正在载入 PDF…'
 ));
-const pageWidth = computed(() => Math.max(
-  240,
-  Math.min(1200, Math.max(240, availableWidth.value - 32)) * zoom.value,
-));
+const pageWidth = computed(() => calculatePdfPageWidth(availableWidth.value, zoom.value));
 const pageStyle = computed(() => ({
   width: `${pageWidth.value}px`,
   minHeight: `${Math.round(pageWidth.value * 1.414)}px`,
@@ -189,7 +190,11 @@ async function renderPage(pageNumber: number) {
     if (revision !== renderRevision) return;
     const originalViewport = page.getViewport({scale: 1});
     const viewport = page.getViewport({scale: pageWidth.value / originalViewport.width});
-    const outputScale = Math.min(window.devicePixelRatio || 1, 2);
+    const outputScale = calculatePdfOutputScale(
+      viewport.width,
+      viewport.height,
+      window.devicePixelRatio || 1,
+    );
     canvas.width = Math.max(1, Math.floor(viewport.width * outputScale));
     canvas.height = Math.max(1, Math.floor(viewport.height * outputScale));
     canvas.style.width = `${Math.floor(viewport.width)}px`;
