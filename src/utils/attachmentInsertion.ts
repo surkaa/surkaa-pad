@@ -21,6 +21,16 @@ export interface AttachmentEditorNode {
   attrs: Record<string, unknown>
 }
 
+export function attachmentUrlMapFromUploads(
+  results: readonly (UploadedAttachment | null)[],
+): Record<string, string> {
+  const urls: Record<string, string> = {}
+  for (const item of results) {
+    if (item) urls[item.attachmentId] = item.url
+  }
+  return urls
+}
+
 export function attachmentNodeKindFromMimeType(mimetype: string): AttachmentNodeKind {
   const normalized = mimetype.toLowerCase()
   if (normalized.startsWith('image/')) return 'image'

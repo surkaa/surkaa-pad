@@ -20,6 +20,7 @@ import {formatBytes} from '../utils/format';
 import {partitionAttachmentsByCacheLimit} from '../utils/attachmentCache';
 import {batchUploadAll, promisifyUpload} from "../utils/batchUpload";
 import {
+    attachmentUrlMapFromUploads,
     attachmentNodeKindFromMimeType,
     applyAttachmentInsertions,
     planAttachmentInsertions,
@@ -98,11 +99,10 @@ export function useMediaAction(
         const editor = editorContentRef.value;
         if (!editor) return false;
 
-        for (const item of results) {
-            if (item && item.nodeKind !== 'file') {
-                currentDiaryAttachmentUrlMap.value[item.attachmentId] = item.url;
-            }
-        }
+        Object.assign(
+            currentDiaryAttachmentUrlMap.value,
+            attachmentUrlMapFromUploads(results),
+        );
         return applyAttachmentInsertions(
             planAttachmentInsertions(results, uuidv4),
             editor,

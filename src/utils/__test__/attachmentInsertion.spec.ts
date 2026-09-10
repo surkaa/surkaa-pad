@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  attachmentUrlMapFromUploads,
   attachmentNodeKindFromMimeType,
   attachmentInsertionsToEditorContent,
   applyAttachmentInsertions,
@@ -11,6 +12,22 @@ import {
 
 const image = (filename: string): UploadedAttachment => ({
   nodeKind: 'image', attachmentId: `att-${filename}`, filename, url: `url://${filename}`,
+})
+
+describe('attachmentUrlMapFromUploads', () => {
+  it('保留普通文件的预览地址并忽略上传失败项', () => {
+    const file: UploadedAttachment = {
+      nodeKind: 'file',
+      attachmentId: 'att-document',
+      filename: 'document.pdf',
+      url: 'http://127.0.0.1/document',
+    }
+
+    expect(attachmentUrlMapFromUploads([image('photo.jpg'), null, file])).toEqual({
+      'att-photo.jpg': 'url://photo.jpg',
+      'att-document': 'http://127.0.0.1/document',
+    })
+  })
 })
 
 describe('planAttachmentInsertions', () => {
