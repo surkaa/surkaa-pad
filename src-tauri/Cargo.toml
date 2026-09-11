@@ -86,6 +86,9 @@ thiserror = "2"
 fs4 = "1"
 dunce = "1"
 eventsource-stream = "0.2"
+# 压缩包预览仅解析目录元数据；关闭默认解压算法，避免引入无关依赖。
+zip = { version = "6.0.0", default-features = false }
+sevenz-rust2 = { version = "0.22.2", default-features = false, features = ["aes256"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-biometric = { git = "https://github.com/surkaa/plugins-workspace", rev = "6fa3112f426dd3a05619fd1f34a00089807c5fd5" }

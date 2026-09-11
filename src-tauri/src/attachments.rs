@@ -1,3 +1,4 @@
+pub(crate) mod archive_preview;
 mod attachment;
 pub mod attachment_command;
 mod attachment_error;
