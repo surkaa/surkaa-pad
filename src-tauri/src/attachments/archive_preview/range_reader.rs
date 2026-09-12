@@ -7,7 +7,8 @@ use std::io::{self, Read, Seek, SeekFrom};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
-const RANGE_CHUNK_SIZE: u64 = 128 * 1024;
+// OSS 的单次 Range 请求存在固定往返开销；1 MiB 能避免 ZIP 条目较分散时产生数百次小请求。
+const RANGE_CHUNK_SIZE: u64 = 1024 * 1024;
 const MAX_CACHED_CHUNKS: usize = 8;
 const MAX_FETCHED_BYTES: u64 = 32 * 1024 * 1024;
 

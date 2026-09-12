@@ -479,6 +479,7 @@ onActivated(async () => {
 
     <AttachmentPreviewDialog
         v-model="showAttachmentPreview"
+        :diary-id="diaryId"
         :attachment="previewAttachment"
         :url="previewAttachmentUrl"
     />

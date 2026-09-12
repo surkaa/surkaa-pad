@@ -46,7 +46,7 @@ pub struct ArchivePreviewEntry {
     #[specta(type = f64)]
     pub compressed_size: u64,
     pub modified_at: Option<String>,
-    /// ZIP 可以按条目标记；7z 的加密信息位于压缩块层级，无法可靠映射到每个条目。
+    // ZIP 可以按条目标记；7z 的加密信息位于压缩块层级，无法可靠映射到每个条目。
     pub encrypted: Option<bool>,
 }
 
@@ -74,10 +74,17 @@ pub struct ArchivePreview {
 )]
 pub enum ArchivePreviewEvent {
     Started,
-    Completed { preview: ArchivePreview },
-    PasswordRequired { invalid_password: bool },
+    Completed {
+        preview: ArchivePreview,
+    },
+    PasswordRequired {
+        #[specta(rename = "invalidPassword")]
+        invalid_password: bool,
+    },
     Cancelled,
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -101,7 +108,6 @@ pub enum ArchivePreviewError {
 }
 
 /// 解析附件中的 ZIP/7z 目录结构。任务支持通过 `cmd_cancel_task` 取消。
-///
 /// `password` 只用于压缩包自身的加密目录，不会写入日志或持久化。
 /// # Arguments
 /// * `event` - 接收开始、密码请求、完成或错误事件的通道
@@ -179,7 +185,7 @@ async fn run_archive_preview(
     let runtime = tokio::runtime::Handle::current();
     let parse_cancellation = CancellationToken::new();
     let source_cancellation = parse_cancellation.clone();
-    let parse_task = tokio::task::spawn_blocking(move || {
+    let mut parse_task = tokio::task::spawn_blocking(move || {
         let source = DiaryAttachmentRangeSource::new(
             runtime,
             store,
@@ -199,14 +205,17 @@ async fn run_archive_preview(
     tokio::select! {
         _ = cancellation.cancelled() => {
             parse_cancellation.cancel();
+            // spawn_blocking 无法强制中止；等待 Range 读取响应取消，避免任务脱离存储操作锁继续访问对象。
+            let _ = parse_task.await;
             Err(cancelled_io().into())
         },
-        result = tokio::time::timeout(ARCHIVE_PREVIEW_TIMEOUT, parse_task) => {
+        result = tokio::time::timeout(ARCHIVE_PREVIEW_TIMEOUT, &mut parse_task) => {
             match result {
                 Ok(Ok(result)) => result,
                 Ok(Err(error)) => Err(ArchivePreviewError::InvalidArchive(format!("解析任务异常结束：{error}"))),
                 Err(_) => {
                     parse_cancellation.cancel();
+                    let _ = parse_task.await;
                     Err(ArchivePreviewError::InvalidArchive("读取压缩包目录超时".into()))
                 }
             }

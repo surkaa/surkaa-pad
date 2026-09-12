@@ -32,6 +32,9 @@ describe('attachmentPreviewKind', () => {
     ['data.bin', 'application/problem+json', 'json'],
     ['trace.LOG', 'application/octet-stream', 'text'],
     ['source.bin', 'text/x-rust', 'text'],
+    ['archive.zip', 'application/octet-stream', 'archive'],
+    ['archive.bin', 'application/x-7z-compressed', 'archive'],
+    ['ARCHIVE.7Z', 'application/octet-stream', 'archive'],
   ] as const)('recognizes %s as %s', (filename, mimetype, expected) => {
     expect(attachmentPreviewKind(attachment(filename, mimetype))).toBe(expected);
   });
@@ -42,7 +45,7 @@ describe('attachmentPreviewKind', () => {
   });
 
   it('does not treat arbitrary binary files as text', () => {
-    expect(attachmentPreviewKind(attachment('archive.zip', 'application/octet-stream'))).toBeNull();
+    expect(attachmentPreviewKind(attachment('archive.bin', 'application/octet-stream'))).toBeNull();
   });
 });
 

@@ -30,7 +30,30 @@
 
       <div v-if="loading" class="attachment-preview-state">
         <q-spinner color="primary" size="36px"/>
-        <span>正在读取附件…</span>
+        <span>{{ loadingText }}</span>
+      </div>
+      <div v-else-if="passwordRequired" class="attachment-preview-state">
+        <q-icon name="lock" size="36px" color="primary"/>
+        <strong>{{ invalidPassword ? '压缩包密码不正确' : '压缩包目录已加密' }}</strong>
+        <span>密码只用于本次预览，不会保存或同步</span>
+        <q-input
+          v-model="archivePassword"
+          class="archive-password-input"
+          outlined
+          dense
+          autofocus
+          type="password"
+          label="压缩包密码"
+          :error="invalidPassword"
+          :error-message="invalidPassword ? '请检查密码后重试' : undefined"
+          @keyup.enter="retryArchivePreview"
+        />
+        <q-btn
+          color="primary"
+          label="读取目录"
+          :disable="!archivePassword"
+          @click="retryArchivePreview"
+        />
       </div>
       <div v-else-if="fatalError" class="attachment-preview-state attachment-preview-error">
         <q-icon name="error_outline" size="36px"/>
@@ -54,6 +77,10 @@
         v-html="renderSafeMarkdown(sourceText)"
       />
       <pre v-else-if="kind === 'text'" class="attachment-preview-text">{{ sourceText }}</pre>
+      <ArchiveAttachmentPreview
+        v-else-if="kind === 'archive' && archivePreview"
+        :preview="archivePreview"
+      />
       <div v-else class="attachment-preview-state">
         <span>当前附件暂不支持预览</span>
       </div>
@@ -61,7 +88,7 @@
       <q-separator/>
       <q-card-actions align="right" class="attachment-preview-actions">
         <q-btn
-          v-if="kind !== 'pdf'"
+          v-if="canCopyContent"
           flat
           icon="content_copy"
           label="复制内容"
@@ -78,8 +105,10 @@
 <script setup lang="ts">
 import {computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch} from 'vue';
 import {useQuasar} from 'quasar';
+import {Channel} from '@tauri-apps/api/core';
 import {openUrl} from '@tauri-apps/plugin-opener';
-import type {AttachmentMeta} from '../bindings';
+import type {ArchivePreview, ArchivePreviewEvent, AttachmentMeta} from '../bindings';
+import api from '../utils/api';
 import {
   attachmentPreviewKind,
   buildPdfPreviewUrl,
@@ -90,11 +119,13 @@ import {renderSafeMarkdown} from '../utils/aiMarkdown';
 import {copyTextToClipboard} from '../utils/clipboard';
 import {formatError} from '../utils/formatError';
 import JsonTreeViewer from './JsonTreeViewer.vue';
+import ArchiveAttachmentPreview from './ArchiveAttachmentPreview.vue';
 
 const PdfAttachmentPreview = defineAsyncComponent(() => import('./PdfAttachmentPreview.vue'));
 
 const props = defineProps<{
   modelValue: boolean;
+  diaryId: string;
   attachment: AttachmentMeta | null;
   url?: string;
 }>();
@@ -107,8 +138,13 @@ const jsonSource = shallowRef<unknown>();
 const jsonParsed = ref(false);
 const jsonError = ref('');
 const fatalError = ref('');
+const archivePreview = shallowRef<ArchivePreview>();
+const passwordRequired = ref(false);
+const invalidPassword = ref(false);
+const archivePassword = ref('');
 let loadController: AbortController | null = null;
 let loadRevision = 0;
+let activeArchiveTask = '';
 
 const kind = computed<AttachmentPreviewKind | null>(() => (
   props.attachment ? attachmentPreviewKind(props.attachment) : null
@@ -119,8 +155,15 @@ const previewIcons: Record<AttachmentPreviewKind, string> = {
   markdown: 'markdown',
   json: 'data_object',
   text: 'description',
+  archive: 'folder_zip',
 };
 const previewIcon = computed(() => previewIcons[kind.value || 'text']);
+const loadingText = computed(() => (
+  kind.value === 'archive' ? '正在读取压缩包目录…' : '正在读取附件…'
+));
+const canCopyContent = computed(() => (
+  kind.value === 'json' || kind.value === 'markdown' || kind.value === 'text'
+));
 
 watch(
   () => [props.modelValue, props.attachment?.id, props.url] as const,
@@ -144,17 +187,27 @@ async function loadPreview() {
 
   const attachment = props.attachment;
   const attachmentKind = kind.value;
-  if (!attachment || !props.url || !attachmentKind) {
+  if (!attachment || !attachmentKind || (attachmentKind !== 'archive' && !props.url)) {
     fatalError.value = '当前附件暂不支持预览';
     return;
   }
+  if (attachmentKind === 'archive') {
+    await startArchivePreview(revision);
+    return;
+  }
   if (attachmentKind === 'pdf') return;
+
+  const url = props.url;
+  if (!url) {
+    fatalError.value = '无法读取附件预览地址';
+    return;
+  }
 
   const controller = new AbortController();
   loadController = controller;
   loading.value = true;
   try {
-    const text = await fetchAttachmentText(props.url, attachment.size, controller.signal);
+    const text = await fetchAttachmentText(url, attachment.size, controller.signal);
     if (revision !== loadRevision) return;
     sourceText.value = text;
     if (attachmentKind === 'json') {
@@ -173,18 +226,78 @@ async function loadPreview() {
   }
 }
 
+async function startArchivePreview(revision = loadRevision, password?: string) {
+  const attachment = props.attachment;
+  if (!attachment) return;
+  passwordRequired.value = false;
+  invalidPassword.value = false;
+  fatalError.value = '';
+  loading.value = true;
+  let terminalReceived = false;
+  const event = new Channel<ArchivePreviewEvent>();
+  event.onmessage = message => {
+    if (revision !== loadRevision) return;
+    if (message.event === 'started') {
+      loading.value = true;
+      return;
+    }
+    terminalReceived = true;
+    activeArchiveTask = '';
+    loading.value = false;
+    if (message.event === 'completed') {
+      archivePreview.value = message.data.preview;
+      archivePassword.value = '';
+    } else if (message.event === 'passwordRequired') {
+      passwordRequired.value = true;
+      invalidPassword.value = message.data.invalidPassword;
+    } else if (message.event === 'error') {
+      fatalError.value = message.data.message;
+    }
+  };
+  try {
+    const token = await api.cmdPreviewArchiveAttachment(
+      event,
+      props.diaryId,
+      attachment.id,
+      password || null,
+    );
+    if (revision !== loadRevision) {
+      void api.cmdCancelTask(token).catch(() => undefined);
+    } else if (!terminalReceived) {
+      activeArchiveTask = token;
+    }
+  } catch (error) {
+    if (revision !== loadRevision || terminalReceived) return;
+    loading.value = false;
+    fatalError.value = formatError(error);
+  }
+}
+
+function retryArchivePreview() {
+  if (!archivePassword.value || loading.value) return;
+  void startArchivePreview(loadRevision, archivePassword.value);
+}
+
 function resetPreview() {
   sourceText.value = '';
   jsonSource.value = undefined;
   jsonParsed.value = false;
   jsonError.value = '';
   fatalError.value = '';
+  archivePreview.value = undefined;
+  passwordRequired.value = false;
+  invalidPassword.value = false;
+  archivePassword.value = '';
 }
 
 function cancelLoad() {
   loadRevision += 1;
   loadController?.abort();
   loadController = null;
+  if (activeArchiveTask) {
+    void api.cmdCancelTask(activeArchiveTask).catch(() => undefined);
+    activeArchiveTask = '';
+  }
   loading.value = false;
 }
 
@@ -313,6 +426,11 @@ async function openMarkdownLink(event: MouseEvent) {
 
 .attachment-preview-actions {
   flex: none;
+}
+
+.archive-password-input {
+  width: min(360px, 100%);
+  color: var(--pad-text-color-100);
 }
 
 @media (max-width: 600px) {

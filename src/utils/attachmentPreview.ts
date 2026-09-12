@@ -3,7 +3,7 @@ import {isHtmlAttachment} from './attachmentOpen';
 
 export const MAX_TEXT_PREVIEW_BYTES = 5 * 1024 * 1024;
 
-export type AttachmentPreviewKind = 'pdf' | 'markdown' | 'json' | 'text';
+export type AttachmentPreviewKind = 'pdf' | 'markdown' | 'json' | 'text' | 'archive';
 
 const TEXT_FILE_EXTENSIONS = new Set([
   'txt', 'log', 'csv', 'tsv', 'xml', 'yaml', 'yml', 'toml', 'ini', 'conf', 'cfg',
@@ -26,6 +26,13 @@ export function attachmentPreviewKind(
 
   const mediaType = normalizedMediaType(attachment.mimetype);
   const extension = filenameExtension(attachment.filename);
+  if (
+    mediaType === 'application/zip'
+    || mediaType === 'application/x-zip-compressed'
+    || mediaType === 'application/x-7z-compressed'
+    || extension === 'zip'
+    || extension === '7z'
+  ) return 'archive';
   if (mediaType === 'application/pdf' || extension === 'pdf') return 'pdf';
   if (
     mediaType === 'text/markdown'

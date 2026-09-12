@@ -812,6 +812,25 @@ async cmdUpdateAttachmentAudioInfo(id: string, attachmentId: string, durationMs:
 }
 },
 /**
+ * 解析附件中的 ZIP/7z 目录结构。任务支持通过 `cmd_cancel_task` 取消。
+ * `password` 只用于压缩包自身的加密目录，不会写入日志或持久化。
+ * # Arguments
+ * * `event` - 接收开始、密码请求、完成或错误事件的通道
+ * * `diary_id` - 附件所属日记 ID
+ * * `attachment_id` - 附件 ID
+ * * `password` - 可选的压缩包密码
+ * # Returns
+ * * `Result<String, AppError>` - 后台任务令牌，可通过 `cmd_cancel_task` 取消
+ */
+async cmdPreviewArchiveAttachment(event: TAURI_CHANNEL<ArchivePreviewEvent>, diaryId: string, attachmentId: string, password: string | null) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_preview_archive_attachment", { event, diaryId, attachmentId, password }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 初始化分片上传
  * # Arguments
  * * `id` - 日记 ID
@@ -1072,6 +1091,10 @@ export type AiSessionMeta = { version: number; id: string; title: string; aiTitl
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }
+export type ArchiveFormat = "zip" | "sevenZip"
+export type ArchivePreview = { format: ArchiveFormat; archiveSize: number; fileCount: number; directoryCount: number; uncompressedSize: number; isSolid: boolean; encrypted: boolean; entries: ArchivePreviewEntry[] }
+export type ArchivePreviewEntry = { path: string; isDirectory: boolean; size: number; compressedSize: number; modifiedAt: string | null; encrypted: boolean | null }
+export type ArchivePreviewEvent = { event: "started" } | { event: "completed"; data: { preview: ArchivePreview } } | { event: "passwordRequired"; data: { invalidPassword: boolean } } | { event: "cancelled" } | { event: "error"; data: { message: string } }
 export type AttachmentCacheInfo = { cachedFiles: number; cachedBytes: number; limitBytes: number; maxFileSizeBytes: number }
 export type AttachmentContentInfo = { type: "audio"; durationMs: number | null; waveform: AudioWaveform | null } | { type: "image"; width: number | null; height: number | null; frameCount: number | null; durationMs: number | null } | { type: "video"; width: number | null; height: number | null; durationMs: number | null } | { type: "archive"; format: string | null; entryCount: number | null; uncompressedSize: number | null }
 export type AttachmentMeta = { 
