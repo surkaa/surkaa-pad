@@ -325,8 +325,8 @@ fn preview_seven_zip<R: Read + Seek>(
         let path = limits.validate_path(file.name())?;
         let modified_at = file.has_last_modified_date.then(|| {
             let system_time: std::time::SystemTime = file.last_modified_date.into();
-            chrono::DateTime::<chrono::Utc>::from(system_time)
-                .format("%Y-%m-%d %H:%M:%S UTC")
+            chrono::DateTime::<chrono::Local>::from(system_time)
+                .format("%Y-%m-%d %H:%M:%S")
                 .to_string()
         });
         entries.push(ArchivePreviewEntry {
