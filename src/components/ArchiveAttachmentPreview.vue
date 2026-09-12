@@ -134,8 +134,9 @@ function fileIcon(path: string): string {
 }
 
 .archive-toolbar {
-  display: flex;
+  display: grid;
   flex: none;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
   align-items: center;
   gap: 16px;
   padding: 12px 16px;
@@ -144,16 +145,15 @@ function fileIcon(path: string): string {
 .archive-summary {
   display: flex;
   min-width: 0;
-  flex: 1;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   color: var(--pad-text-color-300);
   font-size: 13px;
-  white-space: nowrap;
 }
 
 .archive-search {
-  width: min(300px, 34vw);
+  width: 100%;
   color: var(--pad-text-color-100);
 }
 
@@ -207,17 +207,9 @@ function fileIcon(path: string): string {
 
 @media (max-width: 700px) {
   .archive-toolbar {
+    grid-template-columns: 1fr;
     align-items: stretch;
-    flex-direction: column;
     gap: 8px;
-  }
-
-  .archive-summary {
-    overflow-x: auto;
-  }
-
-  .archive-search {
-    width: 100%;
   }
 }
 </style>

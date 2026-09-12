@@ -20,6 +20,9 @@
             dense
             outlined
             options-dense
+            :dark="$q.dark.isActive"
+            :options-dark="$q.dark.isActive"
+            popup-content-class="settings-select-popup"
             aria-label="同时上传数量"
             class="concurrency-select"
           />
@@ -114,6 +117,16 @@ const encryptionSettings = [
 <style scoped lang="scss">
 .concurrency-select {
   width: 76px;
+}
+
+:global(.settings-select-popup) {
+  max-height: min(360px, 70vh);
+  color: var(--pad-text-color-200);
+  background: var(--pad-bg-color-200);
+}
+
+:global(.settings-select-popup .q-item) {
+  color: var(--pad-text-color-200);
 }
 
 .encryption-expansion {
