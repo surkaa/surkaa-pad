@@ -56,8 +56,16 @@
         <q-icon v-if="item.encrypted" name="lock" size="16px" color="primary">
           <q-tooltip>该条目已加密</q-tooltip>
         </q-icon>
-        <span v-if="!item.isDirectory" class="archive-size">{{ formatBytes(item.size) }}</span>
-        <q-tooltip v-if="item.modifiedAt">修改时间：{{ item.modifiedAt }}</q-tooltip>
+        <div v-if="item.modifiedAt || !item.isDirectory" class="archive-entry-meta">
+          <span
+            v-if="item.modifiedAt"
+            class="archive-modified-at"
+            :title="`修改时间：${item.modifiedAt}`"
+          >
+            {{ item.modifiedAt }}
+          </span>
+          <span v-if="!item.isDirectory" class="archive-size">{{ formatBytes(item.size) }}</span>
+        </div>
       </div>
     </q-virtual-scroll>
   </div>
@@ -191,10 +199,15 @@ function fileIcon(path: string): string {
   flex: 1;
 }
 
-.archive-size {
+.archive-entry-meta {
+  display: flex;
   flex: none;
+  align-items: center;
+  gap: 14px;
   color: var(--pad-text-color-300);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .archive-empty {
