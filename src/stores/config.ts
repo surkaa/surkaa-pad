@@ -25,6 +25,7 @@ import {
     normalizeEditorToolbarOrder,
     type EditorToolbarAction,
 } from '../utils/editorToolbar';
+import {normalizePasswordUnlockIntervalDays} from '../utils/biometricUnlockPolicy';
 
 const STORAGE_PREFIX = 'config:';
 
@@ -33,6 +34,7 @@ export type ConfigMap = {
     "biometric_enabled": boolean;
     "biometric_dek": string | null;
     "last_password_unlock_at": number | null;
+    "biometric_password_interval_days": number;
     "vault_verifier": number[] | null;
     "encrypted_oss_config": number[] | null;
     "encrypted_ai_config": number[] | null;
@@ -53,6 +55,7 @@ const DEFAULT_CONFIG = {
     "biometric_enabled": false,
     "biometric_dek": null,
     "last_password_unlock_at": null,
+    "biometric_password_interval_days": 7,
     "vault_verifier": null,
     "encrypted_oss_config": null,
     "encrypted_ai_config": null,
@@ -90,6 +93,9 @@ function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): Conf
     }
     if (key === 'editor_toolbar_order') {
         return normalizeEditorToolbarOrder(value) as ConfigMap[K];
+    }
+    if (key === 'biometric_password_interval_days') {
+        return normalizePasswordUnlockIntervalDays(value) as ConfigMap[K];
     }
     return value as ConfigMap[K];
 }

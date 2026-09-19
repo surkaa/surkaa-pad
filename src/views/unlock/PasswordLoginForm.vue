@@ -39,7 +39,7 @@
       class="row items-center justify-center q-gutter-x-xs text-caption password-required-hint"
     >
       <q-icon name="schedule" size="16px"/>
-      <span>生物识别已暂停，请输入一次主密码；之后 7 天内可继续使用</span>
+      <span>生物识别已暂停，请输入一次主密码；之后 {{ biometricPasswordIntervalDays }} 天内可继续使用</span>
     </div>
     <div class="q-mt-lg pt-md row justify-center q-gutter-x-sm">
       <q-btn flat color="primary" size="sm" label="导入密钥配置" :disable="loading" @click="emit('importBootstrap')"/>
@@ -54,6 +54,7 @@ defineProps<{
   loading: boolean;
   biometricEnabled: boolean;
   biometricUnlockAllowed: boolean;
+  biometricPasswordIntervalDays: number;
 }>();
 const emit = defineEmits<{
   (event: 'update:masterPassword', value: string): void;

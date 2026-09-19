@@ -1,6 +1,8 @@
 import {describe, expect, it} from 'vitest';
 import {
   canUseBiometricUnlock,
+  normalizePasswordUnlockIntervalDays,
+  passwordUnlockValidityMs,
   PASSWORD_UNLOCK_VALIDITY_MS,
 } from '../biometricUnlockPolicy.ts';
 
@@ -29,5 +31,18 @@ describe('canUseBiometricUnlock', () => {
     expect(canUseBiometricUnlock(Number.NaN, now)).toBe(false);
     expect(canUseBiometricUnlock(Number.POSITIVE_INFINITY, now)).toBe(false);
     expect(canUseBiometricUnlock(now, Number.NaN)).toBe(false);
+  });
+
+  it('supports a configured fourteen-day validity window', () => {
+    const validityMs = passwordUnlockValidityMs(14);
+
+    expect(canUseBiometricUnlock(now - validityMs + 1, now, validityMs)).toBe(true);
+    expect(canUseBiometricUnlock(now - validityMs, now, validityMs)).toBe(false);
+  });
+
+  it('falls back to seven days for an unsupported interval', () => {
+    expect(normalizePasswordUnlockIntervalDays(14)).toBe(14);
+    expect(normalizePasswordUnlockIntervalDays(15)).toBe(7);
+    expect(passwordUnlockValidityMs(15)).toBe(PASSWORD_UNLOCK_VALIDITY_MS);
   });
 });

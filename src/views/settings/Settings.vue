@@ -67,7 +67,7 @@
             </q-item-section>
             <q-item-section>
               <q-item-label class="label-text text-weight-medium">生物识别解锁</q-item-label>
-              <q-item-label caption class="desc-text">使用指纹或面容快速解锁，每 7 天需验证一次主密码</q-item-label>
+              <q-item-label caption class="desc-text">使用指纹或面容快速解锁，每 {{ biometricPasswordIntervalDays }} 天需验证一次主密码</q-item-label>
             </q-item-section>
             <q-item-section side>
               <q-toggle
@@ -75,6 +75,32 @@
                   @update:model-value="handleBiometricToggle"
                   color="primary"
                   :disable="loading"
+              />
+            </q-item-section>
+          </q-item>
+          <q-item v-if="biometricEnable" class="settings-item">
+            <q-item-section avatar class="settings-icon-section">
+              <q-icon name="schedule"/>
+            </q-item-section>
+            <q-item-section>
+              <q-item-label class="label-text text-weight-medium">主密码验证间隔</q-item-label>
+              <q-item-label caption class="desc-text">超过此时间后，需要重新输入主密码才能使用生物识别</q-item-label>
+            </q-item-section>
+            <q-item-section side>
+              <q-select
+                v-model="biometricPasswordIntervalDays"
+                :options="biometricPasswordIntervalOptions"
+                :display-value="`${biometricPasswordIntervalDays} 天`"
+                outlined
+                dense
+                emit-value
+                map-options
+                options-dense
+                :dark="$q.dark.isActive"
+                :options-dark="$q.dark.isActive"
+                popup-content-class="settings-select-popup"
+                aria-label="主密码验证间隔"
+                class="biometric-interval-select"
               />
             </q-item-section>
           </q-item>
@@ -237,6 +263,10 @@ import LocalStorageSettings from './LocalStorageSettings.vue';
 import AboutSettings from './AboutSettings.vue';
 import CloudSyncHint from './CloudSyncHint.vue';
 import PinnedDiarySettings from './PinnedDiarySettings.vue';
+import {
+  normalizePasswordUnlockIntervalDays,
+  PASSWORD_UNLOCK_INTERVAL_OPTIONS_DAYS,
+} from '../../utils/biometricUnlockPolicy';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -246,10 +276,19 @@ const verifyPassword = ref('');
 const loading = ref(false);
 const theme = configStore.useTauriConfig('app-theme');
 const biometricEnable = configStore.useTauriConfig('biometric_enabled');
+const biometricPasswordIntervalDays = configStore.useTauriConfig('biometric_password_interval_days');
 const defaultImageSize = configStore.useTauriConfig('default_image_size_is_small');
 const currentPlatform = platform();
 const isAndroid = ref(currentPlatform === 'android');
 const isWindows = currentPlatform === 'windows';
+const biometricPasswordIntervalOptions = PASSWORD_UNLOCK_INTERVAL_OPTIONS_DAYS.map(days => ({
+  label: `${days} 天`,
+  value: days,
+}));
+
+biometricPasswordIntervalDays.value = normalizePasswordUnlockIntervalDays(
+  biometricPasswordIntervalDays.value,
+);
 
 const {
   remoteEnabled,
@@ -465,6 +504,10 @@ defineOptions({name: 'Settings'});
       font-size: 12px;
     }
   }
+}
+
+.biometric-interval-select {
+  width: 92px;
 }
 
 .oss-config-modal {

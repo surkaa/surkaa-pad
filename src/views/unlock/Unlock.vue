@@ -39,6 +39,7 @@
             :loading="loading"
             :biometric-enabled="biometricEnabled"
             :biometric-unlock-allowed="biometricUnlockAllowed"
+            :biometric-password-interval-days="biometricPasswordIntervalDays"
             @submit="unlock"
             @biometric-unlock="tryBiometricUnlock"
             @reset="confirmReset"
@@ -88,7 +89,11 @@ import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {platform} from "@tauri-apps/plugin-os";
 import {formatKiB} from "../../utils";
-import {canUseBiometricUnlock} from "../../utils/biometricUnlockPolicy.ts";
+import {
+  canUseBiometricUnlock,
+  normalizePasswordUnlockIntervalDays,
+  passwordUnlockValidityMs,
+} from "../../utils/biometricUnlockPolicy.ts";
 import {masterPasswordConfirmationError} from "../../utils/masterPasswordSetup.ts";
 import FirstTimeUnlockForm from './FirstTimeUnlockForm.vue';
 import PasswordLoginForm from './PasswordLoginForm.vue';
@@ -132,6 +137,7 @@ const vaultMemoryCostCustomized = ref(false);
 const isAndroid = platform() === 'android';
 const biometricEnabled = ref(false);
 const biometricUnlockAllowed = ref(false);
+const biometricPasswordIntervalDays = ref(7);
 const showBootstrapImport = ref(false);
 
 function validateInitialPasswordSetup(): boolean {
@@ -169,8 +175,15 @@ async function refreshBiometricUnlockAllowed() {
     return;
   }
 
+  biometricPasswordIntervalDays.value = normalizePasswordUnlockIntervalDays(
+      await configStore.getNormalConfig('biometric_password_interval_days'),
+  );
   const lastPasswordUnlockAt = await configStore.getNormalConfig('last_password_unlock_at');
-  biometricUnlockAllowed.value = canUseBiometricUnlock(lastPasswordUnlockAt);
+  biometricUnlockAllowed.value = canUseBiometricUnlock(
+      lastPasswordUnlockAt,
+      Date.now(),
+      passwordUnlockValidityMs(biometricPasswordIntervalDays.value),
+  );
 }
 
 async function syncPortableSettings() {
@@ -389,6 +402,7 @@ async function confirmReset() {
         'biometric_enabled',
         'biometric_dek',
         'last_password_unlock_at',
+        'biometric_password_interval_days',
     );
     encryptedConfig.value = [];
     pipeline.value = 'login';
@@ -403,7 +417,10 @@ async function tryBiometricUnlock() {
   try {
     await refreshBiometricUnlockAllowed();
     if (!biometricUnlockAllowed.value) {
-      $q.notify({type: 'warning', message: '本周需要使用主密码解锁一次'});
+      $q.notify({
+        type: 'warning',
+        message: `每 ${biometricPasswordIntervalDays.value} 天需要使用主密码解锁一次`,
+      });
       return;
     }
 
