@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tauri_plugin_log::log;
 
-const DEFAULT_MAX_MODEL_ROUNDS: usize = 8;
+const DEFAULT_MAX_MODEL_ROUNDS: usize = 20;
 const SYSTEM_PROMPT: &str = r#"你是 SurKaa Pad 的只读日记助手。
 回答涉及用户日记的问题时，必须使用提供的工具读取真实数据，不要猜测。
 你只能读取日记，不能新增、修改或删除任何内容。
