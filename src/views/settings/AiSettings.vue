@@ -30,6 +30,41 @@
             问题以及 Agent 按需读取的日记文本会发送到此服务，请确认你信任服务提供方。
           </q-banner>
 
+          <div class="row items-center q-gutter-sm no-wrap">
+            <q-select
+              :model-value="selectedProfileId"
+              :options="profileOptions"
+              label="当前环境"
+              outlined
+              dense
+              emit-value
+              map-options
+              options-dense
+              :dark="$q.dark.isActive"
+              :options-dark="$q.dark.isActive"
+              popup-content-class="settings-select-popup"
+              class="col profile-select"
+              @update:model-value="switchProfile"
+            />
+            <q-btn outline color="primary" icon="add" aria-label="新增 AI 环境" @click="addProfile"/>
+            <q-btn
+              outline
+              color="negative"
+              icon="delete"
+              aria-label="删除当前 AI 环境"
+              :disable="profiles.length <= 1"
+              @click="deleteProfile"
+            />
+          </div>
+
+          <q-input
+            v-model="draft.name"
+            label="环境名称"
+            outlined
+            dense
+            color="primary"
+          />
+
           <q-input
             v-model="draft.baseUrl"
             label="API 地址"
@@ -82,6 +117,9 @@
               emit-value
               map-options
               options-dense
+              :dark="$q.dark.isActive"
+              :options-dark="$q.dark.isActive"
+              popup-content-class="settings-select-popup"
               class="col model-select"
               :disable="modelOptions.length === 0"
             />
@@ -90,7 +128,7 @@
 
         <q-card-actions align="between" class="q-px-md q-pb-md">
           <q-btn
-            v-if="savedConfig"
+            v-if="savedSet"
             flat
             label="清除配置"
             color="negative"
@@ -124,9 +162,12 @@ import {
   classifyAiEndpoint,
   clearAiServiceConfig,
   DEFAULT_AI_BASE_URL,
-  loadAiServiceConfig,
-  saveAiServiceConfig,
-  type AiServiceConfig,
+  loadAiServiceConfigSet,
+  normalizeAiServiceConfigSet,
+  normalizeAiServiceProfile,
+  saveAiServiceConfigSet,
+  type AiServiceConfigSet,
+  type AiServiceProfile,
 } from '../../utils/aiConfig';
 import {formatError} from '../../utils/formatError';
 
@@ -135,23 +176,35 @@ const showDialog = ref(false);
 const showApiKey = ref(false);
 const loadingModels = ref(false);
 const saving = ref(false);
-const savedConfig = ref<AiServiceConfig | null>(null);
+const savedSet = ref<AiServiceConfigSet | null>(null);
+const profiles = ref<AiServiceProfile[]>([]);
+const selectedProfileId = ref<string | null>(null);
 const models = ref<AiModel[]>([]);
-const draft = reactive<AiServiceConfig>({
+const draft = reactive<AiServiceProfile>({
+  id: 'default',
+  name: '默认环境',
   baseUrl: DEFAULT_AI_BASE_URL,
   apiKey: '',
   model: '',
+  models: [],
 });
 
 const configSummary = computed(() => {
-  if (!savedConfig.value) return '未配置';
+  const savedProfile = savedSet.value?.profiles.find(
+    profile => profile.id === savedSet.value?.activeProfileId,
+  );
+  if (!savedProfile) return '未配置';
   try {
-    return `${savedConfig.value.model} · ${new URL(savedConfig.value.baseUrl).host}`;
+    return `${savedProfile.name} · ${savedProfile.model} · ${new URL(savedProfile.baseUrl).host}`;
   } catch {
-    return savedConfig.value.model;
+    return `${savedProfile.name} · ${savedProfile.model}`;
   }
 });
 const endpointSecurity = computed(() => classifyAiEndpoint(draft.baseUrl));
+const profileOptions = computed(() => profiles.value.map(profile => ({
+  label: profile.name,
+  value: profile.id,
+})));
 const modelOptions = computed(() => models.value.map(model => ({
   label: model.id,
   value: model.id,
@@ -162,25 +215,84 @@ onMounted(refreshConfig);
 
 async function refreshConfig() {
   try {
-    savedConfig.value = await loadAiServiceConfig();
+    savedSet.value = await loadAiServiceConfigSet();
   } catch (error) {
-    savedConfig.value = null;
+    savedSet.value = null;
     $q.notify({type: 'negative', message: `读取 AI 配置失败: ${formatError(error)}`});
   }
 }
 
+function emptyProfile(id = 'default', name = '默认环境'): AiServiceProfile {
+  return {
+    id,
+    name,
+    baseUrl: DEFAULT_AI_BASE_URL,
+    apiKey: '',
+    model: '',
+    models: [],
+  };
+}
+
+function copyProfile(profile: AiServiceProfile): AiServiceProfile {
+  return {...profile, models: profile.models.map(model => ({...model}))};
+}
+
+function loadDraft(profile: AiServiceProfile) {
+  Object.assign(draft, copyProfile(profile));
+  models.value = draft.models.map(model => ({...model}));
+}
+
+function commitDraft() {
+  if (!selectedProfileId.value) return;
+  const index = profiles.value.findIndex(profile => profile.id === selectedProfileId.value);
+  if (index === -1) return;
+  try {
+    profiles.value[index] = normalizeAiServiceProfile(draft, draft.id, draft.name);
+  } catch {
+    // 保存时再展示配置错误；切换环境不应破坏当前已保存的草稿。
+  }
+}
+
 function openConfigDialog() {
-  const config = savedConfig.value;
-  draft.baseUrl = config?.baseUrl || DEFAULT_AI_BASE_URL;
-  draft.apiKey = config?.apiKey || '';
-  draft.model = config?.model || '';
-  models.value = config ? [{id: config.model, ownedBy: null}] : [];
+  const set = savedSet.value;
+  profiles.value = set?.profiles.map(copyProfile) ?? [emptyProfile()];
+  selectedProfileId.value = set?.activeProfileId ?? profiles.value[0].id;
+  loadDraft(profiles.value.find(profile => profile.id === selectedProfileId.value) ?? profiles.value[0]);
   showApiKey.value = false;
   showDialog.value = true;
 }
 
+function switchProfile(profileId: string) {
+  commitDraft();
+  selectedProfileId.value = profileId;
+  const profile = profiles.value.find(item => item.id === profileId);
+  if (profile) loadDraft(profile);
+  showApiKey.value = false;
+}
+
+function addProfile() {
+  commitDraft();
+  const id = `profile-${Date.now()}-${profiles.value.length + 1}`;
+  const profile = emptyProfile(id, `环境 ${profiles.value.length + 1}`);
+  profiles.value.push(profile);
+  selectedProfileId.value = id;
+  loadDraft(profile);
+  showApiKey.value = false;
+}
+
+function deleteProfile() {
+  if (profiles.value.length <= 1 || !selectedProfileId.value) return;
+  const index = profiles.value.findIndex(profile => profile.id === selectedProfileId.value);
+  profiles.value = profiles.value.filter(profile => profile.id !== selectedProfileId.value);
+  const next = profiles.value[Math.max(0, index - 1)] ?? profiles.value[0];
+  selectedProfileId.value = next.id;
+  loadDraft(next);
+  showApiKey.value = false;
+}
+
 function resetDiscoveredModels() {
   models.value = [];
+  draft.models = [];
   draft.model = '';
 }
 
@@ -196,6 +308,7 @@ async function loadModels() {
       draft.apiKey.trim() || null,
     );
     models.value = result;
+    draft.models = result.map(model => ({...model}));
     if (result.length === 0) {
       draft.model = '';
       $q.notify({
@@ -220,9 +333,17 @@ async function loadModels() {
 async function saveConfig() {
   saving.value = true;
   try {
-    savedConfig.value = await saveAiServiceConfig({...draft});
+    // 先单独校验当前草稿，避免多个环境中某个输入错误时被静默丢弃。
+    normalizeAiServiceProfile(draft, draft.id, draft.name);
+    commitDraft();
+    const normalizedSet = normalizeAiServiceConfigSet({
+      version: 1,
+      activeProfileId: selectedProfileId.value,
+      profiles: profiles.value,
+    });
+    savedSet.value = await saveAiServiceConfigSet(normalizedSet);
     showDialog.value = false;
-    $q.notify({type: 'positive', message: 'AI 服务配置已保存'});
+    $q.notify({type: 'positive', message: 'AI 服务环境已保存'});
   } catch (error) {
     $q.notify({type: 'negative', message: `保存 AI 配置失败: ${formatError(error)}`});
   } finally {
@@ -234,7 +355,9 @@ async function clearConfig() {
   saving.value = true;
   try {
     await clearAiServiceConfig();
-    savedConfig.value = null;
+    savedSet.value = null;
+    profiles.value = [];
+    selectedProfileId.value = null;
     showDialog.value = false;
     $q.notify({type: 'positive', message: 'AI 服务配置已清除'});
   } catch (error) {
@@ -282,5 +405,18 @@ async function clearConfig() {
 
 .model-select {
   min-width: 0;
+}
+
+.profile-select {
+  min-width: 0;
+}
+
+:global(.settings-select-popup) {
+  color: var(--pad-text-color-200);
+  background: var(--pad-bg-color-200);
+}
+
+:global(.settings-select-popup .q-item) {
+  color: var(--pad-text-color-200);
 }
 </style>

@@ -4,8 +4,11 @@ import {
   clearAiServiceConfig,
   isAiModelAvailable,
   loadAiServiceConfig,
+  loadAiServiceConfigSet,
   normalizeAiServiceConfig,
+  normalizeAiServiceConfigSet,
   saveAiServiceConfig,
+  saveAiServiceConfigSet,
   type AiConfigCipher,
   type AiConfigStorage,
 } from '../aiConfig';
@@ -72,6 +75,61 @@ describe('AI service config', () => {
     expect(current()).toEqual(expect.any(Array));
     expect(JSON.stringify(current())).not.toContain('secret-key');
     await expect(loadAiServiceConfig(storage, cipher)).resolves.toEqual(config);
+  });
+
+  it('wraps a legacy single environment into a profile set', () => {
+    expect(normalizeAiServiceConfigSet({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret-key',
+      model: 'model-1',
+    })).toEqual({
+      version: 1,
+      activeProfileId: 'default',
+      profiles: [{
+        id: 'default',
+        name: '默认环境',
+        baseUrl: 'https://example.com/v1',
+        apiKey: 'secret-key',
+        model: 'model-1',
+        models: [],
+      }],
+    });
+  });
+
+  it('persists multiple environments, active selection and cached model lists', async () => {
+    const {storage, cipher} = dependencies();
+    const configSet = {
+      version: 1 as const,
+      activeProfileId: 'remote',
+      profiles: [
+        {
+          id: 'local',
+          name: '本地 Ollama',
+          baseUrl: 'http://localhost:11434/v1',
+          apiKey: '',
+          model: 'qwen3:8b',
+          models: [{id: 'qwen3:8b', ownedBy: 'ollama'}],
+        },
+        {
+          id: 'remote',
+          name: '远程服务',
+          baseUrl: 'https://example.com/v1',
+          apiKey: 'secret-key',
+          model: 'model-2',
+          models: [{id: 'model-2', ownedBy: 'provider'}],
+        },
+      ],
+    };
+
+    await saveAiServiceConfigSet(configSet, storage, cipher);
+
+    expect(JSON.stringify(await storage.read())).not.toContain('secret-key');
+    await expect(loadAiServiceConfigSet(storage, cipher)).resolves.toEqual(configSet);
+    await expect(loadAiServiceConfig(storage, cipher)).resolves.toEqual({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret-key',
+      model: 'model-2',
+    });
   });
 
   it('clears an existing encrypted config', async () => {
