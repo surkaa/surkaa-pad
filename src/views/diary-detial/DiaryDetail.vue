@@ -36,6 +36,7 @@ import {v4 as uuidv4} from 'uuid';
 import {useAndroidShareStore} from '../../stores/androidShare';
 import {appendAndroidShareToDiaryContent} from '../../utils/androidShare';
 import {formatError} from '../../utils/formatError';
+import {copyTextToClipboard} from '../../utils/clipboard';
 import type {AttachmentMeta} from '../../bindings';
 import AttachmentPreviewDialog from '../../components/AttachmentPreviewDialog.vue';
 
@@ -277,6 +278,16 @@ function showDiarySource() {
   showSourceDialog.value = true;
 }
 
+async function copyDiaryId() {
+  showMenu.value = false;
+  try {
+    await copyTextToClipboard(diaryId.value);
+    $q.notify({type: 'positive', message: '日记 ID 已复制'});
+  } catch (error) {
+    $q.notify({type: 'negative', message: `复制日记 ID 失败：${formatError(error)}`});
+  }
+}
+
 async function showBlockOrder() {
   showMenu.value = false;
   await nextTick();
@@ -449,6 +460,9 @@ onActivated(async () => {
           </q-item>
           <q-item clickable v-ripple @click="showDiarySource">
             <q-item-section>展示源码</q-item-section>
+          </q-item>
+          <q-item clickable v-ripple @click="copyDiaryId">
+            <q-item-section>复制日记 ID</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="showBlockOrder">
             <q-item-section>调整内容顺序</q-item-section>
