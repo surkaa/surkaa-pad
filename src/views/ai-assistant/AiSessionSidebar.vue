@@ -218,13 +218,15 @@ function sessionSummary(session: AiSessionMeta): string {
 .delete-session {
   flex: none;
   color: var(--pad-text-color-400);
-  opacity: 0;
+  // Quasar sets disabled buttons to opacity .6 !important. Preserve the
+  // list item's visibility rules while session switching disables actions.
+  opacity: 0 !important;
 }
 
 .session-item:hover .delete-session,
 .session-item:focus-within .delete-session,
 .session-item.is-active .delete-session {
-  opacity: 1;
+  opacity: 1 !important;
 }
 
 @media (max-width: 800px) {
@@ -244,7 +246,7 @@ function sessionSummary(session: AiSessionMeta): string {
   }
 
   .delete-session {
-    opacity: 1;
+    opacity: 1 !important;
   }
 }
 

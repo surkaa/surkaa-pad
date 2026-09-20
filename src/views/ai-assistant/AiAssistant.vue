@@ -210,13 +210,28 @@ async function refreshSessions() {
 async function loadSession(sessionId: string, refreshModel = true) {
   if (sending.value) return;
   const loadId = ++sessionLoadId;
+  const previousExchanges = exchanges.value;
+  const previousConversationSource = conversationSource.value;
+  const previousShowConversationSource = showConversationSource.value;
+  const previousQuestion = question.value;
   loadingSession.value = true;
+  exchanges.value = [];
+  conversationSource.value = null;
+  showConversationSource.value = false;
+  question.value = '';
   try {
     const detail = await api.cmdGetAiSession(sessionId);
     if (loadId !== sessionLoadId) return;
     if (!detail) {
       sessions.value = sessions.value.filter(session => session.id !== sessionId);
-      if (activeSessionId.value === sessionId) resetToNewSession(false);
+      if (activeSessionId.value === sessionId) {
+        resetToNewSession(false);
+      } else {
+        exchanges.value = previousExchanges;
+        conversationSource.value = previousConversationSource;
+        showConversationSource.value = previousShowConversationSource;
+        question.value = previousQuestion;
+      }
       $q.notify({type: 'warning', message: '该 AI 对话已不存在'});
       return;
     }
@@ -237,9 +252,13 @@ async function loadSession(sessionId: string, refreshModel = true) {
     if (refreshModel && config.value) {
       void checkModelAvailability(configForActiveSession(config.value));
     }
-    await scrollToBottom();
+    await scrollToBottom(loadId);
   } catch (error) {
     if (loadId !== sessionLoadId) return;
+    exchanges.value = previousExchanges;
+    conversationSource.value = previousConversationSource;
+    showConversationSource.value = previousShowConversationSource;
+    question.value = previousQuestion;
     $q.notify({type: 'negative', message: `打开 AI 对话失败：${formatError(error)}`});
   } finally {
     if (loadId === sessionLoadId) loadingSession.value = false;
@@ -470,14 +489,16 @@ function processStepIcon(step: AiProcessStep): string {
 
 function scheduleScrollToBottom() {
   if (unmounting || pendingScrollFrame !== null) return;
+  const scheduledLoadId = sessionLoadId;
   pendingScrollFrame = requestAnimationFrame(() => {
     pendingScrollFrame = null;
-    void scrollToBottom();
+    void scrollToBottom(scheduledLoadId);
   });
 }
 
-async function scrollToBottom() {
+async function scrollToBottom(expectedLoadId?: number) {
   await nextTick();
+  if (expectedLoadId !== undefined && expectedLoadId !== sessionLoadId) return;
   const container = scrollContainer.value;
   if (container) container.scrollTop = container.scrollHeight;
 }
