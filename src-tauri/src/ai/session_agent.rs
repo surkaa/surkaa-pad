@@ -52,6 +52,7 @@ impl<'a> AiSessionAgentRunner<'a> {
     pub(crate) async fn run<F>(
         &self,
         session_id: &str,
+        model: &str,
         prompt: &str,
         cancellation: CancellationToken,
         emit: &F,
@@ -64,19 +65,15 @@ impl<'a> AiSessionAgentRunner<'a> {
         if prompt.is_empty() {
             return Err(AiSessionRepositoryError::InvalidInput("问题不能为空".into()).into());
         }
+        let model = model.trim();
+        if model.is_empty() {
+            return Err(AiSessionRepositoryError::InvalidInput("AI 模型不能为空".into()).into());
+        }
 
-        let Some((meta, mut stored_messages)) = self.repository.load_session(session_id).await?
-        else {
+        let Some((_, mut stored_messages)) = self.repository.load_session(session_id).await? else {
             return Err(AiSessionRepositoryError::SessionNotFound(session_id.to_owned()).into());
         };
-        recover_interrupted_turn(
-            self.repository,
-            &meta.model,
-            session_id,
-            &mut stored_messages,
-        )
-        .await?;
-        let model = meta.model;
+        recover_interrupted_turn(self.repository, model, session_id, &mut stored_messages).await?;
 
         let user_save_started_at = Instant::now();
         let user_message = self
@@ -116,7 +113,7 @@ impl<'a> AiSessionAgentRunner<'a> {
         let terminal = {
             let agent = AiAgent::new(self.provider, self.tools);
             let run = agent.run_stream_with_message_history_source(
-                &model,
+                model,
                 &history.messages,
                 prompt,
                 &recorded_emit,
@@ -145,7 +142,7 @@ impl<'a> AiSessionAgentRunner<'a> {
                             state: AiAssistantRecordState::Completed,
                             content: result.response.answer.clone(),
                             error: None,
-                            model: model.clone(),
+                            model: model.to_owned(),
                             usage: result.response.usage,
                             context_tokens: result.response.context_tokens,
                             process_steps,
@@ -182,7 +179,7 @@ impl<'a> AiSessionAgentRunner<'a> {
                             state: AiAssistantRecordState::Failed,
                             content: partial_answer,
                             error: Some(message.clone()),
-                            model: model.clone(),
+                            model: model.to_owned(),
                             usage: None,
                             context_tokens: None,
                             process_steps,
@@ -216,7 +213,7 @@ impl<'a> AiSessionAgentRunner<'a> {
                             state: AiAssistantRecordState::Cancelled,
                             content: partial_answer,
                             error: None,
-                            model: model.clone(),
+                            model: model.to_owned(),
                             usage: None,
                             context_tokens: None,
                             process_steps,
@@ -774,19 +771,17 @@ mod tests {
     #[tokio::test]
     async fn persists_completed_turns_and_reuses_completed_history() {
         let (_temp, repository) = repository();
-        let session = repository
-            .create_session("第一问".into(), "test-model".into(), 1)
-            .await
-            .unwrap();
+        let session = repository.create_session("第一问".into(), 1).await.unwrap();
         let provider = FakeProvider::new(vec![Ok(completion("第一答")), Ok(completion("第二答"))]);
         let tools = NoopTools;
         let events = Mutex::new(vec![]);
 
-        for prompt in ["第一问", "第二问"] {
+        for (prompt, model) in [("第一问", "model-a"), ("第二问", "model-b")] {
             let _run_guard = repository.try_begin_run(&session.id).unwrap();
             let outcome = AiSessionAgentRunner::new(&repository, &provider, &tools)
                 .run(
                     &session.id,
+                    model,
                     prompt,
                     CancellationToken::new(),
                     &emit_to(&events),
@@ -811,9 +806,19 @@ mod tests {
         assert_eq!(process_steps.len(), 1);
         assert_eq!(process_steps[0].reasoning, "思考");
         assert_eq!(trace.len(), 1);
+        assert!(matches!(
+            &messages[1].payload,
+            AiSessionMessagePayload::Assistant { model, .. } if model == "model-a"
+        ));
+        assert!(matches!(
+            &messages[3].payload,
+            AiSessionMessagePayload::Assistant { model, .. } if model == "model-b"
+        ));
 
         let requests = provider.requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].model(), "model-a");
+        assert_eq!(requests[1].model(), "model-b");
         assert_eq!(requests[0].messages().len(), 3);
         assert_eq!(requests[1].messages().len(), 5);
         assert!(matches!(
@@ -830,7 +835,7 @@ mod tests {
     async fn persists_model_failures_and_cancellation_as_terminal_assistant_messages() {
         let (_temp, repository) = repository();
         let session = repository
-            .create_session("失败测试".into(), "test-model".into(), 1)
+            .create_session("失败测试".into(), 1)
             .await
             .unwrap();
         let provider = FakeProvider::new(vec![Err(AiError::RequestFailed("模拟失败".into()))]);
@@ -840,6 +845,7 @@ mod tests {
         let failed = AiSessionAgentRunner::new(&repository, &provider, &tools)
             .run(
                 &session.id,
+                "test-model",
                 "失败问题",
                 CancellationToken::new(),
                 &emit_to(&events),
@@ -853,7 +859,13 @@ mod tests {
         let cancelled_token = CancellationToken::new();
         cancelled_token.cancel();
         let cancelled = AiSessionAgentRunner::new(&repository, &PendingProvider, &tools)
-            .run(&session.id, "取消问题", cancelled_token, &emit_to(&events))
+            .run(
+                &session.id,
+                "test-model",
+                "取消问题",
+                cancelled_token,
+                &emit_to(&events),
+            )
             .await
             .unwrap();
         assert!(matches!(cancelled, AiSessionAgentOutcome::Cancelled));
@@ -880,7 +892,7 @@ mod tests {
     async fn repairs_a_trailing_user_message_before_starting_the_next_turn() {
         let (_temp, repository) = repository();
         let session = repository
-            .create_session("恢复测试".into(), "test-model".into(), 1)
+            .create_session("恢复测试".into(), 1)
             .await
             .unwrap();
         repository
@@ -900,6 +912,7 @@ mod tests {
         AiSessionAgentRunner::new(&repository, &provider, &NoopTools)
             .run(
                 &session.id,
+                "test-model",
                 "新问题",
                 CancellationToken::new(),
                 &emit_to(&events),
@@ -923,10 +936,7 @@ mod tests {
     #[tokio::test]
     async fn replays_historical_tool_calls_and_results_without_executing_them_again() {
         let (_temp, repository) = repository();
-        let session = repository
-            .create_session("第一问".into(), "test-model".into(), 1)
-            .await
-            .unwrap();
+        let session = repository.create_session("第一问".into(), 1).await.unwrap();
         let now = now_millis();
         repository
             .append_message(
@@ -981,6 +991,7 @@ mod tests {
         AiSessionAgentRunner::new(&repository, &provider, &NoopTools)
             .run(
                 &session.id,
+                "test-model",
                 "第二问",
                 CancellationToken::new(),
                 &emit_to(&events),

@@ -51,7 +51,6 @@ use crate::ai::ai_command::{cmd_list_ai_models, cmd_run_ai_agent, cmd_run_ai_ses
 use crate::ai::session_command::{
     cmd_create_ai_session, cmd_delete_ai_session, cmd_get_ai_session, cmd_get_ai_session_meta,
     cmd_list_ai_session_messages, cmd_list_ai_sessions, cmd_update_ai_session_ai_title,
-    cmd_update_ai_session_model,
 };
 use crate::android_share::{cmd_ack_pending_android_share, cmd_list_pending_android_shares};
 use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
@@ -213,7 +212,6 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_get_ai_session_meta,
             cmd_list_ai_session_messages,
             cmd_update_ai_session_ai_title,
-            cmd_update_ai_session_model,
             cmd_delete_ai_session,
             // 其他
             cmd_cancel_task,

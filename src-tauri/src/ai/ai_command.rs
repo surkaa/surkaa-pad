@@ -81,7 +81,8 @@ pub fn cmd_run_ai_agent(
 /// * `event` - 接收模型状态、增量回答和最终结果的事件通道
 /// * `base_url` - OpenAI 兼容 API 根地址
 /// * `api_key` - 可选的 Bearer API Key
-/// * `session_id` - 已创建的数字 AI 会话 ID；模型与历史消息从会话中读取
+/// * `model` - 本轮问答使用的模型 ID；历史回复各自保留实际使用的模型
+/// * `session_id` - 已创建的数字 AI 会话 ID；历史消息从会话中读取
 /// * `prompt` - 本轮用户问题
 /// # Returns
 /// * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
@@ -92,6 +93,7 @@ pub fn cmd_run_ai_session_agent(
     event: Channel<AiAgentEvent>,
     base_url: String,
     api_key: Option<String>,
+    model: String,
     session_id: String,
     prompt: String,
 ) -> Result<String, AppError> {
@@ -115,7 +117,10 @@ pub fn cmd_run_ai_session_agent(
         let runner = AiSessionAgentRunner::new(&repository, &client, &tools);
         let emit = |message| send_event(&event, message);
 
-        match runner.run(&session_id, &prompt, cancellation, &emit).await {
+        match runner
+            .run(&session_id, &model, &prompt, cancellation, &emit)
+            .await
+        {
             Ok(AiSessionAgentOutcome::Completed { response }) => {
                 let _ = send_event(&event, AiAgentEvent::Completed(response));
             }

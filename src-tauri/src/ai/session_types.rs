@@ -5,7 +5,7 @@ use serde_json::Value;
 use specta::Type;
 use thiserror::Error;
 
-pub const CURRENT_AI_SESSION_VERSION: u32 = 1;
+pub const CURRENT_AI_SESSION_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -14,7 +14,6 @@ pub struct AiSessionMeta {
     pub id: String,
     pub title: String,
     pub ai_title: Option<String>,
-    pub model: String,
     #[specta(type = f64)]
     pub created_at: i64,
     #[specta(type = f64)]
@@ -165,9 +164,6 @@ pub fn deserialize_session_meta(
             "AI 生成的会话标题不能为空字符串".into(),
         ));
     }
-    if meta.model.trim().is_empty() {
-        return Err(AiSessionDataError::InvalidData("会话模型不能为空".into()));
-    }
     if meta.updated_at < meta.created_at {
         return Err(AiSessionDataError::InvalidData(
             "会话更新时间不能早于创建时间".into(),
@@ -207,11 +203,35 @@ pub fn ai_message_block_size(level: u32) -> Option<u64> {
         .flatten()
 }
 
-/// 当前仅有 V1，因此现阶段迁移只验证版本；未来 V2 在这里串接连续 JSON 迁移步骤。
+/// 按连续版本逐步迁移 AI 会话元数据或消息块；返回 `Some` 时由仓储加密写回。
 pub fn migrate_session_document(bytes: &[u8]) -> Result<Option<Vec<u8>>, AiSessionDataError> {
-    let json = inspect_document(bytes)?;
-    validate_current_version(&json)?;
-    Ok(None)
+    let mut json = inspect_document(bytes)?;
+    let original_version = document_version(&json)?;
+    let mut version = original_version;
+    while version < CURRENT_AI_SESSION_VERSION {
+        match version {
+            1 => migrate_v1_to_v2(&mut json)?,
+            _ => {
+                return Err(AiSessionDataError::UnsupportedVersion {
+                    found: original_version,
+                    supported: CURRENT_AI_SESSION_VERSION,
+                });
+            }
+        }
+        version = version.saturating_add(1);
+        json["version"] = Value::Number(version.into());
+    }
+    if version == original_version {
+        Ok(None)
+    } else {
+        Ok(Some(serde_json::to_vec(&json)?))
+    }
+}
+
+fn migrate_v1_to_v2(_json: &mut Value) -> Result<(), AiSessionDataError> {
+    // V2 从会话元数据中移除了当前模型。具体字段由反序列化为 V2 结构后自然丢弃；
+    // 消息块结构没有变化，但仍随会话文档统一升级版本。
+    Ok(())
 }
 
 fn inspect_document(bytes: &[u8]) -> Result<Value, AiSessionDataError> {
@@ -319,39 +339,57 @@ mod tests {
     use serde_json::json;
 
     fn meta_json(version: u32) -> Vec<u8> {
-        serde_json::to_vec(&json!({
+        let mut value = json!({
             "version": version,
             "id": "8215021834823",
             "title": "最近的日记",
             "aiTitle": null,
-            "model": "deepseek-chat",
             "createdAt": 1_700_000_000_000_i64,
             "updatedAt": 1_700_000_000_100_i64,
             "committedMessageCount": 2
-        }))
-        .unwrap()
+        });
+        if version == 1 {
+            value["model"] = json!("deepseek-chat");
+        }
+        serde_json::to_vec(&value).unwrap()
     }
 
     #[test]
     fn deserializes_current_session_meta_and_checks_identity() {
-        let meta = deserialize_session_meta("8215021834823", &meta_json(1)).unwrap();
+        let meta =
+            deserialize_session_meta("8215021834823", &meta_json(CURRENT_AI_SESSION_VERSION))
+                .unwrap();
         assert_eq!(meta.title, "最近的日记");
         assert_eq!(meta.committed_message_count, 2);
+        let serialized = serde_json::to_value(meta).unwrap();
+        assert!(serialized.get("model").is_none());
 
         assert!(matches!(
-            deserialize_session_meta("other", &meta_json(1)),
+            deserialize_session_meta("other", &meta_json(CURRENT_AI_SESSION_VERSION)),
             Err(AiSessionDataError::InvalidData(message)) if message.contains("不一致")
         ));
     }
 
     #[test]
-    fn rejects_legacy_newer_and_malformed_versions() {
+    fn migrates_v1_and_rejects_newer_or_malformed_versions() {
+        let migrated = migrate_session_document(&meta_json(1)).unwrap().unwrap();
+        let migrated_json: Value = serde_json::from_slice(&migrated).unwrap();
+        assert_eq!(migrated_json["version"], json!(CURRENT_AI_SESSION_VERSION));
+        let meta = deserialize_session_meta("8215021834823", &migrated).unwrap();
+        assert_eq!(meta.version, CURRENT_AI_SESSION_VERSION);
+        assert!(serde_json::to_value(meta).unwrap().get("model").is_none());
+        assert!(
+            migrate_session_document(&meta_json(CURRENT_AI_SESSION_VERSION))
+                .unwrap()
+                .is_none()
+        );
+
         assert!(matches!(
-            migrate_session_document(&meta_json(2)),
+            migrate_session_document(&meta_json(CURRENT_AI_SESSION_VERSION + 1)),
             Err(AiSessionDataError::UnsupportedVersion {
-                found: 2,
+                found,
                 supported: CURRENT_AI_SESSION_VERSION,
-            })
+            }) if found == CURRENT_AI_SESSION_VERSION + 1
         ));
         for value in [json!({}), json!({"version": 0}), json!({"version": "1"})] {
             assert!(matches!(
@@ -422,7 +460,7 @@ mod tests {
     #[test]
     fn rejects_invalid_message_identity_and_completed_empty_answer() {
         let value = json!({
-            "version": 1,
+            "version": CURRENT_AI_SESSION_VERSION,
             "sessionId": "8215021834823",
             "level": 0,
             "blockId": 3,
@@ -463,7 +501,7 @@ mod tests {
             },
         };
         let level_zero = AiSessionMessageBlock {
-            version: 1,
+            version: CURRENT_AI_SESSION_VERSION,
             session_id: "8215021834823".into(),
             level: 0,
             block_id: 20,
@@ -476,7 +514,7 @@ mod tests {
         );
 
         let invalid = AiSessionMessageBlock {
-            version: 1,
+            version: CURRENT_AI_SESSION_VERSION,
             session_id: "8215021834823".into(),
             level: 1,
             block_id: 2,

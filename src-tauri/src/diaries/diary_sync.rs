@@ -959,7 +959,7 @@ mod tests {
             Arc::new(LocalAppObjectStore::new(source_los.clone()));
         let source_ai_repository = AiSessionRepository::new(source_ai_store, crypto.clone());
         let session = source_ai_repository
-            .create_session("同步测试会话".into(), "test-model".into(), 10)
+            .create_session("同步测试会话".into(), 10)
             .await
             .unwrap();
         for index in 0..12 {
