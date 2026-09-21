@@ -8,6 +8,8 @@ export interface AiServiceConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** 模型最大上下文 Token；空值表示不自动压缩历史。 */
+  contextWindowTokens: number | null;
 }
 
 export interface AiServiceProfile extends AiServiceConfig {
@@ -45,9 +47,20 @@ export function normalizeAiServiceConfig(value: unknown): AiServiceConfig {
   const baseUrl = typeof input.baseUrl === 'string' ? input.baseUrl.trim() : '';
   const apiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : '';
   const model = typeof input.model === 'string' ? input.model.trim() : '';
+  const contextWindowTokens = input.contextWindowTokens === undefined || input.contextWindowTokens === null
+    ? null
+    : input.contextWindowTokens;
 
   if (!baseUrl) throw new Error('AI 服务地址不能为空');
   if (!model) throw new Error('AI 模型不能为空');
+  if (contextWindowTokens !== null && (
+    typeof contextWindowTokens !== 'number'
+    || !Number.isSafeInteger(contextWindowTokens)
+    || contextWindowTokens < 256
+    || contextWindowTokens > 10_000_000
+  )) {
+    throw new Error('AI 上下文上限必须是 256 到 10,000,000 之间的整数');
+  }
 
   let url: URL;
   try {
@@ -62,7 +75,7 @@ export function normalizeAiServiceConfig(value: unknown): AiServiceConfig {
     throw new Error('AI 服务地址不能包含凭证、查询参数或片段');
   }
 
-  return {baseUrl, apiKey, model};
+  return {baseUrl, apiKey, model, contextWindowTokens};
 }
 
 export function normalizeAiServiceProfile(
@@ -217,6 +230,7 @@ function toAiServiceConfig(profile: AiServiceProfile): AiServiceConfig {
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,
     model: profile.model,
+    contextWindowTokens: profile.contextWindowTokens,
   };
 }
 

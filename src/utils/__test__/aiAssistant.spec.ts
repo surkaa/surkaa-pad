@@ -21,6 +21,7 @@ const config: AiServiceConfig = {
   baseUrl: 'http://localhost:11434/v1',
   apiKey: ' local-secret ',
   model: 'qwen3:8b',
+  contextWindowTokens: 32_768,
 };
 
 describe('startAiQuestion', () => {
@@ -67,9 +68,12 @@ describe('startAiSessionQuestion', () => {
       .resolves.toBe('session-task-token');
     expect(runner).toHaveBeenCalledWith(
       event,
-      config.baseUrl,
-      'local-secret',
-      config.model,
+      {
+        baseUrl: config.baseUrl,
+        apiKey: 'local-secret',
+        model: config.model,
+        contextWindowTokens: config.contextWindowTokens,
+      },
       '8212345678901',
       '继续总结',
     );
@@ -251,6 +255,25 @@ describe('reduceAiAgentEvent', () => {
       status: '正在连接并等待 AI 服务响应…',
       processSteps: [],
     });
+  });
+
+  it('shows context compaction as a separate completed process step', () => {
+    let state = reduceAiAgentEvent(initialAiAgentDisplayState(), {
+      event: 'contextCompactionStarted',
+    });
+    expect(state.status).toBe('正在整理较早对话…');
+    expect(state.processSteps[0]).toMatchObject({
+      id: 'context-compaction',
+      kind: 'model',
+      title: '整理会话上下文',
+      state: 'running',
+    });
+    state = reduceAiAgentEvent(state, {
+      event: 'contextCompactionCompleted',
+      data: {elapsedMs: 320},
+    });
+    expect(state.status).toBe('已整理较早对话，正在准备回答…');
+    expect(state.processSteps[0]).toMatchObject({state: 'completed', durationMs: 320});
   });
 
   it('streams text, clears temporary tool preambles, and completes with final metadata', () => {

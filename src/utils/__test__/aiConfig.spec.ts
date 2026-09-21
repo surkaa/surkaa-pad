@@ -41,7 +41,25 @@ describe('AI service config', () => {
       baseUrl: 'http://localhost:11434/v1',
       apiKey: '',
       model: 'qwen3:8b',
+      contextWindowTokens: null,
     });
+  });
+
+  it('preserves a valid context window and rejects unsafe values', () => {
+    expect(normalizeAiServiceConfig({
+      baseUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'qwen3:8b',
+      contextWindowTokens: 32_768,
+    }).contextWindowTokens).toBe(32_768);
+    for (const contextWindowTokens of [0, 255, 1.5, 10_000_001]) {
+      expect(() => normalizeAiServiceConfig({
+        baseUrl: 'http://localhost:11434/v1',
+        apiKey: '',
+        model: 'qwen3:8b',
+        contextWindowTokens,
+      })).toThrow();
+    }
   });
 
   it('rejects invalid or credential-bearing URLs', () => {
@@ -68,6 +86,7 @@ describe('AI service config', () => {
       baseUrl: 'https://example.com/v1',
       apiKey: 'secret-key',
       model: 'model-1',
+      contextWindowTokens: null,
     };
 
     await saveAiServiceConfig(config, storage, cipher);
@@ -91,6 +110,7 @@ describe('AI service config', () => {
         baseUrl: 'https://example.com/v1',
         apiKey: 'secret-key',
         model: 'model-1',
+        contextWindowTokens: null,
         models: [],
       }],
     });
@@ -108,6 +128,7 @@ describe('AI service config', () => {
           baseUrl: 'http://localhost:11434/v1',
           apiKey: '',
           model: 'qwen3:8b',
+          contextWindowTokens: null,
           models: [{id: 'qwen3:8b', ownedBy: 'ollama'}],
         },
         {
@@ -116,6 +137,7 @@ describe('AI service config', () => {
           baseUrl: 'https://example.com/v1',
           apiKey: 'secret-key',
           model: 'model-2',
+          contextWindowTokens: null,
           models: [{id: 'model-2', ownedBy: 'provider'}],
         },
       ],
@@ -129,6 +151,7 @@ describe('AI service config', () => {
       baseUrl: 'https://example.com/v1',
       apiKey: 'secret-key',
       model: 'model-2',
+      contextWindowTokens: null,
     });
   });
 
@@ -138,6 +161,7 @@ describe('AI service config', () => {
       baseUrl: 'https://example.com/v1',
       apiKey: '',
       model: 'model-1',
+      contextWindowTokens: null,
     }, storage, cipher);
 
     await clearAiServiceConfig(storage);
@@ -155,6 +179,7 @@ describe('AI service config', () => {
       baseUrl: 'https://example.com/v1',
       apiKey: ' secret-key ',
       model: 'model-2',
+      contextWindowTokens: null,
     };
 
     await expect(isAiModelAvailable(config, listModels)).resolves.toBe(true);
@@ -167,6 +192,7 @@ describe('AI service config', () => {
       baseUrl: 'http://localhost:11434/v1',
       apiKey: '  ',
       model: 'missing-model',
+      contextWindowTokens: null,
     };
 
     await expect(isAiModelAvailable(config, listModels)).resolves.toBe(false);
@@ -183,6 +209,7 @@ describe('AI service config', () => {
       baseUrl: 'https://example.com/v1',
       apiKey: '',
       model: 'model-1',
+      contextWindowTokens: null,
     }, listModels)).rejects.toBe(requestError);
   });
 });
