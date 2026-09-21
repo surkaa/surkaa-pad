@@ -1,7 +1,4 @@
-use super::{
-    session_agent::persisted_conversation_source, AiSessionDetail, AiSessionMeta, AiToolExecutor,
-    DiaryReadTools,
-};
+use super::{AiSessionDetail, AiSessionMessagePage, AiSessionMeta};
 use crate::error::AppError;
 use crate::state::AppState;
 use chrono::Utc;
@@ -46,6 +43,44 @@ pub async fn cmd_get_ai_session(
     session_id: &str,
 ) -> Result<Option<AiSessionDetail>, AppError> {
     get_ai_session(state.inner(), session_id).await
+}
+
+/// 读取会话 `meta.enc` 解密后的原始 JSON。
+/// # Arguments
+/// * `session_id` - 数字 AI 会话 ID
+/// # Returns
+/// * `Result<Option<AiSessionMeta>, AppError>` - 会话不存在时返回 `None`
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_get_ai_session_meta(
+    state: State<'_, AppState>,
+    session_id: &str,
+) -> Result<Option<AiSessionMeta>, AppError> {
+    get_ai_session_meta(state.inner(), session_id).await
+}
+
+/// 懒加载一页会话持久化消息。
+/// # Arguments
+/// * `session_id` - 数字 AI 会话 ID
+/// * `offset` - 从零开始的消息索引（最大为 2^32 - 1）
+/// * `limit` - 本页消息数，范围为 1–20
+/// # Returns
+/// * `Result<Option<AiSessionMessagePage>, AppError>` - 会话不存在时返回 `None`
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_list_ai_session_messages(
+    state: State<'_, AppState>,
+    session_id: &str,
+    offset: u32,
+    limit: u32,
+) -> Result<Option<AiSessionMessagePage>, AppError> {
+    list_ai_session_messages(
+        state.inner(),
+        session_id,
+        u64::from(offset),
+        u64::from(limit),
+    )
+    .await
 }
 
 /// 更新 AI 为会话生成的标题。
@@ -120,24 +155,38 @@ async fn get_ai_session(
         .ai_session_repository()
         .load_session(session_id)
         .await?
-        .map(|(meta, messages)| {
-            let tools = DiaryReadTools::new_with_locked_storage(state.clone()).definitions();
-            let conversation_source = persisted_conversation_source(&meta.model, &messages, &tools)
-                .map_err(|error| {
-                    tauri_plugin_log::log::warn!(
-                        "重建 AI 会话源码失败: session_id={}, error={}",
-                        meta.id,
-                        error
-                    );
-                    error
-                })
-                .ok();
-            AiSessionDetail {
-                meta,
-                messages,
-                conversation_source,
-            }
-        }))
+        .map(|(meta, messages)| AiSessionDetail { meta, messages }))
+}
+
+async fn get_ai_session_meta(
+    state: &AppState,
+    session_id: &str,
+) -> Result<Option<AiSessionMeta>, AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
+    Ok(state
+        .ai_session_repository()
+        .load_persisted_meta(session_id)
+        .await?)
+}
+
+async fn list_ai_session_messages(
+    state: &AppState,
+    session_id: &str,
+    offset: u64,
+    limit: u64,
+) -> Result<Option<AiSessionMessagePage>, AppError> {
+    let _storage_guard = state.lock_storage_operation().await;
+    let repository = state.ai_session_repository();
+    if repository.load_persisted_meta(session_id).await?.is_none() {
+        return Ok(None);
+    }
+    let (messages, total_count) = repository
+        .load_message_page(session_id, offset, limit)
+        .await?;
+    Ok(Some(AiSessionMessagePage {
+        messages,
+        total_count,
+    }))
 }
 
 async fn update_ai_session_ai_title(
@@ -175,7 +224,7 @@ async fn delete_ai_session(state: &AppState, session_id: &str) -> Result<(), App
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::{AiAssistantRecordState, AiConversationSourceMessage, AiSessionMessagePayload};
+    use crate::ai::AiSessionMessagePayload;
     use crate::caches::LocalObjectStore;
     use crate::cryptos::Crypto;
     use crate::object::OssClient;
@@ -219,6 +268,18 @@ mod tests {
         assert_eq!(detail.meta.committed_message_count, 1);
         assert_eq!(detail.messages.len(), 1);
 
+        let persisted_meta = get_ai_session_meta(&state, &created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted_meta, detail.meta);
+        let message_page = list_ai_session_messages(&state, &created.id, 0, 5)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(message_page.total_count, 1);
+        assert_eq!(message_page.messages, detail.messages);
+
         let updated = update_ai_session_ai_title(&state, &created.id, Some("AI 生成的标题".into()))
             .await
             .unwrap();
@@ -232,79 +293,65 @@ mod tests {
 
         delete_ai_session(&state, &created.id).await.unwrap();
         assert!(get_ai_session(&state, &created.id).await.unwrap().is_none());
+        assert!(get_ai_session_meta(&state, &created.id)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(list_ai_session_messages(&state, &created.id, 0, 5)
+            .await
+            .unwrap()
+            .is_none());
         // 删除命令保持幂等，便于失败后重试。
         delete_ai_session(&state, &created.id).await.unwrap();
     }
 
     #[tokio::test]
-    async fn loading_a_session_reconstructs_its_complete_model_source() {
+    async fn details_messages_are_paginated_without_reading_the_full_session() {
         let temp = tempfile::tempdir().unwrap();
         let state = test_state(temp.path().to_path_buf());
         let created = create_ai_session(&state, "第一问".into(), "test-model".into())
             .await
             .unwrap();
-        state
-            .ai_session_repository()
-            .append_message(
-                &created.id,
-                created.created_at + 1,
-                AiSessionMessagePayload::User {
-                    content: "第一问".into(),
-                    timezone_offset_minutes: Some(480),
-                },
-            )
-            .await
-            .unwrap();
-        state
-            .ai_session_repository()
-            .append_message(
-                &created.id,
-                created.created_at + 2,
-                AiSessionMessagePayload::Assistant {
-                    state: AiAssistantRecordState::Completed,
-                    content: "第一答".into(),
-                    error: None,
-                    model: "test-model".into(),
-                    usage: None,
-                    context_tokens: None,
-                    process_steps: vec![],
-                    trace: vec![AiConversationSourceMessage::Assistant {
-                        reasoning_content: Some("思考内容".into()),
-                        content: Some("第一答".into()),
-                        tool_calls: vec![],
-                    }],
-                },
-            )
-            .await
-            .unwrap();
+        for index in 0..17 {
+            state
+                .ai_session_repository()
+                .append_message(
+                    &created.id,
+                    created.created_at + index + 1,
+                    AiSessionMessagePayload::User {
+                        content: format!("消息 {index}"),
+                        timezone_offset_minutes: None,
+                    },
+                )
+                .await
+                .unwrap();
+        }
 
-        let detail = get_ai_session(&state, &created.id).await.unwrap().unwrap();
-        let source = detail.conversation_source.unwrap();
+        for (offset, limit, expected_indexes) in [
+            (0, 5, (0..5).collect::<Vec<_>>()),
+            (5, 5, (5..10).collect::<Vec<_>>()),
+            (10, 5, (10..15).collect::<Vec<_>>()),
+            (15, 20, (15..17).collect::<Vec<_>>()),
+        ] {
+            let page = list_ai_session_messages(&state, &created.id, offset, limit)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(page.total_count, 17);
+            assert_eq!(
+                page.messages
+                    .into_iter()
+                    .map(|message| message.index)
+                    .collect::<Vec<_>>(),
+                expected_indexes,
+            );
+        }
 
-        assert_eq!(source.model, "test-model");
-        assert_eq!(source.tools.len(), 4);
-        assert_eq!(source.messages.len(), 4);
-        assert!(matches!(
-            source.messages[0],
-            AiConversationSourceMessage::System { .. }
-        ));
-        assert!(matches!(
-            source.messages[1],
-            AiConversationSourceMessage::System { .. }
-        ));
-        assert_eq!(
-            source.messages[2],
-            AiConversationSourceMessage::User {
-                content: "第一问".into()
-            }
-        );
-        assert!(matches!(
-            &source.messages[3],
-            AiConversationSourceMessage::Assistant {
-                reasoning_content: Some(reasoning),
-                content: Some(content),
-                tool_calls,
-            } if reasoning == "思考内容" && content == "第一答" && tool_calls.is_empty()
-        ));
+        assert!(list_ai_session_messages(&state, &created.id, 0, 0)
+            .await
+            .is_err());
+        assert!(list_ai_session_messages(&state, &created.id, 0, 21)
+            .await
+            .is_err());
     }
 }

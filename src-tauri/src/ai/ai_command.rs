@@ -62,8 +62,7 @@ pub fn cmd_run_ai_agent(
                 let _ = send_event(&event, AiAgentEvent::Cancelled);
             }
             result = run => match result {
-                Ok(AiAgentRunResult { response, source }) => {
-                    let _ = send_event(&event, AiAgentEvent::ConversationSource(source));
+                Ok(AiAgentRunResult { response, .. }) => {
                     let _ = send_event(&event, AiAgentEvent::Completed(response));
                 }
                 Err(error) => {
@@ -117,8 +116,7 @@ pub fn cmd_run_ai_session_agent(
         let emit = |message| send_event(&event, message);
 
         match runner.run(&session_id, &prompt, cancellation, &emit).await {
-            Ok(AiSessionAgentOutcome::Completed { response, source }) => {
-                let _ = send_event(&event, AiAgentEvent::ConversationSource(source));
+            Ok(AiSessionAgentOutcome::Completed { response }) => {
                 let _ = send_event(&event, AiAgentEvent::Completed(response));
             }
             Ok(AiSessionAgentOutcome::Failed(message)) => {

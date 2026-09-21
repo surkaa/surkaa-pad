@@ -25,8 +25,8 @@ pub use config::AiProviderConfig;
 pub use diary_tools::DiaryReadTools;
 pub use error::AiError;
 pub use message_blocks::{
-    append_and_compact_message, load_all_compacted_messages, load_compacted_messages,
-    AiMessageBlockError, AiMessageBlockStore,
+    append_and_compact_message, load_all_compacted_messages, load_compacted_message_page,
+    load_compacted_messages, AiMessageBlockError, AiMessageBlockStore,
 };
 pub use provider::AiModelProvider;
 pub use session_repository::{AiSessionRepository, AiSessionRepositoryError};
@@ -34,7 +34,8 @@ pub use session_types::{
     ai_message_block_size, deserialize_session_message_block, deserialize_session_meta,
     migrate_session_document, AiAssistantRecordState, AiProcessStepKind, AiProcessStepRecord,
     AiProcessStepState, AiSessionDataError, AiSessionDetail, AiSessionMessage,
-    AiSessionMessageBlock, AiSessionMessagePayload, AiSessionMeta, CURRENT_AI_SESSION_VERSION,
+    AiSessionMessageBlock, AiSessionMessagePage, AiSessionMessagePayload, AiSessionMeta,
+    CURRENT_AI_SESSION_VERSION,
 };
 pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor};
 pub use types::{

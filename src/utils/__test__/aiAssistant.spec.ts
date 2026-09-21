@@ -9,6 +9,7 @@ import {
   formatProcessDuration,
   initialAiAgentDisplayState,
   nextAiProcessExpanded,
+  nextAiSessionMessageLoadSize,
   reduceAiAgentEvent,
   resolveAiSessionModel,
   shouldCollapseAiProcess,
@@ -235,6 +236,16 @@ describe('resolveAiSessionModel', () => {
   });
 });
 
+describe('nextAiSessionMessageLoadSize', () => {
+  it('loads five messages for the first three requests, then twenty at a time', () => {
+    expect(nextAiSessionMessageLoadSize(0)).toBe(5);
+    expect(nextAiSessionMessageLoadSize(1)).toBe(5);
+    expect(nextAiSessionMessageLoadSize(2)).toBe(5);
+    expect(nextAiSessionMessageLoadSize(3)).toBe(20);
+    expect(nextAiSessionMessageLoadSize(8)).toBe(20);
+  });
+});
+
 describe('buildAiConversationHistory', () => {
   it('keeps only completed non-empty question and answer pairs in order', () => {
     expect(buildAiConversationHistory([
@@ -414,19 +425,6 @@ describe('reduceAiAgentEvent', () => {
     expect(failed.error).toBe('模型服务断开连接');
   });
 
-  it('leaves display state unchanged when the full source arrives', () => {
-    const state = initialAiAgentDisplayState();
-    const source = {
-      model: 'qwen3:8b',
-      tools: [],
-      messages: [{role: 'system' as const, content: '系统提示'}],
-    };
-
-    expect(reduceAiAgentEvent(state, {
-      event: 'conversationSource',
-      data: source,
-    })).toBe(state);
-  });
 });
 
 describe('process formatting', () => {

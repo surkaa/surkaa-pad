@@ -2,8 +2,7 @@ use super::{
     AiAgent, AiAgentEvent, AiAgentResponse, AiAssistantMessage, AiAssistantRecordState,
     AiConversationSource, AiConversationSourceMessage, AiError, AiMessage, AiModelProvider,
     AiProcessStepKind, AiProcessStepRecord, AiProcessStepState, AiSessionMessage,
-    AiSessionMessagePayload, AiSessionRepository, AiSessionRepositoryError, AiToolDefinition,
-    AiToolExecutor,
+    AiSessionMessagePayload, AiSessionRepository, AiSessionRepositoryError, AiToolExecutor,
 };
 use chrono::{FixedOffset, Local, TimeZone, Utc};
 use std::collections::HashSet;
@@ -24,10 +23,7 @@ pub(crate) enum AiSessionAgentError {
 }
 
 pub(crate) enum AiSessionAgentOutcome {
-    Completed {
-        response: AiAgentResponse,
-        source: AiConversationSource,
-    },
+    Completed { response: AiAgentResponse },
     Failed(String),
     Cancelled,
 }
@@ -171,7 +167,6 @@ impl<'a> AiSessionAgentRunner<'a> {
                 );
                 Ok(AiSessionAgentOutcome::Completed {
                     response: result.response,
-                    source: result.source,
                 })
             }
             Terminal::Failed(error) => {
@@ -383,20 +378,6 @@ fn conversation_history(
         messages: history,
         completed_turns,
     })
-}
-
-pub(crate) fn persisted_conversation_source(
-    model: &str,
-    messages: &[AiSessionMessage],
-    tools: &[AiToolDefinition],
-) -> Result<AiConversationSource, AiSessionAgentError> {
-    let complete_len = messages.len() - messages.len() % 2;
-    let history = conversation_history(&messages[..complete_len], false)?;
-    Ok(super::agent::conversation_source_for_history(
-        model,
-        &history.messages,
-        tools,
-    ))
 }
 
 fn append_time_context_if_needed(
@@ -631,10 +612,7 @@ impl AiProcessRecorder {
                 }
             }
             AiAgentEvent::AnswerDelta(delta) => self.answer.push_str(delta),
-            AiAgentEvent::ConversationSource(_)
-            | AiAgentEvent::Completed(_)
-            | AiAgentEvent::Failed(_)
-            | AiAgentEvent::Cancelled => {}
+            AiAgentEvent::Completed(_) | AiAgentEvent::Failed(_) | AiAgentEvent::Cancelled => {}
         }
     }
 

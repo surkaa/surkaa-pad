@@ -998,6 +998,38 @@ async cmdGetAiSession(sessionId: string) : Promise<Result<AiSessionDetail | null
 }
 },
 /**
+ * 读取会话 `meta.enc` 解密后的原始 JSON。
+ * # Arguments
+ * * `session_id` - 数字 AI 会话 ID
+ * # Returns
+ * * `Result<Option<AiSessionMeta>, AppError>` - 会话不存在时返回 `None`
+ */
+async cmdGetAiSessionMeta(sessionId: string) : Promise<Result<AiSessionMeta | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_ai_session_meta", { sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 懒加载一页会话持久化消息。
+ * # Arguments
+ * * `session_id` - 数字 AI 会话 ID
+ * * `offset` - 从零开始的消息索引（最大为 2^32 - 1）
+ * * `limit` - 本页消息数，范围为 1–20
+ * # Returns
+ * * `Result<Option<AiSessionMessagePage>, AppError>` - 会话不存在时返回 `None`
+ */
+async cmdListAiSessionMessages(sessionId: string, offset: number, limit: number) : Promise<Result<AiSessionMessagePage | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_list_ai_session_messages", { sessionId, offset, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 更新 AI 为会话生成的标题。
  * # Arguments
  * * `session_id` - 数字 AI 会话 ID
@@ -1071,21 +1103,20 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 
 /** user-defined types **/
 
-export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "conversationSource"; data: AiConversationSource } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
+export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
 export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null; contextTokens: number | null }
 export type AiAssistantRecordState = "completed" | "failed" | "cancelled"
 export type AiAssistantShortcutSettings = { focusInput: string }
-export type AiConversationSource = { model: string; messages: AiConversationSourceMessage[]; tools: AiConversationSourceToolDefinition[] }
 export type AiConversationSourceMessage = { role: "system"; content: string } | { role: "user"; content: string } | { role: "assistant"; reasoning_content: string | null; content: string | null; tool_calls: AiConversationSourceToolCall[] } | { role: "tool"; tool_call_id: string; content: string }
 export type AiConversationSourceToolCall = { id: string; name: string; arguments: string }
-export type AiConversationSourceToolDefinition = { name: string; description: string; parameters: string }
 export type AiConversationTurn = { user: string; assistant: string }
 export type AiModel = { id: string; ownedBy: string | null }
 export type AiProcessStepKind = "model" | "tool"
 export type AiProcessStepRecord = { id: string; kind: AiProcessStepKind; title: string; detail: string | null; reasoning: string; state: AiProcessStepState; durationMs: number | null }
 export type AiProcessStepState = "completed" | "failed" | "cancelled"
-export type AiSessionDetail = { meta: AiSessionMeta; messages: AiSessionMessage[]; conversationSource: AiConversationSource | null }
+export type AiSessionDetail = { meta: AiSessionMeta; messages: AiSessionMessage[] }
 export type AiSessionMessage = { index: number; createdAt: number; payload: AiSessionMessagePayload }
+export type AiSessionMessagePage = { messages: AiSessionMessage[]; totalCount: number }
 export type AiSessionMessagePayload = { role: "user"; content: string; timezoneOffsetMinutes?: number | null } | { role: "assistant"; state: AiAssistantRecordState; content: string; error: string | null; model: string; usage: AiUsage | null; contextTokens?: number | null; processSteps: AiProcessStepRecord[]; trace: AiConversationSourceMessage[] }
 export type AiSessionMeta = { version: number; id: string; title: string; aiTitle: string | null; model: string; createdAt: number; updatedAt: number; committedMessageCount: number }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }

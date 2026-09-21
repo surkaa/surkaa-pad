@@ -4,7 +4,7 @@ import {computed, nextTick, onActivated, onBeforeUnmount, ref} from 'vue';
 import {useRouter} from 'vue-router';
 import {openUrl} from '@tauri-apps/plugin-opener';
 import {useQuasar} from 'quasar';
-import type {AiAgentEvent, AiConversationSource, AiSessionMeta} from '../../bindings';
+import type {AiAgentEvent, AiSessionMessage, AiSessionMeta} from '../../bindings';
 import {
   buildPersistedAiExchanges,
   formatAiResponseMeta,
@@ -13,6 +13,7 @@ import {
   initialAiAgentDisplayState,
   isTerminalAiExchangeState,
   nextAiProcessExpanded,
+  nextAiSessionMessageLoadSize,
   reduceAiAgentEvent,
   resolveAiSessionModel,
   startAiSessionQuestion,
@@ -26,8 +27,8 @@ import api from '../../utils/api';
 import {formatError} from '../../utils/formatError';
 import {useConfigStore} from '../../stores/config';
 import {useAiAssistantShortcuts} from '../../composables/useAiAssistantShortcuts';
-import JsonSourceDialog from '../../components/JsonSourceDialog.vue';
 import AiSessionSidebar from './AiSessionSidebar.vue';
+import AiSessionPersistenceDialog from './AiSessionPersistenceDialog.vue';
 
 interface AiExchange extends AiAgentDisplayState {
   id: number;
@@ -66,14 +67,24 @@ const loadingSession = ref(false);
 const sessionsError = ref<string | null>(null);
 const deletingSessionId = ref<string | null>(null);
 const sessionDrawerOpen = ref(false);
-const conversationSource = ref<AiConversationSource | null>(null);
-const showConversationSource = ref(false);
+const showSessionPersistence = ref(false);
+const persistedSessionMeta = ref<AiSessionMeta | null>(null);
+const persistedSessionMessages = ref<AiSessionMessage[]>([]);
+const persistedMessageTotalCount = ref(0);
+const loadingPersistedSessionMeta = ref(false);
+const loadingPersistedSessionMessages = ref(false);
+const persistedSessionMessageError = ref<string | null>(null);
+const persistedSessionId = ref<string | null>(null);
+const persistedMessageLoadCount = ref(0);
 const activeSession = computed(() => (
   sessions.value.find(session => session.id === activeSessionId.value) ?? null
 ));
 const activeModel = computed(() => activeSession.value?.model ?? config.value?.model ?? '');
 const isCanceling = computed(() => exchanges.value.some(exchange => exchange.state === 'canceling'));
 const modelReady = computed(() => !!config.value && modelCheckState.value === 'available');
+const nextPersistedMessageLoadSize = computed(() => (
+  nextAiSessionMessageLoadSize(persistedMessageLoadCount.value)
+));
 const modelLabel = computed(() => {
   const model = activeModel.value;
   if (!model) return '';
@@ -89,6 +100,7 @@ let pendingScrollFrame: number | null = null;
 let unmounting = false;
 let configRefreshId = 0;
 let sessionLoadId = 0;
+let persistedSessionRequestId = 0;
 
 defineOptions({name: 'AiAssistant'});
 
@@ -107,6 +119,7 @@ onBeforeUnmount(() => {
   unmounting = true;
   configRefreshId += 1;
   sessionLoadId += 1;
+  persistedSessionRequestId += 1;
   if (pendingScrollFrame !== null) cancelAnimationFrame(pendingScrollFrame);
   void cancelActiveQuestion(false);
 });
@@ -162,8 +175,8 @@ async function checkModelAvailability(
       const updated = await api.cmdUpdateAiSessionModel(sessionId, resolution.model);
       if (refreshId !== configRefreshId || activeSessionId.value !== sessionId) return;
       upsertSession(updated);
-      if (conversationSource.value) {
-        conversationSource.value = {...conversationSource.value, model: resolution.model};
+      if (persistedSessionMeta.value?.id === sessionId) {
+        persistedSessionMeta.value = updated;
       }
       modelCheckState.value = 'available';
       $q.notify({
@@ -211,13 +224,10 @@ async function loadSession(sessionId: string, refreshModel = true) {
   if (sending.value) return;
   const loadId = ++sessionLoadId;
   const previousExchanges = exchanges.value;
-  const previousConversationSource = conversationSource.value;
-  const previousShowConversationSource = showConversationSource.value;
   const previousQuestion = question.value;
+  closeSessionPersistence();
   loadingSession.value = true;
   exchanges.value = [];
-  conversationSource.value = null;
-  showConversationSource.value = false;
   question.value = '';
   try {
     const detail = await api.cmdGetAiSession(sessionId);
@@ -228,8 +238,6 @@ async function loadSession(sessionId: string, refreshModel = true) {
         resetToNewSession(false);
       } else {
         exchanges.value = previousExchanges;
-        conversationSource.value = previousConversationSource;
-        showConversationSource.value = previousShowConversationSource;
         question.value = previousQuestion;
       }
       $q.notify({type: 'warning', message: '该 AI 对话已不存在'});
@@ -245,8 +253,6 @@ async function loadSession(sessionId: string, refreshModel = true) {
       cancelRequested: false,
       processExpanded: restored.state !== 'completed',
     }));
-    conversationSource.value = detail.conversationSource;
-    showConversationSource.value = false;
     question.value = '';
     sessionDrawerOpen.value = false;
     if (refreshModel && config.value) {
@@ -256,8 +262,6 @@ async function loadSession(sessionId: string, refreshModel = true) {
   } catch (error) {
     if (loadId !== sessionLoadId) return;
     exchanges.value = previousExchanges;
-    conversationSource.value = previousConversationSource;
-    showConversationSource.value = previousShowConversationSource;
     question.value = previousQuestion;
     $q.notify({type: 'negative', message: `打开 AI 对话失败：${formatError(error)}`});
   } finally {
@@ -278,15 +282,86 @@ function startNewSession() {
 
 function resetToNewSession(refreshModel: boolean) {
   sessionLoadId += 1;
+  closeSessionPersistence();
   activeSessionId.value = null;
   exchanges.value = [];
-  conversationSource.value = null;
-  showConversationSource.value = false;
   question.value = '';
   loadingSession.value = false;
   sessionDrawerOpen.value = false;
   if (refreshModel && config.value) void checkModelAvailability(config.value);
   void nextTick(() => questionInput.value?.focus());
+}
+
+function closeSessionPersistence() {
+  persistedSessionRequestId += 1;
+  showSessionPersistence.value = false;
+  persistedSessionMeta.value = null;
+  persistedSessionMessages.value = [];
+  persistedMessageTotalCount.value = 0;
+  loadingPersistedSessionMeta.value = false;
+  loadingPersistedSessionMessages.value = false;
+  persistedSessionMessageError.value = null;
+  persistedSessionId.value = null;
+  persistedMessageLoadCount.value = 0;
+}
+
+async function openSessionPersistence() {
+  const sessionId = activeSessionId.value;
+  if (!sessionId || sending.value || loadingSession.value) return;
+
+  closeSessionPersistence();
+  const requestId = ++persistedSessionRequestId;
+  persistedSessionId.value = sessionId;
+  showSessionPersistence.value = true;
+  loadingPersistedSessionMeta.value = true;
+  try {
+    const meta = await api.cmdGetAiSessionMeta(sessionId);
+    if (requestId !== persistedSessionRequestId) return;
+    if (!meta) {
+      closeSessionPersistence();
+      $q.notify({type: 'warning', message: '该 AI 对话已不存在'});
+      return;
+    }
+    persistedSessionMeta.value = meta;
+    persistedMessageTotalCount.value = meta.committedMessageCount;
+  } catch (error) {
+    if (requestId !== persistedSessionRequestId) return;
+    closeSessionPersistence();
+    $q.notify({type: 'negative', message: `读取会话持久化详情失败：${formatError(error)}`});
+  } finally {
+    if (requestId === persistedSessionRequestId) loadingPersistedSessionMeta.value = false;
+  }
+}
+
+async function loadMorePersistedSessionMessages() {
+  const sessionId = persistedSessionId.value;
+  if (!sessionId || !persistedSessionMeta.value || loadingPersistedSessionMessages.value) return;
+
+  const requestId = persistedSessionRequestId;
+  const offset = persistedSessionMessages.value.length;
+  const limit = nextPersistedMessageLoadSize.value;
+  loadingPersistedSessionMessages.value = true;
+  persistedSessionMessageError.value = null;
+  try {
+    const page = await api.cmdListAiSessionMessages(sessionId, offset, limit);
+    if (requestId !== persistedSessionRequestId) return;
+    if (!page) {
+      closeSessionPersistence();
+      $q.notify({type: 'warning', message: '该 AI 对话已不存在'});
+      return;
+    }
+    persistedSessionMessages.value = [...persistedSessionMessages.value, ...page.messages];
+    persistedMessageTotalCount.value = page.totalCount;
+    persistedMessageLoadCount.value += 1;
+    if (page.messages.length === 0 && offset < page.totalCount) {
+      persistedSessionMessageError.value = '消息列表未返回预期数据，请关闭后重试';
+    }
+  } catch (error) {
+    if (requestId !== persistedSessionRequestId) return;
+    persistedSessionMessageError.value = `读取消息失败：${formatError(error)}`;
+  } finally {
+    if (requestId === persistedSessionRequestId) loadingPersistedSessionMessages.value = false;
+  }
 }
 
 function requestDeleteSession(session: AiSessionMeta) {
@@ -398,10 +473,6 @@ async function submitQuestion() {
 function handleAgentEvent(id: number, message: AiAgentEvent) {
   const exchange = findExchange(id);
   if (!exchange) return;
-  if (message.event === 'conversationSource') {
-    conversationSource.value = message.data;
-    return;
-  }
   if (isTerminalAiExchangeState(exchange.state)) return;
 
   const processExpanded = nextAiProcessExpanded(exchange.processExpanded, exchange, message);
@@ -706,15 +777,15 @@ async function scrollToBottom(expectedLoadId?: number) {
         />
         <span>{{ modelLabel }}</span>
         <q-btn
-          v-if="conversationSource"
+          v-if="activeSessionId"
           flat
           dense
           no-caps
           icon="data_object"
-          label="源码"
-          :disable="sending"
-          aria-label="查看当前对话完整源码"
-          @click="showConversationSource = true"
+          label="详情"
+          :disable="sending || loadingSession"
+          aria-label="查看当前会话持久化详情"
+          @click="openSessionPersistence"
         />
         <q-btn
           v-if="modelCheckState === 'failed'"
@@ -765,13 +836,17 @@ async function scrollToBottom(expectedLoadId?: number) {
       <div class="privacy-hint">当前会话历史、问题及 Agent 读取的日记文字会发送到你配置的 AI 服务</div>
     </div>
     </main>
-    <JsonSourceDialog
-      v-model="showConversationSource"
-      title="当前对话完整源码"
-      :source="conversationSource"
-      copy-label="复制完整源码"
-      copy-success-message="当前对话完整源码已复制"
-      copy-error-prefix="复制对话源码失败"
+    <AiSessionPersistenceDialog
+      :model-value="showSessionPersistence"
+      :meta="persistedSessionMeta"
+      :messages="persistedSessionMessages"
+      :total-message-count="persistedMessageTotalCount"
+      :loading-meta="loadingPersistedSessionMeta"
+      :loading-messages="loadingPersistedSessionMessages"
+      :message-error="persistedSessionMessageError"
+      :next-message-batch-size="nextPersistedMessageLoadSize"
+      @update:model-value="visible => visible || closeSessionPersistence()"
+      @load-more="loadMorePersistedSessionMessages"
     />
   </div>
 </template>

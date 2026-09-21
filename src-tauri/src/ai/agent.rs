@@ -81,7 +81,6 @@ pub enum AiAgentEvent {
         delta: String,
     },
     AnswerDelta(String),
-    ConversationSource(AiConversationSource),
     Completed(AiAgentResponse),
     Failed(String),
     Cancelled,
@@ -281,14 +280,6 @@ impl<'a> AiAgent<'a> {
 
         unreachable!("positive max_model_rounds always returns from the loop")
     }
-}
-
-pub(crate) fn conversation_source_for_history(
-    model: &str,
-    history: &[AiMessage],
-    tools: &[super::AiToolDefinition],
-) -> AiConversationSource {
-    AiConversationSource::from_messages(model, &conversation_messages(history), tools)
 }
 
 fn conversation_messages(history: &[AiMessage]) -> Vec<AiMessage> {

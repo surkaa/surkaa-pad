@@ -1,4 +1,4 @@
-use super::{AiConversationSource, AiConversationSourceMessage, AiUsage};
+use super::{AiConversationSourceMessage, AiUsage};
 use crate::object_locations::MAX_AI_MESSAGE_BLOCK_LEVEL;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -39,7 +39,14 @@ pub struct AiSessionMessage {
 pub struct AiSessionDetail {
     pub meta: AiSessionMeta,
     pub messages: Vec<AiSessionMessage>,
-    pub conversation_source: Option<AiConversationSource>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSessionMessagePage {
+    pub messages: Vec<AiSessionMessage>,
+    #[specta(type = f64)]
+    pub total_count: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]

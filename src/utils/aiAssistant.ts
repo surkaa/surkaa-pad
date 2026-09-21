@@ -46,6 +46,10 @@ export type AiSessionModelResolution =
   | {kind: 'switch'; model: string}
   | {kind: 'unavailable'};
 
+export function nextAiSessionMessageLoadSize(successfulLoadCount: number): number {
+  return successfulLoadCount < 3 ? 5 : 20;
+}
+
 export type AiAgentRunner = typeof api.cmdRunAiAgent;
 export type AiSessionAgentRunner = typeof api.cmdRunAiSessionAgent;
 
@@ -284,8 +288,6 @@ export function reduceAiAgentEvent(
         answer: state.answer + message.data,
         status: '正在生成回答…',
       };
-    case 'conversationSource':
-      return state;
     case 'completed':
       return {
         state: 'completed',

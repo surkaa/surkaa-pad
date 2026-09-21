@@ -96,6 +96,108 @@ pub async fn load_compacted_messages(
     Ok(messages)
 }
 
+/// 按全局索引读取一段已提交消息，而不解密与当前页无关的消息块。
+///
+/// 正常写入后的块布局是按十进制进位形成的连续前缀：例如 123 条消息由一个
+/// 2 级块（0–99）、两个 1 级块（100–119）和三个 0 级块（120–122）组成。
+/// 因此可根据已提交数量直接定位所需块；首次协调仍由调用方负责处理异常遗留块。
+pub async fn load_compacted_message_page(
+    store: &dyn AiMessageBlockStore,
+    session_id: &str,
+    expected_count: u64,
+    offset: u64,
+    limit: u64,
+) -> Result<Vec<AiSessionMessage>, AiMessageBlockError> {
+    if limit == 0 || offset >= expected_count {
+        return Ok(vec![]);
+    }
+    let end = offset.saturating_add(limit).min(expected_count);
+    let capacity = usize::try_from(end.saturating_sub(offset))
+        .map_err(|_| AiMessageBlockError::IndexOverflow)?;
+    let mut messages = Vec::with_capacity(capacity);
+    let mut remaining = expected_count;
+    let mut start = 0_u64;
+
+    for level in (0..=MAX_AI_MESSAGE_BLOCK_LEVEL).rev() {
+        let block_size =
+            super::ai_message_block_size(level).ok_or(AiMessageBlockError::IndexOverflow)?;
+        let block_count = remaining / block_size;
+        if block_count == 0 {
+            continue;
+        }
+        let span = block_count
+            .checked_mul(block_size)
+            .ok_or(AiMessageBlockError::IndexOverflow)?;
+        let block_group_end = start
+            .checked_add(span)
+            .ok_or(AiMessageBlockError::IndexOverflow)?;
+
+        if offset < block_group_end && end > start {
+            let range_start = offset.max(start);
+            let range_end = end.min(block_group_end);
+            let first_block_offset = range_start
+                .checked_sub(start)
+                .ok_or(AiMessageBlockError::IndexOverflow)?
+                / block_size;
+            let last_block_offset = range_end
+                .checked_sub(1)
+                .ok_or(AiMessageBlockError::IndexOverflow)?
+                .checked_sub(start)
+                .ok_or(AiMessageBlockError::IndexOverflow)?
+                / block_size;
+            let first_block_id = start
+                .checked_div(block_size)
+                .and_then(|id| id.checked_add(first_block_offset))
+                .ok_or(AiMessageBlockError::IndexOverflow)?;
+
+            for block_offset in first_block_offset..=last_block_offset {
+                let block_id = first_block_id
+                    .checked_add(block_offset - first_block_offset)
+                    .ok_or(AiMessageBlockError::IndexOverflow)?;
+                let block = store
+                    .load_block(session_id, level, block_id)
+                    .await?
+                    .ok_or(AiMessageBlockError::MissingSourceBlock { level, block_id })?;
+                ensure_block_location(&block, session_id, level, block_id)?;
+                validate_block(&block)?;
+
+                let block_start = block_id
+                    .checked_mul(block_size)
+                    .ok_or(AiMessageBlockError::IndexOverflow)?;
+                let block_end = block_start
+                    .checked_add(block_size)
+                    .ok_or(AiMessageBlockError::IndexOverflow)?;
+                let from = usize::try_from(range_start.max(block_start) - block_start)
+                    .map_err(|_| AiMessageBlockError::IndexOverflow)?;
+                let to = usize::try_from(range_end.min(block_end) - block_start)
+                    .map_err(|_| AiMessageBlockError::IndexOverflow)?;
+                messages.extend_from_slice(
+                    block
+                        .messages
+                        .get(from..to)
+                        .ok_or(AiMessageBlockError::IndexOverflow)?,
+                );
+            }
+        }
+
+        start = block_group_end;
+        remaining = remaining
+            .checked_sub(span)
+            .ok_or(AiMessageBlockError::IndexOverflow)?;
+    }
+
+    let expected_len = end
+        .checked_sub(offset)
+        .ok_or(AiMessageBlockError::IndexOverflow)?;
+    if u64::try_from(messages.len()).ok() != Some(expected_len) {
+        return Err(AiMessageBlockError::NonContiguousMessages {
+            expected: expected_len,
+            actual: u64::try_from(messages.len()).unwrap_or(u64::MAX),
+        });
+    }
+    Ok(messages)
+}
+
 /// 不依赖 meta 中的提交水位，从当前所有消息块恢复完整且连续的物理消息序列。
 ///
 /// 该入口用于会话首次打开或上次提交失败后的协调。正常追加仍使用 meta 中的水位，
@@ -469,6 +571,31 @@ mod tests {
                     .unwrap()
                     .len(),
                 count as usize
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn loads_only_the_requested_message_range_from_compacted_blocks() {
+        let store = MemoryBlockStore::default();
+        append_range(&store, 123).await;
+
+        for (offset, limit, expected) in [
+            (0, 5, (0..5).collect::<Vec<_>>()),
+            (95, 10, (95..105).collect::<Vec<_>>()),
+            (115, 20, (115..123).collect::<Vec<_>>()),
+            (123, 5, vec![]),
+        ] {
+            let messages = load_compacted_message_page(&store, "1", 123, offset, limit)
+                .await
+                .unwrap();
+            assert_eq!(
+                messages
+                    .into_iter()
+                    .map(|message| message.index)
+                    .collect::<Vec<_>>(),
+                expected,
+                "offset={offset}, limit={limit}",
             );
         }
     }

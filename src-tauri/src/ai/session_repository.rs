@@ -1,8 +1,8 @@
 use super::{
     append_and_compact_message, deserialize_session_message_block, deserialize_session_meta,
-    load_all_compacted_messages, load_compacted_messages, AiMessageBlockError, AiMessageBlockStore,
-    AiSessionDataError, AiSessionMessage, AiSessionMessageBlock, AiSessionMessagePayload,
-    AiSessionMeta, CURRENT_AI_SESSION_VERSION,
+    load_all_compacted_messages, load_compacted_message_page, load_compacted_messages,
+    AiMessageBlockError, AiMessageBlockStore, AiSessionDataError, AiSessionMessage,
+    AiSessionMessageBlock, AiSessionMessagePayload, AiSessionMeta, CURRENT_AI_SESSION_VERSION,
 };
 use crate::app_object_store::{AppObjectStoreError, SharedAppObjectStore};
 use crate::cryptos::{Crypto, CryptoError};
@@ -16,6 +16,8 @@ use std::time::Instant;
 use tauri_plugin_log::log;
 use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
+
+pub const MAX_AI_SESSION_MESSAGE_PAGE_SIZE: u64 = 20;
 
 #[derive(Debug, Error)]
 pub enum AiSessionRepositoryError {
@@ -144,6 +146,17 @@ impl AiSessionRepository {
         };
         let (meta, _) = self.ensure_reconciled_locked(meta).await?;
         Ok(Some(meta))
+    }
+
+    /// 读取 `meta.enc` 解密后的原始会话元数据，不触发消息块协调或改写。
+    pub async fn load_persisted_meta(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<AiSessionMeta>, AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
+        let lock = self.session_lock(session_id);
+        let _guard = lock.lock().await;
+        self.load_meta(session_id).await
     }
 
     /// 在同一个会话锁内读取并协调 meta 与全部消息，避免两次调用之间插入新消息。
@@ -294,6 +307,45 @@ impl AiSessionRepository {
             started_at.elapsed().as_millis()
         );
         Ok(messages)
+    }
+
+    /// 懒加载一段已由 `meta.enc` 提交的消息。页面大小受限，避免详情窗口一次读取整段历史。
+    pub async fn load_message_page(
+        &self,
+        session_id: &str,
+        offset: u64,
+        limit: u64,
+    ) -> Result<(Vec<AiSessionMessage>, u64), AiSessionRepositoryError> {
+        if limit == 0 || limit > MAX_AI_SESSION_MESSAGE_PAGE_SIZE {
+            return Err(AiSessionRepositoryError::InvalidInput(format!(
+                "消息分页大小必须在 1 到 {MAX_AI_SESSION_MESSAGE_PAGE_SIZE} 之间"
+            )));
+        }
+        let started_at = Instant::now();
+        validate_session_id(session_id)?;
+        let lock = self.session_lock(session_id);
+        let lock_started_at = Instant::now();
+        let _guard = lock.lock().await;
+        let lock_wait_ms = lock_started_at.elapsed().as_millis();
+        let meta = self.required_meta(session_id).await?;
+        let messages = load_compacted_message_page(
+            self,
+            session_id,
+            meta.committed_message_count,
+            offset,
+            limit,
+        )
+        .await?;
+        log::info!(
+            "[ai session timing] operation=load_page, session_id={}, offset={}, messages={}, total={}, lock_wait_ms={}, total_ms={}",
+            session_id,
+            offset,
+            messages.len(),
+            meta.committed_message_count,
+            lock_wait_ms,
+            started_at.elapsed().as_millis()
+        );
+        Ok((messages, meta.committed_message_count))
     }
 
     pub async fn update_ai_title(
