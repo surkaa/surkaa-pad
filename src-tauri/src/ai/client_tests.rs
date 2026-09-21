@@ -1,8 +1,8 @@
 use super::client::MAX_MODELS_RESPONSE_BYTES;
 use super::{
-    AiAssistantMessage, AiCompletionDelta, AiCompletionRequest, AiError, AiMessage, AiModel,
-    AiModelProvider, AiProviderConfig, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
-    OpenAiCompatibleClient,
+    AiAssistantMessage, AiCompletionDelta, AiCompletionRequest, AiContextWindow,
+    AiContextWindowSource, AiError, AiMessage, AiModel, AiModelProvider, AiProviderConfig,
+    AiToolCall, AiToolDefinition, AiToolResult, AiUsage, OpenAiCompatibleClient,
 };
 use serde_json::{json, Value};
 use std::sync::Mutex;
@@ -120,6 +120,73 @@ async fn rejects_oversized_model_list_before_reading_the_body() {
             limit_bytes: MAX_MODELS_RESPONSE_BYTES,
         })
     );
+}
+
+#[tokio::test]
+async fn detects_the_actual_context_length_of_a_loaded_ollama_model() {
+    let (base_url, requests) = spawn_response_sequence(vec![MockResponse::json(
+        200,
+        r#"{"models":[{"name":"qwen3:8b","model":"qwen3:8b:latest","context_length":32768}]}"#,
+    )])
+    .await;
+    let client =
+        OpenAiCompatibleClient::new(AiProviderConfig::new(&base_url, None).unwrap()).unwrap();
+
+    let detected = client.detect_context_window("qwen3:8b").await.unwrap();
+
+    assert_eq!(
+        detected,
+        Some(AiContextWindow {
+            tokens: 32_768,
+            source: AiContextWindowSource::OllamaLoadedModel,
+        })
+    );
+    assert!(requests.await.unwrap()[0].starts_with("GET /api/ps HTTP/1.1\r\n"));
+}
+
+#[tokio::test]
+async fn falls_back_to_ollama_model_metadata_when_the_model_is_not_loaded() {
+    let (base_url, requests) = spawn_response_sequence(vec![
+        MockResponse::json(200, r#"{"models":[]}"#),
+        MockResponse::json(
+            200,
+            r#"{"parameters":"num_ctx 8192\ntemperature 0.8","model_info":{"general.architecture":"qwen3","qwen3.context_length":32768}}"#,
+        ),
+    ])
+    .await;
+    let client =
+        OpenAiCompatibleClient::new(AiProviderConfig::new(&base_url, None).unwrap()).unwrap();
+
+    let detected = client.detect_context_window("qwen3:8b").await.unwrap();
+
+    assert_eq!(
+        detected,
+        Some(AiContextWindow {
+            tokens: 8_192,
+            source: AiContextWindowSource::OllamaModelMetadata,
+        })
+    );
+    let requests = requests.await.unwrap();
+    assert!(requests[0].starts_with("GET /api/ps HTTP/1.1\r\n"));
+    assert!(requests[1].starts_with("POST /api/show HTTP/1.1\r\n"));
+    assert_eq!(
+        captured_json_body(requests[1].clone()),
+        json!({"model":"qwen3:8b"})
+    );
+}
+
+#[tokio::test]
+async fn treats_a_non_ollama_service_as_an_undetectable_context_window() {
+    let (base_url, requests) = spawn_response_sequence(vec![
+        MockResponse::json(404, r#"{"error":{"message":"not found"}}"#),
+        MockResponse::json(404, r#"{"error":{"message":"not found"}}"#),
+    ])
+    .await;
+    let client =
+        OpenAiCompatibleClient::new(AiProviderConfig::new(&base_url, None).unwrap()).unwrap();
+
+    assert_eq!(client.detect_context_window("model").await.unwrap(), None);
+    assert_eq!(requests.await.unwrap().len(), 2);
 }
 
 #[tokio::test]

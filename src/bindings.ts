@@ -913,6 +913,18 @@ async cmdListAiModels(baseUrl: string, apiKey: string | null) : Promise<Result<A
 }
 },
 /**
+ * 尝试从 Ollama 原生 API 检测所选模型的上下文上限。
+ * 非 Ollama 的 OpenAI 兼容服务没有统一的上下文长度接口，因此会正常返回 `None`。
+ */
+async cmdDetectAiContextWindow(baseUrl: string, apiKey: string | null, model: string) : Promise<Result<AiContextWindow | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_detect_ai_context_window", { baseUrl, apiKey, model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 使用只读日记工具运行一次 AI Agent 问答。
  * # Arguments
  * * `base_url` - OpenAI 兼容 API 根地址
@@ -938,17 +950,15 @@ async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey:
  * 同时运行两个问答。任务运行期间存储模式保持不变。
  * # Arguments
  * * `event` - 接收模型状态、增量回答和最终结果的事件通道
- * * `base_url` - OpenAI 兼容 API 根地址
- * * `api_key` - 可选的 Bearer API Key
- * * `model` - 本轮问答使用的模型 ID；历史回复各自保留实际使用的模型
+ * * `connection` - 本轮的服务地址、可选 API Key、模型与可选上下文上限
  * * `session_id` - 已创建的数字 AI 会话 ID；历史消息从会话中读取
  * * `prompt` - 本轮用户问题
  * # Returns
  * * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
  */
-async cmdRunAiSessionAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, model: string, sessionId: string, prompt: string) : Promise<Result<string, AppError>> {
+async cmdRunAiSessionAgent(event: TAURI_CHANNEL<AiAgentEvent>, connection: AiSessionAgentConnection, sessionId: string, prompt: string) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_session_agent", { event, baseUrl, apiKey, model, sessionId, prompt }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_session_agent", { event, connection, sessionId, prompt }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1087,10 +1097,12 @@ async cmdCancelTask(cancelToken: string) : Promise<Result<boolean, AppError>> {
 
 /** user-defined types **/
 
-export type AiAgentEvent = { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
+export type AiAgentEvent = { event: "contextCompactionStarted" } | { event: "contextCompactionCompleted"; data: { elapsedMs: number } } | { event: "modelStarted"; data: { round: number } } | { event: "modelCompleted"; data: { round: number; toolCount: number; elapsedMs: number } } | { event: "toolStarted"; data: { operationId: number; round: number; title: string; detail: string | null } } | { event: "toolCompleted"; data: { operationId: number; summary: string; succeeded: boolean; elapsedMs: number } } | { event: "reasoningDelta"; data: { round: number; delta: string } } | { event: "answerDelta"; data: string } | { event: "completed"; data: AiAgentResponse } | { event: "failed"; data: string } | { event: "cancelled" }
 export type AiAgentResponse = { answer: string; modelRounds: number; usage: AiUsage | null; contextTokens: number | null }
 export type AiAssistantRecordState = "completed" | "failed" | "cancelled"
 export type AiAssistantShortcutSettings = { focusInput: string }
+export type AiContextWindow = { tokens: number; source: AiContextWindowSource }
+export type AiContextWindowSource = "ollamaLoadedModel" | "ollamaModelMetadata"
 export type AiConversationSourceMessage = { role: "system"; content: string } | { role: "user"; content: string } | { role: "assistant"; reasoning_content: string | null; content: string | null; tool_calls: AiConversationSourceToolCall[] } | { role: "tool"; tool_call_id: string; content: string }
 export type AiConversationSourceToolCall = { id: string; name: string; arguments: string }
 export type AiConversationTurn = { user: string; assistant: string }
@@ -1098,11 +1110,13 @@ export type AiModel = { id: string; ownedBy: string | null }
 export type AiProcessStepKind = "model" | "tool"
 export type AiProcessStepRecord = { id: string; kind: AiProcessStepKind; title: string; detail: string | null; reasoning: string; state: AiProcessStepState; durationMs: number | null }
 export type AiProcessStepState = "completed" | "failed" | "cancelled"
+export type AiSessionAgentConnection = { baseUrl: string; apiKey: string | null; model: string; contextWindowTokens: number | null }
+export type AiSessionContextSummary = { version: number; coveredMessageCount: number; content: string; createdAt: number }
 export type AiSessionDetail = { meta: AiSessionMeta; messages: AiSessionMessage[] }
 export type AiSessionMessage = { index: number; createdAt: number; payload: AiSessionMessagePayload }
 export type AiSessionMessagePage = { messages: AiSessionMessage[]; totalCount: number }
 export type AiSessionMessagePayload = { role: "user"; content: string; timezoneOffsetMinutes?: number | null } | { role: "assistant"; state: AiAssistantRecordState; content: string; error: string | null; model: string; usage: AiUsage | null; contextTokens?: number | null; processSteps: AiProcessStepRecord[]; trace: AiConversationSourceMessage[] }
-export type AiSessionMeta = { version: number; id: string; title: string; aiTitle: string | null; createdAt: number; updatedAt: number; committedMessageCount: number }
+export type AiSessionMeta = { version: number; id: string; title: string; aiTitle: string | null; contextSummary?: AiSessionContextSummary | null; createdAt: number; updatedAt: number; committedMessageCount: number }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }

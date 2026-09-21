@@ -11,6 +11,24 @@ pub struct AiModel {
     pub owned_by: Option<String>,
 }
 
+// 可用于自动整理历史消息的模型上下文上限。
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiContextWindow {
+    #[specta(type = f64)]
+    pub tokens: u64,
+    pub source: AiContextWindowSource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum AiContextWindowSource {
+    // 来自 Ollama 当前已加载模型，代表实际分配的上下文长度。
+    OllamaLoadedModel,
+    // 来自 Ollama 模型元数据，模型尚未加载时的理论或配置值。
+    OllamaModelMetadata,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AiConversationTurn {

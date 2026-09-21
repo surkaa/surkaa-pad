@@ -1,13 +1,25 @@
 use super::session_agent::{AiSessionAgentOutcome, AiSessionAgentRunner};
 use super::{
-    AiAgent, AiAgentEvent, AiAgentRunResult, AiConversationTurn, AiError, AiModel, AiModelProvider,
-    AiProviderConfig, DiaryReadTools, OpenAiCompatibleClient,
+    AiAgent, AiAgentEvent, AiAgentRunResult, AiContextWindow, AiConversationTurn, AiError, AiModel,
+    AiModelProvider, AiProviderConfig, DiaryReadTools, OpenAiCompatibleClient,
 };
 use crate::error::AppError;
 use crate::state::AppState;
+use serde::Deserialize;
+use specta::Type;
 use tauri::ipc::Channel;
 use tauri::State;
 use tauri_plugin_log::log;
+
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSessionAgentConnection {
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub model: String,
+    #[specta(type = Option<f64>)]
+    pub context_window_tokens: Option<u64>,
+}
 
 /// 获取 OpenAI 兼容服务提供的模型列表。
 /// # Arguments
@@ -24,6 +36,20 @@ pub async fn cmd_list_ai_models(
     let config = AiProviderConfig::new(&base_url, api_key)?;
     let client = OpenAiCompatibleClient::new(config)?;
     Ok(client.list_models().await?)
+}
+
+/// 尝试从 Ollama 原生 API 检测所选模型的上下文上限。
+/// 非 Ollama 的 OpenAI 兼容服务没有统一的上下文长度接口，因此会正常返回 `None`。
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_detect_ai_context_window(
+    base_url: String,
+    api_key: Option<String>,
+    model: String,
+) -> Result<Option<AiContextWindow>, AppError> {
+    let config = AiProviderConfig::new(&base_url, api_key)?;
+    let client = OpenAiCompatibleClient::new(config)?;
+    Ok(client.detect_context_window(&model).await?)
 }
 
 /// 使用只读日记工具运行一次 AI Agent 问答。
@@ -79,9 +105,7 @@ pub fn cmd_run_ai_agent(
 /// 同时运行两个问答。任务运行期间存储模式保持不变。
 /// # Arguments
 /// * `event` - 接收模型状态、增量回答和最终结果的事件通道
-/// * `base_url` - OpenAI 兼容 API 根地址
-/// * `api_key` - 可选的 Bearer API Key
-/// * `model` - 本轮问答使用的模型 ID；历史回复各自保留实际使用的模型
+/// * `connection` - 本轮的服务地址、可选 API Key、模型与可选上下文上限
 /// * `session_id` - 已创建的数字 AI 会话 ID；历史消息从会话中读取
 /// * `prompt` - 本轮用户问题
 /// # Returns
@@ -91,14 +115,14 @@ pub fn cmd_run_ai_agent(
 pub fn cmd_run_ai_session_agent(
     state: State<'_, AppState>,
     event: Channel<AiAgentEvent>,
-    base_url: String,
-    api_key: Option<String>,
-    model: String,
+    connection: AiSessionAgentConnection,
     session_id: String,
     prompt: String,
 ) -> Result<String, AppError> {
-    let config = AiProviderConfig::new(&base_url, api_key)?;
+    let config = AiProviderConfig::new(&connection.base_url, connection.api_key)?;
     let client = OpenAiCompatibleClient::new(config)?;
+    let context_window_tokens = normalize_context_window_tokens(connection.context_window_tokens)?;
+    let model = connection.model;
     let repository = state.ai_session_repository();
     let run_guard = repository.try_begin_run(&session_id)?;
     let task_pool = state.task_pool();
@@ -118,7 +142,14 @@ pub fn cmd_run_ai_session_agent(
         let emit = |message| send_event(&event, message);
 
         match runner
-            .run(&session_id, &model, &prompt, cancellation, &emit)
+            .run(
+                &session_id,
+                &model,
+                context_window_tokens,
+                &prompt,
+                cancellation,
+                &emit,
+            )
             .await
         {
             Ok(AiSessionAgentOutcome::Completed { response }) => {
@@ -143,4 +174,39 @@ fn send_event(event: &Channel<AiAgentEvent>, message: AiAgentEvent) -> Result<()
     event
         .send(message)
         .map_err(|error| AiError::EventSendFailed(error.to_string()))
+}
+
+fn normalize_context_window_tokens(value: Option<u64>) -> Result<Option<u64>, AppError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if !(256..=10_000_000).contains(&value) {
+        return Err(AiError::InvalidRequest(
+            "AI 上下文上限必须是 256 到 10,000,000 之间的整数".into(),
+        )
+        .into());
+    }
+    Ok(Some(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_optional_context_window_with_safe_bounds() {
+        assert_eq!(normalize_context_window_tokens(None).unwrap(), None);
+        assert_eq!(
+            normalize_context_window_tokens(Some(256)).unwrap(),
+            Some(256)
+        );
+        assert_eq!(
+            normalize_context_window_tokens(Some(10_000_000)).unwrap(),
+            Some(10_000_000)
+        );
+
+        for value in [0, 255, 10_000_001] {
+            assert!(normalize_context_window_tokens(Some(value)).is_err());
+        }
+    }
 }

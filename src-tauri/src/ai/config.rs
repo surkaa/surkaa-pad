@@ -44,6 +44,14 @@ impl AiProviderConfig {
             .join("chat/completions")
             .expect("validated AI base URL must accept relative paths")
     }
+
+    /// 由 OpenAI 兼容 `/v1` 地址推导同一服务的 Ollama 原生 API 地址。
+    /// 保留可能存在的反向代理前缀，例如 `/ollama/v1` 会对应 `/ollama/api/ps`。
+    pub fn ollama_api_url(&self, endpoint: &str) -> Url {
+        self.base_url
+            .join(&format!("../api/{endpoint}"))
+            .expect("validated AI base URL must accept relative paths")
+    }
 }
 
 impl fmt::Debug for AiProviderConfig {
@@ -97,6 +105,10 @@ mod tests {
         assert_eq!(
             config.chat_completions_url().as_str(),
             "http://localhost:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            config.ollama_api_url("ps").as_str(),
+            "http://localhost:11434/api/ps"
         );
     }
 

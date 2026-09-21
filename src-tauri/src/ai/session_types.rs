@@ -6,6 +6,7 @@ use specta::Type;
 use thiserror::Error;
 
 pub const CURRENT_AI_SESSION_VERSION: u32 = 1;
+pub const CURRENT_AI_CONTEXT_SUMMARY_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +15,9 @@ pub struct AiSessionMeta {
     pub id: String,
     pub title: String,
     pub ai_title: Option<String>,
+    // 已由滚动摘要覆盖的较早消息。原始消息块始终保留，摘要只影响后续模型请求的上下文。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_summary: Option<AiSessionContextSummary>,
     #[specta(type = f64)]
     pub created_at: i64,
     #[specta(type = f64)]
@@ -21,6 +25,19 @@ pub struct AiSessionMeta {
     // 已经完成消息块写入并由 meta 确认的连续消息数量。
     #[specta(type = f64)]
     pub committed_message_count: u64,
+}
+
+// 用于缩短模型请求上下文的加密滚动摘要。`covered_message_count` 是从会话开头起、
+// 已经被摘要覆盖的消息数量，始终是完整用户/助手消息对的偶数边界；它不会删除原始消息块。
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSessionContextSummary {
+    pub version: u32,
+    #[specta(type = f64)]
+    pub covered_message_count: u64,
+    pub content: String,
+    #[specta(type = f64)]
+    pub created_at: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
@@ -164,12 +181,48 @@ pub fn deserialize_session_meta(
             "AI 生成的会话标题不能为空字符串".into(),
         ));
     }
+    if let Some(summary) = &meta.context_summary {
+        validate_context_summary(summary, meta.committed_message_count)?;
+    }
     if meta.updated_at < meta.created_at {
         return Err(AiSessionDataError::InvalidData(
             "会话更新时间不能早于创建时间".into(),
         ));
     }
     Ok(meta)
+}
+
+fn validate_context_summary(
+    summary: &AiSessionContextSummary,
+    committed_message_count: u64,
+) -> Result<(), AiSessionDataError> {
+    if summary.version != CURRENT_AI_CONTEXT_SUMMARY_VERSION {
+        return Err(AiSessionDataError::InvalidData(format!(
+            "不支持的会话上下文摘要版本 V{}",
+            summary.version
+        )));
+    }
+    if summary.covered_message_count == 0 || !summary.covered_message_count.is_multiple_of(2) {
+        return Err(AiSessionDataError::InvalidData(
+            "会话上下文摘要覆盖的消息数量必须是正偶数".into(),
+        ));
+    }
+    if summary.covered_message_count > committed_message_count {
+        return Err(AiSessionDataError::InvalidData(
+            "会话上下文摘要覆盖的消息数量不能超过已提交消息数量".into(),
+        ));
+    }
+    if summary.content.trim().is_empty() {
+        return Err(AiSessionDataError::InvalidData(
+            "会话上下文摘要不能为空".into(),
+        ));
+    }
+    if summary.created_at < 0 {
+        return Err(AiSessionDataError::InvalidData(
+            "会话上下文摘要创建时间不能为负数".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn deserialize_session_message_block(
@@ -341,6 +394,38 @@ mod tests {
         assert!(matches!(
             deserialize_session_meta("other", &meta_json(1)),
             Err(AiSessionDataError::InvalidData(message)) if message.contains("不一致")
+        ));
+    }
+
+    #[test]
+    fn validates_optional_context_summary_at_complete_turn_boundaries() {
+        let mut value: Value = serde_json::from_slice(&meta_json(1)).unwrap();
+        value["contextSummary"] = json!({
+            "version": CURRENT_AI_CONTEXT_SUMMARY_VERSION,
+            "coveredMessageCount": 2,
+            "content": "用户希望继续整理最近日记。",
+            "createdAt": 1_700_000_000_050_i64,
+        });
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert_eq!(
+            deserialize_session_meta("8215021834823", &bytes)
+                .unwrap()
+                .context_summary
+                .unwrap()
+                .covered_message_count,
+            2
+        );
+
+        value["contextSummary"]["coveredMessageCount"] = json!(1);
+        assert!(matches!(
+            deserialize_session_meta("8215021834823", &serde_json::to_vec(&value).unwrap()),
+            Err(AiSessionDataError::InvalidData(message)) if message.contains("正偶数")
+        ));
+
+        value["contextSummary"]["coveredMessageCount"] = json!(4);
+        assert!(matches!(
+            deserialize_session_meta("8215021834823", &serde_json::to_vec(&value).unwrap()),
+            Err(AiSessionDataError::InvalidData(message)) if message.contains("不能超过")
         ));
     }
 

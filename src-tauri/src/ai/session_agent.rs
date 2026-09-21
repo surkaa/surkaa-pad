@@ -1,3 +1,6 @@
+use super::context_compaction::{
+    plan_context_compaction, summary_from_completion, summary_history_message,
+};
 use super::{
     AiAgent, AiAgentEvent, AiAgentResponse, AiAssistantMessage, AiAssistantRecordState,
     AiConversationSource, AiConversationSourceMessage, AiError, AiMessage, AiModelProvider,
@@ -18,6 +21,8 @@ const INTERRUPTED_ANSWER_ERROR: &str = "上次回答因应用中断未完成";
 pub(crate) enum AiSessionAgentError {
     #[error(transparent)]
     Repository(#[from] AiSessionRepositoryError),
+    #[error(transparent)]
+    Ai(#[from] AiError),
     #[error("AI 会话消息顺序无效: {0}")]
     InvalidHistory(String),
 }
@@ -53,6 +58,7 @@ impl<'a> AiSessionAgentRunner<'a> {
         &self,
         session_id: &str,
         model: &str,
+        context_window_tokens: Option<u64>,
         prompt: &str,
         cancellation: CancellationToken,
         emit: &F,
@@ -69,11 +75,78 @@ impl<'a> AiSessionAgentRunner<'a> {
         if model.is_empty() {
             return Err(AiSessionRepositoryError::InvalidInput("AI 模型不能为空".into()).into());
         }
+        if context_window_tokens == Some(0) {
+            return Err(
+                AiSessionRepositoryError::InvalidInput("AI 上下文上限必须大于 0".into()).into(),
+            );
+        }
 
-        let Some((_, mut stored_messages)) = self.repository.load_session(session_id).await? else {
+        let Some((mut meta, mut stored_messages)) =
+            self.repository.load_session(session_id).await?
+        else {
             return Err(AiSessionRepositoryError::SessionNotFound(session_id.to_owned()).into());
         };
+        let had_interrupted_turn = !stored_messages.len().is_multiple_of(2);
         recover_interrupted_turn(self.repository, model, session_id, &mut stored_messages).await?;
+
+        if had_interrupted_turn {
+            meta = self
+                .repository
+                .get_session(session_id)
+                .await?
+                .ok_or_else(|| AiSessionRepositoryError::SessionNotFound(session_id.to_owned()))?;
+        }
+
+        let recorder = Mutex::new(AiProcessRecorder::default());
+        let recorded_emit = |event: AiAgentEvent| {
+            recorder
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .record(&event);
+            emit(event)
+        };
+        if let Some(plan) = plan_context_compaction(
+            meta.context_summary.as_ref(),
+            &stored_messages,
+            latest_context_tokens(&stored_messages),
+            context_window_tokens,
+            model,
+        )? {
+            recorded_emit(AiAgentEvent::ContextCompactionStarted)?;
+            let compaction_started_at = Instant::now();
+            let covered_message_count = plan.covered_message_count;
+            let completion = {
+                let summary = self.provider.complete(plan.request);
+                tokio::pin!(summary);
+                tokio::select! {
+                    result = &mut summary => result?,
+                    _ = cancellation.cancelled() => return Ok(AiSessionAgentOutcome::Cancelled),
+                }
+            };
+            if !completion.message.tool_calls.is_empty() {
+                return Err(AiError::InvalidResponse(
+                    "AI 在整理会话上下文时返回了不支持的工具调用".into(),
+                )
+                .into());
+            }
+            let summary = summary_from_completion(
+                covered_message_count,
+                completion.message.content.as_deref().unwrap_or_default(),
+                now_millis(),
+            )?;
+            meta = self
+                .repository
+                .update_context_summary(session_id, summary)
+                .await?;
+            let elapsed_ms = elapsed_millis(compaction_started_at.elapsed());
+            recorded_emit(AiAgentEvent::ContextCompactionCompleted { elapsed_ms })?;
+            log::info!(
+                "[ai session timing] operation=context_compaction, session_id={}, covered_messages={}, total_ms={}",
+                session_id,
+                covered_message_count,
+                elapsed_ms
+            );
+        }
 
         let user_save_started_at = Instant::now();
         let user_message = self
@@ -90,18 +163,9 @@ impl<'a> AiSessionAgentRunner<'a> {
         let user_save_ms = user_save_started_at.elapsed().as_millis();
         stored_messages.push(user_message);
         let history_started_at = Instant::now();
-        let history = conversation_history(&stored_messages, true)?;
+        let history = conversation_history(&stored_messages, true, meta.context_summary.as_ref())?;
         let history_prepare_ms = history_started_at.elapsed().as_millis();
         let history_turns = history.completed_turns;
-
-        let recorder = Mutex::new(AiProcessRecorder::default());
-        let recorded_emit = |event: AiAgentEvent| {
-            recorder
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .record(&event);
-            emit(event)
-        };
         enum Terminal {
             Completed(super::AiAgentRunResult),
             Failed(AiError),
@@ -305,11 +369,26 @@ struct PreparedConversationHistory {
 fn conversation_history(
     messages: &[AiSessionMessage],
     allow_trailing_user: bool,
+    context_summary: Option<&super::AiSessionContextSummary>,
 ) -> Result<PreparedConversationHistory, AiSessionAgentError> {
     validate_message_order(messages, allow_trailing_user)?;
+    let covered_message_count = context_summary.map_or(0, |summary| summary.covered_message_count);
+    let first_message = usize::try_from(covered_message_count).map_err(|_| {
+        AiSessionAgentError::InvalidHistory("会话上下文摘要索引超出支持范围".into())
+    })?;
+    if first_message > messages.len() || !first_message.is_multiple_of(2) {
+        return Err(AiSessionAgentError::InvalidHistory(
+            "会话上下文摘要覆盖范围与已保存消息不一致".into(),
+        ));
+    }
+    let messages = &messages[first_message..];
     let mut history = Vec::new();
     let mut completed_turns = 0;
     let mut previous_message_at = None;
+
+    if let Some(summary) = context_summary {
+        history.push(summary_history_message(summary));
+    }
 
     for pair in messages.chunks_exact(2) {
         let AiSessionMessagePayload::User {
@@ -375,6 +454,20 @@ fn conversation_history(
         messages: history,
         completed_turns,
     })
+}
+
+fn latest_context_tokens(messages: &[AiSessionMessage]) -> Option<u64> {
+    messages
+        .iter()
+        .rev()
+        .find_map(|message| match &message.payload {
+            AiSessionMessagePayload::Assistant {
+                state: AiAssistantRecordState::Completed,
+                context_tokens,
+                ..
+            } => *context_tokens,
+            _ => None,
+        })
 }
 
 fn append_time_context_if_needed(
@@ -508,6 +601,10 @@ fn now_millis() -> i64 {
     Utc::now().timestamp_millis()
 }
 
+fn elapsed_millis(duration: std::time::Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
+}
+
 fn current_timezone_offset_minutes() -> Option<i16> {
     let minutes = Local::now().offset().local_minus_utc() / 60;
     i16::try_from(minutes).ok()
@@ -532,6 +629,23 @@ struct PendingProcessStep {
 impl AiProcessRecorder {
     fn record(&mut self, event: &AiAgentEvent) {
         match event {
+            AiAgentEvent::ContextCompactionStarted => {
+                self.steps.push(PendingProcessStep {
+                    id: "context-compaction".into(),
+                    kind: AiProcessStepKind::Model,
+                    title: "整理会话上下文".into(),
+                    detail: Some("压缩较早对话，保留最近完整问答".into()),
+                    reasoning: String::new(),
+                    state: None,
+                    duration_ms: None,
+                });
+            }
+            AiAgentEvent::ContextCompactionCompleted { elapsed_ms } => {
+                if let Some(step) = self.find_step_mut("context-compaction") {
+                    step.state = Some(AiProcessStepState::Completed);
+                    step.duration_ms = Some(*elapsed_ms);
+                }
+            }
             AiAgentEvent::ModelStarted { round } => {
                 self.answer.clear();
                 self.steps.push(PendingProcessStep {
@@ -782,6 +896,7 @@ mod tests {
                 .run(
                     &session.id,
                     model,
+                    None,
                     prompt,
                     CancellationToken::new(),
                     &emit_to(&events),
@@ -832,6 +947,107 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn compacts_older_history_without_deleting_raw_messages() {
+        let (_temp, repository) = repository();
+        let session = repository.create_session("第一问".into(), 1).await.unwrap();
+        for turn in 0..6_i64 {
+            repository
+                .append_message(
+                    &session.id,
+                    turn * 2 + 2,
+                    AiSessionMessagePayload::User {
+                        content: format!("旧问题 {turn}"),
+                        timezone_offset_minutes: None,
+                    },
+                )
+                .await
+                .unwrap();
+            repository
+                .append_message(
+                    &session.id,
+                    turn * 2 + 3,
+                    AiSessionMessagePayload::Assistant {
+                        state: AiAssistantRecordState::Completed,
+                        content: format!("旧回答 {turn}"),
+                        error: None,
+                        model: "old-model".into(),
+                        usage: None,
+                        context_tokens: (turn == 5).then_some(700),
+                        process_steps: vec![],
+                        trace: vec![],
+                    },
+                )
+                .await
+                .unwrap();
+        }
+        let provider = FakeProvider::new(vec![
+            Ok(completion("较早对话摘要")),
+            Ok(completion("新回答")),
+        ]);
+        let events = Mutex::new(vec![]);
+
+        let _run_guard = repository.try_begin_run(&session.id).unwrap();
+        let outcome = AiSessionAgentRunner::new(&repository, &provider, &NoopTools)
+            .run(
+                &session.id,
+                "new-model",
+                Some(1_000),
+                "继续处理",
+                CancellationToken::new(),
+                &emit_to(&events),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(outcome, AiSessionAgentOutcome::Completed { .. }));
+
+        let (meta, messages) = repository.load_session(&session.id).await.unwrap().unwrap();
+        assert_eq!(messages.len(), 14);
+        assert_eq!(
+            messages[0].payload,
+            AiSessionMessagePayload::User {
+                content: "旧问题 0".into(),
+                timezone_offset_minutes: None,
+            }
+        );
+        assert_eq!(
+            meta.context_summary
+                .as_ref()
+                .map(|summary| summary.covered_message_count),
+            Some(4)
+        );
+        assert_eq!(
+            meta.context_summary
+                .as_ref()
+                .map(|summary| summary.content.as_str()),
+            Some("较早对话摘要")
+        );
+        let completed_process = match &messages[13].payload {
+            AiSessionMessagePayload::Assistant { process_steps, .. } => process_steps,
+            _ => panic!("expected completed assistant message"),
+        };
+        assert!(completed_process
+            .iter()
+            .any(|step| step.id == "context-compaction"));
+
+        let requests = provider.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0].tools().is_empty());
+        assert_eq!(requests[0].messages().len(), 2);
+        assert!(matches!(
+            &requests[1].messages()[1],
+            AiMessage::System(content) if content.contains("较早对话摘要")
+        ));
+        assert!(!requests[1]
+            .messages()
+            .iter()
+            .any(|message| message == &AiMessage::User("旧问题 0".into())));
+        assert!(requests[1]
+            .messages()
+            .iter()
+            .any(|message| message == &AiMessage::User("旧问题 2".into())));
+    }
+
+    #[tokio::test]
     async fn persists_model_failures_and_cancellation_as_terminal_assistant_messages() {
         let (_temp, repository) = repository();
         let session = repository
@@ -846,6 +1062,7 @@ mod tests {
             .run(
                 &session.id,
                 "test-model",
+                None,
                 "失败问题",
                 CancellationToken::new(),
                 &emit_to(&events),
@@ -862,6 +1079,7 @@ mod tests {
             .run(
                 &session.id,
                 "test-model",
+                None,
                 "取消问题",
                 cancelled_token,
                 &emit_to(&events),
@@ -913,6 +1131,7 @@ mod tests {
             .run(
                 &session.id,
                 "test-model",
+                None,
                 "新问题",
                 CancellationToken::new(),
                 &emit_to(&events),
@@ -992,6 +1211,7 @@ mod tests {
             .run(
                 &session.id,
                 "test-model",
+                None,
                 "第二问",
                 CancellationToken::new(),
                 &emit_to(&events),
@@ -1040,7 +1260,7 @@ mod tests {
             ),
         ];
 
-        let history = conversation_history(&messages, false).unwrap();
+        let history = conversation_history(&messages, false, None).unwrap();
 
         assert_eq!(history.completed_turns, 1);
         assert_eq!(history.messages.len(), 3);
@@ -1066,7 +1286,7 @@ mod tests {
             user_message(4, timestamp(2026, 8, 23, 10, 0), "当前问题", Some(480)),
         ];
 
-        let history = conversation_history(&messages, true).unwrap();
+        let history = conversation_history(&messages, true, None).unwrap();
         let time_contexts = history
             .messages
             .iter()

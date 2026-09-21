@@ -47,6 +47,11 @@ pub(crate) struct AiAgentRunResult {
     content = "data"
 )]
 pub enum AiAgentEvent {
+    ContextCompactionStarted,
+    ContextCompactionCompleted {
+        #[specta(rename = "elapsedMs", type = f64)]
+        elapsed_ms: u64,
+    },
     ModelStarted {
         #[specta(type = f64)]
         round: usize,
