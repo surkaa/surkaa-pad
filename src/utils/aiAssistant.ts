@@ -84,9 +84,12 @@ export async function startAiSessionQuestion(
 
   return runner(
     event,
-    config.baseUrl,
-    config.apiKey.trim() || null,
-    config.model,
+    {
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey.trim() || null,
+      model: config.model,
+      contextWindowTokens: config.contextWindowTokens,
+    },
     normalizedSessionId,
     normalizedPrompt,
   );
@@ -177,6 +180,32 @@ export function reduceAiAgentEvent(
   if (isTerminalAiExchangeState(state.state)) return state;
 
   switch (message.event) {
+    case 'contextCompactionStarted':
+      if (state.state === 'canceling') return state;
+      return {
+        ...state,
+        processSteps: [...state.processSteps, {
+          id: contextCompactionStepId(),
+          kind: 'model',
+          title: '整理会话上下文',
+          detail: '压缩较早对话，保留最近完整问答',
+          reasoning: '',
+          state: 'running',
+          durationMs: null,
+        }],
+        status: '正在整理较早对话…',
+      };
+    case 'contextCompactionCompleted':
+      if (state.state === 'canceling') return state;
+      return {
+        ...state,
+        processSteps: updateProcessStep(
+          state.processSteps,
+          contextCompactionStepId(),
+          step => ({...step, state: 'completed', durationMs: message.data.elapsedMs}),
+        ),
+        status: '已整理较早对话，正在准备回答…',
+      };
     case 'modelStarted':
       if (state.state === 'canceling') return state;
       return {
@@ -348,6 +377,10 @@ export function formatProcessDuration(durationMs: number): string {
 
 function modelStepId(round: number): string {
   return `model-${round}`;
+}
+
+function contextCompactionStepId(): string {
+  return 'context-compaction';
 }
 
 function toolStepId(operationId: number): string {

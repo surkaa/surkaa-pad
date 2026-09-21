@@ -122,6 +122,30 @@
               popup-content-class="settings-select-popup"
               class="col model-select"
               :disable="modelOptions.length === 0"
+              @update:model-value="draft.contextWindowTokens = null"
+            />
+          </div>
+
+          <div class="row items-start q-gutter-sm no-wrap">
+            <q-input
+              v-model.number="draft.contextWindowTokens"
+              type="number"
+              label="上下文上限（Token，可选）"
+              hint="服务返回用量达到约 70% 时自动整理较早对话；留空则不启用"
+              outlined
+              dense
+              clearable
+              color="primary"
+              class="col"
+            />
+            <q-btn
+              outline
+              no-caps
+              color="primary"
+              label="自动检测"
+              :loading="detectingContextWindow"
+              :disable="!draft.model"
+              @click="detectContextWindow"
             />
           </div>
         </q-card-section>
@@ -175,6 +199,7 @@ const $q = useQuasar();
 const showDialog = ref(false);
 const showApiKey = ref(false);
 const loadingModels = ref(false);
+const detectingContextWindow = ref(false);
 const saving = ref(false);
 const savedSet = ref<AiServiceConfigSet | null>(null);
 const profiles = ref<AiServiceProfile[]>([]);
@@ -186,6 +211,7 @@ const draft = reactive<AiServiceProfile>({
   baseUrl: DEFAULT_AI_BASE_URL,
   apiKey: '',
   model: '',
+  contextWindowTokens: null,
   models: [],
 });
 
@@ -229,6 +255,7 @@ function emptyProfile(id = 'default', name = '默认环境'): AiServiceProfile {
     baseUrl: DEFAULT_AI_BASE_URL,
     apiKey: '',
     model: '',
+    contextWindowTokens: null,
     models: [],
   };
 }
@@ -327,6 +354,38 @@ async function loadModels() {
     $q.notify({type: 'negative', message: `连接 AI 服务失败: ${formatError(error)}`});
   } finally {
     loadingModels.value = false;
+  }
+}
+
+async function detectContextWindow() {
+  if (!draft.baseUrl.trim() || !draft.model.trim()) {
+    $q.notify({type: 'warning', message: '请先填写 API 地址并选择模型'});
+    return;
+  }
+  detectingContextWindow.value = true;
+  try {
+    const detected = await api.cmdDetectAiContextWindow(
+      draft.baseUrl,
+      draft.apiKey.trim() || null,
+      draft.model,
+    );
+    if (!detected) {
+      $q.notify({
+        type: 'info',
+        message: '未检测到上下文上限；非 Ollama 服务请按模型文档手动填写',
+      });
+      return;
+    }
+    draft.contextWindowTokens = detected.tokens;
+    const source = detected.source === 'ollamaLoadedModel' ? '已加载模型' : '模型元数据';
+    $q.notify({
+      type: 'positive',
+      message: `已从 Ollama ${source}检测到 ${detected.tokens.toLocaleString('zh-CN')} Token`,
+    });
+  } catch (error) {
+    $q.notify({type: 'negative', message: `检测上下文上限失败: ${formatError(error)}`});
+  } finally {
+    detectingContextWindow.value = false;
   }
 }
 
