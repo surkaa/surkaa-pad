@@ -75,7 +75,7 @@ const loadingPersistedSessionMeta = ref(false);
 const loadingPersistedSessionMessages = ref(false);
 const persistedSessionMessageError = ref<string | null>(null);
 const persistedSessionId = ref<string | null>(null);
-const persistedMessageLoadCount = ref(0);
+const persistedMessageManualLoadCount = ref(0);
 const activeSession = computed(() => (
   sessions.value.find(session => session.id === activeSessionId.value) ?? null
 ));
@@ -83,7 +83,7 @@ const activeModel = computed(() => activeSession.value?.model ?? config.value?.m
 const isCanceling = computed(() => exchanges.value.some(exchange => exchange.state === 'canceling'));
 const modelReady = computed(() => !!config.value && modelCheckState.value === 'available');
 const nextPersistedMessageLoadSize = computed(() => (
-  nextAiSessionMessageLoadSize(persistedMessageLoadCount.value)
+  nextAiSessionMessageLoadSize(persistedMessageManualLoadCount.value)
 ));
 const modelLabel = computed(() => {
   const model = activeModel.value;
@@ -302,7 +302,7 @@ function closeSessionPersistence() {
   loadingPersistedSessionMessages.value = false;
   persistedSessionMessageError.value = null;
   persistedSessionId.value = null;
-  persistedMessageLoadCount.value = 0;
+  persistedMessageManualLoadCount.value = 0;
 }
 
 async function openSessionPersistence() {
@@ -324,6 +324,7 @@ async function openSessionPersistence() {
     }
     persistedSessionMeta.value = meta;
     persistedMessageTotalCount.value = meta.committedMessageCount;
+    if (meta.committedMessageCount > 0) void loadMorePersistedSessionMessages(false);
   } catch (error) {
     if (requestId !== persistedSessionRequestId) return;
     closeSessionPersistence();
@@ -333,7 +334,7 @@ async function openSessionPersistence() {
   }
 }
 
-async function loadMorePersistedSessionMessages() {
+async function loadMorePersistedSessionMessages(recordManualLoad = true) {
   const sessionId = persistedSessionId.value;
   if (!sessionId || !persistedSessionMeta.value || loadingPersistedSessionMessages.value) return;
 
@@ -352,7 +353,7 @@ async function loadMorePersistedSessionMessages() {
     }
     persistedSessionMessages.value = [...persistedSessionMessages.value, ...page.messages];
     persistedMessageTotalCount.value = page.totalCount;
-    persistedMessageLoadCount.value += 1;
+    if (recordManualLoad) persistedMessageManualLoadCount.value += 1;
     if (page.messages.length === 0 && offset < page.totalCount) {
       persistedSessionMessageError.value = '消息列表未返回预期数据，请关闭后重试';
     }

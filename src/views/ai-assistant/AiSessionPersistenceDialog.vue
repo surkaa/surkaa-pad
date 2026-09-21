@@ -34,8 +34,12 @@
               <p>解密后的原始 JSON</p>
             </div>
           </div>
-          <div class="json-panel meta-json-panel">
-            <JsonTreeViewer :source="meta" :expand-json-strings-by-default="false"/>
+          <div class="json-panel">
+            <JsonTreeViewer
+              :source="meta"
+              :expand-json-strings-by-default="false"
+              expand-to-content
+            />
           </div>
         </section>
 
@@ -52,19 +56,24 @@
             <template #avatar><q-icon name="error_outline"/></template>
             <span>{{ messageError }}</span>
           </q-banner>
+          <div v-else-if="loadingMessages" class="message-empty">
+            <q-spinner color="primary" size="24px" />
+            <span>正在读取消息</span>
+          </div>
           <div v-else-if="messages.length === 0" class="message-empty">
             <q-icon name="chat_bubble_outline" size="26px"/>
-            <span>{{ totalMessageCount === 0 ? '该会话还没有保存消息' : '消息将在需要时读取' }}</span>
+            <span>该会话还没有保存消息</span>
           </div>
-          <div v-else class="json-panel messages-json-panel">
+          <div v-else class="json-panel">
             <JsonTreeViewer
               :source="{messages}"
               :expand-json-strings-by-default="false"
+              expand-to-content
             />
           </div>
 
           <q-btn
-            v-if="hasMoreMessages"
+            v-if="hasMoreMessages && !loadingMessages"
             outline
             no-caps
             color="primary"
@@ -176,14 +185,6 @@ const hasMoreMessages = computed(() => props.messages.length < props.totalMessag
   border-radius: var(--pad-radius-md);
 }
 
-.meta-json-panel {
-  height: 220px;
-}
-
-.messages-json-panel {
-  height: 300px;
-}
-
 .message-error {
   color: var(--pad-danger-color);
   background: var(--pad-bg-color-200);
@@ -217,14 +218,6 @@ const hasMoreMessages = computed(() => props.messages.length < props.totalMessag
     align-items: flex-start;
     flex-direction: column;
     gap: 3px;
-  }
-
-  .meta-json-panel {
-    height: 190px;
-  }
-
-  .messages-json-panel {
-    height: 260px;
   }
 }
 </style>

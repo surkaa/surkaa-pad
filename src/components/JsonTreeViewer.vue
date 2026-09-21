@@ -1,5 +1,8 @@
 <template>
-  <div class="json-tree-viewer">
+  <div
+    class="json-tree-viewer"
+    :class="{'is-content-height': expandToContent}"
+  >
     <div class="json-tree-toolbar">
       <q-btn
         v-if="hasNestedJsonObjectString"
@@ -63,8 +66,10 @@ import {
 const props = withDefaults(defineProps<{
   source: unknown;
   expandJsonStringsByDefault?: boolean;
+  expandToContent?: boolean;
 }>(), {
   expandJsonStringsByDefault: true,
+  expandToContent: false,
 });
 const $q = useQuasar();
 const expandJsonStrings = ref(props.expandJsonStringsByDefault);
@@ -118,6 +123,17 @@ function setExpansion(mode: 'all' | 'root' | number) {
   color: var(--pad-text-color-200);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 12px;
+}
+
+.json-tree-viewer.is-content-height {
+  flex: none;
+  min-height: auto;
+}
+
+.json-tree-viewer.is-content-height .json-tree-content {
+  flex: none;
+  min-height: auto;
+  overflow: visible;
 }
 
 .json-tree-content :deep(.vjs-tree) {
