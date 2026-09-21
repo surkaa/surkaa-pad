@@ -14,7 +14,6 @@ pub struct AiSessionMeta {
     pub id: String,
     pub title: String,
     pub ai_title: Option<String>,
-    pub model: String,
     #[specta(type = f64)]
     pub created_at: i64,
     #[specta(type = f64)]
@@ -164,9 +163,6 @@ pub fn deserialize_session_meta(
         return Err(AiSessionDataError::InvalidData(
             "AI 生成的会话标题不能为空字符串".into(),
         ));
-    }
-    if meta.model.trim().is_empty() {
-        return Err(AiSessionDataError::InvalidData("会话模型不能为空".into()));
     }
     if meta.updated_at < meta.created_at {
         return Err(AiSessionDataError::InvalidData(
@@ -324,6 +320,8 @@ mod tests {
             "id": "8215021834823",
             "title": "最近的日记",
             "aiTitle": null,
+            // V1 曾将会话后续使用的模型写入 meta；模型现由全局 AI 配置决定，
+            // 这里保留它以验证旧数据仍可读取，序列化后会自动移除该字段。
             "model": "deepseek-chat",
             "createdAt": 1_700_000_000_000_i64,
             "updatedAt": 1_700_000_000_100_i64,
@@ -337,6 +335,8 @@ mod tests {
         let meta = deserialize_session_meta("8215021834823", &meta_json(1)).unwrap();
         assert_eq!(meta.title, "最近的日记");
         assert_eq!(meta.committed_message_count, 2);
+        let serialized = serde_json::to_value(meta).unwrap();
+        assert!(serialized.get("model").is_none());
 
         assert!(matches!(
             deserialize_session_meta("other", &meta_json(1)),

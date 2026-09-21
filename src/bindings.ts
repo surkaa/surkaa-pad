@@ -940,14 +940,15 @@ async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey:
  * * `event` - 接收模型状态、增量回答和最终结果的事件通道
  * * `base_url` - OpenAI 兼容 API 根地址
  * * `api_key` - 可选的 Bearer API Key
- * * `session_id` - 已创建的数字 AI 会话 ID；模型与历史消息从会话中读取
+ * * `model` - 本轮问答使用的模型 ID；历史回复各自保留实际使用的模型
+ * * `session_id` - 已创建的数字 AI 会话 ID；历史消息从会话中读取
  * * `prompt` - 本轮用户问题
  * # Returns
  * * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
  */
-async cmdRunAiSessionAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, sessionId: string, prompt: string) : Promise<Result<string, AppError>> {
+async cmdRunAiSessionAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, model: string, sessionId: string, prompt: string) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_session_agent", { event, baseUrl, apiKey, sessionId, prompt }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_session_agent", { event, baseUrl, apiKey, model, sessionId, prompt }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -957,13 +958,12 @@ async cmdRunAiSessionAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, 
  * 创建一个空的 AI 会话。
  * # Arguments
  * * `title` - 会话的初始标题，通常取第一条用户问题
- * * `model` - 创建会话时选择的模型 ID
  * # Returns
  * * `Result<AiSessionMeta, AppError>` - 已加密持久化的会话元数据
  */
-async cmdCreateAiSession(title: string, model: string) : Promise<Result<AiSessionMeta, AppError>> {
+async cmdCreateAiSession(title: string) : Promise<Result<AiSessionMeta, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_create_ai_session", { title, model }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_create_ai_session", { title }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1046,22 +1046,6 @@ async cmdUpdateAiSessionAiTitle(sessionId: string, aiTitle: string | null) : Pro
 }
 },
 /**
- * 更新一个 AI 会话后续问答使用的模型，不改写已经保存的历史消息。
- * # Arguments
- * * `session_id` - 数字 AI 会话 ID
- * * `model` - 后续问答使用的新模型 ID
- * # Returns
- * * `Result<AiSessionMeta, AppError>` - 更新后的会话元数据
- */
-async cmdUpdateAiSessionModel(sessionId: string, model: string) : Promise<Result<AiSessionMeta, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_update_ai_session_model", { sessionId, model }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * 删除一个 AI 会话的全部消息块及元数据。
  * # Arguments
  * * `session_id` - 数字 AI 会话 ID
@@ -1118,7 +1102,7 @@ export type AiSessionDetail = { meta: AiSessionMeta; messages: AiSessionMessage[
 export type AiSessionMessage = { index: number; createdAt: number; payload: AiSessionMessagePayload }
 export type AiSessionMessagePage = { messages: AiSessionMessage[]; totalCount: number }
 export type AiSessionMessagePayload = { role: "user"; content: string; timezoneOffsetMinutes?: number | null } | { role: "assistant"; state: AiAssistantRecordState; content: string; error: string | null; model: string; usage: AiUsage | null; contextTokens?: number | null; processSteps: AiProcessStepRecord[]; trace: AiConversationSourceMessage[] }
-export type AiSessionMeta = { version: number; id: string; title: string; aiTitle: string | null; model: string; createdAt: number; updatedAt: number; committedMessageCount: number }
+export type AiSessionMeta = { version: number; id: string; title: string; aiTitle: string | null; createdAt: number; updatedAt: number; committedMessageCount: number }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }

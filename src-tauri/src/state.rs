@@ -340,7 +340,7 @@ mod tests {
         );
         let repository = state.ai_session_repository();
         let session = repository
-            .create_session("本地会话".into(), "test-model".into(), 1)
+            .create_session("本地会话".into(), 1)
             .await
             .unwrap();
         assert!(repository.get_session(&session.id).await.unwrap().is_some());

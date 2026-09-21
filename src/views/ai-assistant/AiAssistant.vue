@@ -15,7 +15,6 @@ import {
   nextAiProcessExpanded,
   nextAiSessionMessageLoadSize,
   reduceAiAgentEvent,
-  resolveAiSessionModel,
   startAiSessionQuestion,
   type AiAgentDisplayState,
   type AiExchangeState,
@@ -79,7 +78,7 @@ const persistedMessageManualLoadCount = ref(0);
 const activeSession = computed(() => (
   sessions.value.find(session => session.id === activeSessionId.value) ?? null
 ));
-const activeModel = computed(() => activeSession.value?.model ?? config.value?.model ?? '');
+const activeModel = computed(() => config.value?.model ?? '');
 const isCanceling = computed(() => exchanges.value.some(exchange => exchange.state === 'canceling'));
 const modelReady = computed(() => !!config.value && modelCheckState.value === 'available');
 const nextPersistedMessageLoadSize = computed(() => (
@@ -135,7 +134,7 @@ async function refreshConfig() {
     if (refreshId !== configRefreshId) return;
     config.value = loadedConfig;
     loadingConfig.value = false;
-    if (loadedConfig) await checkModelAvailability(configForActiveSession(loadedConfig), refreshId);
+    if (loadedConfig) await checkModelAvailability(loadedConfig, refreshId);
   } catch (error) {
     if (refreshId !== configRefreshId) return;
     config.value = null;
@@ -143,12 +142,6 @@ async function refreshConfig() {
   } finally {
     if (refreshId === configRefreshId) loadingConfig.value = false;
   }
-}
-
-function configForActiveSession(baseConfig: AiServiceConfig): AiServiceConfig {
-  return activeSession.value
-    ? {...baseConfig, model: activeSession.value.model}
-    : baseConfig;
 }
 
 async function checkModelAvailability(
@@ -163,29 +156,9 @@ async function checkModelAvailability(
       activeConfig.apiKey.trim() || null,
     );
     if (refreshId !== configRefreshId) return;
-    const configuredModel = config.value?.model ?? activeConfig.model;
-    const resolution = resolveAiSessionModel(
-      activeConfig.model,
-      configuredModel,
-      new Set(models.map(model => model.id)),
-    );
-    if (resolution.kind === 'switch' && activeSessionId.value) {
-      const previousModel = activeConfig.model;
-      const sessionId = activeSessionId.value;
-      const updated = await api.cmdUpdateAiSessionModel(sessionId, resolution.model);
-      if (refreshId !== configRefreshId || activeSessionId.value !== sessionId) return;
-      upsertSession(updated);
-      if (persistedSessionMeta.value?.id === sessionId) {
-        persistedSessionMeta.value = updated;
-      }
-      modelCheckState.value = 'available';
-      $q.notify({
-        type: 'info',
-        message: `原模型“${previousModel}”不可用，已将此对话切换到“${resolution.model}”`,
-      });
-      return;
-    }
-    modelCheckState.value = resolution.kind === 'available' ? 'available' : 'unavailable';
+    modelCheckState.value = models.some(model => model.id === activeConfig.model)
+      ? 'available'
+      : 'unavailable';
   } catch (error) {
     if (refreshId !== configRefreshId) return;
     modelCheckState.value = 'failed';
@@ -195,7 +168,7 @@ async function checkModelAvailability(
 
 function retryModelCheck() {
   const activeConfig = config.value;
-  if (activeConfig) void checkModelAvailability(configForActiveSession(activeConfig));
+  if (activeConfig) void checkModelAvailability(activeConfig);
 }
 
 async function refreshSessions() {
@@ -256,7 +229,7 @@ async function loadSession(sessionId: string, refreshModel = true) {
     question.value = '';
     sessionDrawerOpen.value = false;
     if (refreshModel && config.value) {
-      void checkModelAvailability(configForActiveSession(config.value));
+      void checkModelAvailability(config.value);
     }
     await scrollToBottom(loadId);
   } catch (error) {
@@ -430,7 +403,7 @@ async function submitQuestion() {
   let sessionId = activeSessionId.value;
   if (!sessionId) {
     try {
-      const created = await api.cmdCreateAiSession(prompt, storedConfig.model);
+      const created = await api.cmdCreateAiSession(prompt);
       upsertSession(created);
       activeSessionId.value = created.id;
       sessionId = created.id;
@@ -439,7 +412,7 @@ async function submitQuestion() {
       return;
     }
   }
-  const activeConfig = configForActiveSession(storedConfig);
+  const activeConfig = storedConfig;
 
   const exchange: AiExchange = {
     ...initialAiAgentDisplayState(),

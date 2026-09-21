@@ -100,7 +100,6 @@ impl AiSessionRepository {
     pub async fn create_session(
         &self,
         title: String,
-        model: String,
         created_at: i64,
     ) -> Result<AiSessionMeta, AiSessionRepositoryError> {
         let started_at = Instant::now();
@@ -109,17 +108,11 @@ impl AiSessionRepository {
                 "会话标题不能为空".into(),
             ));
         }
-        if model.trim().is_empty() {
-            return Err(AiSessionRepositoryError::InvalidInput(
-                "会话模型不能为空".into(),
-            ));
-        }
         let meta = AiSessionMeta {
             version: CURRENT_AI_SESSION_VERSION,
             id: generate_descending_id(),
             title,
             ai_title: None,
-            model,
             created_at,
             updated_at: created_at,
             committed_message_count: 0,
@@ -368,32 +361,6 @@ impl AiSessionRepository {
         let meta = self.required_meta(session_id).await?;
         let (mut meta, _) = self.ensure_reconciled_locked(meta).await?;
         meta.ai_title = ai_title;
-        meta.updated_at = meta.updated_at.max(updated_at);
-        self.save_meta(&meta).await?;
-        Ok(meta)
-    }
-
-    pub async fn update_model(
-        &self,
-        session_id: &str,
-        model: String,
-        updated_at: i64,
-    ) -> Result<AiSessionMeta, AiSessionRepositoryError> {
-        validate_session_id(session_id)?;
-        let model = model.trim();
-        if model.is_empty() {
-            return Err(AiSessionRepositoryError::InvalidInput(
-                "会话模型不能为空".into(),
-            ));
-        }
-        let lock = self.session_lock(session_id);
-        let _guard = lock.lock().await;
-        let meta = self.required_meta(session_id).await?;
-        let (mut meta, _) = self.ensure_reconciled_locked(meta).await?;
-        if meta.model == model {
-            return Ok(meta);
-        }
-        meta.model = model.to_owned();
         meta.updated_at = meta.updated_at.max(updated_at);
         self.save_meta(&meta).await?;
         Ok(meta)
@@ -735,7 +702,7 @@ mod tests {
         let store: SharedAppObjectStore = Arc::new(LocalAppObjectStore::new(local.clone()));
         let repository = AiSessionRepository::new(store, crypto());
         let meta = repository
-            .create_session("第一条消息".into(), "deepseek-chat".into(), 100)
+            .create_session("第一条消息".into(), 100)
             .await
             .unwrap();
 
@@ -798,11 +765,11 @@ mod tests {
         ));
         let repository = AiSessionRepository::new(store, crypto());
         let first = repository
-            .create_session("first".into(), "model".into(), 100)
+            .create_session("first".into(), 100)
             .await
             .unwrap();
         let second = repository
-            .create_session("second".into(), "model".into(), 200)
+            .create_session("second".into(), 200)
             .await
             .unwrap();
         let updated = repository
@@ -811,11 +778,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(updated.ai_title.as_deref(), Some("AI 标题"));
-        let updated = repository
-            .update_model(&first.id, "new-model".into(), 400)
-            .await
-            .unwrap();
-        assert_eq!(updated.model, "new-model");
         assert_eq!(
             repository
                 .list_sessions()
@@ -837,7 +799,7 @@ mod tests {
         )));
         let repository = AiSessionRepository::new(store.clone(), crypto());
         let meta = repository
-            .create_session("session".into(), "model".into(), 100)
+            .create_session("session".into(), 100)
             .await
             .unwrap();
         for index in 0..12 {
@@ -876,7 +838,7 @@ mod tests {
         )));
         let repository = AiSessionRepository::new(store.clone(), crypto());
         let meta = repository
-            .create_session("session".into(), "model".into(), 100)
+            .create_session("session".into(), 100)
             .await
             .unwrap();
         for index in 0..9 {
@@ -947,7 +909,7 @@ mod tests {
         )));
         let repository = AiSessionRepository::new(store.clone(), crypto());
         let meta = repository
-            .create_session("session".into(), "model".into(), 100)
+            .create_session("session".into(), 100)
             .await
             .unwrap();
         repository
@@ -983,9 +945,7 @@ mod tests {
         let repository = AiSessionRepository::new(store, crypto());
 
         assert!(matches!(
-            repository
-                .create_session(" ".into(), "model".into(), 0)
-                .await,
+            repository.create_session(" ".into(), 0).await,
             Err(AiSessionRepositoryError::InvalidInput(_))
         ));
         assert!(matches!(
@@ -998,14 +958,8 @@ mod tests {
             repository.get_session("../123").await,
             Err(AiSessionRepositoryError::InvalidInput(_))
         ));
-        let session = repository
-            .create_session("title".into(), "model".into(), 1)
-            .await
-            .unwrap();
-        assert!(matches!(
-            repository.update_model(&session.id, " ".into(), 2).await,
-            Err(AiSessionRepositoryError::InvalidInput(_))
-        ));
+        let session = repository.create_session("title".into(), 1).await.unwrap();
+        assert!(repository.get_session(&session.id).await.unwrap().is_some());
 
         let invalid: AppError = AiSessionRepositoryError::InvalidInput("bad".into()).into();
         assert_eq!(invalid.error_type, "ai_session_invalid_input");
