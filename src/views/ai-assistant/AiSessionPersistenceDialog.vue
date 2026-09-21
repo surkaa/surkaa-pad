@@ -56,7 +56,7 @@
             <template #avatar><q-icon name="error_outline"/></template>
             <span>{{ messageError }}</span>
           </q-banner>
-          <div v-else-if="loadingMessages" class="message-empty">
+          <div v-else-if="loadingMessages && messages.length === 0" class="message-empty">
             <q-spinner color="primary" size="24px" />
             <span>正在读取消息</span>
           </div>
@@ -73,7 +73,7 @@
           </div>
 
           <q-btn
-            v-if="hasMoreMessages && !loadingMessages"
+            v-if="hasMoreMessages && (messages.length > 0 || !loadingMessages)"
             outline
             no-caps
             color="primary"
