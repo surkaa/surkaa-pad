@@ -2,14 +2,15 @@ use super::openai_protocol::{
     ChatCompletionAccumulator, ChatCompletionRequest, ChatCompletionResponse, ModelListResponse,
 };
 use super::{
-    AiCompletion, AiCompletionDelta, AiCompletionRequest, AiError, AiModel, AiModelProvider,
-    AiProviderConfig,
+    AiCompletion, AiCompletionDelta, AiCompletionRequest, AiContextWindow, AiContextWindowSource,
+    AiError, AiModel, AiModelProvider, AiProviderConfig,
 };
 use async_trait::async_trait;
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures_util::StreamExt;
 use reqwest::{Client, RequestBuilder, Response};
 use serde::Deserialize;
+use serde_json::Value;
 use std::{
     collections::HashSet,
     sync::{Arc, RwLock},
@@ -17,6 +18,7 @@ use std::{
 };
 
 const MODELS_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const CONTEXT_WINDOW_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 pub(super) const MAX_MODELS_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const COMPLETION_REQUEST_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const MAX_COMPLETION_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
@@ -62,6 +64,63 @@ impl OpenAiCompatibleClient {
             .write()
             .unwrap_or_else(|error| error.into_inner())
             .insert(model.to_owned());
+    }
+
+    /// 尝试从 Ollama 原生接口读取模型上下文长度。非 Ollama 服务通常返回 `None`，
+    /// 不应阻断仍然兼容 OpenAI Chat Completions 的第三方服务。
+    pub async fn detect_context_window(
+        &self,
+        model: &str,
+    ) -> Result<Option<AiContextWindow>, AiError> {
+        let model = model.trim();
+        if model.is_empty() {
+            return Err(AiError::InvalidRequest("模型 ID 不能为空".into()));
+        }
+
+        let request = self.authorize(self.http.get(self.config.ollama_api_url("ps")));
+        if let Some(body) = send_optional_ollama_request(
+            request,
+            CONTEXT_WINDOW_REQUEST_TIMEOUT,
+            MAX_MODELS_RESPONSE_BYTES,
+        )
+        .await?
+        {
+            let response: OllamaPsResponse = serde_json::from_slice(&body)
+                .map_err(|error| AiError::InvalidResponse(error.to_string()))?;
+            if let Some(tokens) = response.models.into_iter().find_map(|running| {
+                (running.name == model || running.model == model)
+                    .then_some(running.context_length)
+                    .flatten()
+                    .filter(|tokens| *tokens > 0)
+            }) {
+                return Ok(Some(AiContextWindow {
+                    tokens,
+                    source: AiContextWindowSource::OllamaLoadedModel,
+                }));
+            }
+        }
+
+        let request = self.authorize(
+            self.http
+                .post(self.config.ollama_api_url("show"))
+                .json(&OllamaShowRequest { model }),
+        );
+        let Some(body) = send_optional_ollama_request(
+            request,
+            CONTEXT_WINDOW_REQUEST_TIMEOUT,
+            MAX_MODELS_RESPONSE_BYTES,
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        let response: OllamaShowResponse = serde_json::from_slice(&body)
+            .map_err(|error| AiError::InvalidResponse(error.to_string()))?;
+        let tokens = context_window_from_ollama_show(&response);
+        Ok(tokens.map(|tokens| AiContextWindow {
+            tokens,
+            source: AiContextWindowSource::OllamaModelMetadata,
+        }))
     }
 
     async fn complete_once(
@@ -147,6 +206,60 @@ impl OpenAiCompatibleClient {
         }
         accumulator.finish()
     }
+}
+
+#[derive(Deserialize)]
+struct OllamaPsResponse {
+    #[serde(default)]
+    models: Vec<OllamaRunningModel>,
+}
+
+#[derive(Deserialize)]
+struct OllamaRunningModel {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    context_length: Option<u64>,
+}
+
+#[derive(serde::Serialize)]
+struct OllamaShowRequest<'a> {
+    model: &'a str,
+}
+
+#[derive(Deserialize)]
+struct OllamaShowResponse {
+    #[serde(default)]
+    parameters: String,
+    #[serde(default)]
+    model_info: std::collections::HashMap<String, Value>,
+}
+
+fn context_window_from_ollama_show(response: &OllamaShowResponse) -> Option<u64> {
+    response
+        .parameters
+        .lines()
+        .find_map(|line| {
+            let mut words = line.split_whitespace();
+            (words.next() == Some("num_ctx"))
+                .then(|| words.next())
+                .flatten()
+                .and_then(|value| value.parse::<u64>().ok())
+        })
+        .filter(|tokens| *tokens > 0)
+        .or_else(|| {
+            let architecture = response
+                .model_info
+                .get("general.architecture")
+                .and_then(Value::as_str)?;
+            response
+                .model_info
+                .get(&format!("{architecture}.context_length"))
+                .and_then(Value::as_u64)
+                .filter(|tokens| *tokens > 0)
+        })
 }
 
 #[async_trait]
@@ -244,6 +357,30 @@ async fn send_request(
         });
     }
     Ok(body)
+}
+
+async fn send_optional_ollama_request(
+    request: RequestBuilder,
+    timeout: Duration,
+    response_limit: usize,
+) -> Result<Option<Vec<u8>>, AiError> {
+    let response = request
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(|error| AiError::RequestFailed(error.to_string()))?;
+    let status = response.status();
+    if status.as_u16() == 404 {
+        return Ok(None);
+    }
+    let body = read_limited_body(response, response_limit).await?;
+    if !status.is_success() {
+        return Err(AiError::HttpStatus {
+            status: status.as_u16(),
+            message: response_error_message(&body),
+        });
+    }
+    Ok(Some(body))
 }
 
 async fn read_limited_body(response: Response, limit: usize) -> Result<Vec<u8>, AiError> {

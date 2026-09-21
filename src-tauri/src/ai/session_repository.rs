@@ -1,9 +1,9 @@
 use super::{
     append_and_compact_message, deserialize_session_message_block, deserialize_session_meta,
     load_all_compacted_messages, load_compacted_message_page, load_compacted_messages,
-    migrate_session_document, AiMessageBlockError, AiMessageBlockStore, AiSessionDataError,
-    AiSessionMessage, AiSessionMessageBlock, AiSessionMessagePayload, AiSessionMeta,
-    CURRENT_AI_SESSION_VERSION,
+    migrate_session_document, AiMessageBlockError, AiMessageBlockStore, AiSessionContextSummary,
+    AiSessionDataError, AiSessionMessage, AiSessionMessageBlock, AiSessionMessagePayload,
+    AiSessionMeta, CURRENT_AI_SESSION_VERSION,
 };
 use crate::app_object_store::{AppObjectStoreError, SharedAppObjectStore};
 use crate::cryptos::{Crypto, CryptoError};
@@ -114,6 +114,7 @@ impl AiSessionRepository {
             id: generate_descending_id(),
             title,
             ai_title: None,
+            context_summary: None,
             created_at,
             updated_at: created_at,
             committed_message_count: 0,
@@ -363,6 +364,27 @@ impl AiSessionRepository {
         let (mut meta, _) = self.ensure_reconciled_locked(meta).await?;
         meta.ai_title = ai_title;
         meta.updated_at = meta.updated_at.max(updated_at);
+        self.save_meta(&meta).await?;
+        Ok(meta)
+    }
+
+    /// 提交新的滚动上下文摘要。消息块保持不变，后续只在构造模型历史时使用该摘要。
+    pub async fn update_context_summary(
+        &self,
+        session_id: &str,
+        summary: AiSessionContextSummary,
+    ) -> Result<AiSessionMeta, AiSessionRepositoryError> {
+        validate_session_id(session_id)?;
+        let lock = self.session_lock(session_id);
+        let _guard = lock.lock().await;
+        let meta = self.required_meta(session_id).await?;
+        let (mut meta, _) = self.ensure_reconciled_locked(meta).await?;
+        if summary.covered_message_count > meta.committed_message_count {
+            return Err(AiSessionRepositoryError::InvalidInput(
+                "上下文摘要不能覆盖尚未提交的消息".into(),
+            ));
+        }
+        meta.context_summary = Some(summary);
         self.save_meta(&meta).await?;
         Ok(meta)
     }

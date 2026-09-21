@@ -6,6 +6,7 @@ mod client;
 #[cfg(test)]
 mod client_tests;
 mod config;
+mod context_compaction;
 mod diary_tools;
 mod error;
 mod message_blocks;
@@ -33,13 +34,14 @@ pub use session_repository::{AiSessionRepository, AiSessionRepositoryError};
 pub use session_types::{
     ai_message_block_size, deserialize_session_message_block, deserialize_session_meta,
     migrate_session_document, AiAssistantRecordState, AiProcessStepKind, AiProcessStepRecord,
-    AiProcessStepState, AiSessionDataError, AiSessionDetail, AiSessionMessage,
-    AiSessionMessageBlock, AiSessionMessagePage, AiSessionMessagePayload, AiSessionMeta,
-    CURRENT_AI_SESSION_VERSION,
+    AiProcessStepState, AiSessionContextSummary, AiSessionDataError, AiSessionDetail,
+    AiSessionMessage, AiSessionMessageBlock, AiSessionMessagePage, AiSessionMessagePayload,
+    AiSessionMeta, CURRENT_AI_CONTEXT_SUMMARY_VERSION, CURRENT_AI_SESSION_VERSION,
 };
 pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor};
 pub use types::{
-    AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiConversationSource,
-    AiConversationSourceMessage, AiConversationSourceToolCall, AiConversationSourceToolDefinition,
-    AiConversationTurn, AiMessage, AiModel, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
+    AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiContextWindow,
+    AiContextWindowSource, AiConversationSource, AiConversationSourceMessage,
+    AiConversationSourceToolCall, AiConversationSourceToolDefinition, AiConversationTurn,
+    AiMessage, AiModel, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
 };
