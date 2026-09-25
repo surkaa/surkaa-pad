@@ -65,6 +65,7 @@ import {
 import {TaskCompletionOrder} from './editor/taskCompletionOrder'
 import {isHtmlAttachment} from '../utils/attachmentOpen'
 import {attachmentPreviewKind} from '../utils/attachmentPreview'
+import {insertImageAndMoveCursorAfter} from './editor/imageInsertion'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -496,7 +497,14 @@ function sameStrings(left: readonly string[], right: readonly string[]) {
 defineExpose({
   editor,
   focusEnd: () => editor.value?.commands.focus('end'),
-  insertImage: (id: string) => (editor.value?.chain().focus() as any).insertImage({ id, src: props.attachmentMap[id] || '' }).run(),
+  insertImage: (id: string) => {
+    const currentEditor = editor.value
+    if (!currentEditor) return false
+    return insertImageAndMoveCursorAfter(currentEditor, {
+      id,
+      src: props.attachmentMap[id] || '',
+    })
+  },
   insertAlbum: (id: string, images: string[], urls: string[]) => (editor.value?.chain().focus() as any).insertAlbum({
     id,
     images,
