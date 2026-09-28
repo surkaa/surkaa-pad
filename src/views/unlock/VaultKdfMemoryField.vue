@@ -9,6 +9,9 @@
       map-options
       options-dense
       color="primary"
+      :dark="$q.dark.isActive"
+      :options-dark="$q.dark.isActive"
+      popup-content-class="kdf-memory-select-popup"
       :disable="loading"
       @update:model-value="emit('update:modelValue', Number($event))"
     >
@@ -23,6 +26,7 @@
 </template>
 
 <script setup lang="ts">
+import {useQuasar} from 'quasar';
 import {newVaultMemoryOptions} from '../../utils/vaultKdfSetup';
 
 defineProps<{
@@ -34,6 +38,7 @@ const emit = defineEmits<{
   (event: 'update:modelValue', value: number): void;
 }>();
 
+const $q = useQuasar();
 const options = newVaultMemoryOptions();
 </script>
 
@@ -49,6 +54,15 @@ const options = newVaultMemoryOptions();
   font-size: 0.75rem;
   line-height: 1.45;
   text-align: left;
+}
+
+:global(.kdf-memory-select-popup) {
+  color: var(--pad-text-color-200);
+  background: var(--pad-bg-color-200);
+}
+
+:global(.kdf-memory-select-popup .q-item) {
+  color: var(--pad-text-color-200);
 }
 
 </style>
