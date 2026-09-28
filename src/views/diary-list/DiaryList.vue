@@ -46,8 +46,10 @@ const loadedDiaryListRevision = ref(diaryListRevision.value);
 interface InfiniteScrollHandle {
   reset: () => void;
   resume: () => void;
+  stop: () => void;
 }
 const infiniteScrollRef = ref<InfiniteScrollHandle | null>(null);
+let diaryListLoadGeneration = 0;
 
 const scrollContainer = ref<HTMLElement | null>(null);
 const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
@@ -135,17 +137,11 @@ async function loadDiarySummer(id: string) {
   }
 }
 
-// 无限滚动的核心回调函数
-async function onLoad(_index: number, done: (stop?: boolean) => void) {
-  // 如果正在加载中，直接跳过，防止由于滚动过快导致的重复请求
-  if (isLoading.value) {
-    done(false);
-    return;
-  }
-
-  isLoading.value = true; // 开始加载
+async function loadDiaryPage(generation: number) {
+  isLoading.value = true;
   try {
     const [ids, nt] = await api.cmdPageDiaryIds(nextToken.value);
+    if (generation !== diaryListLoadGeneration) return true;
 
     for (const id of ids) {
       if (diarySummaries.value[id] === undefined) {
@@ -156,28 +152,64 @@ async function onLoad(_index: number, done: (stop?: boolean) => void) {
       }
     }
 
-    if (!nt) {
-      // 以是否有 nextToken 来判断是否还有下一页，
-      // 后端的listObjectV2返回的是所有对象，
-      // 可能存在一整页都是非日记主文件的情况，
-      // 所以不能以返回的ID数量来判断
-      done(true);
-      return;
-    }
-
     nextToken.value = nt;
+    // 以是否有 nextToken 来判断是否还有下一页；对象列表的一整页可能没有日记主文件。
+    return !nt;
+  } finally {
+    if (generation === diaryListLoadGeneration) {
+      isLoading.value = false;
+      isFirstLoadFinished.value = true;
+    }
+  }
+}
 
-    // 本次加载完成，可以准备下一次
+// 无限滚动的核心回调函数
+async function onLoad(_index: number, done: (stop?: boolean) => void) {
+  // 如果正在加载中，直接跳过，防止由于滚动过快导致的重复请求
+  if (isLoading.value) {
     done(false);
+    return;
+  }
+
+  const generation = diaryListLoadGeneration;
+  try {
+    done(await loadDiaryPage(generation));
   } catch (error) {
     console.error('加载失败:', JSON.stringify(error), error);
     done(true);
+  }
+}
+
+function resetDiaryListContent() {
+  const pinnedIds = [...new Set(pinnedDiaryIds.value)];
+  diaryIds.value = pinnedIds;
+  diarySummaries.value = Object.fromEntries(pinnedIds.map(id => [id, null]));
+  nextToken.value = null;
+  isFirstLoadFinished.value = false;
+}
+
+async function refreshDiaryList(done: () => void) {
+  const generation = ++diaryListLoadGeneration;
+  infiniteScrollRef.value?.stop();
+  isLoading.value = false;
+  resetDiaryListContent();
+
+  let stopInfiniteScroll = true;
+  try {
+    stopInfiniteScroll = await loadDiaryPage(generation);
+  } catch (error) {
+    console.error('刷新日记列表失败:', JSON.stringify(error), error);
+    $q.notify({
+      type: 'negative',
+      message: `刷新日记列表失败: ${formatError(error)}`,
+    });
   } finally {
-    isLoading.value = false;
-    // 标记首次加载完成
-    if (!isFirstLoadFinished.value) {
-      isFirstLoadFinished.value = true;
+    await nextTick();
+    if (generation === diaryListLoadGeneration) {
+      infiniteScrollRef.value?.reset();
+      if (!stopInfiniteScroll) infiniteScrollRef.value?.resume();
     }
+    done();
   }
 }
 
@@ -195,9 +227,10 @@ onActivated(async () => {
   isActivating.value = true;
   if (loadedDiaryListRevision.value !== diaryListRevision.value) {
     loadedDiaryListRevision.value = diaryListRevision.value;
-    nextToken.value = null;
-    isFirstLoadFinished.value = false;
+    diaryListLoadGeneration += 1;
+    infiniteScrollRef.value?.stop();
     isLoading.value = false;
+    resetDiaryListContent();
     await nextTick();
     infiniteScrollRef.value?.reset();
     infiniteScrollRef.value?.resume();
@@ -218,39 +251,47 @@ onDeactivated(() => {
   <div id="diary-list">
     <div class="main-content">
       <section id="list" class="scroll-container" ref="scrollContainer">
-        <q-banner v-if="selectingTarget" rounded class="share-target-banner q-mb-md">
-          <template #avatar><q-icon name="ios_share"/></template>
-          请选择要添加分享内容的日记
-          <template #action>
-            <q-btn flat label="取消" @click="androidShareStore.cancelTargetSelection()"/>
-          </template>
-        </q-banner>
-        <q-infinite-scroll
-            ref="infiniteScrollRef"
+        <q-pull-to-refresh
+            class="diary-list-refresh"
             scroll-target="#list"
-            v-show="diaryIds.length > 0 || !isFirstLoadFinished"
-            @load="onLoad"
-            :offset="250"
+            color="primary"
+            :no-mouse="isWindows"
+            @refresh="refreshDiaryList"
         >
-          <DiarySummaryCard
-              v-for="id in sortedDiaryIds"
-              :key="id"
-              :diary="diarySummaries[id]"
-              :pinned="pinnedDiaryIds.includes(id)"
-              @click="handleDiaryClick(id)"
-              @visible="handleCardVisible(id)"
-          />
+          <q-banner v-if="selectingTarget" rounded class="share-target-banner q-mb-md">
+            <template #avatar><q-icon name="ios_share"/></template>
+            请选择要添加分享内容的日记
+            <template #action>
+              <q-btn flat label="取消" @click="androidShareStore.cancelTargetSelection()"/>
+            </template>
+          </q-banner>
+          <q-infinite-scroll
+              ref="infiniteScrollRef"
+              scroll-target="#list"
+              v-show="diaryIds.length > 0 || !isFirstLoadFinished"
+              @load="onLoad"
+              :offset="250"
+          >
+            <DiarySummaryCard
+                v-for="id in sortedDiaryIds"
+                :key="id"
+                :diary="diarySummaries[id]"
+                :pinned="pinnedDiaryIds.includes(id)"
+                @click="handleDiaryClick(id)"
+                @visible="handleCardVisible(id)"
+            />
 
-          <template v-slot:loading>
-            <div class="row justify-center q-my-md">
-              <q-spinner-dots color="primary" size="40px"/>
-            </div>
-          </template>
-        </q-infinite-scroll>
+            <template v-slot:loading>
+              <div class="row justify-center q-my-md">
+                <q-spinner-dots color="primary" size="40px"/>
+              </div>
+            </template>
+          </q-infinite-scroll>
 
-        <div v-if="diaryIds.length === 0 && !isLoading">
-          <DiaryListEmpty @create="openDiary()"/>
-        </div>
+          <div v-if="diaryIds.length === 0 && !isLoading">
+            <DiaryListEmpty @create="openDiary()"/>
+          </div>
+        </q-pull-to-refresh>
       </section>
     </div>
 
@@ -313,6 +354,10 @@ onDeactivated(() => {
     overflow-y: auto;
     overflow-x: hidden;
     padding: 24px 24px 100px 24px;
+  }
+
+  .diary-list-refresh {
+    min-height: 100%;
   }
 
   .share-target-banner {
