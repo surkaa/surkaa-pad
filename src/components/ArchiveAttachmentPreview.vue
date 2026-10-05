@@ -32,7 +32,7 @@
       v-else
       class="archive-tree"
       :items="visibleNodes"
-      :virtual-scroll-item-size="44"
+      :virtual-scroll-item-size="$q.screen.lt.sm ? 72 : 44"
       v-slot="{item}: {item: ArchiveTreeNode}"
     >
       <div
@@ -48,6 +48,7 @@
           size="18px"
         />
         <q-icon
+          class="archive-file-icon"
           :name="item.isDirectory ? 'folder' : fileIcon(item.path)"
           :color="item.isDirectory ? 'primary' : undefined"
           size="21px"
@@ -70,6 +71,7 @@
 
 <script setup lang="ts">
 import {computed, ref, shallowRef, watch} from 'vue';
+import {useQuasar} from 'quasar';
 import type {ArchivePreview} from '../bindings';
 import {formatBytes} from '../utils/format';
 import {
@@ -80,6 +82,7 @@ import {
 } from '../utils/archivePreview';
 
 const props = defineProps<{preview: ArchivePreview}>();
+const $q = useQuasar();
 const query = ref('');
 const roots = shallowRef<ArchiveTreeNode[]>([]);
 const expanded = ref<Set<string>>(new Set());
@@ -227,17 +230,60 @@ function fileIcon(path: string): string {
   }
 }
 
-@media (max-width: 500px) {
+@media (max-width: 599px) {
+  .archive-toolbar {
+    padding: 10px 12px;
+  }
+
+  .archive-summary {
+    gap: 6px 8px;
+  }
+
   .archive-row {
-    grid-template-columns: 18px 21px minmax(48px, 1fr) 16px 88px 58px;
+    height: 72px;
+    grid-template-columns: 18px 21px minmax(0, 1fr) auto;
+    grid-template-rows: minmax(36px, auto) 18px;
+    grid-template-areas:
+      'toggle icon name lock'
+      '. . modified size';
     column-gap: 7px;
-    padding-right: 10px;
-    padding-left: calc(8px + var(--archive-depth) * 16px);
+    padding: 6px 10px 6px calc(8px + min(48px, calc(var(--archive-depth) * 12px)));
+  }
+
+  .archive-toggle {
+    grid-area: toggle;
+  }
+
+  .archive-file-icon {
+    grid-area: icon;
+  }
+
+  .archive-name {
+    display: -webkit-box;
+    grid-area: name;
+    overflow: hidden;
+    line-height: 18px;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .archive-lock-slot {
+    grid-area: lock;
   }
 
   .archive-modified-at {
+    grid-area: modified;
     overflow: hidden;
+    font-size: 11px;
+    text-align: left;
     text-overflow: ellipsis;
+  }
+
+  .archive-size {
+    grid-area: size;
+    padding-left: 8px;
+    font-size: 11px;
   }
 }
 </style>
