@@ -159,6 +159,17 @@ export function buildAmapLocationUrl(location: DiaryLocation): string {
   return url.toString();
 }
 
+export function buildAmapAndroidUrl(location: DiaryLocation): string {
+  const url = new URL('androidamap://viewMap');
+  url.searchParams.set('sourceApplication', 'SurKaa Pad');
+  url.searchParams.set('poiname', location.placeName?.trim() || '日记位置');
+  url.searchParams.set('lat', String(location.latitude));
+  url.searchParams.set('lon', String(location.longitude));
+  // 高德 URI 的 dev=1 表示传入原始坐标，由高德转换保存的 WGS-84 坐标。
+  url.searchParams.set('dev', '1');
+  return url.toString();
+}
+
 export function formatLocationCoordinates(location: DiaryLocation): string {
   return `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
 }

@@ -13,6 +13,14 @@
     "biometric:allow-status",
     "process:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "androidamap:*"
+        }
+      ]
+    },
     "opener:allow-open-path",
     "core:menu:default",
     "native-camera:default",

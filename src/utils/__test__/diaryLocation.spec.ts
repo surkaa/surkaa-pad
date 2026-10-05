@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 import type {PermissionStatus, Position} from '@tauri-apps/plugin-geolocation';
 import {
+  buildAmapAndroidUrl,
   buildAmapLocationUrl,
   captureCurrentDiaryLocation,
   DiaryLocationError,
@@ -104,5 +105,25 @@ describe('Android diary location capture', () => {
     expect(url.searchParams.get('coordinate')).toBe('wgs84');
     expect(url.searchParams.get('callnative')).toBe('1');
     expect(url.searchParams.get('name')).toBe('广州市越秀区');
+  });
+
+  it('builds an Android Amap app URI for WGS84 coordinates', () => {
+    const location = positionToDiaryLocation(position);
+    location.placeName = ' 广州市越秀区 ';
+    const url = new URL(buildAmapAndroidUrl(location));
+
+    expect(url.protocol).toBe('androidamap:');
+    expect(url.hostname).toBe('viewMap');
+    expect(url.searchParams.get('sourceApplication')).toBe('SurKaa Pad');
+    expect(url.searchParams.get('poiname')).toBe('广州市越秀区');
+    expect(url.searchParams.get('lat')).toBe('23.1291');
+    expect(url.searchParams.get('lon')).toBe('113.2644');
+    expect(url.searchParams.get('dev')).toBe('1');
+  });
+
+  it('uses a fallback label for an unnamed Android map marker', () => {
+    const url = new URL(buildAmapAndroidUrl(positionToDiaryLocation(position)));
+
+    expect(url.searchParams.get('poiname')).toBe('日记位置');
   });
 });

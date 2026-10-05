@@ -22,6 +22,7 @@ import {platform} from '@tauri-apps/plugin-os';
 import {openUrl} from '@tauri-apps/plugin-opener';
 import type {DiaryLocation} from '../../bindings';
 import {
+  buildAmapAndroidUrl,
   buildAmapLocationUrl,
   captureCurrentDiaryLocation,
   DiaryLocationError,
@@ -228,9 +229,12 @@ function insertLocation(location: DiaryLocation) {
 
 async function openLocation(location: DiaryLocation) {
   try {
-    await openUrl(buildAmapLocationUrl(location));
+    await openUrl(isAndroid
+      ? buildAmapAndroidUrl(location)
+      : buildAmapLocationUrl(location));
   } catch (error) {
-    $q.notify({type: 'negative', message: `打开地图失败：${String(error)}`});
+    const prefix = isAndroid ? '打开高德地图失败，请确认已安装高德地图' : '打开地图失败';
+    $q.notify({type: 'negative', message: `${prefix}：${String(error)}`});
   }
 }
 
