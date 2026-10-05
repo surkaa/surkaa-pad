@@ -23,7 +23,7 @@
       <q-card class="toolbar-order-dialog">
         <q-card-section>
           <div class="text-h6 title-text">工具栏按钮顺序</div>
-          <div class="text-caption desc-text">撤销和重做固定在末尾，不参与排序</div>
+          <div class="text-caption desc-text">全部工具按钮都可以调整顺序</div>
         </q-card-section>
         <q-separator/>
 

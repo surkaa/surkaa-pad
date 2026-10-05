@@ -26,6 +26,8 @@ function settingsData(theme: 'light' | 'dark' | 'system' = 'dark'): SyncedSettin
     },
     editor: {
       toolbarOrder: [
+        'redo',
+        'undo',
         'summary',
         'taskList',
         'heading3',
@@ -66,12 +68,12 @@ function settingsData(theme: 'light' | 'dark' | 'system' = 'dark'): SyncedSettin
 
 function document(updatedAt: number, theme: 'light' | 'dark' | 'system' = 'dark'):
 SyncedSettingsDocument {
-  return {version: 1, updatedAt, ...settingsData(theme)};
+  return {version: 2, updatedAt, ...settingsData(theme)};
 }
 
 function fakeApi(remote: SyncedSettingsDocument | null) {
   const save = vi.fn(async (settings: SyncedSettingsData) => ({
-    version: 1,
+    version: 2,
     updatedAt: 300,
     ...settings,
   }));

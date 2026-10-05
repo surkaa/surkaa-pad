@@ -9,6 +9,8 @@ import {
   type EditorShortcutConfig,
 } from "../utils/editorShortcuts.ts";
 import {
+  EDITOR_FORMATTING_ACTIONS,
+  EDITOR_TOOLBAR_ICONS,
   EDITOR_TOOLBAR_LABELS,
   normalizeEditorToolbarOrder,
   runEditorToolbarAction,
@@ -30,7 +32,6 @@ const {
 }>();
 
 const emit = defineEmits([
-  'undo', 'redo',
   'additionalAction', 'editSummary',
   'insertPhoto', 'takePhoto',
   'insertAudio', 'audioRecording',
@@ -55,6 +56,8 @@ function isToolbarActionActive(action: EditorToolbarAction): boolean {
     case 'heading3': return editor.isActive('heading', {level: 3});
     case 'taskList': return editor.isActive('taskList');
     case 'summary': return editor.isActive('summaryNode');
+    case 'undo':
+    case 'redo': return false;
   }
 }
 
@@ -72,7 +75,16 @@ function toolbarActionText(action: EditorToolbarAction): string {
     heading3: 'H3',
     taskList: '',
     summary: '',
+    undo: '',
+    redo: '',
   }[action];
+}
+
+function toolbarActionUsesIcon(action: EditorToolbarAction): boolean {
+  return action === 'taskList'
+    || action === 'summary'
+    || action === 'undo'
+    || action === 'redo';
 }
 
 function attachmentActionTitle(label: string, action: EditorShortcutAction) {
@@ -82,7 +94,11 @@ function attachmentActionTitle(label: string, action: EditorShortcutAction) {
 }
 
 function toolbarActionTitle(action: EditorToolbarAction) {
-  return attachmentActionTitle(EDITOR_TOOLBAR_LABELS[action], action);
+  const label = EDITOR_TOOLBAR_LABELS[action];
+  if (!EDITOR_FORMATTING_ACTIONS.includes(action as (typeof EDITOR_FORMATTING_ACTIONS)[number])) {
+    return label;
+  }
+  return attachmentActionTitle(label, action as EditorShortcutAction);
 }
 
 </script>
@@ -103,17 +119,17 @@ function toolbarActionTitle(action: EditorToolbarAction) {
               :aria-label="EDITOR_TOOLBAR_LABELS[action]"
               @click.stop="runToolbarAction(action)"
             >
-              <q-icon v-if="action === 'taskList'" name="checklist" size="20px"/>
-              <q-icon v-else-if="action === 'summary'" name="unfold_more" size="20px"/>
+              <q-icon
+                v-if="toolbarActionUsesIcon(action)"
+                :name="EDITOR_TOOLBAR_ICONS[action]"
+                size="20px"
+              />
               <b v-else-if="action === 'bold'">{{ toolbarActionText(action) }}</b>
               <u v-else-if="action === 'underline'">{{ toolbarActionText(action) }}</u>
               <s v-else-if="action === 'strike'">{{ toolbarActionText(action) }}</s>
               <template v-else>{{ toolbarActionText(action) }}</template>
             </button>
-            <div class="divider"></div>
           </template>
-          <button class="tool-btn" @click.stop="emit('undo')">↺</button>
-          <button class="tool-btn" @click.stop="emit('redo')">↻</button>
         </div>
         <div class="divider"></div>
 

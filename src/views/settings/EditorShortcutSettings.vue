@@ -128,7 +128,7 @@ import {
   type EditorShortcutAction,
 } from '../../utils/editorShortcuts';
 import {
-  EDITOR_TOOLBAR_ACTIONS,
+  EDITOR_FORMATTING_ACTIONS,
   EDITOR_TOOLBAR_ICONS,
 } from '../../utils/editorToolbar';
 import {
@@ -153,11 +153,14 @@ const editorShortcutGroups: ReadonlyArray<{
   label: string;
   actions: readonly EditorShortcutAction[];
 }> = [
-  {label: '文字与结构', actions: EDITOR_TOOLBAR_ACTIONS},
+  {label: '文字与结构', actions: EDITOR_FORMATTING_ACTIONS},
   {label: '附件', actions: EDITOR_ATTACHMENT_SHORTCUT_ACTIONS},
 ];
 const editorShortcutIcons: Record<EditorShortcutAction, string> = {
-  ...EDITOR_TOOLBAR_ICONS,
+  ...Object.fromEntries(EDITOR_FORMATTING_ACTIONS.map(action => [
+    action,
+    EDITOR_TOOLBAR_ICONS[action],
+  ])) as Record<(typeof EDITOR_FORMATTING_ACTIONS)[number], string>,
   insertPhoto: 'image',
   insertAudio: 'audiotrack',
   audioRecording: 'mic',

@@ -23,6 +23,8 @@ describe('editor toolbar order', () => {
       'heading2',
       'heading3',
       'summary',
+      'undo',
+      'redo',
     ]);
   });
 
@@ -33,8 +35,10 @@ describe('editor toolbar order', () => {
       .toEqual(DEFAULT_EDITOR_TOOLBAR_ORDER);
     expect(moveEditorToolbarAction(DEFAULT_EDITOR_TOOLBAR_ORDER, 'taskList', 1))
       .not.toEqual(DEFAULT_EDITOR_TOOLBAR_ORDER);
-    expect(moveEditorToolbarAction(DEFAULT_EDITOR_TOOLBAR_ORDER, 'summary', 1))
+    expect(moveEditorToolbarAction(DEFAULT_EDITOR_TOOLBAR_ORDER, 'redo', 1))
       .toEqual(DEFAULT_EDITOR_TOOLBAR_ORDER);
+    expect(moveEditorToolbarAction(DEFAULT_EDITOR_TOOLBAR_ORDER, 'undo', -1).slice(-4))
+      .toEqual(['taskList', 'undo', 'summary', 'redo']);
   });
 
   it('runs formatting commands and delegates Summary editing', () => {
@@ -47,6 +51,8 @@ describe('editor toolbar order', () => {
       'toggleStrike',
       'toggleHeading',
       'toggleTaskList',
+      'undo',
+      'redo',
     ]) {
       chain[method] = vi.fn(() => chain);
     }
@@ -59,5 +65,8 @@ describe('editor toolbar order', () => {
 
     expect(runEditorToolbarAction(editor, 'summary', openSummary)).toBe(true);
     expect(openSummary).toHaveBeenCalledOnce();
+
+    expect(runEditorToolbarAction(editor, 'undo', openSummary)).toBe(true);
+    expect(chain.undo).toHaveBeenCalledOnce();
   });
 });

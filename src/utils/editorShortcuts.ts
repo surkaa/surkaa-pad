@@ -1,7 +1,7 @@
 import {
-  EDITOR_TOOLBAR_ACTIONS,
+  EDITOR_FORMATTING_ACTIONS,
   EDITOR_TOOLBAR_LABELS,
-  type EditorToolbarAction,
+  type EditorFormattingAction,
 } from './editorToolbar'
 
 export const EDITOR_ATTACHMENT_SHORTCUT_ACTIONS = [
@@ -13,7 +13,7 @@ export const EDITOR_ATTACHMENT_SHORTCUT_ACTIONS = [
 ] as const
 
 export const EDITOR_SHORTCUT_ACTIONS = [
-  ...EDITOR_TOOLBAR_ACTIONS,
+  ...EDITOR_FORMATTING_ACTIONS,
   ...EDITOR_ATTACHMENT_SHORTCUT_ACTIONS,
 ] as const
 
@@ -46,7 +46,7 @@ export const DEFAULT_WINDOWS_EDITOR_SHORTCUTS: EditorShortcutConfig = {
 }
 
 /** Tiptap 内置的工具栏快捷键；用户改键后需要拦截这些旧组合。 */
-export const NATIVE_EDITOR_SHORTCUTS: Partial<Record<EditorToolbarAction, readonly string[]>> = {
+export const NATIVE_EDITOR_SHORTCUTS: Partial<Record<EditorFormattingAction, readonly string[]>> = {
   bold: ['Ctrl+KeyB', 'Ctrl+Shift+KeyB'],
   underline: ['Ctrl+KeyU', 'Ctrl+Shift+KeyU'],
   strike: ['Ctrl+Shift+KeyS'],
@@ -101,15 +101,15 @@ export function findEditorShortcutAction(
 
 export function isEditorToolbarShortcutAction(
   action: EditorShortcutAction,
-): action is EditorToolbarAction {
-  return EDITOR_TOOLBAR_ACTIONS.includes(action as EditorToolbarAction)
+): action is EditorFormattingAction {
+  return EDITOR_FORMATTING_ACTIONS.includes(action as EditorFormattingAction)
 }
 
 export function findReassignedNativeEditorShortcut(
   event: ShortcutKeyboardEvent,
   config: EditorShortcutConfig,
-): EditorToolbarAction | null {
-  for (const action of EDITOR_TOOLBAR_ACTIONS) {
+): EditorFormattingAction | null {
+  for (const action of EDITOR_FORMATTING_ACTIONS) {
     const nativeShortcuts = NATIVE_EDITOR_SHORTCUTS[action]
     const matchedShortcut = nativeShortcuts?.find(shortcut =>
       keyboardEventMatchesShortcut(event, shortcut)

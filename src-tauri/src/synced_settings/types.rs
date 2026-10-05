@@ -4,7 +4,7 @@ use specta::Type;
 use std::collections::HashSet;
 use thiserror::Error;
 
-pub const CURRENT_SYNCED_SETTINGS_VERSION: u32 = 1;
+pub const CURRENT_SYNCED_SETTINGS_VERSION: u32 = 2;
 const MAX_PINNED_DIARIES: usize = 100_000;
 const MAX_SHORTCUT_CHARS: usize = 100;
 
@@ -27,10 +27,12 @@ pub enum EditorToolbarAction {
     Heading3,
     TaskList,
     Summary,
+    Undo,
+    Redo,
 }
 
 impl EditorToolbarAction {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 10] = [
         Self::Bold,
         Self::Underline,
         Self::Strike,
@@ -39,6 +41,8 @@ impl EditorToolbarAction {
         Self::Heading3,
         Self::TaskList,
         Self::Summary,
+        Self::Undo,
+        Self::Redo,
     ];
 }
 
@@ -235,17 +239,21 @@ impl SyncedSettingsData {
 pub fn deserialize_synced_settings(
     bytes: &[u8],
 ) -> Result<SyncedSettingsDocument, SyncedSettingsError> {
-    let value: Value = serde_json::from_slice(bytes)?;
+    let mut value: Value = serde_json::from_slice(bytes)?;
     let version = value
         .get("version")
         .and_then(Value::as_u64)
         .and_then(|version| u32::try_from(version).ok())
         .ok_or_else(|| SyncedSettingsError::InvalidData("缺少有效的 version 字段".into()))?;
-    if version != CURRENT_SYNCED_SETTINGS_VERSION {
+    if version == 0 || version > CURRENT_SYNCED_SETTINGS_VERSION {
         return Err(SyncedSettingsError::UnsupportedVersion {
             found: version,
             supported: CURRENT_SYNCED_SETTINGS_VERSION,
         });
+    }
+
+    if version == 1 {
+        migrate_v1_to_v2(&mut value)?;
     }
     let document: SyncedSettingsDocument = serde_json::from_value(value)?;
     if document.updated_at < 0 {
@@ -255,6 +263,19 @@ pub fn deserialize_synced_settings(
     }
     document.data.validate()?;
     Ok(document)
+}
+
+fn migrate_v1_to_v2(value: &mut Value) -> Result<(), SyncedSettingsError> {
+    let toolbar_order = value
+        .pointer_mut("/editor/toolbarOrder")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| {
+            SyncedSettingsError::InvalidData("缺少有效的 editor.toolbarOrder 字段".into())
+        })?;
+    toolbar_order.push(Value::String("undo".into()));
+    toolbar_order.push(Value::String("redo".into()));
+    value["version"] = Value::from(2);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -301,10 +322,12 @@ mod tests {
         };
         let value = serde_json::to_value(&document).unwrap();
 
-        assert_eq!(value["version"], 1);
+        assert_eq!(value["version"], 2);
         assert_eq!(value["updatedAt"], 123);
         assert_eq!(value["appearance"]["theme"], "dark");
         assert_eq!(value["editor"]["toolbarOrder"][6], "taskList");
+        assert_eq!(value["editor"]["toolbarOrder"][8], "undo");
+        assert_eq!(value["editor"]["toolbarOrder"][9], "redo");
         assert_eq!(
             value["windows"]["editorShortcuts"]["insertPhoto"],
             "Ctrl+Alt+KeyP"
@@ -319,12 +342,12 @@ mod tests {
             data: sample_settings(),
         })
         .unwrap();
-        value["version"] = 2.into();
+        value["version"] = (CURRENT_SYNCED_SETTINGS_VERSION + 1).into();
         assert!(matches!(
             deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()),
             Err(SyncedSettingsError::UnsupportedVersion {
-                found: 2,
-                supported: 1
+                found: 3,
+                supported: 2
             })
         ));
 
@@ -343,7 +366,30 @@ mod tests {
     }
 
     #[test]
-    fn fills_toolbar_shortcuts_when_loading_an_older_v1_document() {
+    fn migrates_v1_toolbar_order_by_appending_undo_and_redo() {
+        let mut value = serde_json::to_value(SyncedSettingsDocument {
+            version: CURRENT_SYNCED_SETTINGS_VERSION,
+            updated_at: 123,
+            data: sample_settings(),
+        })
+        .unwrap();
+        value["version"] = 1.into();
+        value["editor"]["toolbarOrder"]
+            .as_array_mut()
+            .unwrap()
+            .truncate(8);
+
+        let document = deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()).unwrap();
+
+        assert_eq!(document.version, CURRENT_SYNCED_SETTINGS_VERSION);
+        assert_eq!(
+            document.data.editor.toolbar_order,
+            EditorToolbarAction::ALL.to_vec()
+        );
+    }
+
+    #[test]
+    fn fills_missing_toolbar_shortcuts_with_defaults() {
         let mut value = serde_json::to_value(SyncedSettingsDocument {
             version: CURRENT_SYNCED_SETTINGS_VERSION,
             updated_at: 123,

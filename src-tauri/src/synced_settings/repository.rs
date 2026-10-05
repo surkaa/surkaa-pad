@@ -108,6 +108,8 @@ mod tests {
                     EditorToolbarAction::Heading3,
                     EditorToolbarAction::TaskList,
                     EditorToolbarAction::Summary,
+                    EditorToolbarAction::Undo,
+                    EditorToolbarAction::Redo,
                 ],
             },
             pinned_diary_ids: vec!["8215021834823".into()],
@@ -174,7 +176,7 @@ mod tests {
             data: sample_settings(),
         })
         .unwrap();
-        value["version"] = 2.into();
+        value["version"] = (CURRENT_SYNCED_SETTINGS_VERSION + 1).into();
         let encrypted = crypto
             .encrypt(&serde_json::to_vec(&value).unwrap())
             .unwrap();

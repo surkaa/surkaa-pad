@@ -1,6 +1,6 @@
 import type {Editor} from '@tiptap/vue-3';
 
-export const EDITOR_TOOLBAR_ACTIONS = [
+export const EDITOR_FORMATTING_ACTIONS = [
   'bold',
   'underline',
   'strike',
@@ -9,6 +9,14 @@ export const EDITOR_TOOLBAR_ACTIONS = [
   'heading3',
   'taskList',
   'summary',
+] as const;
+
+export type EditorFormattingAction = typeof EDITOR_FORMATTING_ACTIONS[number];
+
+export const EDITOR_TOOLBAR_ACTIONS = [
+  ...EDITOR_FORMATTING_ACTIONS,
+  'undo',
+  'redo',
 ] as const;
 
 export type EditorToolbarAction = typeof EDITOR_TOOLBAR_ACTIONS[number];
@@ -22,6 +30,8 @@ export const EDITOR_TOOLBAR_LABELS: Record<EditorToolbarAction, string> = {
   heading3: '三级标题',
   taskList: '待办列表',
   summary: '折叠内容',
+  undo: '撤销',
+  redo: '重做',
 };
 
 export const EDITOR_TOOLBAR_ICONS: Record<EditorToolbarAction, string> = {
@@ -33,6 +43,8 @@ export const EDITOR_TOOLBAR_ICONS: Record<EditorToolbarAction, string> = {
   heading3: 'looks_3',
   taskList: 'checklist',
   summary: 'unfold_more',
+  undo: 'undo',
+  redo: 'redo',
 };
 
 export const DEFAULT_EDITOR_TOOLBAR_ORDER: EditorToolbarAction[] = [...EDITOR_TOOLBAR_ACTIONS];
@@ -80,6 +92,8 @@ export function runEditorToolbarAction(
     openSummary();
     return true;
   }
+  if (action === 'undo') return editor.chain().undo().run();
+  if (action === 'redo') return editor.chain().redo().run();
 
   const chain = editor.chain().focus();
   switch (action) {
