@@ -49,6 +49,7 @@ interface InfiniteScrollHandle {
   stop: () => void;
 }
 const infiniteScrollRef = ref<InfiniteScrollHandle | null>(null);
+const diaryListRenderRevision = ref(0);
 let diaryListLoadGeneration = 0;
 
 const scrollContainer = ref<HTMLElement | null>(null);
@@ -182,6 +183,9 @@ async function onLoad(_index: number, done: (stop?: boolean) => void) {
 
 function resetDiaryListContent() {
   const pinnedIds = [...new Set(pinnedDiaryIds.value)];
+  // 置顶卡片可能已解除过 IntersectionObserver。重建卡片后，刷新产生的骨架态
+  // 会重新注册可见性监听，只加载当前视口附近的摘要。
+  diaryListRenderRevision.value += 1;
   diaryIds.value = pinnedIds;
   diarySummaries.value = Object.fromEntries(pinnedIds.map(id => [id, null]));
   nextToken.value = null;
@@ -274,7 +278,7 @@ onDeactivated(() => {
           >
             <DiarySummaryCard
                 v-for="id in sortedDiaryIds"
-                :key="id"
+                :key="`${diaryListRenderRevision}:${id}`"
                 :diary="diarySummaries[id]"
                 :pinned="pinnedDiaryIds.includes(id)"
                 @click="handleDiaryClick(id)"
