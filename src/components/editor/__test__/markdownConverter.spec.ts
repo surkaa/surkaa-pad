@@ -43,6 +43,8 @@ describe('htmlToMarkdown', () => {
     ['h1', '<h1>Title</h1>', '# Title'],
     ['h2', '<h2>Title</h2>', '## Title'],
     ['h3', '<h3>Title</h3>', '### Title'],
+    ['h4', '<h4>Title</h4>', '#### Title'],
+    ['h5', '<h5>Title</h5>', '##### Title'],
   ])('converts %s headings', (_name, html, expected) => {
     expect(htmlToMarkdown(html)).toBe(expected)
   })
@@ -111,6 +113,8 @@ describe('markdownToHtml', () => {
     ['h1', '# Title', '<h1>Title</h1>'],
     ['h2', '## Title', '<h2>Title</h2>'],
     ['h3', '### Title', '<h3>Title</h3>'],
+    ['h4', '#### Title', '<h4>Title</h4>'],
+    ['h5', '##### Title', '<h5>Title</h5>'],
     ['strike', '~~gone~~', '<p><s>gone</s></p>'],
     ['inline code', '`fn()`', '<p><code>fn()</code></p>'],
     ['link', '[site](https://x.com)', '<p><a href="https://x.com">site</a></p>'],

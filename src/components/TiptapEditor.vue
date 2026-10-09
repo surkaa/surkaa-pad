@@ -66,6 +66,8 @@ import {TaskCompletionOrder} from './editor/taskCompletionOrder'
 import {isHtmlAttachment} from '../utils/attachmentOpen'
 import {attachmentPreviewKind} from '../utils/attachmentPreview'
 import {insertImageAndMoveCursorAfter} from './editor/imageInsertion'
+import {useConfigStore} from '../stores/config'
+import {editorFontSizeCssVariables} from '../utils/editorFontSizes'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -93,6 +95,9 @@ const emit = defineEmits<{
 const editorElement = ref<HTMLDivElement>()
 const currentPlatform = platform()
 const $q = useQuasar()
+const configStore = useConfigStore()
+const editorFontSizes = configStore.useTauriConfig('editor_font_sizes')
+const editorFontSizeStyle = computed(() => editorFontSizeCssVariables(editorFontSizes.value))
 
 const storageY = useStorage(`scroll-y-${props.diarySummary?.id}`, 0, sessionStorage)
 const { y } = useScroll(editorElement, {
@@ -141,7 +146,7 @@ const editor = useEditor({
   content: diaryContentToHtml(props.modelValue, props.attachmentMap, attachmentFilenames.value),
   extensions: [
     StarterKit.configure({
-      heading: { levels: [1, 2, 3] },
+      heading: { levels: [1, 2, 3, 4, 5] },
     }),
     Placeholder.configure({
       placeholder: '开始记录...',
@@ -549,6 +554,7 @@ defineExpose({
   <div
     ref="editorElement"
     class="tiptap-wrapper"
+    :style="editorFontSizeStyle"
     @pointerdown.capture="handleWrapperPointerDown"
     @dragstart.capture="handleWrapperDragStart"
     @click="handleWrapperClick"
@@ -630,6 +636,27 @@ defineExpose({
   min-height: 100%;
   padding: 0;
   text-align: left;
+  font-size: var(--diary-body-font-size, 16px);
+
+  h1 {
+    font-size: var(--diary-heading-1-font-size, 32px);
+  }
+
+  h2 {
+    font-size: var(--diary-heading-2-font-size, 24px);
+  }
+
+  h3 {
+    font-size: var(--diary-heading-3-font-size, 19px);
+  }
+
+  h4 {
+    font-size: var(--diary-heading-4-font-size, 16px);
+  }
+
+  h5 {
+    font-size: var(--diary-heading-5-font-size, 13px);
+  }
 
   > * + * {
     margin-top: 0.75em;

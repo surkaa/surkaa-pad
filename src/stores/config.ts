@@ -26,6 +26,11 @@ import {
     type EditorToolbarAction,
 } from '../utils/editorToolbar';
 import {normalizePasswordUnlockIntervalDays} from '../utils/biometricUnlockPolicy';
+import {
+    DEFAULT_EDITOR_FONT_SIZES,
+    normalizeEditorFontSizeConfig,
+    type EditorFontSizeConfig,
+} from '../utils/editorFontSizes';
 
 const STORAGE_PREFIX = 'config:';
 
@@ -49,6 +54,7 @@ export type ConfigMap = {
     "windows_diary_list_shortcuts": DiaryListShortcutConfig;
     "windows_ai_assistant_shortcuts": AiAssistantShortcutConfig;
     "editor_toolbar_order": EditorToolbarAction[];
+    "editor_font_sizes": EditorFontSizeConfig;
 };
 const DEFAULT_CONFIG = {
     "app-theme": DEFAULT_THEME,
@@ -70,6 +76,7 @@ const DEFAULT_CONFIG = {
     "windows_diary_list_shortcuts": {...DEFAULT_WINDOWS_DIARY_LIST_SHORTCUTS},
     "windows_ai_assistant_shortcuts": {...DEFAULT_WINDOWS_AI_ASSISTANT_SHORTCUTS},
     "editor_toolbar_order": [...DEFAULT_EDITOR_TOOLBAR_ORDER],
+    "editor_font_sizes": {...DEFAULT_EDITOR_FONT_SIZES},
 } satisfies ConfigMap;
 
 export type ConfigKey = keyof ConfigMap;
@@ -93,6 +100,9 @@ function normalizeConfigValue<K extends ConfigKey>(key: K, value: unknown): Conf
     }
     if (key === 'editor_toolbar_order') {
         return normalizeEditorToolbarOrder(value) as ConfigMap[K];
+    }
+    if (key === 'editor_font_sizes') {
+        return normalizeEditorFontSizeConfig(value) as ConfigMap[K];
     }
     if (key === 'biometric_password_interval_days') {
         return normalizePasswordUnlockIntervalDays(value) as ConfigMap[K];

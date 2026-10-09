@@ -52,6 +52,8 @@ describe('editor shortcuts', () => {
       heading1: 'Ctrl+Digit1',
       heading2: 'Ctrl+Digit2',
       heading3: 'Ctrl+Digit3',
+      heading4: 'Ctrl+Digit4',
+      heading5: 'Ctrl+Digit5',
       summary: 'Ctrl+Alt+KeyS',
       taskList: 'Ctrl+KeyT',
     })

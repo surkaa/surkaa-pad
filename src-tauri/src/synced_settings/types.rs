@@ -4,7 +4,7 @@ use specta::Type;
 use std::collections::HashSet;
 use thiserror::Error;
 
-pub const CURRENT_SYNCED_SETTINGS_VERSION: u32 = 2;
+pub const CURRENT_SYNCED_SETTINGS_VERSION: u32 = 3;
 const MAX_PINNED_DIARIES: usize = 100_000;
 const MAX_SHORTCUT_CHARS: usize = 100;
 
@@ -25,6 +25,8 @@ pub enum EditorToolbarAction {
     Heading1,
     Heading2,
     Heading3,
+    Heading4,
+    Heading5,
     TaskList,
     Summary,
     Undo,
@@ -32,13 +34,15 @@ pub enum EditorToolbarAction {
 }
 
 impl EditorToolbarAction {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 12] = [
         Self::Bold,
         Self::Underline,
         Self::Strike,
         Self::Heading1,
         Self::Heading2,
         Self::Heading3,
+        Self::Heading4,
+        Self::Heading5,
         Self::TaskList,
         Self::Summary,
         Self::Undo,
@@ -71,6 +75,8 @@ pub struct EditorShortcutSettings {
     pub heading1: String,
     pub heading2: String,
     pub heading3: String,
+    pub heading4: String,
+    pub heading5: String,
     pub task_list: String,
     pub summary: String,
     pub insert_photo: String,
@@ -89,6 +95,8 @@ impl Default for EditorShortcutSettings {
             heading1: "Ctrl+Digit1".into(),
             heading2: "Ctrl+Digit2".into(),
             heading3: "Ctrl+Digit3".into(),
+            heading4: "Ctrl+Digit4".into(),
+            heading5: "Ctrl+Digit5".into(),
             task_list: "Ctrl+KeyT".into(),
             summary: "Ctrl+Alt+KeyS".into(),
             insert_photo: "Ctrl+Alt+KeyP".into(),
@@ -217,6 +225,8 @@ impl SyncedSettingsData {
             ("heading1", &editor.heading1),
             ("heading2", &editor.heading2),
             ("heading3", &editor.heading3),
+            ("heading4", &editor.heading4),
+            ("heading5", &editor.heading5),
             ("taskList", &editor.task_list),
             ("summary", &editor.summary),
             ("insertPhoto", &editor.insert_photo),
@@ -255,6 +265,9 @@ pub fn deserialize_synced_settings(
     if version == 1 {
         migrate_v1_to_v2(&mut value)?;
     }
+    if value.get("version").and_then(Value::as_u64) == Some(2) {
+        migrate_v2_to_v3(&mut value)?;
+    }
     let document: SyncedSettingsDocument = serde_json::from_value(value)?;
     if document.updated_at < 0 {
         return Err(SyncedSettingsError::InvalidData(
@@ -275,6 +288,23 @@ fn migrate_v1_to_v2(value: &mut Value) -> Result<(), SyncedSettingsError> {
     toolbar_order.push(Value::String("undo".into()));
     toolbar_order.push(Value::String("redo".into()));
     value["version"] = Value::from(2);
+    Ok(())
+}
+
+fn migrate_v2_to_v3(value: &mut Value) -> Result<(), SyncedSettingsError> {
+    let toolbar_order = value
+        .pointer_mut("/editor/toolbarOrder")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| {
+            SyncedSettingsError::InvalidData("缺少有效的 editor.toolbarOrder 字段".into())
+        })?;
+    let heading3_index = toolbar_order
+        .iter()
+        .position(|action| action.as_str() == Some("heading3"))
+        .ok_or_else(|| SyncedSettingsError::InvalidData("编辑器工具栏顺序缺少 heading3".into()))?;
+    toolbar_order.insert(heading3_index + 1, Value::String("heading4".into()));
+    toolbar_order.insert(heading3_index + 2, Value::String("heading5".into()));
+    value["version"] = Value::from(3);
     Ok(())
 }
 
@@ -322,12 +352,13 @@ mod tests {
         };
         let value = serde_json::to_value(&document).unwrap();
 
-        assert_eq!(value["version"], 2);
+        assert_eq!(value["version"], 3);
         assert_eq!(value["updatedAt"], 123);
         assert_eq!(value["appearance"]["theme"], "dark");
-        assert_eq!(value["editor"]["toolbarOrder"][6], "taskList");
-        assert_eq!(value["editor"]["toolbarOrder"][8], "undo");
-        assert_eq!(value["editor"]["toolbarOrder"][9], "redo");
+        assert_eq!(value["editor"]["toolbarOrder"][6], "heading4");
+        assert_eq!(value["editor"]["toolbarOrder"][8], "taskList");
+        assert_eq!(value["editor"]["toolbarOrder"][10], "undo");
+        assert_eq!(value["editor"]["toolbarOrder"][11], "redo");
         assert_eq!(
             value["windows"]["editorShortcuts"]["insertPhoto"],
             "Ctrl+Alt+KeyP"
@@ -346,8 +377,8 @@ mod tests {
         assert!(matches!(
             deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()),
             Err(SyncedSettingsError::UnsupportedVersion {
-                found: 3,
-                supported: 2
+                found: 4,
+                supported: 3
             })
         ));
 
@@ -374,10 +405,16 @@ mod tests {
         })
         .unwrap();
         value["version"] = 1.into();
-        value["editor"]["toolbarOrder"]
-            .as_array_mut()
-            .unwrap()
-            .truncate(8);
+        value["editor"]["toolbarOrder"] = serde_json::json!([
+            "bold",
+            "underline",
+            "strike",
+            "heading1",
+            "heading2",
+            "heading3",
+            "taskList",
+            "summary"
+        ]);
 
         let document = deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()).unwrap();
 
@@ -385,6 +422,61 @@ mod tests {
         assert_eq!(
             document.data.editor.toolbar_order,
             EditorToolbarAction::ALL.to_vec()
+        );
+    }
+
+    #[test]
+    fn migrates_v2_toolbar_order_by_inserting_new_headings_after_heading3() {
+        let mut value = serde_json::to_value(SyncedSettingsDocument {
+            version: CURRENT_SYNCED_SETTINGS_VERSION,
+            updated_at: 123,
+            data: sample_settings(),
+        })
+        .unwrap();
+        value["version"] = 2.into();
+        value["editor"]["toolbarOrder"] = serde_json::json!([
+            "redo",
+            "heading2",
+            "heading3",
+            "bold",
+            "taskList",
+            "heading1",
+            "underline",
+            "summary",
+            "strike",
+            "undo"
+        ]);
+        let shortcuts = value["windows"]["editorShortcuts"].as_object_mut().unwrap();
+        shortcuts.remove("heading4");
+        shortcuts.remove("heading5");
+
+        let document = deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()).unwrap();
+
+        assert_eq!(document.version, CURRENT_SYNCED_SETTINGS_VERSION);
+        assert_eq!(
+            document.data.editor.toolbar_order,
+            vec![
+                EditorToolbarAction::Redo,
+                EditorToolbarAction::Heading2,
+                EditorToolbarAction::Heading3,
+                EditorToolbarAction::Heading4,
+                EditorToolbarAction::Heading5,
+                EditorToolbarAction::Bold,
+                EditorToolbarAction::TaskList,
+                EditorToolbarAction::Heading1,
+                EditorToolbarAction::Underline,
+                EditorToolbarAction::Summary,
+                EditorToolbarAction::Strike,
+                EditorToolbarAction::Undo,
+            ]
+        );
+        assert_eq!(
+            document.data.windows.editor_shortcuts.heading4,
+            "Ctrl+Digit4"
+        );
+        assert_eq!(
+            document.data.windows.editor_shortcuts.heading5,
+            "Ctrl+Digit5"
         );
     }
 
@@ -404,6 +496,8 @@ mod tests {
             "heading1",
             "heading2",
             "heading3",
+            "heading4",
+            "heading5",
             "taskList",
             "summary",
         ] {

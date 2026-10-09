@@ -22,9 +22,39 @@ describe('editor toolbar order', () => {
       'heading1',
       'heading2',
       'heading3',
+      'heading4',
+      'heading5',
       'summary',
       'undo',
       'redo',
+    ]);
+  });
+
+  it('inserts new heading actions after heading3 in an old complete order', () => {
+    expect(normalizeEditorToolbarOrder([
+      'redo',
+      'heading3',
+      'bold',
+      'taskList',
+      'heading2',
+      'heading1',
+      'underline',
+      'summary',
+      'strike',
+      'undo',
+    ])).toEqual([
+      'redo',
+      'heading3',
+      'heading4',
+      'heading5',
+      'bold',
+      'taskList',
+      'heading2',
+      'heading1',
+      'underline',
+      'summary',
+      'strike',
+      'undo',
     ]);
   });
 
@@ -59,8 +89,8 @@ describe('editor toolbar order', () => {
     const editor = {chain: vi.fn(() => chain)} as unknown as Editor;
     const openSummary = vi.fn();
 
-    expect(runEditorToolbarAction(editor, 'heading2', openSummary)).toBe(true);
-    expect(chain.toggleHeading).toHaveBeenCalledWith({level: 2});
+    expect(runEditorToolbarAction(editor, 'heading5', openSummary)).toBe(true);
+    expect(chain.toggleHeading).toHaveBeenCalledWith({level: 5});
     expect(openSummary).not.toHaveBeenCalled();
 
     expect(runEditorToolbarAction(editor, 'summary', openSummary)).toBe(true);

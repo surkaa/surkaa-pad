@@ -2,6 +2,8 @@
   <section class="settings-group settings-section-component">
     <div class="group-title">编辑器</div>
     <q-list bordered class="pad-card">
+      <EditorFontSizeSettings/>
+      <q-separator/>
       <q-item clickable v-ripple class="settings-item" @click="showDialog = true">
         <q-item-section avatar class="settings-icon-section">
           <q-icon name="tune"/>
@@ -82,6 +84,7 @@ import {
   type EditorToolbarAction,
 } from '../../utils/editorToolbar';
 import CloudSyncHint from './CloudSyncHint.vue';
+import EditorFontSizeSettings from './EditorFontSizeSettings.vue';
 
 const configStore = useConfigStore();
 const showDialog = ref(false);

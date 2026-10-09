@@ -278,6 +278,8 @@ useDiaryEditorShortcuts({
     heading1: () => runToolbarShortcut('heading1'),
     heading2: () => runToolbarShortcut('heading2'),
     heading3: () => runToolbarShortcut('heading3'),
+    heading4: () => runToolbarShortcut('heading4'),
+    heading5: () => runToolbarShortcut('heading5'),
     taskList: () => runToolbarShortcut('taskList'),
     summary: () => runToolbarShortcut('summary'),
     insertPhoto: () => void mediaAction.insertPhoto(),

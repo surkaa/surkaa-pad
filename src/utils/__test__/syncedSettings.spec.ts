@@ -30,6 +30,8 @@ function settingsData(theme: 'light' | 'dark' | 'system' = 'dark'): SyncedSettin
         'undo',
         'summary',
         'taskList',
+        'heading5',
+        'heading4',
         'heading3',
         'heading2',
         'heading1',
@@ -47,6 +49,8 @@ function settingsData(theme: 'light' | 'dark' | 'system' = 'dark'): SyncedSettin
         heading1: 'Ctrl+Digit1',
         heading2: 'Ctrl+Digit2',
         heading3: 'Ctrl+Digit3',
+        heading4: 'Ctrl+Digit4',
+        heading5: 'Ctrl+Digit5',
         taskList: 'Ctrl+KeyT',
         summary: 'Ctrl+Alt+KeyS',
         insertPhoto: 'Ctrl+Alt+KeyP',
@@ -68,12 +72,12 @@ function settingsData(theme: 'light' | 'dark' | 'system' = 'dark'): SyncedSettin
 
 function document(updatedAt: number, theme: 'light' | 'dark' | 'system' = 'dark'):
 SyncedSettingsDocument {
-  return {version: 2, updatedAt, ...settingsData(theme)};
+  return {version: 3, updatedAt, ...settingsData(theme)};
 }
 
 function fakeApi(remote: SyncedSettingsDocument | null) {
   const save = vi.fn(async (settings: SyncedSettingsData) => ({
-    version: 2,
+    version: 3,
     updatedAt: 300,
     ...settings,
   }));
@@ -171,6 +175,7 @@ describe('synced settings', () => {
   it('recognizes only the explicitly portable config keys', () => {
     expect(isSyncedConfigStorageKey(configStorageKey('app-theme'))).toBe(true);
     expect(isSyncedConfigStorageKey(configStorageKey('editor_toolbar_order'))).toBe(true);
+    expect(isSyncedConfigStorageKey(configStorageKey('editor_font_sizes'))).toBe(false);
     expect(isSyncedConfigStorageKey(configStorageKey('pinned_diary_ids'))).toBe(true);
     expect(isSyncedConfigStorageKey(configStorageKey('biometric_dek'))).toBe(false);
     expect(isSyncedConfigStorageKey(configStorageKey('encrypted_oss_config'))).toBe(false);

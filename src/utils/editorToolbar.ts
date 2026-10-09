@@ -7,6 +7,8 @@ export const EDITOR_FORMATTING_ACTIONS = [
   'heading1',
   'heading2',
   'heading3',
+  'heading4',
+  'heading5',
   'taskList',
   'summary',
 ] as const;
@@ -28,6 +30,8 @@ export const EDITOR_TOOLBAR_LABELS: Record<EditorToolbarAction, string> = {
   heading1: '一级标题',
   heading2: '二级标题',
   heading3: '三级标题',
+  heading4: '四级标题',
+  heading5: '五级标题',
   taskList: '待办列表',
   summary: '折叠内容',
   undo: '撤销',
@@ -41,6 +45,8 @@ export const EDITOR_TOOLBAR_ICONS: Record<EditorToolbarAction, string> = {
   heading1: 'looks_one',
   heading2: 'looks_two',
   heading3: 'looks_3',
+  heading4: 'looks_4',
+  heading5: 'looks_5',
   taskList: 'checklist',
   summary: 'unfold_more',
   undo: 'undo',
@@ -61,6 +67,16 @@ export function normalizeEditorToolbarOrder(value: unknown): EditorToolbarAction
         result.push(candidate as EditorToolbarAction);
       }
     }
+  }
+
+  // 旧版本没有 H4/H5；升级时将它们放在 H3 后，而不是追加到撤销/重做之后。
+  for (const [action, previous] of [
+    ['heading4', 'heading3'],
+    ['heading5', 'heading4'],
+  ] as const) {
+    if (result.includes(action)) continue;
+    const previousIndex = result.indexOf(previous);
+    if (previousIndex >= 0) result.splice(previousIndex + 1, 0, action);
   }
 
   for (const action of EDITOR_TOOLBAR_ACTIONS) {
@@ -103,6 +119,8 @@ export function runEditorToolbarAction(
     case 'heading1': return chain.toggleHeading({level: 1}).run();
     case 'heading2': return chain.toggleHeading({level: 2}).run();
     case 'heading3': return chain.toggleHeading({level: 3}).run();
+    case 'heading4': return chain.toggleHeading({level: 4}).run();
+    case 'heading5': return chain.toggleHeading({level: 5}).run();
     case 'taskList': return chain.toggleTaskList().run();
   }
 }

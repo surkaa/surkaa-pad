@@ -54,6 +54,8 @@ function isToolbarActionActive(action: EditorToolbarAction): boolean {
     case 'heading1': return editor.isActive('heading', {level: 1});
     case 'heading2': return editor.isActive('heading', {level: 2});
     case 'heading3': return editor.isActive('heading', {level: 3});
+    case 'heading4': return editor.isActive('heading', {level: 4});
+    case 'heading5': return editor.isActive('heading', {level: 5});
     case 'taskList': return editor.isActive('taskList');
     case 'summary': return editor.isActive('summaryNode');
     case 'undo':
@@ -73,6 +75,8 @@ function toolbarActionText(action: EditorToolbarAction): string {
     heading1: 'H1',
     heading2: 'H2',
     heading3: 'H3',
+    heading4: 'H4',
+    heading5: 'H5',
     taskList: '',
     summary: '',
     undo: '',
