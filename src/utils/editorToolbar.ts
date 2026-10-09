@@ -101,13 +101,16 @@ export function moveEditorToolbarAction(
 export function reorderEditorToolbarAction(
   order: readonly EditorToolbarAction[],
   action: EditorToolbarAction,
-  target: EditorToolbarAction,
+  insertionIndex: number,
 ): EditorToolbarAction[] {
   const next = normalizeEditorToolbarOrder(order);
   const currentIndex = next.indexOf(action);
-  const targetIndex = next.indexOf(target);
-  if (currentIndex < 0 || targetIndex < 0 || currentIndex === targetIndex) return next;
+  if (currentIndex < 0) return next;
   next.splice(currentIndex, 1);
+  const targetIndex = Math.min(
+    next.length,
+    Math.max(0, Math.trunc(insertionIndex)),
+  );
   next.splice(targetIndex, 0, action);
   return next;
 }

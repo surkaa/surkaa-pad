@@ -72,11 +72,11 @@ describe('editor toolbar order', () => {
       .toEqual(['taskList', 'undo', 'summary', 'redo']);
   });
 
-  it('reorders an action to the hovered action position', () => {
+  it('reorders an action at a stable insertion index', () => {
     expect(reorderEditorToolbarAction(
       DEFAULT_EDITOR_TOOLBAR_ORDER,
       'bold',
-      'heading3',
+      5,
     ).slice(0, 7)).toEqual([
       'underline',
       'strike',
@@ -89,8 +89,19 @@ describe('editor toolbar order', () => {
     expect(reorderEditorToolbarAction(
       DEFAULT_EDITOR_TOOLBAR_ORDER,
       'heading3',
-      'heading3',
+      5,
     )).toEqual(DEFAULT_EDITOR_TOOLBAR_ORDER);
+    expect(reorderEditorToolbarAction(
+      DEFAULT_EDITOR_TOOLBAR_ORDER,
+      'redo',
+      -10,
+    )[0]).toBe('redo');
+    const movedToEnd = reorderEditorToolbarAction(
+      DEFAULT_EDITOR_TOOLBAR_ORDER,
+      'bold',
+      999,
+    );
+    expect(movedToEnd[movedToEnd.length - 1]).toBe('bold');
   });
 
   it('runs formatting commands and delegates Summary editing', () => {

@@ -36,7 +36,11 @@
               :key="action"
               :data-toolbar-action="action"
               class="toolbar-order-item"
-              :class="{'is-dragging': draggedAction === action}"
+              :class="{
+                'is-dragging': draggedAction === action,
+                'drop-before': dropIndicator?.action === action && dropIndicator.position === 'before',
+                'drop-after': dropIndicator?.action === action && dropIndicator.position === 'after',
+              }"
             >
               <q-item-section avatar>
                 <q-icon :name="EDITOR_TOOLBAR_ICONS[action]" class="action-icon"/>
@@ -92,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onBeforeUnmount, ref, type ComponentPublicInstance} from 'vue';
+import {computed, onBeforeUnmount, ref, watch, type ComponentPublicInstance} from 'vue';
 import {useConfigStore} from '../../stores/config';
 import {
   DEFAULT_EDITOR_TOOLBAR_ORDER,
@@ -110,10 +114,22 @@ const showDialog = ref(false);
 const toolbarOrder = configStore.useTauriConfig('editor_toolbar_order');
 const toolbarListRef = ref<ComponentPublicInstance | null>(null);
 const draggedAction = ref<EditorToolbarAction | null>(null);
+const dragInsertionIndex = ref<number | null>(null);
 let dragPointerId: number | null = null;
 const orderSummary = computed(() => toolbarOrder.value
   .map(action => EDITOR_TOOLBAR_LABELS[action])
   .join(' · '));
+const dropIndicator = computed<{
+  action: EditorToolbarAction;
+  position: 'before' | 'after';
+} | null>(() => {
+  if (!draggedAction.value || dragInsertionIndex.value === null) return null;
+  const remaining = toolbarOrder.value.filter(action => action !== draggedAction.value);
+  const nextAction = remaining[dragInsertionIndex.value];
+  if (nextAction) return {action: nextAction, position: 'before'};
+  const previousAction = remaining[remaining.length - 1];
+  return previousAction ? {action: previousAction, position: 'after'} : null;
+});
 
 function move(action: EditorToolbarAction, direction: -1 | 1) {
   toolbarOrder.value = moveEditorToolbarAction(toolbarOrder.value, action, direction);
@@ -134,6 +150,7 @@ function startDrag(event: PointerEvent, action: EditorToolbarAction) {
   event.preventDefault();
   dragPointerId = event.pointerId;
   draggedAction.value = action;
+  dragInsertionIndex.value = toolbarOrder.value.indexOf(action);
   document.body.classList.add('toolbar-order-dragging');
   document.addEventListener('pointermove', handleDragMove, {passive: false});
   document.addEventListener('pointerup', finishDrag);
@@ -152,29 +169,51 @@ function handleDragMove(event: PointerEvent) {
     else if (event.clientY > bounds.bottom - edgeSize) list.scrollTop += 12;
   }
 
-  const row = document
-    .elementFromPoint(event.clientX, event.clientY)
-    ?.closest<HTMLElement>('[data-toolbar-action]');
-  const target = row?.dataset.toolbarAction as EditorToolbarAction | undefined;
-  if (!target || !toolbarOrder.value.includes(target) || target === draggedAction.value) return;
-  toolbarOrder.value = reorderEditorToolbarAction(
-    toolbarOrder.value,
-    draggedAction.value,
-    target,
-  );
+  if (!list) return;
+  const remaining = toolbarOrder.value.filter(action => action !== draggedAction.value);
+  const rows = Array.from(
+    list.querySelectorAll<HTMLElement>('[data-toolbar-action]'),
+  ).filter(row => row.dataset.toolbarAction !== draggedAction.value);
+  let insertionIndex = remaining.length;
+  for (const row of rows) {
+    const action = row.dataset.toolbarAction as EditorToolbarAction | undefined;
+    const actionIndex = action ? remaining.indexOf(action) : -1;
+    if (actionIndex < 0) continue;
+    const bounds = row.getBoundingClientRect();
+    if (event.clientY < bounds.top + bounds.height / 2) {
+      insertionIndex = actionIndex;
+      break;
+    }
+  }
+  dragInsertionIndex.value = insertionIndex;
 }
 
-function finishDrag(event?: PointerEvent) {
-  if (event && event.pointerId !== dragPointerId) return;
+function finishDrag(event: PointerEvent) {
+  if (event.pointerId !== dragPointerId) return;
+  completeDrag(event.type === 'pointerup');
+}
+
+function completeDrag(commit: boolean) {
+  if (commit && draggedAction.value && dragInsertionIndex.value !== null) {
+    toolbarOrder.value = reorderEditorToolbarAction(
+      toolbarOrder.value,
+      draggedAction.value,
+      dragInsertionIndex.value,
+    );
+  }
   dragPointerId = null;
   draggedAction.value = null;
+  dragInsertionIndex.value = null;
   document.body.classList.remove('toolbar-order-dragging');
   document.removeEventListener('pointermove', handleDragMove);
   document.removeEventListener('pointerup', finishDrag);
   document.removeEventListener('pointercancel', finishDrag);
 }
 
-onBeforeUnmount(() => finishDrag());
+watch(showDialog, open => {
+  if (!open) completeDrag(false);
+});
+onBeforeUnmount(() => completeDrag(false));
 </script>
 
 <style scoped lang="scss" src="./settingsSection.scss"></style>
@@ -205,6 +244,7 @@ onBeforeUnmount(() => finishDrag());
 }
 
 .toolbar-order-item {
+  position: relative;
   min-height: 54px;
   transition: background-color 160ms ease, opacity 160ms ease;
 
@@ -216,6 +256,27 @@ onBeforeUnmount(() => finishDrag());
     z-index: 1;
     opacity: 0.72;
     background: color-mix(in srgb, var(--pad-primary-color) 14%, var(--pad-bg-color-100));
+  }
+
+  &.drop-before::before,
+  &.drop-after::after {
+    position: absolute;
+    right: 12px;
+    left: 12px;
+    z-index: 2;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--pad-primary-color);
+    content: '';
+    pointer-events: none;
+  }
+
+  &.drop-before::before {
+    top: -2px;
+  }
+
+  &.drop-after::after {
+    bottom: -2px;
   }
 }
 
