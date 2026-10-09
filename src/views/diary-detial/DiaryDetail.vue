@@ -61,6 +61,8 @@ const pendingLocation = ref<DiaryLocation | null>(null);
 const androidShareStore = useAndroidShareStore();
 const {importRequest, importingBatch} = storeToRefs(androidShareStore);
 const shareImportRunning = ref(false);
+const isDiaryLoading = ref(true);
+const diaryLoadFailed = ref(false);
 
 const {
   diaryId, diary, attachments, diaryManifestSize, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
@@ -71,6 +73,14 @@ const previewAttachment = ref<AttachmentMeta | null>(null);
 const previewAttachmentUrl = computed(() => (
   previewAttachment.value ? attachmentMap.value[previewAttachment.value.id] : undefined
 ));
+
+async function loadCurrentDiary() {
+  isDiaryLoading.value = true;
+  diaryLoadFailed.value = false;
+  const loaded = await loadDiaryInfo();
+  diaryLoadFailed.value = !loaded;
+  isDiaryLoading.value = false;
+}
 
 // UI交互
 const {
@@ -250,7 +260,8 @@ useDiaryEditorShortcuts({
   shortcuts: editorShortcuts,
   showToolbarPanel,
   isInteractionBlocked: () => Boolean(
-    showMenu.value
+    !isInitialLoaded.value
+    || showMenu.value
     || showDetailDialog.value
     || showSourceDialog.value
     || showRenameDialog.value
@@ -361,10 +372,11 @@ onMounted(async () => {
   // 从 Android 分享进入新日记时先完成导入，不主动拉起软键盘。
   const shouldFocusEditor = newDiary && typeof route.query.shareImport !== 'string';
   if (!newDiary) {
-    await loadDiaryInfo();
+    await loadCurrentDiary();
   } else {
     // 新建日记，直接标记加载完成，允许保存
     isInitialLoaded.value = true;
+    isDiaryLoading.value = false;
   }
   setupToolbar();
   if (shouldFocusEditor) {
@@ -393,9 +405,30 @@ onActivated(async () => {
 <template>
   <div id="diary-detail">
     <Teleport defer to="#header-actions">
-      <q-btn flat round dense icon="info" @click="openDiaryDetail" aria-label="详细信息"/>
-      <q-btn flat round dense icon="more_horiz" @click="showMenu = true" aria-label="操作"/>
+      <q-btn
+        flat round dense icon="info"
+        :disable="!isInitialLoaded"
+        @click="openDiaryDetail"
+        aria-label="详细信息"
+      />
+      <q-btn
+        flat round dense icon="more_horiz"
+        :disable="!isInitialLoaded"
+        @click="showMenu = true"
+        aria-label="操作"
+      />
     </Teleport>
+
+    <div v-if="isDiaryLoading" class="diary-load-state" role="status" aria-live="polite">
+      <q-spinner-dots color="primary" size="48px"/>
+      <span>正在加载日记…</span>
+    </div>
+
+    <div v-else-if="diaryLoadFailed" class="diary-load-state diary-load-state--failed" role="alert">
+      <q-icon name="error_outline" size="44px" color="negative"/>
+      <span>日记加载失败</span>
+      <q-btn unelevated color="primary" label="重新加载" @click="loadCurrentDiary"/>
+    </div>
 
     <TiptapEditor
         ref="tiptapEditorRef"
@@ -420,6 +453,7 @@ onActivated(async () => {
     />
 
     <EditToolbar
+        v-if="isInitialLoaded"
         :view="showToolbar || showToolbarPanel"
         :panelOpen="showToolbarPanel"
         :editor="tiptapEditorRef?.editor ?? null"
@@ -552,6 +586,22 @@ onActivated(async () => {
   .action-sheet-card {
     width: 100%;
     overflow: hidden;
+  }
+
+  .diary-load-state {
+    display: flex;
+    flex: 1;
+    min-height: 240px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 14px;
+    color: var(--pad-text-color-300);
+    background: var(--pad-bg-color-100);
+  }
+
+  .diary-load-state--failed {
+    color: var(--pad-text-color-200);
   }
 
 }

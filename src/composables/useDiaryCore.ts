@@ -51,7 +51,7 @@ export function useDiaryCore() {
         return findUnusedAttachments(diaryContent.value, currentDiaryAttachments.value);
     });
 
-    async function loadDiaryInfo() {
+    async function loadDiaryInfo(): Promise<boolean> {
         try {
             const detail = await api.cmdGetDiaryDetail(currentId.value);
             diarySummaries.value[currentId.value] = detail.summary;
@@ -62,6 +62,7 @@ export function useDiaryCore() {
             // 延迟标记加载完成，避免触发首次 watch
             await nextTick();
             isInitialLoaded.value = true;
+            return true;
         } catch (e) {
             console.error(`加载日记失败:`, e);
             $q.notify({
@@ -70,6 +71,7 @@ export function useDiaryCore() {
                     ? NEWER_DIARY_VERSION_MESSAGE
                     : `加载日记失败: ${formatError(e)}`
             });
+            return false;
         }
     }
 

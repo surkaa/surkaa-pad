@@ -42,6 +42,7 @@ const nextToken = ref<string | null>(null);
 // 用于判断是否已经完成首次加载，防止一开始数据还没回来就显示“空状态”
 const isFirstLoadFinished = ref(false);
 const isLoading = ref(false);
+const isOpeningDiary = ref(false);
 const loadedDiaryListRevision = ref(diaryListRevision.value);
 interface InfiniteScrollHandle {
   reset: () => void;
@@ -59,32 +60,51 @@ const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
 const isActivating = ref(true);
 
 function openSearch() {
+  if (isOpeningDiary.value) return;
   void router.push({name: 'DiarySearch'});
 }
 
 function openAiAssistant() {
+  if (isOpeningDiary.value) return;
   void router.push({name: 'AiAssistant'});
 }
 
 function openSettings() {
+  if (isOpeningDiary.value) return;
   void router.push({name: 'Settings'});
 }
 
-async function handleDiaryClick(id: string) {
-  if (selectingTarget.value) {
-    const batchId = androidShareStore.selectTarget(id);
-    dataStore.currentId = id;
-    await router.push({
-      name: 'DiaryDetail',
-      query: {shareImport: batchId},
-    });
-    return;
+async function openNewDiary() {
+  if (isOpeningDiary.value) return;
+  isOpeningDiary.value = true;
+  try {
+    await openDiary();
+  } finally {
+    isOpeningDiary.value = false;
   }
-  await openDiary(id);
+}
+
+async function handleDiaryClick(id: string) {
+  if (isOpeningDiary.value) return;
+  isOpeningDiary.value = true;
+  try {
+    if (selectingTarget.value) {
+      const batchId = androidShareStore.selectTarget(id);
+      dataStore.currentId = id;
+      await router.push({
+        name: 'DiaryDetail',
+        query: {shareImport: batchId},
+      });
+      return;
+    }
+    await openDiary(id);
+  } finally {
+    isOpeningDiary.value = false;
+  }
 }
 
 useDiaryListShortcuts(diaryListShortcuts, {
-  createDiary: () => void openDiary(),
+  createDiary: () => void openNewDiary(),
   aiAssistant: openAiAssistant,
   search: openSearch,
   settings: openSettings,
@@ -260,6 +280,7 @@ onDeactivated(() => {
             scroll-target="#list"
             color="primary"
             :no-mouse="isWindows"
+            :disable="isOpeningDiary"
             @refresh="refreshDiaryList"
         >
           <q-banner v-if="selectingTarget" rounded class="share-target-banner q-mb-md">
@@ -293,7 +314,7 @@ onDeactivated(() => {
           </q-infinite-scroll>
 
           <div v-if="diaryIds.length === 0 && !isLoading">
-            <DiaryListEmpty @create="openDiary()"/>
+            <DiaryListEmpty @create="openNewDiary()"/>
           </div>
         </q-pull-to-refresh>
       </section>
@@ -307,7 +328,8 @@ onDeactivated(() => {
           color="primary"
           padding="16px 20px"
           class="pad-fab-gradient"
-          @click="openDiary()"
+          :disable="isOpeningDiary"
+          @click="openNewDiary()"
       >
         <q-tooltip v-if="isWindows">
           新建日记（{{ formatEditorShortcut(diaryListShortcuts.createDiary) }}）
@@ -316,15 +338,18 @@ onDeactivated(() => {
     </q-page-sticky>
 
     <Teleport v-if="isActivating && !selectingTarget" defer to="#header-actions">
-      <q-btn flat round dense icon="auto_awesome" aria-label="AI 助手" @click="openAiAssistant">
+      <q-btn flat round dense icon="auto_awesome" aria-label="AI 助手"
+             :disable="isOpeningDiary" @click="openAiAssistant">
         <q-tooltip v-if="isWindows">
           AI 助手（{{ formatEditorShortcut(diaryListShortcuts.aiAssistant) }}）
         </q-tooltip>
       </q-btn>
-      <q-btn flat round dense icon="search" aria-label="搜索日记" class="q-ml-md" @click="openSearch">
+      <q-btn flat round dense icon="search" aria-label="搜索日记" class="q-ml-md"
+             :disable="isOpeningDiary" @click="openSearch">
         <q-tooltip v-if="isWindows">搜索（{{ formatEditorShortcut(diaryListShortcuts.search) }}）</q-tooltip>
       </q-btn>
-      <q-btn flat round dense icon="settings" aria-label="设置" class="q-ml-md" @click="openSettings">
+      <q-btn flat round dense icon="settings" aria-label="设置" class="q-ml-md"
+             :disable="isOpeningDiary" @click="openSettings">
         <q-tooltip v-if="isWindows">设置（{{ formatEditorShortcut(diaryListShortcuts.settings) }}）</q-tooltip>
       </q-btn>
     </Teleport>
@@ -332,6 +357,12 @@ onDeactivated(() => {
       <span>日记 {{ diaryIds.length }} · 含附件 {{ withAttachments }}</span>
       <span>自动关闭 {{ timeoutStore.remainingStr }}</span>
     </Teleport>
+    <q-inner-loading
+      :showing="isOpeningDiary"
+      color="primary"
+      label="正在打开日记…"
+      class="diary-opening-overlay"
+    />
   </div>
 </template>
 
@@ -362,6 +393,12 @@ onDeactivated(() => {
 
   .diary-list-refresh {
     min-height: 100%;
+  }
+
+  .diary-opening-overlay {
+    z-index: 30;
+    color: var(--pad-text-color-200);
+    background: color-mix(in srgb, var(--pad-bg-color-100) 88%, transparent);
   }
 
   .share-target-banner {
