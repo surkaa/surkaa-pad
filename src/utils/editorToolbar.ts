@@ -98,6 +98,20 @@ export function moveEditorToolbarAction(
   return next;
 }
 
+export function reorderEditorToolbarAction(
+  order: readonly EditorToolbarAction[],
+  action: EditorToolbarAction,
+  target: EditorToolbarAction,
+): EditorToolbarAction[] {
+  const next = normalizeEditorToolbarOrder(order);
+  const currentIndex = next.indexOf(action);
+  const targetIndex = next.indexOf(target);
+  if (currentIndex < 0 || targetIndex < 0 || currentIndex === targetIndex) return next;
+  next.splice(currentIndex, 1);
+  next.splice(targetIndex, 0, action);
+  return next;
+}
+
 export function runEditorToolbarAction(
   editor: Editor | null | undefined,
   action: EditorToolbarAction,
