@@ -221,18 +221,25 @@ impl DiaryContent {
     }
 
     pub fn title(&self) -> String {
-        self.nodes
-            .iter()
-            .filter_map(|node| match node {
-                DiaryContentNode::Markdown { text } => Some(text),
-                DiaryContentNode::Summary { summary, .. } => Some(summary),
-                _ => None,
-            })
-            .flat_map(|text| text.lines())
-            .map(str::trim)
-            .find(|line| !line.is_empty())
-            .unwrap_or("")
-            .to_string()
+        for node in &self.nodes {
+            let (text, is_markdown) = match node {
+                DiaryContentNode::Markdown { text } => (text.as_str(), true),
+                DiaryContentNode::Summary { summary, .. } => (summary.as_str(), false),
+                _ => continue,
+            };
+            for line in text.lines() {
+                let line = line.trim();
+                let title = if is_markdown {
+                    strip_markdown_heading_prefix(line)
+                } else {
+                    line
+                };
+                if !title.is_empty() {
+                    return title.to_string();
+                }
+            }
+        }
+        String::new()
     }
 
     pub fn attachment_counts(&self) -> DiaryAttachmentCounts {
@@ -313,6 +320,22 @@ impl DiaryContent {
             | DiaryContentNode::Summary { .. }
             | DiaryContentNode::Location { .. } => true,
         });
+    }
+}
+
+fn strip_markdown_heading_prefix(line: &str) -> &str {
+    let marker_count = line.bytes().take_while(|byte| *byte == b'#').count();
+    if !(1..=6).contains(&marker_count) {
+        return line;
+    }
+    let remainder = &line[marker_count..];
+    if remainder.is_empty() {
+        return "";
+    }
+    if matches!(remainder.as_bytes()[0], b' ' | b'\t') {
+        remainder.trim_start()
+    } else {
+        line
     }
 }
 
@@ -507,6 +530,36 @@ mod tests {
         };
 
         assert_eq!(content.title(), "标题");
+    }
+
+    #[test]
+    fn title_hides_markdown_heading_markers_without_changing_plain_hash_text() {
+        for (markdown, expected) in [
+            ("# 一级标题", "一级标题"),
+            ("## 二级标题", "二级标题"),
+            ("##### 五级标题", "五级标题"),
+            ("###### 六级标题", "六级标题"),
+            ("#标签", "#标签"),
+            ("####### 不是标题", "####### 不是标题"),
+        ] {
+            let content = DiaryContent {
+                nodes: vec![DiaryContentNode::Markdown {
+                    text: markdown.to_string(),
+                }],
+            };
+            assert_eq!(content.title(), expected);
+        }
+    }
+
+    #[test]
+    fn title_skips_an_empty_markdown_heading_marker() {
+        let content = DiaryContent {
+            nodes: vec![DiaryContentNode::Markdown {
+                text: "###\n真正的标题".to_string(),
+            }],
+        };
+
+        assert_eq!(content.title(), "真正的标题");
     }
 
     #[test]
