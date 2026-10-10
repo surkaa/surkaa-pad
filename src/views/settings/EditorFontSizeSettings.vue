@@ -14,7 +14,7 @@
 
   <q-dialog v-model="showDialog">
     <q-card class="font-size-dialog">
-      <q-card-section>
+      <q-card-section class="font-size-header">
         <div class="text-h6 title-text">编辑器字号</div>
         <div class="text-caption desc-text">分别调整正文与各级标题；配置只保存在当前设备</div>
       </q-card-section>
@@ -23,11 +23,10 @@
       <q-card-section class="font-size-content">
         <div class="font-size-controls">
           <div v-for="key in EDITOR_FONT_SIZE_KEYS" :key="key" class="font-size-row">
-            <div class="font-size-row__header">
-              <span class="label-text">{{ EDITOR_FONT_SIZE_LABELS[key] }}</span>
-              <span class="font-size-value">{{ fontSizes[key] }} px</span>
-            </div>
+            <span class="font-size-label label-text">{{ EDITOR_FONT_SIZE_LABELS[key] }}</span>
+            <span class="font-size-value">{{ fontSizes[key] }} px</span>
             <q-slider
+              class="font-size-slider"
               :model-value="fontSizes[key]"
               :min="MIN_EDITOR_FONT_SIZE"
               :max="MAX_EDITOR_FONT_SIZE"
@@ -51,7 +50,7 @@
       </q-card-section>
 
       <q-separator/>
-      <q-card-actions align="right">
+      <q-card-actions align="right" class="font-size-actions">
         <q-btn flat label="恢复默认" color="primary" @click="resetSizes"/>
         <q-btn flat label="关闭" color="primary" v-close-popup/>
       </q-card-actions>
@@ -101,11 +100,26 @@ function resetSizes() {
 <style scoped lang="scss" src="./settingsSection.scss"></style>
 <style scoped lang="scss">
 .font-size-dialog {
-  width: min(760px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  width: min(760px, calc(100vw - 48px));
   max-width: none;
+  max-height: min(720px, calc(100vh - 48px));
+  max-height: min(720px, calc(100dvh - 48px));
+  overflow: hidden;
   color: var(--pad-text-color-100);
   background: var(--pad-bg-color-200);
   border-radius: var(--pad-radius-xl);
+}
+
+.font-size-header,
+.font-size-actions,
+.font-size-dialog > .q-separator {
+  flex: 0 0 auto;
+}
+
+.font-size-actions {
+  padding: 12px 16px;
 }
 
 .title-text {
@@ -114,28 +128,38 @@ function resetSizes() {
 
 .font-size-content {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(260px, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  align-items: start;
   gap: 22px;
-  max-height: min(70vh, 620px);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .font-size-controls {
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
-.font-size-row__header {
-  display: flex;
+.font-size-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  column-gap: 12px;
+}
+
+.font-size-slider {
+  grid-column: 1 / -1;
 }
 
 .font-size-value {
   color: var(--pad-primary-dark);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .font-preview {
@@ -174,6 +198,7 @@ function resetSizes() {
     color: var(--pad-text-color-300);
     font-size: var(--diary-body-font-size);
     line-height: 1.55;
+    margin-bottom: 0;
   }
 }
 
@@ -181,6 +206,29 @@ function resetSizes() {
   .font-size-content {
     grid-template-columns: 1fr;
     gap: 16px;
+  }
+
+  .font-size-row {
+    grid-template-columns: 64px minmax(0, 1fr) 44px;
+    min-height: 48px;
+    column-gap: 10px;
+  }
+
+  .font-size-label {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .font-size-slider {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .font-size-value {
+    grid-column: 3;
+    grid-row: 1;
+    font-size: 13px;
+    text-align: right;
   }
 }
 </style>
