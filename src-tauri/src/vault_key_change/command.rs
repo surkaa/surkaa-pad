@@ -197,11 +197,11 @@ pub(super) async fn plan_change(
         temporary_bytes,
         derivation_ms,
         crypto_estimate_ms,
-        // 最坏大对象路线：11 次读取 + 3 次写入（含备份/正式替换的流式复制）。
-        // <= 1 GiB 使用 OSS 服务端复制，实际流量更小。这里只估算主要数据，
+        // 合并数据流后 6 次读取 + 1 次写入；备份和正式替换均走 OSS 同桶复制。
+        // 这里只估算主要数据，GCM/Manifest 格式重写可能有少量大小差异；
         // 不含检查点/请求开销和中断重试，不能当作严格的流量上限或网络耗时。
         transfer_bytes: if remote {
-            encrypted_bytes.saturating_mul(14)
+            encrypted_bytes.saturating_mul(7)
         } else {
             0
         },

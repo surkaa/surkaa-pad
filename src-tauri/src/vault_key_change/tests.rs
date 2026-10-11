@@ -1330,7 +1330,7 @@ async fn cloud_workflow_preserves_bootstrap_until_done_and_refreshes_other_devic
     )
     .await
     .unwrap();
-    assert_eq!(plan.transfer_bytes, plan.encrypted_bytes * 14);
+    assert_eq!(plan.transfer_bytes, plan.encrypted_bytes * 7);
     let manager = state.key_change_manager();
     let pause_channel = tauri::ipc::Channel::new(move |body| {
         if let tauri::ipc::InvokeResponseBody::Json(json) = body {

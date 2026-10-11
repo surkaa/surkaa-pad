@@ -794,6 +794,9 @@ impl OssClient {
 }
 
 #[cfg(test)]
+mod copy_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{oss_config_diagnostics, OssClient};
     use crate::test_utils::TestOssGuard;

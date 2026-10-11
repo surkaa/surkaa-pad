@@ -153,7 +153,7 @@ impl RekeyStorage for Storage {
 
     async fn write(&self, key: &str, size: u64, stream: ByteStream) -> Result<String> {
         if self.remote {
-            // 不依赖仅支持 <= 1GB 的 OSS CopyObject，大对象也保持有界内存。
+            // 重加密的新密文仍流式上传；使用串行 multipart 保持有界内存。
             self.state
                 .oss_client()
                 .upload(key, size, stream, "application/octet-stream")
@@ -247,23 +247,34 @@ impl RekeyStorage for Storage {
         size: u64,
         progress: &FileProgress,
     ) -> Result<String> {
-        if self.remote && size <= 1024 * 1024 * 1024 {
+        if self.remote {
+            // OSS 同桶复制且不请求变更服务端加密/存储类型时支持大对象（包括 > 5 GB）。
+            // 这里复制的是应用已经加密的字节，不涉及 OSS 的服务端加密转换。
+            // https://help.aliyun.com/zh/oss/developer-reference/copyobject
+            // 不静默退回下载重传；复制失败仍保留检查点和备份，供用户续改。
             self.state
                 .oss_client()
                 .copy_object(source, target)
                 .await
                 .map_err(error)?;
-            return self
+            let copied = self
                 .head(target)
                 .await?
-                .map(|e| e.etag)
-                .ok_or_else(|| error("复制的对象不存在"));
+                .ok_or_else(|| error("复制的对象不存在"))?;
+            if copied.size != size {
+                return Err(error("云端复制的对象大小不匹配"));
+            }
+            return Ok(copied.etag);
         }
-        // 云端的小对象仍使用服务端复制，仅能报告开始/完成，不伪造中间进度。
+        // 本地流式复制可计数字节；云内复制只报告开始/完成，不伪造中间进度。
         self.write(target, size, progress.wrap(self.read(source).await?))
             .await
     }
 }
+
+#[cfg(test)]
+#[path = "storage_tests.rs"]
+mod tests;
 
 pub(super) fn byte_stream(bytes: Vec<u8>) -> ByteStream {
     Box::pin(futures_util::stream::once(

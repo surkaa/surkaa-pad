@@ -34,7 +34,7 @@
             <span>{{ plan.remote ? '临时云端空间上限' : '额外本地空间上限' }}</span><strong>{{ formatBytes(plan.temporaryBytes) }}</strong>
             <template v-if="plan.remote"><span>累计传输量估算</span><strong>{{ formatBytes(plan.transferBytes) }}</strong></template>
           </div>
-          <div v-if="plan.remote" class="text-caption desc-text">按需要重加密的数据量的 14 倍估算多轮下载、上传和读回校验流量，不是最终占用空间或严格上限；不含改密检查点、请求开销及中断重试。</div>
+          <div v-if="plan.remote" class="text-caption desc-text">按需要重加密的数据量的 7 倍估算下载、上传和读回校验流量；备份与替换由云端复制，不经过本机传输。这不是最终占用空间或严格上限，不含改密检查点、请求开销及中断重试。</div>
           <div class="notice">耗时基于本机实测，不包含磁盘读写、校验及网络等待；云端改密还会产生读取、写入请求和流量。实际耗时可能明显更长。请备份重要数据并保持供电。{{ changePassword ? '中断续改时需要新主密码，请务必记住。' : '本次只更换盐，续改时仍输入原主密码。' }}</div>
           <div v-if="!plan.remote" class="notice">本次只更改本地数据，不会修改已断开云同步的旧云端副本或其他备份；新旧密钥的副本不能直接混用。</div>
           <div class="text-caption desc-text">新盐：{{ plan.newBootstrap.kdf.salt }}</div>
