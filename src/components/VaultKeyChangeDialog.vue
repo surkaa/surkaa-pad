@@ -10,7 +10,7 @@
         <template v-if="!plan && !busy">
           <template v-if="resumeMode">
             <div class="notice">发现未完成的改密。请输入新主密码继续处理；只更换盐时仍输入原密码。请勿清理应用数据或改密记录。</div>
-            <q-input v-model="resumePassword" label="改密后的主密码" type="password" outlined autofocus @keyup.enter="resumeChange" />
+            <q-input v-model="resumePassword" label="续改主密码（只换盐时输入原密码）" type="password" outlined autofocus @keyup.enter="resumeChange" />
           </template>
           <template v-else>
             <q-input v-model="oldPassword" label="当前主密码" type="password" outlined autofocus />
@@ -22,7 +22,7 @@
             <q-select v-model="memoryCost" :options="memoryOptions" emit-value map-options outlined label="派生内存成本" :dark="$q.dark.isActive" :options-dark="$q.dark.isActive" popup-content-class="key-change-memory-popup" />
             <div class="notice">每次都会生成新的随机盐。只换盐时密码保持不变，也需要重加密全部已加密数据；未加密附件保持原样。</div>
           </template>
-          <q-checkbox v-model="devicesClosed" label="已退出其他设备上的此应用，且不会在改密期间打开它们" color="primary" />
+          <q-checkbox v-model="devicesClosed" label="我确保已退出其他设备上的此应用，且不会在改密期间打开它们" color="negative" class="device-acknowledgement" />
         </template>
 
         <template v-if="plan && !busy">
@@ -32,9 +32,10 @@
             <span>派生实测</span><strong>{{ estimateDuration(plan.derivationMs) }}</strong>
             <span>加解密估算</span><strong>{{ estimateDuration(plan.cryptoEstimateMs) }}</strong>
             <span>{{ plan.remote ? '临时云端空间上限' : '额外本地空间上限' }}</span><strong>{{ formatBytes(plan.temporaryBytes) }}</strong>
-            <template v-if="plan.remote"><span>传输量上限估算</span><strong>{{ formatBytes(plan.transferBytes) }}</strong></template>
+            <template v-if="plan.remote"><span>累计传输量估算</span><strong>{{ formatBytes(plan.transferBytes) }}</strong></template>
           </div>
-          <div class="notice">耗时基于本机实测，不包含磁盘读写、校验及网络等待；云端改密还会产生读取、写入请求和流量。实际耗时可能明显更长。请备份重要数据并保持供电。中断续改必须输入新密码，请务必记住。</div>
+          <div v-if="plan.remote" class="text-caption desc-text">按需要重加密的数据量的 14 倍估算多轮下载、上传和读回校验流量，不是最终占用空间或严格上限；不含改密检查点、请求开销及中断重试。</div>
+          <div class="notice">耗时基于本机实测，不包含磁盘读写、校验及网络等待；云端改密还会产生读取、写入请求和流量。实际耗时可能明显更长。请备份重要数据并保持供电。{{ changePassword ? '中断续改时需要新主密码，请务必记住。' : '本次只更换盐，续改时仍输入原主密码。' }}</div>
           <div v-if="!plan.remote" class="notice">本次只更改本地数据，不会修改已断开云同步的旧云端副本或其他备份；新旧密钥的副本不能直接混用。</div>
           <div class="text-caption desc-text">新盐：{{ plan.newBootstrap.kdf.salt }}</div>
         </template>
@@ -42,9 +43,18 @@
         <div v-if="busy" class="progress-section">
           <div class="row items-center q-gutter-sm"><q-spinner color="primary" size="24px" /><span>{{ preparing ? '正在统计并进行派生、加密测试…' : keyChangeProgressLabel(progress?.phase ?? '') }}</span></div>
           <template v-if="progress">
-            <div class="text-caption desc-text">{{ progress.completedFiles }} / {{ progress.totalFiles }} 个对象 · {{ formatBytes(progress.completedBytes) }} / {{ formatBytes(progress.totalBytes) }}</div>
+            <div class="text-caption desc-text">已完成并保存检查点：{{ progress.completedFiles }} / {{ progress.totalFiles }} 个对象 · {{ formatBytes(progress.completedBytes) }} / {{ formatBytes(progress.totalBytes) }}</div>
             <div class="text-caption desc-text current-file">{{ progress.currentFile }}</div>
             <q-linear-progress :value="keyChangeProgressValue(progress)" color="primary" rounded size="6px" />
+            <div v-if="progress.fileProgress" :key="progress.fileProgress.step" class="file-progress" data-testid="key-change-file-progress">
+              <div class="row items-center justify-between q-gutter-xs">
+                <span>{{ keyChangeFileProgressLabel(progress.fileProgress.step) }}</span>
+                <strong>{{ Math.round(keyChangeFileProgressValue(progress.fileProgress) * 100) }}%</strong>
+              </div>
+              <q-linear-progress :value="keyChangeFileProgressValue(progress.fileProgress)" color="primary" rounded size="6px" />
+              <div class="text-caption desc-text">{{ formatBytes(progress.fileProgress.completedBytes) }} / {{ formatBytes(progress.fileProgress.totalBytes) }}<template v-if="progress.fileProgress.completedBytes >= progress.fileProgress.totalBytes && progress.fileProgress.completedPoints < progress.fileProgress.totalPoints"> · 等待本步骤确认</template></div>
+              <div class="text-caption desc-text">各步骤分别计数；云端服务端复制只显示开始与完成。</div>
+            </div>
           </template>
           <div class="notice">请勿清理应用数据或改密记录。突然退出、断网或重启后，可以在解锁页面继续改密。</div>
         </div>
@@ -70,7 +80,7 @@ import api from '../utils/api';
 import type {KeyChangePlan, KeyChangeProgress, LocalEncryptedConfig} from '../bindings';
 import {formatBytes} from '../utils/format';
 import {formatError} from '../utils/formatError';
-import {estimateDuration, finishVaultKeyChange, getLocalEncryptedConfig, keyChangeProgressLabel, keyChangeProgressValue} from '../utils/vaultKeyChange';
+import {estimateDuration, finishVaultKeyChange, getLocalEncryptedConfig, keyChangeCompletionMessage, keyChangeFileProgressLabel, keyChangeFileProgressValue, keyChangeProgressLabel, keyChangeProgressValue} from '../utils/vaultKeyChange';
 import {useTimeoutStore} from '../stores/timeout';
 
 const props = defineProps<{modelValue: boolean; resume?: boolean; initialPassword?: string}>();
@@ -120,8 +130,8 @@ async function perform(run: (channel: Channel<KeyChangeProgress>) => Promise<Loc
   event.onmessage = value => { progress.value = value; };
   try {
     const local = await run(event);
-    await finishVaultKeyChange(local);
-    $q.notify({type: 'positive', message: '改密已完成。生物解锁已关闭，可在设置中重新启用。'});
+    const biometricWasEnabled = await finishVaultKeyChange(local);
+    $q.notify({type: 'positive', message: keyChangeCompletionMessage(biometricWasEnabled)});
     emit('update:modelValue', false); emit('completed');
   } catch (e) {
     failure.value = formatError(e);
@@ -159,7 +169,9 @@ async function close() {
 .plan-grid span { color: var(--pad-text-color-200); }
 .plan-grid strong, .current-file { overflow-wrap: anywhere; }
 .progress-section { display: flex; flex-direction: column; gap: 14px; }
+.file-progress { padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--pad-bg-color-100); border: 1px solid var(--pad-border-color-200); border-radius: var(--pad-radius-md); font-size: 13px; }
 .failure { color: var(--q-negative); overflow-wrap: anywhere; }
+.device-acknowledgement { color: var(--pad-danger-color); }
 :global(.key-change-memory-popup) { background: var(--pad-bg-color-200); color: var(--pad-text-color-100); }
 :global(.key-change-memory-popup .q-item) { color: var(--pad-text-color-100); }
 @media (max-width: 480px) { .key-change-header { padding: 16px; } .key-change-content { padding: 16px; } .plan-grid { gap: 10px; font-size: 12px; } }

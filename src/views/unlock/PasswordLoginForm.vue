@@ -41,25 +41,37 @@
       <q-icon name="schedule" size="16px"/>
       <span>生物识别已暂停，请输入一次主密码；之后 {{ biometricPasswordIntervalDays }} 天内可继续使用</span>
     </div>
-    <div class="q-mt-lg pt-md row justify-center q-gutter-x-sm">
+    <div class="q-mt-lg pt-md row items-center justify-center q-gutter-x-sm">
       <q-btn flat color="primary" size="sm" label="导入密钥配置" :disable="loading" @click="emit('importBootstrap')"/>
       <q-btn flat color="grey-6" size="sm" label="重置配置" :disable="loading" @click="emit('reset')"/>
+      <q-btn v-if="showChangedKeyHint" flat round color="primary" size="sm" icon="error_outline" aria-label="其他设备改密后的解锁说明" :disable="loading" @click="showKeyChangeHelp" />
     </div>
   </q-form>
 </template>
 
 <script setup lang="ts">
+import {useQuasar} from 'quasar';
+
 defineProps<{
   masterPassword: string;
   loading: boolean;
   biometricEnabled: boolean;
   biometricUnlockAllowed: boolean;
   biometricPasswordIntervalDays: number;
+  showChangedKeyHint?: boolean;
 }>();
 const emit = defineEmits<{
   (event: 'update:masterPassword', value: string): void;
   (event: 'submit' | 'biometricUnlock' | 'reset' | 'importBootstrap'): void;
 }>();
+const $q = useQuasar();
+function showKeyChangeHelp() {
+  $q.dialog({
+    title: '其他设备已改密？',
+    message: '若其他设备已改密，请先输入本机原密码，再按提示输入新密码以更新本机配置。',
+    ok: {label: '知道了', color: 'primary'},
+  });
+}
 </script>
 
 <style scoped lang="scss">

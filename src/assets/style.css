@@ -176,6 +176,13 @@
     }
 }
 
+/* QSelect/QMenu 会 Teleport 到 body；使用更高优先级，避免后加载的 Quasar
+   默认白色菜单背景覆盖主题。浅色与深色都取同一套主题变量。 */
+body .q-menu, body .q-select__dialog {
+    background-color: var(--pad-bg-color-200);
+    color: var(--pad-text-color-100);
+}
+
 body {
     font-family: var(--pad-font-family), serif;
     line-height: 1.5;

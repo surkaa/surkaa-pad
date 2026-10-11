@@ -23,6 +23,9 @@
         dense
         outlined
         options-dense
+        :dark="$q.dark.isActive"
+        :options-dark="$q.dark.isActive"
+        popup-content-class="settings-select-popup"
         aria-label="本地附件缓存上限"
         class="cache-limit-select"
         :loading="loading"
@@ -51,6 +54,9 @@
         dense
         outlined
         options-dense
+        :dark="$q.dark.isActive"
+        :options-dark="$q.dark.isActive"
+        popup-content-class="settings-select-popup"
         aria-label="单个附件缓存上限"
         class="cache-limit-select"
         :loading="loading"

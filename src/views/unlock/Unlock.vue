@@ -17,9 +17,6 @@
         <div class="desc-text text-caption q-mb-sm">上次改密未完成，普通解锁已暂停。请输入新密码续改；只换盐时仍输入原密码。</div>
         <q-btn color="primary" label="继续改密" unelevated @click="showKeyChange = true" />
       </q-card-section>
-      <q-card-section v-else-if="pipeline === 'login' && encryptedConfig.length" class="q-pt-none desc-text text-caption">
-        若其他设备已改密，请先输入本机原密码，再按提示输入新密码以更新本机配置。
-      </q-card-section>
 
       <q-card-section class="content-area q-pa-lg">
 
@@ -47,6 +44,7 @@
             :biometric-enabled="biometricEnabled"
             :biometric-unlock-allowed="biometricUnlockAllowed"
             :biometric-password-interval-days="biometricPasswordIntervalDays"
+            :show-changed-key-hint="!!encryptedConfig.length && !pendingKeyChange"
             @submit="unlock"
             @biometric-unlock="tryBiometricUnlock"
             @reset="confirmReset"
