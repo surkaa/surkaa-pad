@@ -190,13 +190,14 @@ mod tests {
     #[tokio::test]
     async fn remote_encryption_replacement_restores_old_object_after_failure() {
         let client = OssClient::from_env();
-        let (client, _guard) = TestOssGuard::new(client).await;
+        let (client, guard) = TestOssGuard::new(client).await;
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
         let config = AppConfigStore::in_memory(AppConfig::with_attachment_cache_limit_bytes(100));
         config.set_attachment_cache_max_file_size_bytes(4).unwrap();
         let attachment_cache = AttachmentCacheManager::new(los.clone(), config);
-        let store = RemoteStore::with_attachment_cache(los.clone(), client, attachment_cache);
+        let store =
+            RemoteStore::with_attachment_cache(los.clone(), client.clone(), attachment_cache);
         let diary_id = "8215021834823";
         let old_data = b"old remote attachment".to_vec();
         let replacement = b"new remote attachment".to_vec();
@@ -256,6 +257,13 @@ mod tests {
             .restore_attachment_backup(diary_id, "attachment", "text/plain")
             .await
             .is_err());
+
+        // 业务回滚断言通过后清理隔离前缀，并确认测试附件与事务备份均未残留。
+        guard.cleanup().await;
+        assert!(
+            client.list_all_keys("").await.unwrap().is_empty(),
+            "成功完成测试后不应残留任何 OSS 对象"
+        );
     }
 
     #[tokio::test]
