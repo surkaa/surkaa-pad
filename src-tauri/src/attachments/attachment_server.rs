@@ -37,7 +37,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri_plugin_log::log;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedRwLockReadGuard, OwnedSemaphorePermit, Semaphore};
 
 const MAX_CHUNK_SIZE: u64 = 1024 * 1024;
 const MAX_CONCURRENT_REQUESTS: usize = 32;
@@ -395,7 +395,10 @@ async fn process_attachment(
         attachment_server.try_acquire_attachment_request(global_permit, &id, &attachment_id)?;
 
     // 整个 HTTP 请求固定使用进入时的存储模式，避免读取 Manifest 后切换到另一存储。
-    let _storage_guard = state.lock_storage_operation().await;
+    let storage_guard = state
+        .lock_storage_operation()
+        .await
+        .map_err(|_| ServerError::Forbidden("Vault key change is pending"))?;
     let cache = state.diary_cache();
     let crypto = state.crypto();
     let store = state.diary_store();
@@ -484,6 +487,7 @@ async fn process_attachment(
                 Bytes::new(),
             ),
             request_permit,
+            storage_guard,
         );
     }
 
@@ -524,6 +528,7 @@ async fn process_attachment(
         return hold_request_permit(
             build_attachment_stream_response(status, resource_mimetype, selected_length, stream),
             request_permit,
+            storage_guard,
         );
     }
     let capacity = min(selected_length, MAX_CHUNK_SIZE) as usize;
@@ -559,6 +564,7 @@ async fn process_attachment(
             Bytes::from(data),
         ),
         request_permit,
+        storage_guard,
     )
 }
 
@@ -760,6 +766,8 @@ fn stream_body(stream: ByteStream) -> ResponseBody {
 struct PermitBody {
     inner: ResponseBody,
     _request_permit: AttachmentRequestPermit,
+    // 不能在响应头返回后释放；HTML/PDF/动图仍会继续从存储读取正文。
+    _storage_guard: OwnedRwLockReadGuard<()>,
 }
 
 impl Body for PermitBody {
@@ -785,12 +793,14 @@ impl Body for PermitBody {
 fn hold_request_permit(
     response: Result<Response<ResponseBody>, ServerError>,
     request_permit: AttachmentRequestPermit,
+    storage_guard: OwnedRwLockReadGuard<()>,
 ) -> Result<Response<ResponseBody>, ServerError> {
     response.map(|response| {
         let (parts, body) = response.into_parts();
         let body = PermitBody {
             inner: body,
             _request_permit: request_permit,
+            _storage_guard: storage_guard,
         }
         .boxed_unsync();
         Response::from_parts(parts, body)
@@ -809,6 +819,55 @@ mod tests {
     use crate::stream::{collect_data, create_mock_stream};
     use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn streaming_response_keeps_storage_lock_until_body_is_dropped() {
+        let temp = tempfile::tempdir().unwrap();
+        let handle = AttachmentServerHandle::for_test();
+        let state = AppState::from_parts(
+            Crypto::new(),
+            OssClient::new(),
+            LocalObjectStore::new(temp.path().into()),
+        );
+        let storage_guard = state.lock_storage_operation().await.unwrap();
+        let permit = handle
+            .try_acquire_attachment_request(
+                handle.try_acquire_global_request().unwrap(),
+                "123",
+                "file",
+            )
+            .unwrap();
+        let response = hold_request_permit(
+            build_attachment_stream_response(
+                StatusCode::OK,
+                "application/pdf",
+                1,
+                Box::pin(futures_util::stream::pending()),
+            ),
+            permit,
+            storage_guard,
+        )
+        .unwrap();
+        assert!(
+            state.try_lock_key_change().is_none(),
+            "正文传输仍在进行时不能启动改密"
+        );
+        drop(response);
+        assert!(state.try_lock_key_change().is_some());
+    }
+
+    #[tokio::test]
+    async fn pending_key_change_forbids_attachment_requests() {
+        let server = start_test_server("123", "file.txt", "text/plain", b"data", false).await;
+        server
+            .state
+            .persist_key_change(Some("pending-record".into()))
+            .unwrap();
+        let response = reqwest::get(server.handle.url("123", "file.txt"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
 
     struct TestServer {
         _temp_dir: TempDir,
@@ -1006,7 +1065,15 @@ mod tests {
                 let permit = handle
                     .try_acquire_attachment_request(global, "diary", "stream.mp4")
                     .unwrap();
-                hold_request_permit(Ok(Response::new(full_body(Bytes::new()))), permit).unwrap()
+                let storage_guard = Arc::new(tokio::sync::RwLock::new(()))
+                    .try_read_owned()
+                    .unwrap();
+                hold_request_permit(
+                    Ok(Response::new(full_body(Bytes::new()))),
+                    permit,
+                    storage_guard,
+                )
+                .unwrap()
             })
             .collect::<Vec<_>>();
 

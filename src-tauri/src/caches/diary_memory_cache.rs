@@ -26,4 +26,8 @@ impl DiaryMemoryCache {
     pub fn remove(&self, id: &str) {
         self.diaries.remove(id);
     }
+
+    pub fn clear(&self) {
+        self.diaries.clear();
+    }
 }

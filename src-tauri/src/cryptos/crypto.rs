@@ -14,7 +14,7 @@ use argon2::{Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
 use bytes::Bytes;
 use futures_util::StreamExt;
 use std::sync::{Arc, RwLock};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 impl std::ops::Deref for DerivedKey {
     type Target = [u8; KEY_LEN];
@@ -207,6 +207,50 @@ impl Crypto {
         Ok(guard.is_some())
     }
 
+    /// 独立密钥快照；不能用共享同一个 Arc 的 `clone()` 充当改密旧密钥。
+    pub(crate) fn snapshot(&self) -> Result<Self, CryptoError> {
+        let snapshot = Self::new();
+        snapshot.adopt(self)?;
+        Ok(snapshot)
+    }
+
+    pub(crate) fn adopt(&self, source: &Self) -> Result<(), CryptoError> {
+        let (key, kdf) = {
+            let guard = source.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
+            let state = guard.as_ref().ok_or(CryptoError::NotInitialized)?;
+            (state.key.clone(), state.kdf.clone())
+        };
+        self.set_derived_key(key, kdf)
+    }
+
+    /// 仅在 Rust 内部包装恢复密钥，密钥不以明文传给前端或写入文件。
+    pub(crate) fn wrap_peer(&self, peer: &Self, context: &[u8]) -> Result<Vec<u8>, CryptoError> {
+        let guard = peer.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
+        let state = guard.as_ref().ok_or(CryptoError::NotInitialized)?;
+        let mut plaintext = Zeroizing::new(context.to_vec());
+        plaintext.extend_from_slice(&state.key.0);
+        self.encrypt(&plaintext)
+    }
+
+    pub(crate) fn unwrap_peer(
+        &self,
+        wrapped: &[u8],
+        context: &[u8],
+        kdf: KeyDerivationParameters,
+    ) -> Result<Self, CryptoError> {
+        let plaintext = Zeroizing::new(self.decrypt(wrapped)?);
+        if plaintext.len() != context.len() + KEY_LEN || !plaintext.starts_with(context) {
+            return Err(CryptoError::DecryptionFailed(
+                "改密恢复密钥的上下文不匹配".into(),
+            ));
+        }
+        let mut key = DerivedKey([0; KEY_LEN]);
+        key.0.copy_from_slice(&plaintext[context.len()..]);
+        let peer = Self::new();
+        peer.set_derived_key(key, kdf)?;
+        Ok(peer)
+    }
+
     pub fn candidate_matches_active_key(
         &self,
         password: String,
@@ -306,6 +350,7 @@ pub(crate) fn derive_key(
     password: String,
     parameters: &KeyDerivationParameters,
 ) -> Result<DerivedKey, CryptoError> {
+    let password = Zeroizing::new(password);
     parameters
         .validate()
         .map_err(|error| CryptoError::DeriveFailed(error.to_string()))?;

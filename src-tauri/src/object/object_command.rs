@@ -139,6 +139,7 @@ pub async fn cmd_enable_remote_storage(
         });
     }
 
+    crate::vault_key_change::ensure_no_remote_key_change(&state).await?;
     if let Err(error) = state
         .vault_bootstrap_repository()
         .ensure_remote_for_active_key()
@@ -353,6 +354,7 @@ pub fn cmd_get_storage_mode(state: State<'_, AppState>) -> bool {
 pub async fn cmd_get_attachment_cache_info(
     state: State<'_, AppState>,
 ) -> Result<AttachmentCacheInfo, AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
     if !state.is_remote_enabled() {
         return Err(AppError {
             error_type: "storage_mode".into(),
@@ -373,6 +375,7 @@ pub async fn cmd_set_attachment_cache_limit(
     state: State<'_, AppState>,
     limit_bytes: f64,
 ) -> Result<AttachmentCacheInfo, AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
     if !state.is_remote_enabled() {
         return Err(AppError {
             error_type: "storage_mode".into(),
@@ -419,6 +422,7 @@ pub async fn cmd_set_attachment_cache_max_file_size(
     state: State<'_, AppState>,
     limit_bytes: f64,
 ) -> Result<AttachmentCacheInfo, AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
     if !state.is_remote_enabled() {
         return Err(AppError {
             error_type: "storage_mode".into(),
@@ -485,6 +489,23 @@ pub async fn cmd_restore_remote_storage(state: State<'_, AppState>) -> Result<bo
         });
     }
     if enabled {
+        crate::vault_key_change::ensure_no_remote_key_change(&state).await?;
+        if let Some(remote) = state
+            .vault_bootstrap_repository()
+            .load_remote_for_key_change()
+            .await?
+        {
+            if state
+                .vault_bootstrap()
+                .as_ref()
+                .is_some_and(|local| local.vault_id == remote.vault_id && local.kdf != remote.kdf)
+            {
+                return Err(AppError {
+                    error_type: "vault_key_changed".into(),
+                    message: "云端已完成改密，请输入新的主密码更新本机配置".into(),
+                });
+            }
+        }
         state
             .vault_bootstrap_repository()
             .ensure_remote_for_active_key()

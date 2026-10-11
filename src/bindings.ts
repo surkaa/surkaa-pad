@@ -196,6 +196,75 @@ async cmdPrepareRemoteVault(masterPassword: string, akid: string, aks: string, b
 }
 },
 /**
+ * 检查完整清单并实测派生与重加密；不修改任何用户数据。
+ */
+async cmdPlanVaultKeyChange(oldPassword: string, newPassword: string, confirmPassword: string, memoryCostKib: number | null, localConfig: LocalEncryptedConfig) : Promise<Result<KeyChangePlan, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_plan_vault_key_change", { oldPassword, newPassword, confirmPassword, memoryCostKib, localConfig }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdStartVaultKeyChange(planId: string, event: TAURI_CHANNEL<KeyChangeProgress>) : Promise<Result<LocalEncryptedConfig, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_start_vault_key_change", { planId, event }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdResumeVaultKeyChange(password: string, event: TAURI_CHANNEL<KeyChangeProgress>) : Promise<Result<LocalEncryptedConfig, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_resume_vault_key_change", { password, event }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 前端持久保存加密配置并禁用旧生物凭据后，才删除恢复密钥桥并解除改密锁。
+ */
+async cmdAckVaultKeyChange(localConfig: LocalEncryptedConfig) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_ack_vault_key_change", { localConfig }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdGetVaultKeyChangeStatus() : Promise<Result<KeyChangeStatus, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_get_vault_key_change_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdPauseVaultKeyChange() : Promise<void> {
+    await TAURI_INVOKE("cmd_pause_vault_key_change");
+},
+/**
+ * 其他设备完成改密后：先用本机旧密码解锁 OSS 配置，再用新密码确认云端 Vault。
+ * 本机更新也使用恢复记录，防止新 bootstrap 已保存、前端凭据还未更新时退出。
+ */
+async cmdSyncChangedVaultKey(newPassword: string, localConfig: LocalEncryptedConfig, event: TAURI_CHANNEL<KeyChangeProgress>) : Promise<Result<LocalEncryptedConfig, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_sync_changed_vault_key", { newPassword, localConfig, event }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdDiscardVaultKeyChangePlan() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_discard_vault_key_change_plan") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 查看尚未导入的 Android 系统分享内容。
  * Windows 端始终返回空数组。读取不会消费队列；成功导入或明确放弃后需调用
  * [`cmd_ack_pending_android_share`]。
@@ -1219,8 +1288,15 @@ export type EditorShortcutSettings = { bold: string; underline: string; strike: 
 export type EditorToolbarAction = "bold" | "underline" | "strike" | "heading1" | "heading2" | "heading3" | "heading4" | "heading5" | "taskList" | "summary" | "undo" | "redo"
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
+export type KeyChangePlan = { planId: string; remote: boolean; totalFiles: number; totalBytes: number; encryptedFiles: number; encryptedBytes: number; temporaryBytes: number; derivationMs: number; cryptoEstimateMs: number; transferBytes: number; newBootstrap: VaultBootstrap }
+export type KeyChangeProgress = { phase: string; completedFiles: number; totalFiles: number; completedBytes: number; totalBytes: number; currentFile: string | null }
+export type KeyChangeStatus = { pending: boolean; remote: boolean }
 export type KeyDerivationAlgorithm = "argon2id"
 export type KeyDerivationParameters = { algorithm: KeyDerivationAlgorithm; algorithmVersion: number; salt: string; memoryCostKib: number; timeCost: number; parallelism: number; outputLength: number }
+/**
+ * 仅包含已加密的本机配置；不会把 OSS/API 密钥明文写入改密记录。
+ */
+export type LocalEncryptedConfig = { vaultVerifier: number[] | null; oss: number[] | null; ai: number[] | null }
 export type LocalStorageInfo = { currentPath: string; configuredPath: string; isDefault: boolean; migrationPending: boolean; totalFiles: number; totalBytes: number }
 export type LocalStorageMigrationEvent = { event: "preparing"; data: { sourcePath: string; targetPath: string } } | { event: "started"; data: { totalFiles: number; totalBytes: number; fastMove: boolean } } | { event: "phase"; data: { phase: LocalStorageMigrationPhase } } | { event: "progress"; data: { phase: LocalStorageMigrationPhase; currentFile: string; currentFileIndex: number; totalFiles: number; currentFileBytes: number; currentFileSize: number; processedBytes: number; totalBytes: number } } | { event: "completed"; data: { targetPath: string; migratedFiles: number; migratedBytes: number; cleanupWarning: string | null } } | { event: "error"; data: { phase: LocalStorageMigrationPhase; currentFile: string | null; message: string } }
 export type LocalStorageMigrationPhase = "preparing" | "copying" | "verifying" | "switching" | "cleaning"

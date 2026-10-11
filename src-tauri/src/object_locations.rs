@@ -120,6 +120,28 @@ impl ObjectLocations {
         "vault/bootstrap.json"
     }
 
+    pub const fn vault_key_change() -> &'static str {
+        "vault/key-change.json"
+    }
+
+    pub fn vault_key_change_staging_prefix(transaction_id: &str) -> String {
+        format!("vault/key-change/{transaction_id}/")
+    }
+
+    pub fn vault_key_change_stage(transaction_id: &str, index: usize) -> String {
+        format!(
+            "{}{index}.enc",
+            Self::vault_key_change_staging_prefix(transaction_id)
+        )
+    }
+
+    pub fn vault_key_change_backup(transaction_id: &str, index: usize) -> String {
+        format!(
+            "{}{index}.old.enc",
+            Self::vault_key_change_staging_prefix(transaction_id)
+        )
+    }
+
     pub fn ai_session_prefix(session_id: &str) -> String {
         format!("{AI_DIRECTORY}/{AI_SESSIONS_DIRECTORY}/{session_id}/")
     }

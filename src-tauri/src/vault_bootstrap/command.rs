@@ -9,7 +9,10 @@ use tauri_plugin_log::log;
 /// * `Result<VaultBootstrap, AppError>` - 当前 Vault 的完整引导配置
 #[tauri::command]
 #[specta::specta]
-pub fn cmd_commit_vault_bootstrap(state: State<'_, AppState>) -> Result<VaultBootstrap, AppError> {
+pub async fn cmd_commit_vault_bootstrap(
+    state: State<'_, AppState>,
+) -> Result<VaultBootstrap, AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state.vault_bootstrap_repository().commit_active()?)
 }
 
@@ -86,7 +89,7 @@ pub async fn cmd_import_vault_bootstrap(
     json: String,
     master_password: String,
 ) -> Result<VaultBootstrap, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state
         .vault_bootstrap_repository()
         .import_json(&json, master_password, &state.local_object_store())
@@ -132,6 +135,7 @@ pub async fn cmd_prepare_remote_vault(
         .oss_client()
         .initialize(endpoint, akid, aks, bucket)
         .map_err(AppError::from)?;
+    crate::vault_key_change::ensure_no_remote_key_change(&state).await?;
     match state
         .vault_bootstrap_repository()
         .prepare_remote(

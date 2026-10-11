@@ -15,6 +15,7 @@ pub async fn cmd_unlock(
     state: State<'_, AppState>,
     master_password: String,
 ) -> Result<(), AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
     if let Some(bootstrap) = state.vault_bootstrap() {
         return Ok(state
             .crypto()
@@ -36,6 +37,7 @@ pub async fn cmd_valid_password(
     state: State<'_, AppState>,
     master_password: String,
 ) -> Result<String, AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state.crypto().valid_password(master_password)?)
 }
 
@@ -47,6 +49,7 @@ pub async fn cmd_valid_password(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_biometric_unlock(state: State<'_, AppState>, dek: String) -> Result<(), AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
     let has_bootstrap = state.vault_bootstrap().is_some();
     let parameters = state
         .vault_bootstrap()
@@ -72,6 +75,7 @@ pub async fn cmd_encrypt_data(
     state: State<'_, AppState>,
     data: String,
 ) -> Result<Vec<u8>, AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state.crypto().encrypt(data.as_bytes())?)
 }
 
@@ -86,6 +90,7 @@ pub async fn cmd_decrypt_data(
     state: State<'_, AppState>,
     encrypted: Vec<u8>,
 ) -> Result<String, AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
     let decrypted_bytes = state.crypto().decrypt(&encrypted)?;
     let decrypted_string = String::from_utf8(decrypted_bytes).map_err(|e| AppError {
         error_type: "utf8".into(),

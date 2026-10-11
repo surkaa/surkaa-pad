@@ -49,7 +49,12 @@ impl DiaryReadTools {
         let _storage_guard = if self.storage_already_locked {
             None
         } else {
-            Some(self.state.lock_storage_operation().await)
+            Some(
+                self.state
+                    .lock_storage_operation()
+                    .await
+                    .map_err(|e| execution_failed(LIST_DIARIES_TOOL, e))?,
+            )
         };
         let cache = self.state.diary_cache();
         let crypto = self.state.crypto();
@@ -84,7 +89,12 @@ impl DiaryReadTools {
         let _storage_guard = if self.storage_already_locked {
             None
         } else {
-            Some(self.state.lock_storage_operation().await)
+            Some(
+                self.state
+                    .lock_storage_operation()
+                    .await
+                    .map_err(|e| execution_failed(LIST_DIARIES_BY_DATE_RANGE_TOOL, e))?,
+            )
         };
         let cache = self.state.diary_cache();
         let crypto = self.state.crypto();
@@ -130,7 +140,12 @@ impl DiaryReadTools {
         let _storage_guard = if self.storage_already_locked {
             None
         } else {
-            Some(self.state.lock_storage_operation().await)
+            Some(
+                self.state
+                    .lock_storage_operation()
+                    .await
+                    .map_err(|e| execution_failed(SEARCH_DIARIES_TOOL, e))?,
+            )
         };
         let cache = self.state.diary_cache();
         let crypto = self.state.crypto();
@@ -188,7 +203,12 @@ impl DiaryReadTools {
         let _storage_guard = if self.storage_already_locked {
             None
         } else {
-            Some(self.state.lock_storage_operation().await)
+            Some(
+                self.state
+                    .lock_storage_operation()
+                    .await
+                    .map_err(|e| execution_failed(READ_DIARY_TOOL, e))?,
+            )
         };
         let store = self.state.diary_store();
         let diary = get_diary(

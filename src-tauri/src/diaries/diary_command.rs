@@ -28,7 +28,7 @@ pub async fn cmd_save_diary(
     state: State<'_, AppState>,
     content: DiaryContent,
 ) -> Result<(DiarySummary, DiaryContent), AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let store = state.diary_store();
     Ok(save_diary(&state.diary_cache(), &state.crypto(), &*store, content).await?)
 }
@@ -41,7 +41,7 @@ pub async fn cmd_save_diary(
 #[tauri::command]
 #[specta::specta]
 pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let store = state.diary_store();
     Ok(delete_diary(&state.diary_cache(), &*store, id).await?)
 }
@@ -59,7 +59,7 @@ pub async fn cmd_update_diary_content_only(
     id: &str,
     new_content: DiaryContent,
 ) -> Result<DiarySummary, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let store = state.diary_store();
     Ok(update_diary_content_only(
         &state.diary_cache(),
@@ -82,7 +82,7 @@ pub async fn cmd_page_diary_ids(
     state: State<'_, AppState>,
     next_token: NextToken,
 ) -> Result<(Vec<String>, NextToken), AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let store = state.diary_store();
     Ok(page_diary_ids(&*store, next_token).await?)
 }
@@ -98,7 +98,7 @@ pub async fn cmd_get_diary_summary(
     state: State<'_, AppState>,
     id: &str,
 ) -> Result<DiarySummary, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let store = state.diary_store();
     Ok(get_diary_summary(&state.diary_cache(), &state.crypto(), &*store, id).await?)
 }
@@ -114,7 +114,7 @@ pub async fn cmd_get_diary_detail(
     state: State<'_, AppState>,
     id: &str,
 ) -> Result<DiaryDetail, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let store = state.diary_store();
     Ok(get_diary_detail(
         &state.diary_cache(),
@@ -137,7 +137,7 @@ pub async fn cmd_get_diary_manifest(
     state: State<'_, AppState>,
     id: &str,
 ) -> Result<DiaryManifest, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let store = state.diary_store();
     Ok(get_diary(&state.diary_cache(), &state.crypto(), &*store, id).await?)
 }
@@ -165,7 +165,13 @@ pub fn cmd_search_diaries(
     let state = state.inner().clone();
     let event = event.clone();
     Ok(task_pool.spawn(async move {
-        let _storage_guard = state.lock_storage_operation().await;
+        let _storage_guard = match state.lock_storage_operation().await {
+            Ok(guard) => guard,
+            Err(error) => {
+                let _ = event.send(SearchDiariesEvent::Error(error.to_string()));
+                return;
+            }
+        };
         let cache = state.diary_cache();
         let crypto = state.crypto();
         let store = state.diary_store();
@@ -202,7 +208,15 @@ pub fn cmd_inspect_diary_versions(
 fn start_diary_version_task(state: AppState, event: Channel<DiaryVersionEvent>) -> String {
     let task_pool = state.task_pool();
     task_pool.spawn_cancelable(move |cancellation| async move {
-        let _storage_guard = state.lock_storage_operation().await;
+        let _storage_guard = match state.lock_storage_operation().await {
+            Ok(guard) => guard,
+            Err(error) => {
+                let _ = event.send(DiaryVersionEvent::Error {
+                    message: error.to_string(),
+                });
+                return;
+            }
+        };
         let scope = if state.is_remote_enabled() {
             DiaryVersionStorageScope::Cloud
         } else {

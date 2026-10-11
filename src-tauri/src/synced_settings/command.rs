@@ -43,7 +43,7 @@ async fn load_synced_settings(
     state: &AppState,
 ) -> Result<Option<SyncedSettingsDocument>, AppError> {
     ensure_remote_enabled(state)?;
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state.synced_settings_repository().load().await?)
 }
 
@@ -52,7 +52,7 @@ async fn save_synced_settings(
     settings: SyncedSettingsData,
 ) -> Result<SyncedSettingsDocument, AppError> {
     ensure_remote_enabled(state)?;
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state
         .synced_settings_repository()
         .save(settings, Utc::now().timestamp_millis())

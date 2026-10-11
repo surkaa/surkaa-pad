@@ -20,6 +20,7 @@ pub use diary_content::DiaryContent;
 pub(crate) use diary_content::{DiaryAttachmentCounts, DiaryContentNode};
 pub use diary_error::DiaryError;
 pub use diary_store::{DiaryStore, LocalStore, RemoteStore};
+pub(crate) use diary_types::deserialize_current_manifest;
 pub use diary_types::DiaryManifest;
 pub(crate) use diary_types::DiarySummary;
 #[cfg(test)]

@@ -39,6 +39,7 @@ pub struct AppState {
     ai_session_repository: AiSessionRepository,
     synced_settings_repository: SyncedSettingsRepository,
     vault_bootstrap_repository: VaultBootstrapRepository,
+    key_change_manager: Arc<crate::vault_key_change::KeyChangeManager>,
 }
 
 impl AppState {
@@ -84,6 +85,7 @@ impl AppState {
             ai_session_repository,
             synced_settings_repository,
             vault_bootstrap_repository,
+            key_change_manager: Arc::new(crate::vault_key_change::KeyChangeManager::default()),
         }
     }
 
@@ -115,12 +117,47 @@ impl AppState {
         self.chunked_uploads.clone()
     }
 
-    pub async fn lock_storage_operation(&self) -> OwnedRwLockReadGuard<()> {
-        self.storage_mode_gate.clone().read_owned().await
+    pub fn ensure_storage_available(&self) -> Result<(), crate::error::AppError> {
+        if self.pending_key_change().is_some() {
+            return Err(crate::error::AppError {
+                error_type: "vault_key_change_pending".into(),
+                message: "改密尚未完成，请先继续改密；日记、附件和 AI 操作已暂停".into(),
+            });
+        }
+        Ok(())
+    }
+
+    pub async fn lock_storage_operation(
+        &self,
+    ) -> Result<OwnedRwLockReadGuard<()>, crate::error::AppError> {
+        self.ensure_storage_available()?;
+        let guard = self.storage_mode_gate.clone().read_owned().await;
+        self.ensure_storage_available()?;
+        Ok(guard)
     }
 
     pub fn try_lock_storage_mode_change(&self) -> Option<OwnedRwLockWriteGuard<()>> {
+        self.ensure_storage_available().ok()?;
+        self.try_lock_key_change()
+    }
+
+    pub(crate) fn try_lock_key_change(&self) -> Option<OwnedRwLockWriteGuard<()>> {
         self.storage_mode_gate.clone().try_write_owned().ok()
+    }
+
+    pub(crate) fn pending_key_change(&self) -> Option<String> {
+        self.app_config
+            .current()
+            .pending_vault_key_change()
+            .map(str::to_owned)
+    }
+
+    pub(crate) fn persist_key_change(&self, journal: Option<String>) -> Result<(), AppConfigError> {
+        self.app_config.set_pending_vault_key_change(journal)
+    }
+
+    pub(crate) fn key_change_manager(&self) -> Arc<crate::vault_key_change::KeyChangeManager> {
+        self.key_change_manager.clone()
     }
 
     pub fn filename_allocators(&self) -> Arc<DashMap<String, Arc<Mutex<HashSet<String>>>>> {
@@ -281,6 +318,7 @@ impl AppState {
             ai_session_repository,
             synced_settings_repository,
             vault_bootstrap_repository,
+            key_change_manager: Arc::new(crate::vault_key_change::KeyChangeManager::default()),
         }
     }
 }
@@ -298,7 +336,7 @@ mod tests {
             LocalObjectStore::new(temp_dir.path().to_path_buf()),
         );
 
-        let operation_guard = state.lock_storage_operation().await;
+        let operation_guard = state.lock_storage_operation().await.unwrap();
         assert!(state.try_lock_storage_mode_change().is_none());
 
         drop(operation_guard);

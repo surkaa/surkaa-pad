@@ -231,7 +231,7 @@ pub async fn cmd_delete_attachment(
     id: &str,
     attachment_id: String,
 ) -> Result<(), AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let store = state.diary_store();
     Ok(delete_attachment(
         &state.diary_cache(),
@@ -323,7 +323,13 @@ pub fn cmd_toggle_attachment_encryption(
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
-        let _storage_guard = state.lock_storage_operation().await;
+        let _storage_guard = match state.lock_storage_operation().await {
+            Ok(guard) => guard,
+            Err(error) => {
+                let _ = event.send(AttachmentProcessEvent::Error(error.to_string()));
+                return;
+            }
+        };
         toggle_attachment_encryption_cancelable(
             &state,
             Arc::new(event),
@@ -355,7 +361,13 @@ pub fn cmd_rotate_image_attachment(
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
-        let _storage_guard = state.lock_storage_operation().await;
+        let _storage_guard = match state.lock_storage_operation().await {
+            Ok(guard) => guard,
+            Err(error) => {
+                let _ = event.send(AttachmentProcessEvent::Error(error.to_string()));
+                return;
+            }
+        };
         rotate_image_attachment_cancelable(
             &state,
             Arc::new(event),
@@ -386,7 +398,13 @@ pub fn cmd_caching_attachment(
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
-        let _storage_guard = state.lock_storage_operation().await;
+        let _storage_guard = match state.lock_storage_operation().await {
+            Ok(guard) => guard,
+            Err(error) => {
+                let _ = event.send(AttachmentProcessEvent::Error(error.to_string()));
+                return;
+            }
+        };
         let store = state.diary_store();
         caching_attachment(&*store, Arc::new(event), &id, &attachment_id).await;
     }))
@@ -409,7 +427,7 @@ pub async fn cmd_save_decrypt_attachment(
     attachment_id: String,
 ) -> Result<String, AppError> {
     let attachment = {
-        let _storage_guard = state.lock_storage_operation().await;
+        let _storage_guard = state.lock_storage_operation().await?;
         let store = state.diary_store();
         let diary = get_diary(&state.diary_cache(), &state.crypto(), &*store, &id).await?;
         diary
@@ -448,7 +466,13 @@ pub async fn cmd_save_decrypt_attachment(
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn(async move {
-        let _storage_guard = state.lock_storage_operation().await;
+        let _storage_guard = match state.lock_storage_operation().await {
+            Ok(guard) => guard,
+            Err(error) => {
+                let _ = event.send(AttachmentProcessEvent::Error(error.to_string()));
+                return;
+            }
+        };
         save_decrypt_attachment(
             &state,
             Arc::new(event),
@@ -476,7 +500,7 @@ pub async fn cmd_open_html_attachment(
     id: String,
     attachment_id: String,
 ) -> Result<(), AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(open_html_attachment(&app_handle, &state, &id, &attachment_id).await?)
 }
 
@@ -495,7 +519,7 @@ pub async fn cmd_update_attachment_filename(
     attachment_id: String,
     new_filename: String,
 ) -> Result<(), AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(update_attachment_filename(&state, &id, attachment_id, new_filename).await?)
 }
 
@@ -522,7 +546,7 @@ pub async fn cmd_update_attachment_audio_info(
             message: "音频时长无效".into(),
         });
     }
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let store = state.diary_store();
     Ok(update_diary_attachment_audio_info(
         &state.diary_cache(),

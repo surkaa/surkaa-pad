@@ -153,7 +153,10 @@ async fn add_attachment_with_result_cancelable(
     cancellation: &CancellationToken,
 ) -> Result<(AttachmentMeta, String), AttachmentError> {
     // 上传期间固定存储模式，避免启用/关闭云存储与附件事务交错。
-    let _storage_mode_guard = state.lock_storage_operation().await;
+    let _storage_mode_guard = state
+        .lock_storage_operation()
+        .await
+        .map_err(|error| AttachmentError::InvalidOperation(error.to_string()))?;
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
     let upload_progress = attachment_upload_progress(event.clone());
 

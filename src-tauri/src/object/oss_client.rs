@@ -337,12 +337,21 @@ impl OssClient {
             .put_object(&key, data)
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        if !(200..=299).contains(&resp.status_code()) {
+            return Err(ObjectError::OperationFailed(format!(
+                "PUT failed: HTTP {}",
+                resp.status_code()
+            )));
+        }
         let etag = resp
             .headers()
             .get("etag")
             .and_then(|v| v.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
             .unwrap_or_default()
             .to_string();
+        if etag.is_empty() {
+            return Err(ObjectError::OperationFailed("PUT 成功响应缺少 ETag".into()));
+        }
         Ok(etag)
     }
 
@@ -370,6 +379,51 @@ impl OssClient {
                 "Conditional PUT failed: HTTP {status}"
             ))),
         }
+    }
+
+    /// 改密恢复记录不能留在 OSS 版本历史中；空 Status 才是从未开启版本控制。
+    pub async fn require_unversioned_bucket(&self) -> Result<(), ObjectError> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename = "VersioningConfiguration")]
+        struct Versioning {
+            #[serde(rename = "Status", default)]
+            status: Option<String>,
+        }
+        let bucket = self
+            .inner()?
+            .with_extra_query(std::collections::HashMap::from([(
+                "versioning".into(),
+                String::new(),
+            )]))
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        let response = bucket.get_object("").await.map_err(|e| {
+            ObjectError::OperationFailed(format!(
+                "查询桶版本控制失败，需要 oss:GetBucketVersioning 权限: {e}"
+            ))
+        })?;
+        if response.status_code() != 200 || response.as_slice().len() > 16 * 1024 {
+            return Err(ObjectError::OperationFailed(
+                "无法确认桶版本控制状态，不能安全改密".into(),
+            ));
+        }
+        let xml = std::str::from_utf8(response.as_slice())
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        // 只接受明确的 VersioningConfiguration 响应，不能把空错误响应当作未开启。
+        if !xml.contains("<VersioningConfiguration") {
+            return Err(ObjectError::OperationFailed("桶版本控制响应无效".into()));
+        }
+        let versioning: Versioning = quick_xml::de::from_str(xml)
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        if versioning
+            .status
+            .as_deref()
+            .is_some_and(|status| !status.is_empty())
+        {
+            return Err(ObjectError::OperationFailed(
+                "第一版改密不支持启用或暂停版本控制的桶，避免恢复密钥遗留在版本历史中".into(),
+            ));
+        }
+        Ok(())
     }
 
     /// 在同一 Bucket 内复制对象。该操作由 OSS 服务端完成，不会把对象内容
@@ -720,8 +774,7 @@ impl OssClient {
         Ok(())
     }
 
-    /// 测试中直接查询当前唯一前缀下尚未完成的 multipart 会话。
-    #[cfg(test)]
+    /// 查询指定前缀下尚未完成的 multipart 会话，供测试及改密中断恢复清理。
     pub async fn list_multipart_uploads(
         &self,
         prefix: &str,

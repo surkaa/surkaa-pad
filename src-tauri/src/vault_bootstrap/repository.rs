@@ -195,6 +195,12 @@ impl VaultBootstrapRepository {
         Ok(imported)
     }
 
+    pub(crate) async fn load_remote_for_key_change(
+        &self,
+    ) -> Result<Option<VaultBootstrap>, VaultBootstrapError> {
+        self.load_remote().await
+    }
+
     fn create_from_active_key(&self) -> Result<VaultBootstrap, VaultBootstrapError> {
         let mut vault_id = [0_u8; 16];
         getrandom::fill(&mut vault_id)

@@ -162,7 +162,10 @@ async fn run_archive_preview(
     password: Option<Zeroizing<String>>,
     cancellation: CancellationToken,
 ) -> Result<ArchivePreview, ArchivePreviewError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state
+        .lock_storage_operation()
+        .await
+        .map_err(|e| ArchivePreviewError::Io(std::io::Error::other(e)))?;
     if cancellation.is_cancelled() {
         return Err(cancelled_io().into());
     }

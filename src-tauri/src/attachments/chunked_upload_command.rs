@@ -52,7 +52,7 @@ pub async fn cmd_start_chunked_upload(
         mimetype
     };
 
-    let storage_mode_guard = state.lock_storage_operation().await;
+    let storage_mode_guard = state.lock_storage_operation().await?;
     let (crypto, cache, store) = (state.crypto(), state.diary_cache(), state.diary_store());
 
     let attachment_id = generate_attachment_id()?;

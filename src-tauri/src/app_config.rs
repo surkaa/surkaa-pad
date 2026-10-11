@@ -96,6 +96,9 @@ pub struct AppConfig {
     pending_local_storage_migration: Option<PendingLocalStorageMigration>,
     #[serde(rename = "vaultBootstrap", default)]
     vault_bootstrap: Option<VaultBootstrap>,
+    /// 认证加密的改密记录。与应用配置一起原子保存，不能放在可淘汰的附件缓存中。
+    #[serde(rename = "pendingVaultKeyChange", default)]
+    pending_vault_key_change: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -108,6 +111,7 @@ impl Default for AppConfig {
             attachment_cache_max_file_size_bytes: DEFAULT_ATTACHMENT_CACHE_MAX_FILE_SIZE_BYTES,
             pending_local_storage_migration: None,
             vault_bootstrap: None,
+            pending_vault_key_change: None,
         }
     }
 }
@@ -135,6 +139,10 @@ impl AppConfig {
 
     pub fn vault_bootstrap(&self) -> Option<&VaultBootstrap> {
         self.vault_bootstrap.as_ref()
+    }
+
+    pub fn pending_vault_key_change(&self) -> Option<&str> {
+        self.pending_vault_key_change.as_deref()
     }
 
     #[cfg(test)]
@@ -235,6 +243,20 @@ impl AppConfigStore {
         self.save(next)
     }
 
+    pub fn set_pending_vault_key_change(
+        &self,
+        journal: Option<String>,
+    ) -> Result<(), AppConfigError> {
+        let mut next = self.current();
+        next.pending_vault_key_change = journal.clone();
+        let result = self.save(next);
+        if result.is_err() && journal.is_some() {
+            // 文件写入/备份清理可能只完成了一部分；即使报告失败，也不能开放普通操作。
+            self.lock_config().pending_vault_key_change = journal;
+        }
+        result
+    }
+
     pub fn begin_local_storage_migration(
         &self,
         pending: PendingLocalStorageMigration,
@@ -284,7 +306,24 @@ fn load_config(path: &Path) -> Result<AppConfig, AppConfigError> {
         }
         Err(error) => Err(error.into()),
     }?;
-    validate_version(config)
+    let mut config = validate_version(config)?;
+    // 改密确认时，主文件可能已清除记录，但进程在删除旧备份前退出。
+    // 不能因此忽略备份中仍存在的恢复密钥桥；继续保持改密锁，直至清理成功。
+    if config.pending_vault_key_change.is_none() {
+        if let Ok(bytes) = fs::read(&backup_path) {
+            if let Ok(backup) = deserialize_config(&bytes) {
+                let same_vault = config
+                    .vault_bootstrap
+                    .as_ref()
+                    .zip(backup.vault_bootstrap.as_ref())
+                    .is_some_and(|(a, b)| a.vault_id == b.vault_id);
+                if same_vault && backup.pending_vault_key_change.is_some() {
+                    config.pending_vault_key_change = backup.pending_vault_key_change;
+                }
+            }
+        }
+    }
+    Ok(config)
 }
 
 fn deserialize_config(bytes: &[u8]) -> Result<AppConfig, AppConfigError> {
@@ -331,9 +370,15 @@ fn save_config_atomic(path: &Path, config: &AppConfig) -> Result<(), AppConfigEr
         return Err(error.into());
     }
 
+    // Android 上目录项也需要持久化，确保新主文件先落盘再删除唯一的旧备份。
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
+
     if had_current {
-        let _ = fs::remove_file(backup_path);
+        fs::remove_file(backup_path)?;
     }
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
     Ok(())
 }
 
@@ -344,6 +389,56 @@ fn backup_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unfinished_key_change_in_backup_keeps_lock_until_cleanup_is_persisted() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join(APP_CONFIG_FILENAME);
+        let bootstrap = VaultBootstrap {
+            schema_version: 1,
+            vault_id: "00112233445566778899aabbccddeeff".into(),
+            kdf: crate::vault_bootstrap::KeyDerivationParameters::legacy_debug(),
+            encrypted_verifier: "not-used-by-this-config-test".into(),
+        };
+        let main = AppConfig {
+            vault_bootstrap: Some(bootstrap),
+            ..Default::default()
+        };
+        let backup = AppConfig {
+            pending_vault_key_change: Some("encrypted-journal".into()),
+            ..main.clone()
+        };
+        fs::write(&path, serde_json::to_vec(&main).unwrap()).unwrap();
+        fs::write(backup_path(&path), serde_json::to_vec(&backup).unwrap()).unwrap();
+        let store = AppConfigStore::load(path.clone()).unwrap();
+        assert_eq!(
+            store.current().pending_vault_key_change(),
+            Some("encrypted-journal")
+        );
+        store.set_pending_vault_key_change(None).unwrap();
+        assert!(!backup_path(&path).exists());
+        assert!(AppConfigStore::load(path)
+            .unwrap()
+            .current()
+            .pending_vault_key_change()
+            .is_none());
+    }
+
+    #[test]
+    fn failed_key_change_record_write_still_pauses_current_process() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join(APP_CONFIG_FILENAME);
+        let store = AppConfigStore::load(path.clone()).unwrap();
+        // 无法覆盖目录，模拟初次写入恢复记录失败；没有替换任何用户对象。
+        fs::create_dir(path.with_extension("json.tmp")).unwrap();
+        assert!(store
+            .set_pending_vault_key_change(Some("encrypted-journal".into()))
+            .is_err());
+        assert_eq!(
+            store.current().pending_vault_key_change(),
+            Some("encrypted-journal")
+        );
+    }
 
     #[test]
     fn missing_config_uses_default_location() {

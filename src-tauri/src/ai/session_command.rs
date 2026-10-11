@@ -112,7 +112,7 @@ pub async fn cmd_delete_ai_session(
 }
 
 async fn create_ai_session(state: &AppState, title: String) -> Result<AiSessionMeta, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state
         .ai_session_repository()
         .create_session(title, Utc::now().timestamp_millis())
@@ -120,7 +120,7 @@ async fn create_ai_session(state: &AppState, title: String) -> Result<AiSessionM
 }
 
 async fn list_ai_sessions(state: &AppState) -> Result<Vec<AiSessionMeta>, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state.ai_session_repository().list_sessions().await?)
 }
 
@@ -128,7 +128,7 @@ async fn get_ai_session(
     state: &AppState,
     session_id: &str,
 ) -> Result<Option<AiSessionDetail>, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state
         .ai_session_repository()
         .load_session(session_id)
@@ -140,7 +140,7 @@ async fn get_ai_session_meta(
     state: &AppState,
     session_id: &str,
 ) -> Result<Option<AiSessionMeta>, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state
         .ai_session_repository()
         .load_persisted_meta(session_id)
@@ -153,7 +153,7 @@ async fn list_ai_session_messages(
     offset: u64,
     limit: u64,
 ) -> Result<Option<AiSessionMessagePage>, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     let repository = state.ai_session_repository();
     if repository.load_persisted_meta(session_id).await?.is_none() {
         return Ok(None);
@@ -172,7 +172,7 @@ async fn update_ai_session_ai_title(
     session_id: &str,
     ai_title: Option<String>,
 ) -> Result<AiSessionMeta, AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state
         .ai_session_repository()
         .update_ai_title(session_id, ai_title, Utc::now().timestamp_millis())
@@ -180,7 +180,7 @@ async fn update_ai_session_ai_title(
 }
 
 async fn delete_ai_session(state: &AppState, session_id: &str) -> Result<(), AppError> {
-    let _storage_guard = state.lock_storage_operation().await;
+    let _storage_guard = state.lock_storage_operation().await?;
     Ok(state
         .ai_session_repository()
         .delete_session(session_id)

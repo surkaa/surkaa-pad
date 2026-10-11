@@ -136,7 +136,13 @@ pub fn cmd_run_ai_session_agent(
                 return;
             }
         };
-        let _storage_guard = storage_guard;
+        let _storage_guard = match storage_guard {
+            Ok(guard) => guard,
+            Err(error) => {
+                let _ = send_event(&event, AiAgentEvent::Failed(error.to_string()));
+                return;
+            }
+        };
         let tools = DiaryReadTools::new_with_locked_storage(state);
         let runner = AiSessionAgentRunner::new(&repository, &client, &tools);
         let emit = |message| send_event(&event, message);

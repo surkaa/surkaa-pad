@@ -21,6 +21,7 @@ mod tasks;
 mod test_utils;
 mod utils;
 mod vault_bootstrap;
+mod vault_key_change;
 
 #[cfg(target_os = "android")]
 mod android_tls {
@@ -96,6 +97,11 @@ use crate::vault_bootstrap::{
     cmd_has_vault_bootstrap, cmd_import_vault_bootstrap, cmd_initialize_new_vault,
     cmd_prepare_remote_vault,
 };
+use crate::vault_key_change::{
+    cmd_ack_vault_key_change, cmd_discard_vault_key_change_plan, cmd_get_vault_key_change_status,
+    cmd_pause_vault_key_change, cmd_plan_vault_key_change, cmd_resume_vault_key_change,
+    cmd_start_vault_key_change, cmd_sync_changed_vault_key,
+};
 use tauri::{App, Manager};
 
 fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
@@ -147,6 +153,14 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_import_vault_bootstrap,
             cmd_initialize_new_vault,
             cmd_prepare_remote_vault,
+            cmd_plan_vault_key_change,
+            cmd_start_vault_key_change,
+            cmd_resume_vault_key_change,
+            cmd_ack_vault_key_change,
+            cmd_get_vault_key_change_status,
+            cmd_pause_vault_key_change,
+            cmd_sync_changed_vault_key,
+            cmd_discard_vault_key_change_plan,
             // Android 系统分享收件箱（Windows 返回空数据）
             cmd_list_pending_android_shares,
             cmd_ack_pending_android_share,
