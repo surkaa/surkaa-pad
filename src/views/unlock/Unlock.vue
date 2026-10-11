@@ -13,6 +13,13 @@
           </div>
         </div>
       </q-card-section>
+      <q-card-section v-if="pipeline === 'login' && pendingKeyChange" class="q-pt-none">
+        <div class="desc-text text-caption q-mb-sm">上次改密未完成，普通解锁已暂停。请输入新密码续改；只换盐时仍输入原密码。</div>
+        <q-btn color="primary" label="继续改密" unelevated @click="showKeyChange = true" />
+      </q-card-section>
+      <q-card-section v-else-if="pipeline === 'login' && encryptedConfig.length" class="q-pt-none desc-text text-caption">
+        若其他设备已改密，请先输入本机原密码，再按提示输入新密码以更新本机配置。
+      </q-card-section>
 
       <q-card-section class="content-area q-pa-lg">
 
@@ -73,6 +80,7 @@
     :initial-password="masterPassword"
     @imported="handleBootstrapImported"
   />
+  <VaultKeyChangeDialog v-model="showKeyChange" :resume="true" :initial-password="masterPassword" @completed="afterKeyChange" />
 </template>
 
 <script setup lang="ts">
@@ -110,6 +118,9 @@ import {initializeSyncedSettingsSync} from '../../utils/syncedSettings';
 import {defaultNewVaultMemoryCost} from '../../utils/vaultKdfSetup';
 import VaultBootstrapImportDialog from '../../components/VaultBootstrapImportDialog.vue';
 import type {VaultBootstrap} from '../../bindings';
+import VaultKeyChangeDialog from '../../components/VaultKeyChangeDialog.vue';
+import {finishVaultKeyChange, getLocalEncryptedConfig} from '../../utils/vaultKeyChange';
+import type {KeyChangeProgress} from '../../bindings';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -139,6 +150,40 @@ const biometricEnabled = ref(false);
 const biometricUnlockAllowed = ref(false);
 const biometricPasswordIntervalDays = ref(7);
 const showBootstrapImport = ref(false);
+const pendingKeyChange = ref(false);
+const showKeyChange = ref(false);
+
+async function afterKeyChange() {
+  pendingKeyChange.value = false;
+  vaultVerifier.value = await configStore.getNormalConfig('vault_verifier') ?? [];
+  encryptedConfig.value = await configStore.getNormalConfig('encrypted_oss_config') ?? [];
+  try {
+    if (await api.cmdGetStorageMode()) { if (!await initOss()) return; }
+    const remote = await api.cmdRestoreRemoteStorage();
+    if (remote) await syncPortableSettings();
+    await recordPasswordUnlock();
+    setTimeoutForCloseApp();
+    masterPassword.value = '';
+    await router.replace({name: 'DiaryList'});
+  } catch (e) { $q.notify({type: 'negative', message: `恢复存储模式失败: ${formatError(e)}`}); }
+}
+
+async function restoreRemoteOrUpdateKey(): Promise<boolean> {
+  try { return await api.cmdRestoreRemoteStorage(); }
+  catch (e) {
+    if (!e || typeof e !== 'object' || !('error_type' in e) || e.error_type !== 'vault_key_changed') throw e;
+    const password = await new Promise<string>((resolve, reject) => {
+      $q.dialog({title: '云端密码已更改', message: '请输入新的主密码，以更新本机密钥配置并清除旧缓存。',
+        prompt: {model: '', type: 'password', isValid: value => !!value}, cancel: true, persistent: true,
+      }).onOk(value => resolve(String(value))).onCancel(() => reject(new Error('已取消更新本机密钥配置')));
+    });
+    const config = await api.cmdSyncChangedVaultKey(password, await getLocalEncryptedConfig(), new Channel<KeyChangeProgress>());
+    await finishVaultKeyChange(config);
+    vaultVerifier.value = config.vaultVerifier ?? [];
+    encryptedConfig.value = config.oss ?? [];
+    return api.cmdRestoreRemoteStorage();
+  }
+}
 
 function validateInitialPasswordSetup(): boolean {
   const error = masterPasswordConfirmationError(
@@ -339,6 +384,7 @@ async function initOss() {
 
 async function unlock() {
   if (loading.value) return;
+  if (pendingKeyChange.value) { showKeyChange.value = true; return; }
   loading.value = true;
 
   try {
@@ -352,7 +398,7 @@ async function unlock() {
         return;
       }
     }
-    const restoredRemote = await api.cmdRestoreRemoteStorage();
+    const restoredRemote = await restoreRemoteOrUpdateKey();
     if (restoredRemote) await syncPortableSettings();
 
     if (vaultVerifier.value.length === 0) {
@@ -364,6 +410,7 @@ async function unlock() {
     setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
   } catch (e) {
+    await checkPendingKeyChange();
     $q.notify({type: "negative", message: `解锁失败: ${formatError(e)}`});
   } finally {
     loading.value = false;
@@ -413,6 +460,7 @@ async function confirmReset() {
 
 async function tryBiometricUnlock() {
   if (loading.value) return;
+  if (pendingKeyChange.value) return;
   loading.value = true;
   try {
     await refreshBiometricUnlockAllowed();
@@ -442,7 +490,7 @@ async function tryBiometricUnlock() {
         return;
       }
     }
-    const restoredRemote = await api.cmdRestoreRemoteStorage();
+    const restoredRemote = await restoreRemoteOrUpdateKey();
     if (restoredRemote) await syncPortableSettings();
 
     if (vaultVerifier.value.length === 0) {
@@ -453,6 +501,7 @@ async function tryBiometricUnlock() {
     setTimeoutForCloseApp();
     await router.replace({name: 'DiaryList'});
   } catch (e) {
+    await checkPendingKeyChange();
     console.warn(`生物识别未成功或被取消: ${formatError(e)}`);
   } finally {
     loading.value = false;
@@ -488,6 +537,13 @@ async function loadAppMetadata() {
 
 async function initializeUnlockPipeline() {
   logStartupPhase('Unlock pipeline initialization started');
+  try { pendingKeyChange.value = (await api.cmdGetVaultKeyChangeStatus()).pending; }
+  catch (e) {
+    // 无法读取恢复记录时不能当作空环境，也不能让生物解锁绕过改密锁。
+    pendingKeyChange.value = true; pipeline.value = 'login'; biometricEnabled.value = false;
+    $q.notify({type: 'negative', message: `读取改密状态失败，请勿清理应用数据：${formatError(e)}`});
+    return;
+  }
   const [verifier, ec, hasVaultBootstrap] = await Promise.all([
     configStore.getNormalConfig('vault_verifier'),
     configStore.getNormalConfig('encrypted_oss_config'),
@@ -514,7 +570,7 @@ async function initializeUnlockPipeline() {
     }
     pipeline.value = 'login';
     logStartupPhase('Unlock login form selected');
-    biometricEnabled.value = isAndroid
+    biometricEnabled.value = !pendingKeyChange.value && isAndroid
         && await configStore.getNormalConfig('biometric_enabled');
     await refreshBiometricUnlockAllowed();
     if (biometricUnlockAllowed.value) {
@@ -524,6 +580,15 @@ async function initializeUnlockPipeline() {
   } else {
     pipeline.value = 'first-time';
     logStartupPhase('Unlock first-time form selected');
+  }
+}
+
+async function checkPendingKeyChange() {
+  try { pendingKeyChange.value = (await api.cmdGetVaultKeyChangeStatus()).pending; }
+  catch { pendingKeyChange.value = true; }
+  if (pendingKeyChange.value) {
+    biometricEnabled.value = biometricUnlockAllowed.value = false;
+    showKeyChange.value = true;
   }
 }
 

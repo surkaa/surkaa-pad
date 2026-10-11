@@ -82,5 +82,6 @@ export const useTimeoutStore = defineStore('timeout', () => {
     return {
         remainingStr,
         setTimeoutForCloseApp,
+        clearCloseTimers,
     }
 });

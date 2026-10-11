@@ -46,12 +46,13 @@
         </div>
         <div class="bootstrap-notice">
           <q-icon name="info_outline"/>
-          <span>修改任意参数都会产生不同密钥，因此当前版本只允许导入与现有 Vault 完全匹配的配置。</span>
+          <span>导入只接受匹配当前 Vault 的配置。更换密码或盐请使用“更改密码与盐”，该操作会安全重加密现有数据。</span>
         </div>
       </q-card-section>
 
       <q-separator/>
       <q-card-actions align="right" class="q-px-md q-pb-md">
+        <q-btn flat label="更改密码与盐" color="primary" :disable="!bootstrap || loading" @click="openKeyChange"/>
         <q-btn flat label="导入" color="primary" :disable="loading" @click="openImportDialog"/>
         <q-btn flat label="查看 JSON" color="primary" :disable="!bootstrap || loading" @click="showJson = true"/>
         <q-btn
@@ -75,6 +76,7 @@
   />
 
   <VaultBootstrapImportDialog v-model="showImport" @imported="handleImported"/>
+  <VaultKeyChangeDialog v-model="showKeyChange" @completed="reloadAfterKeyChange"/>
 </template>
 
 <script setup lang="ts">
@@ -87,6 +89,7 @@ import {formatError} from '../../utils/formatError';
 import {formatKiB} from '../../utils';
 import api from '../../utils/api';
 import VaultBootstrapImportDialog from '../../components/VaultBootstrapImportDialog.vue';
+import VaultKeyChangeDialog from '../../components/VaultKeyChangeDialog.vue';
 
 const props = defineProps<{remoteEnabled: boolean}>();
 const $q = useQuasar();
@@ -96,6 +99,9 @@ const loadError = ref('');
 const showDialog = ref(false);
 const showJson = ref(false);
 const showImport = ref(false);
+const showKeyChange = ref(false);
+function openKeyChange() { showDialog.value = false; showKeyChange.value = true; }
+function reloadAfterKeyChange() { window.location.reload(); }
 
 const entrySummary = computed(() => {
   if (!bootstrap.value) return loadError.value || '查看、复制或导入当前 Vault 的派生参数';
