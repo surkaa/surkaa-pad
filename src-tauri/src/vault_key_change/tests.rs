@@ -20,6 +20,12 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone, Default)]
 struct MemoryStore(Arc<Mutex<Memory>>);
 
+#[derive(Clone, Copy)]
+enum ReadFault {
+    Truncated,
+    Disconnected,
+}
+
 #[derive(Default)]
 struct Memory {
     objects: BTreeMap<String, Vec<u8>>,
@@ -29,6 +35,8 @@ struct Memory {
     fail_at: Option<usize>,
     fail_after: bool,
     read_chunk_size: Option<usize>,
+    read_counts: BTreeMap<String, usize>,
+    read_fault: Option<(String, ReadFault)>,
 }
 
 impl MemoryStore {
@@ -81,27 +89,41 @@ impl RekeyStorage for MemoryStore {
     }
     async fn read(&self, key: &str) -> Result<ByteStream> {
         self.tick(false)?;
-        let (bytes, chunk_size) = {
-            let data = self.0.lock().unwrap();
+        let (mut bytes, chunk_size, fault) = {
+            let mut data = self.0.lock().unwrap();
+            *data.read_counts.entry(key.into()).or_default() += 1;
             (
                 data.objects
                     .get(key)
                     .cloned()
                     .ok_or_else(|| error("对象不存在"))?,
                 data.read_chunk_size.unwrap_or(73),
+                data.read_fault
+                    .as_ref()
+                    .filter(|(k, _)| k == key)
+                    .map(|(_, fault)| *fault),
             )
         };
+        if matches!(fault, Some(ReadFault::Truncated)) {
+            bytes.pop();
+        }
         // 故意跨 AES 块边界分块，不能只测试整块输入。
-        let chunks: Vec<_> = bytes
+        let mut chunks: Vec<_> = bytes
             .chunks(chunk_size)
             .map(|c| Ok(bytes::Bytes::copy_from_slice(c)))
             .collect();
+        if matches!(fault, Some(ReadFault::Disconnected)) {
+            chunks.truncate(1);
+            chunks.push(Err(std::io::Error::other("模拟读取中途断流")));
+        }
         Ok(Box::pin(futures_util::stream::iter(chunks)))
     }
     async fn write(&self, key: &str, size: u64, stream: ByteStream) -> Result<String> {
         self.tick(false)?;
         let bytes = crate::stream::collect_data(stream).await.map_err(error)?;
-        assert_eq!(size, bytes.len() as u64);
+        if size != bytes.len() as u64 {
+            return Err(error("写入流大小不匹配"));
+        }
         let etag = Self::entry(key, &bytes).etag;
         self.0.lock().unwrap().objects.insert(key.into(), bytes);
         // 模拟服务端已完成 PUT，但客户端没有收到确认。
@@ -118,6 +140,122 @@ impl RekeyStorage for MemoryStore {
         self.0.lock().unwrap().journal = Some(journal.into());
         self.tick(true)
     }
+}
+
+#[tokio::test]
+async fn reencrypt_reads_each_source_only_once_before_readback() {
+    let store = MemoryStore::default();
+    let (old, ob) = crypto("old");
+    let (new, nb) = crypto("new");
+    let expected = fixture(&store, &old, 4097).await;
+    let (_, items) = inventory(&store, &old).await.unwrap();
+    let (mut journal, mut cp) =
+        Journal::create(&old, &new, ob, nb, false, items, Default::default()).unwrap();
+    store.0.lock().unwrap().read_counts.clear();
+    let notify_store = store.clone();
+    run(
+        &store,
+        &mut journal,
+        &mut cp,
+        &old,
+        &new,
+        move |p| {
+            if p.phase == "verifying" && p.file_progress.is_none() {
+                let key = p.current_file.unwrap();
+                assert_eq!(notify_store.0.lock().unwrap().read_counts[&key], 1);
+            }
+        },
+        || false,
+    )
+    .await
+    .unwrap();
+    for (index, item) in cp.items.iter().enumerate() {
+        let data = store.0.lock().unwrap();
+        // 生成临时密文、替换前检查、复制旧备份、最终目标校验各读取一次。
+        assert_eq!(data.read_counts[&item.source.key], 4);
+        let stage = ObjectLocations::vault_key_change_stage(&journal.transaction_id, index);
+        // 一次同时校验明文/密文、替换前检查、复制到目标各读取一次。
+        assert_eq!(data.read_counts[&stage], 3);
+    }
+    assert_data(&store, &new, &expected).await;
+}
+
+#[tokio::test]
+async fn interrupted_or_truncated_source_stream_keeps_original_and_resumes() {
+    for fault in [ReadFault::Disconnected, ReadFault::Truncated] {
+        let store = MemoryStore::default();
+        let (old, ob) = crypto("old");
+        let (new, nb) = crypto("new");
+        let expected = fixture(&store, &old, 4097).await;
+        let (_, items) = inventory(&store, &old).await.unwrap();
+        let (mut journal, mut cp) =
+            Journal::create(&old, &new, ob, nb, false, items, Default::default()).unwrap();
+        let index = cp
+            .items
+            .iter()
+            .position(|i| matches!(i.encoding, Encoding::Ctr { .. }))
+            .unwrap();
+        let target = cp.items[index].source.key.clone();
+        let original = store.0.lock().unwrap().objects[&target].clone();
+        store.checkpoint(&journal.encode().unwrap()).await.unwrap();
+        store.0.lock().unwrap().read_fault = Some((target.clone(), fault));
+        assert!(
+            run(&store, &mut journal, &mut cp, &old, &new, |_| {}, || false)
+                .await
+                .is_err()
+        );
+        assert_eq!(cp.next, index);
+        assert!(cp.staged.is_none());
+        assert_eq!(store.0.lock().unwrap().objects[&target], original);
+        store.0.lock().unwrap().read_fault = None;
+        let saved = store.0.lock().unwrap().journal.clone().unwrap();
+        let mut journal = Journal::parse(&saved).unwrap();
+        let (old, new, mut cp) = journal.open("new".into()).unwrap();
+        run(&store, &mut journal, &mut cp, &old, &new, |_| {}, || false)
+            .await
+            .unwrap();
+        assert_data(&store, &new, &expected).await;
+    }
+}
+
+#[tokio::test]
+async fn readback_rejects_different_gcm_ciphertext_even_with_identical_plaintext() {
+    let store = MemoryStore::default();
+    let (old, ob) = crypto("old");
+    let (new, nb) = crypto("new");
+    fixture(&store, &old, 129).await;
+    let (_, items) = inventory(&store, &old).await.unwrap();
+    let (mut journal, mut cp) =
+        Journal::create(&old, &new, ob, nb, false, items, Default::default()).unwrap();
+    let target = cp.items[0].source.key.clone();
+    assert!(matches!(cp.items[0].encoding, Encoding::Gcm));
+    let original = store.0.lock().unwrap().objects[&target].clone();
+    let stage = ObjectLocations::vault_key_change_stage(&journal.transaction_id, 0);
+    let notify_store = store.clone();
+    let notify_new = new.clone();
+    let result = run(
+        &store,
+        &mut journal,
+        &mut cp,
+        &old,
+        &new,
+        move |p| {
+            if p.phase == "verifying" && p.file_progress.is_none() {
+                // 使用新随机 nonce 重加密相同内容，模拟“明文正确但并非刚上传的密文”。
+                let mut data = notify_store.0.lock().unwrap();
+                let plaintext = notify_new.decrypt(&data.objects[&stage]).unwrap();
+                let different = notify_new.encrypt(&plaintext).unwrap();
+                assert_ne!(different, data.objects[&stage]);
+                data.objects.insert(stage.clone(), different);
+            }
+        },
+        || false,
+    )
+    .await;
+    assert!(result.unwrap_err().message.contains("新密文读回校验失败"));
+    assert_eq!(cp.next, 0);
+    assert!(cp.staged.is_none());
+    assert_eq!(store.0.lock().unwrap().objects[&target], original);
 }
 
 fn crypto(password: &str) -> (Crypto, VaultBootstrap) {
@@ -536,11 +674,8 @@ async fn local_streaming_rotation_and_restart_lock() {
     .await
     .unwrap();
     for step in [
-        KeyChangeFileStep::ReadingSource,
-        KeyChangeFileStep::CheckingSourceContent,
         KeyChangeFileStep::WritingStage,
         KeyChangeFileStep::CheckingStageContent,
-        KeyChangeFileStep::CheckingStageCipher,
         KeyChangeFileStep::CheckingTarget,
         KeyChangeFileStep::CheckingStage,
         KeyChangeFileStep::BackingUp,
@@ -678,7 +813,7 @@ async fn stream_digest_rejects_io_failure() {
 
 #[tokio::test]
 async fn large_file_readback_corruption_and_lost_write_ack_never_report_success_and_resume() {
-    for corrupt_between_reads in [true, false] {
+    for corrupt_readback in [true, false] {
         let store = MemoryStore::default();
         store.0.lock().unwrap().read_chunk_size = Some(256 * 1024);
         let (old, ob) = crypto("old");
@@ -708,15 +843,15 @@ async fn large_file_readback_corruption_and_lost_write_ack_never_report_success_
             &new,
             move |p| {
                 if let Some(file) = &p.file_progress {
-                    let inject = if corrupt_between_reads {
+                    let inject = if corrupt_readback {
                         file.step == KeyChangeFileStep::CheckingStageContent
-                            && file.completed_points == file.total_points
+                            && file.completed_points == 0
                     } else {
                         file.step == KeyChangeFileStep::WritingStage && file.completed_points == 9
                     };
                     if inject && !once.swap(true, std::sync::atomic::Ordering::SeqCst) {
                         let mut data = notify_store.0.lock().unwrap();
-                        if corrupt_between_reads {
+                        if corrupt_readback {
                             data.objects.get_mut(&stage).unwrap()[20] ^= 1;
                         } else {
                             // 完整 PUT 已写入，但响应丢失：不能提前显示写入 100%。
@@ -733,8 +868,8 @@ async fn large_file_readback_corruption_and_lost_write_ack_never_report_success_
         assert!(result.is_err());
         assert_eq!(cp.next, index);
         assert_eq!(store.0.lock().unwrap().objects[&target], original);
-        let failed_step = if corrupt_between_reads {
-            KeyChangeFileStep::CheckingStageCipher
+        let failed_step = if corrupt_readback {
+            KeyChangeFileStep::CheckingStageContent
         } else {
             KeyChangeFileStep::WritingStage
         };

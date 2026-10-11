@@ -49,11 +49,8 @@ pub struct KeyChangeProgress {
 #[derive(Clone, Debug, Serialize, Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum KeyChangeFileStep {
-    ReadingSource,
-    CheckingSourceContent,
     WritingStage,
     CheckingStageContent,
-    CheckingStageCipher,
     CheckingTarget,
     CheckingStage,
     BackingUp,

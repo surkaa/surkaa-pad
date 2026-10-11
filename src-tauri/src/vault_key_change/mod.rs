@@ -4,6 +4,7 @@ mod inventory;
 mod journal;
 mod progress;
 mod storage;
+mod stream_digest;
 mod types;
 
 pub use command::*;

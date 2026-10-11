@@ -50,9 +50,8 @@ export function keyChangeProgressValue(progress: KeyChangeProgress): number {
 
 export function keyChangeFileProgressLabel(step: KeyChangeFileStep): string {
   const labels: Record<KeyChangeFileStep, string> = {
-    readingSource: '读取并核对原密文', checkingSourceContent: '解密并核对原内容',
-    writingStage: '重加密并写入临时密文', checkingStageContent: '读回、解密并校验新内容',
-    checkingStageCipher: '读回校验临时密文', checkingTarget: '核对目标数据',
+    writingStage: '读取、重加密并写入临时密文', checkingStageContent: '读回、解密并校验新内容与密文',
+    checkingTarget: '核对目标数据',
     checkingStage: '再次核对临时密文', backingUp: '备份原密文',
     checkingBackup: '读回校验原密文备份', writingTarget: '替换目标数据',
     checkingCommitted: '读回校验已替换的数据',
