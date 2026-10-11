@@ -28,6 +28,7 @@ struct Memory {
     calls: usize,
     fail_at: Option<usize>,
     fail_after: bool,
+    read_chunk_size: Option<usize>,
 }
 
 impl MemoryStore {
@@ -80,17 +81,19 @@ impl RekeyStorage for MemoryStore {
     }
     async fn read(&self, key: &str) -> Result<ByteStream> {
         self.tick(false)?;
-        let bytes = self
-            .0
-            .lock()
-            .unwrap()
-            .objects
-            .get(key)
-            .cloned()
-            .ok_or_else(|| error("对象不存在"))?;
+        let (bytes, chunk_size) = {
+            let data = self.0.lock().unwrap();
+            (
+                data.objects
+                    .get(key)
+                    .cloned()
+                    .ok_or_else(|| error("对象不存在"))?,
+                data.read_chunk_size.unwrap_or(73),
+            )
+        };
         // 故意跨 AES 块边界分块，不能只测试整块输入。
         let chunks: Vec<_> = bytes
-            .chunks(73)
+            .chunks(chunk_size)
             .map(|c| Ok(bytes::Bytes::copy_from_slice(c)))
             .collect();
         Ok(Box::pin(futures_util::stream::iter(chunks)))
@@ -497,7 +500,7 @@ async fn local_streaming_rotation_and_restart_lock() {
         state: state.clone(),
         remote: false,
     };
-    let expected = fixture(&store, &old, 9 * 1024 * 1024 + 17).await;
+    let expected = fixture(&store, &old, 30 * 1024 * 1024 + 17).await;
     let (_, items) = inventory(&store, &old).await.unwrap();
     let (mut journal, mut checkpoint) =
         Journal::create(&old, &new, ob, nb, false, items, Default::default()).unwrap();
@@ -517,17 +520,43 @@ async fn local_streaming_rotation_and_restart_lock() {
     .await
     .is_err());
     assert_eq!(checkpoint.next, 0);
+    let events = Arc::new(Mutex::new(vec![]));
+    let notify_events = events.clone();
     run(
         &store,
         &mut journal,
         &mut checkpoint,
         &old,
         &new,
-        |_| {},
+        move |p| {
+            notify_events.lock().unwrap().push(p);
+        },
         || false,
     )
     .await
     .unwrap();
+    for step in [
+        KeyChangeFileStep::ReadingSource,
+        KeyChangeFileStep::CheckingSourceContent,
+        KeyChangeFileStep::WritingStage,
+        KeyChangeFileStep::CheckingStageContent,
+        KeyChangeFileStep::CheckingStageCipher,
+        KeyChangeFileStep::CheckingTarget,
+        KeyChangeFileStep::CheckingStage,
+        KeyChangeFileStep::BackingUp,
+        KeyChangeFileStep::CheckingBackup,
+        KeyChangeFileStep::WritingTarget,
+        KeyChangeFileStep::CheckingCommitted,
+    ] {
+        let captured = events.lock().unwrap();
+        let points: Vec<_> = captured
+            .iter()
+            .filter_map(|p| p.file_progress.as_ref())
+            .filter(|p| p.step == step)
+            .map(|p| p.completed_points)
+            .collect();
+        assert_eq!(points, (0..=10).collect::<Vec<_>>(), "{step:?}");
+    }
     assert_data(&store, &new, &expected).await;
     // 改密尚未最后确认前，活跃密钥和 bootstrap 不得提前切换。
     assert!(state
@@ -558,27 +587,58 @@ async fn cloud_streaming_rotation_cleans_multipart_and_resumes() {
         state,
         remote: true,
     };
-    let expected = fixture(&store, &old, 9 * 1024 * 1024 + 17).await;
+    let expected = fixture(&store, &old, 12 * 1024 * 1024 + 17).await;
     let (_, items) = inventory(&store, &old).await.unwrap();
     let (mut journal, mut checkpoint) =
         Journal::create(&old, &new, ob, nb, true, items, Default::default()).unwrap();
     store.checkpoint(&journal.encode().unwrap()).await.unwrap();
-    let paused = std::sync::atomic::AtomicBool::new(false);
+    let paused = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let notify_paused = paused.clone();
+    let pause_after = checkpoint
+        .items
+        .iter()
+        .position(|item| matches!(item.encoding, Encoding::Ctr { .. }))
+        .unwrap() as u32
+        + 1;
+    assert!(pause_after < checkpoint.items.len() as u32);
+    let events = Arc::new(Mutex::new(vec![]));
+    let notify_events = events.clone();
     assert!(run(
         &store,
         &mut journal,
         &mut checkpoint,
         &old,
         &new,
-        |p| {
-            if p.completed_files == 1 {
-                paused.store(true, std::sync::atomic::Ordering::SeqCst);
+        move |p| {
+            if p.completed_files == pause_after {
+                notify_paused.store(true, std::sync::atomic::Ordering::SeqCst);
             }
+            notify_events.lock().unwrap().push(p);
         },
         || paused.load(std::sync::atomic::Ordering::SeqCst)
     )
     .await
     .is_err());
+    let steps = [
+        KeyChangeFileStep::WritingStage,
+        KeyChangeFileStep::CheckingStageContent,
+        KeyChangeFileStep::CheckingBackup,
+        KeyChangeFileStep::CheckingCommitted,
+    ];
+    for step in steps {
+        let captured = events.lock().unwrap();
+        let file_events: Vec<_> = captured
+            .iter()
+            .filter_map(|p| p.file_progress.as_ref())
+            .filter(|p| p.step == step)
+            .collect();
+        assert!(file_events.len() >= 3, "{step:?} 应有真实流式进度");
+        assert_eq!(file_events.first().unwrap().completed_points, 0);
+        assert_eq!(file_events.last().unwrap().completed_points, 10);
+        assert!(file_events
+            .windows(2)
+            .all(|pair| pair[0].completed_points < pair[1].completed_points));
+    }
     let saved = read_limited(&store, ObjectLocations::vault_key_change(), 1024 * 1024)
         .await
         .unwrap();
@@ -614,6 +674,91 @@ async fn stream_digest_rejects_io_failure() {
         Err(std::io::Error::other("断流")),
     ]));
     assert!(digest(stream).await.is_err());
+}
+
+#[tokio::test]
+async fn large_file_readback_corruption_and_lost_write_ack_never_report_success_and_resume() {
+    for corrupt_between_reads in [true, false] {
+        let store = MemoryStore::default();
+        store.0.lock().unwrap().read_chunk_size = Some(256 * 1024);
+        let (old, ob) = crypto("old");
+        let (new, nb) = crypto("new");
+        let expected = fixture(&store, &old, 10 * 1024 * 1024 + 17).await;
+        let (_, items) = inventory(&store, &old).await.unwrap();
+        let (mut journal, mut cp) =
+            Journal::create(&old, &new, ob, nb, false, items, Default::default()).unwrap();
+        store.checkpoint(&journal.encode().unwrap()).await.unwrap();
+        let index = cp
+            .items
+            .iter()
+            .position(|i| matches!(i.encoding, Encoding::Ctr { .. }))
+            .unwrap();
+        let target = cp.items[index].source.key.clone();
+        let original = store.0.lock().unwrap().objects[&target].clone();
+        let stage = ObjectLocations::vault_key_change_stage(&journal.transaction_id, index);
+        let events = Arc::new(Mutex::new(vec![]));
+        let notify_events = events.clone();
+        let notify_store = store.clone();
+        let once = std::sync::atomic::AtomicBool::new(false);
+        let result = run(
+            &store,
+            &mut journal,
+            &mut cp,
+            &old,
+            &new,
+            move |p| {
+                if let Some(file) = &p.file_progress {
+                    let inject = if corrupt_between_reads {
+                        file.step == KeyChangeFileStep::CheckingStageContent
+                            && file.completed_points == file.total_points
+                    } else {
+                        file.step == KeyChangeFileStep::WritingStage && file.completed_points == 9
+                    };
+                    if inject && !once.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        let mut data = notify_store.0.lock().unwrap();
+                        if corrupt_between_reads {
+                            data.objects.get_mut(&stage).unwrap()[20] ^= 1;
+                        } else {
+                            // 完整 PUT 已写入，但响应丢失：不能提前显示写入 100%。
+                            data.fail_at = Some(data.calls);
+                            data.fail_after = true;
+                        }
+                    }
+                }
+                notify_events.lock().unwrap().push(p);
+            },
+            || false,
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(cp.next, index);
+        assert_eq!(store.0.lock().unwrap().objects[&target], original);
+        let failed_step = if corrupt_between_reads {
+            KeyChangeFileStep::CheckingStageCipher
+        } else {
+            KeyChangeFileStep::WritingStage
+        };
+        {
+            let captured = events.lock().unwrap();
+            let file_events: Vec<_> = captured
+                .iter()
+                .filter_map(|p| p.file_progress.as_ref())
+                .filter(|p| p.step == failed_step)
+                .collect();
+            assert!(file_events.len() > 1);
+            assert!(file_events
+                .iter()
+                .all(|p| p.completed_points < p.total_points));
+        }
+        store.0.lock().unwrap().fail_at = None;
+        let encoded = store.0.lock().unwrap().journal.clone().unwrap();
+        let mut journal = Journal::parse(&encoded).unwrap();
+        let (old, new, mut cp) = journal.open("new".into()).unwrap();
+        run(&store, &mut journal, &mut cp, &old, &new, |_| {}, || false)
+            .await
+            .unwrap();
+        assert_data(&store, &new, &expected).await;
+    }
 }
 
 fn persistent_state(temp: &std::path::Path) -> AppState {
@@ -842,21 +987,27 @@ async fn corrupt_stage_stops_before_replacement_and_missing_target_recovers_from
         let target = cp.items[0].source.key.clone();
         let original = store.0.lock().unwrap().objects[&target].clone();
         let once = std::sync::atomic::AtomicBool::new(false);
+        let notify_store = store.clone();
+        let notify_stage = stage.clone();
+        let notify_backup = backup.clone();
+        let notify_target = target.clone();
+        let notify_original = original.clone();
         let result = run(
             &store,
             &mut journal,
             &mut cp,
             &old,
             &new,
-            |p| {
+            move |p| {
                 if p.phase == "committing" && !once.swap(true, std::sync::atomic::Ordering::SeqCst)
                 {
-                    let mut m = store.0.lock().unwrap();
+                    let mut m = notify_store.0.lock().unwrap();
                     if corrupt {
-                        m.objects.get_mut(&stage).unwrap()[20] ^= 1;
+                        m.objects.get_mut(&notify_stage).unwrap()[20] ^= 1;
                     } else {
-                        m.objects.insert(backup.clone(), original.clone());
-                        m.objects.remove(&target);
+                        m.objects
+                            .insert(notify_backup.clone(), notify_original.clone());
+                        m.objects.remove(&notify_target);
                     }
                 }
             },
@@ -1044,6 +1195,7 @@ async fn cloud_workflow_preserves_bootstrap_until_done_and_refreshes_other_devic
     )
     .await
     .unwrap();
+    assert_eq!(plan.transfer_bytes, plan.encrypted_bytes * 14);
     let manager = state.key_change_manager();
     let pause_channel = tauri::ipc::Channel::new(move |body| {
         if let tauri::ipc::InvokeResponseBody::Json(json) = body {

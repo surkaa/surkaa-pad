@@ -42,6 +42,36 @@ pub struct KeyChangeProgress {
     #[specta(type = f64)]
     pub total_bytes: u64,
     pub current_file: Option<String>,
+    // 当前文件当前步骤的离散进度；小于 10 MiB 不发送，且不写入恢复记录。
+    pub file_progress: Option<KeyChangeFileProgress>,
+}
+
+#[derive(Clone, Debug, Serialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum KeyChangeFileStep {
+    ReadingSource,
+    CheckingSourceContent,
+    WritingStage,
+    CheckingStageContent,
+    CheckingStageCipher,
+    CheckingTarget,
+    CheckingStage,
+    BackingUp,
+    CheckingBackup,
+    WritingTarget,
+    CheckingCommitted,
+}
+
+#[derive(Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyChangeFileProgress {
+    pub step: KeyChangeFileStep,
+    #[specta(type = f64)]
+    pub completed_bytes: u64,
+    #[specta(type = f64)]
+    pub total_bytes: u64,
+    pub completed_points: u32,
+    pub total_points: u32,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq)]

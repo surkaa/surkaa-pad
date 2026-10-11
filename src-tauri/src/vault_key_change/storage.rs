@@ -1,3 +1,4 @@
+use super::progress::FileProgress;
 use super::types::Entry;
 use super::{error, Result};
 use crate::object_locations::ObjectLocations;
@@ -24,8 +25,15 @@ pub(super) trait RekeyStorage: Send + Sync {
     async fn write(&self, key: &str, size: u64, stream: ByteStream) -> Result<String>;
     async fn delete(&self, key: &str) -> Result<()>;
     async fn checkpoint(&self, journal: &str) -> Result<()>;
-    async fn copy(&self, source: &str, target: &str, size: u64) -> Result<String> {
-        self.write(target, size, self.read(source).await?).await
+    async fn copy(
+        &self,
+        source: &str,
+        target: &str,
+        size: u64,
+        progress: &FileProgress,
+    ) -> Result<String> {
+        self.write(target, size, progress.wrap(self.read(source).await?))
+            .await
     }
 }
 
@@ -232,7 +240,13 @@ impl RekeyStorage for Storage {
         Ok(())
     }
 
-    async fn copy(&self, source: &str, target: &str, size: u64) -> Result<String> {
+    async fn copy(
+        &self,
+        source: &str,
+        target: &str,
+        size: u64,
+        progress: &FileProgress,
+    ) -> Result<String> {
         if self.remote && size <= 1024 * 1024 * 1024 {
             self.state
                 .oss_client()
@@ -245,7 +259,9 @@ impl RekeyStorage for Storage {
                 .map(|e| e.etag)
                 .ok_or_else(|| error("复制的对象不存在"));
         }
-        self.write(target, size, self.read(source).await?).await
+        // 云端的小对象仍使用服务端复制，仅能报告开始/完成，不伪造中间进度。
+        self.write(target, size, progress.wrap(self.read(source).await?))
+            .await
     }
 }
 
@@ -260,7 +276,14 @@ pub(super) async fn read_limited(
     key: &str,
     limit: usize,
 ) -> Result<Vec<u8>> {
-    let mut stream = storage.read(key).await?;
+    read_limited_stream(storage.read(key).await?, key, limit).await
+}
+
+pub(super) async fn read_limited_stream(
+    mut stream: ByteStream,
+    key: &str,
+    limit: usize,
+) -> Result<Vec<u8>> {
     let mut bytes = vec![];
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(error)?;

@@ -1,6 +1,6 @@
 import api from './api';
 import {useConfigStore} from '../stores/config';
-import type {LocalEncryptedConfig, KeyChangeProgress} from '../bindings';
+import type {LocalEncryptedConfig, KeyChangeProgress, KeyChangeFileProgress, KeyChangeFileStep} from '../bindings';
 
 export async function getLocalEncryptedConfig(): Promise<LocalEncryptedConfig> {
   const store = useConfigStore();
@@ -12,8 +12,9 @@ export async function getLocalEncryptedConfig(): Promise<LocalEncryptedConfig> {
 }
 
 /** 后端保留恢复记录，直到这些独立的本机写入全部完成。重复执行也是安全的。 */
-export async function finishVaultKeyChange(config: LocalEncryptedConfig) {
+export async function finishVaultKeyChange(config: LocalEncryptedConfig): Promise<boolean> {
   const store = useConfigStore();
+  const biometricWasEnabled = (await store.getNormalConfig('biometric_enabled')) === true;
   // 先禁用旧生物凭据，防止保存配置期间重启时用旧 DEK 自动登录。
   await store.saveNormalConfig('biometric_enabled', false);
   await store.deleteConfig('biometric_dek', 'last_password_unlock_at');
@@ -25,6 +26,11 @@ export async function finishVaultKeyChange(config: LocalEncryptedConfig) {
     throw new Error('本机加密配置尚未保存完成，请继续改密重试');
   }
   await api.cmdAckVaultKeyChange(saved);
+  return biometricWasEnabled;
+}
+
+export function keyChangeCompletionMessage(biometricWasEnabled: boolean): string {
+  return biometricWasEnabled ? '改密已完成。生物解锁已关闭，可在设置中重新启用。' : '改密已完成';
 }
 
 export function keyChangeProgressLabel(phase: string): string {
@@ -40,6 +46,23 @@ export function keyChangeProgressValue(progress: KeyChangeProgress): number {
   const value = progress.totalBytes > 0 ? progress.completedBytes / progress.totalBytes
     : progress.totalFiles > 0 ? progress.completedFiles / progress.totalFiles : 0;
   return Math.max(0, Math.min(value, 1));
+}
+
+export function keyChangeFileProgressLabel(step: KeyChangeFileStep): string {
+  const labels: Record<KeyChangeFileStep, string> = {
+    readingSource: '读取并核对原密文', checkingSourceContent: '解密并核对原内容',
+    writingStage: '重加密并写入临时密文', checkingStageContent: '读回、解密并校验新内容',
+    checkingStageCipher: '读回校验临时密文', checkingTarget: '核对目标数据',
+    checkingStage: '再次核对临时密文', backingUp: '备份原密文',
+    checkingBackup: '读回校验原密文备份', writingTarget: '替换目标数据',
+    checkingCommitted: '读回校验已替换的数据',
+  };
+  return labels[step];
+}
+
+export function keyChangeFileProgressValue(progress: KeyChangeFileProgress): number {
+  const value = progress.totalPoints > 0 ? progress.completedPoints / progress.totalPoints : 0;
+  return Number.isFinite(value) ? Math.max(0, Math.min(value, 1)) : 0;
 }
 
 export function estimateDuration(milliseconds: number): string {

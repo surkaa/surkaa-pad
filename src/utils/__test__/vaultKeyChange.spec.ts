@@ -2,7 +2,7 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {createPinia, setActivePinia} from 'pinia';
 import {useConfigStore} from '../../stores/config';
-import {estimateDuration, finishVaultKeyChange, getLocalEncryptedConfig, keyChangeProgressLabel, keyChangeProgressValue} from '../vaultKeyChange';
+import {estimateDuration, finishVaultKeyChange, getLocalEncryptedConfig, keyChangeCompletionMessage, keyChangeFileProgressLabel, keyChangeFileProgressValue, keyChangeProgressLabel, keyChangeProgressValue} from '../vaultKeyChange';
 import type {LocalEncryptedConfig} from '../../bindings';
 
 const api = vi.hoisted(() => ({cmdAckVaultKeyChange: vi.fn(async (_config: LocalEncryptedConfig) => {})}));
@@ -23,7 +23,7 @@ describe('vault key change local commit', () => {
       expect(await store.getNormalConfig('biometric_dek')).toBeNull();
       expect(await getLocalEncryptedConfig()).toEqual(config);
     });
-    await finishVaultKeyChange(config);
+    expect(await finishVaultKeyChange(config)).toBe(true);
     expect(api.cmdAckVaultKeyChange).toHaveBeenCalledExactlyOnceWith(config);
   });
 
@@ -54,16 +54,35 @@ describe('vault key change local commit', () => {
     await finishVaultKeyChange(empty);
     expect(await getLocalEncryptedConfig()).toEqual(empty);
   });
+
+  it('only mentions disabled biometric unlock when it was actually enabled', async () => {
+    expect(await finishVaultKeyChange(config)).toBe(false);
+    expect(keyChangeCompletionMessage(false)).toBe('改密已完成');
+    await useConfigStore().saveNormalConfig('biometric_enabled', true);
+    expect(await finishVaultKeyChange(config)).toBe(true);
+    expect(keyChangeCompletionMessage(true)).toContain('生物解锁已关闭');
+  });
 });
 
 describe('key change progress and estimates', () => {
   it('uses a bounded zero-to-one value and does not confuse data completion with key switching', () => {
-    const p = {phase: 'switchingKey', completedFiles: 2, totalFiles: 2, completedBytes: 200, totalBytes: 200, currentFile: null};
+    const p = {phase: 'switchingKey', completedFiles: 2, totalFiles: 2, completedBytes: 200, totalBytes: 200, currentFile: null, fileProgress: null};
     expect(keyChangeProgressValue(p)).toBe(1);
     expect(keyChangeProgressLabel(p.phase)).toContain('切换密钥');
     expect(keyChangeProgressValue({...p, completedBytes: 999})).toBe(1);
     expect(keyChangeProgressValue({...p, totalBytes: 0, totalFiles: 0})).toBe(0);
     expect(keyChangeProgressValue({...p, completedBytes: -1})).toBe(0);
+  });
+  it('shows the quantized points rather than pretending consumed bytes are verified completion', () => {
+    const p = {step: 'checkingStageContent' as const, completedBytes: 100, totalBytes: 100, completedPoints: 9, totalPoints: 10};
+    expect(keyChangeFileProgressValue(p)).toBe(0.9);
+    expect(keyChangeFileProgressValue({...p, completedPoints: 10})).toBe(1);
+    expect(keyChangeFileProgressValue({...p, completedPoints: 31, totalPoints: 100})).toBe(0.31);
+    expect(keyChangeFileProgressValue({...p, completedPoints: -1})).toBe(0);
+    expect(keyChangeFileProgressValue({...p, totalPoints: 0})).toBe(0);
+    expect(keyChangeFileProgressValue({...p, completedPoints: NaN})).toBe(0);
+    expect(keyChangeFileProgressLabel(p.step)).toContain('校验新内容');
+    expect(keyChangeFileProgressLabel('checkingCommitted')).toContain('校验已替换');
   });
   it('formats measured time without implying a precise wall-clock ETA', () => {
     expect(estimateDuration(200)).toBe('约 1 秒');

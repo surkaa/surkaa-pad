@@ -2,6 +2,7 @@ mod command;
 mod engine;
 mod inventory;
 mod journal;
+mod progress;
 mod storage;
 mod types;
 
