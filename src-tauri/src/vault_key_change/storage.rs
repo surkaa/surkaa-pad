@@ -99,10 +99,9 @@ impl RekeyStorage for Storage {
             Ok(self
                 .state
                 .oss_client()
-                .download(key, None)
+                .download_stream(key)
                 .await
-                .map_err(error)?
-                .0)
+                .map_err(error)?)
         } else {
             // 恢复时目标可能已换成新密文但 ETag 文件尚未落盘，仍须能校验数据文件。
             let path = self

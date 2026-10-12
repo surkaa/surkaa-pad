@@ -626,6 +626,26 @@ impl OssClient {
         Ok((prefixes, next_token))
     }
 
+    /// 只获取完整数据流，不额外 HEAD 查询大小。调用方仍须验证实际长度、EOF
+    /// 及内容完整性；改密模块在原有同一条流上完成这些检查。
+    pub(crate) async fn download_stream(&self, key: &str) -> Result<ByteStream, ObjectError> {
+        let bucket = self.inner()?;
+        let key = self.physical_key(key);
+        let response = bucket
+            .get_object_stream(&key)
+            .await
+            .map_err(|error| ObjectError::OperationFailed(error.to_string()))?;
+        if !(200..=299).contains(&response.status_code) {
+            return Err(ObjectError::OperationFailed(format!(
+                "GET failed: HTTP {}",
+                response.status_code
+            )));
+        }
+        Ok(Box::pin(response.bytes.map(|chunk| {
+            chunk.map_err(|error| std::io::Error::other(error.to_string()))
+        })))
+    }
+
     pub async fn download(
         &self,
         key: &str,
@@ -795,6 +815,9 @@ impl OssClient {
 
 #[cfg(test)]
 mod copy_tests;
+
+#[cfg(test)]
+mod request_tests;
 
 #[cfg(test)]
 mod tests {

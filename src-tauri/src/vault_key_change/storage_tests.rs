@@ -8,6 +8,29 @@ use crate::vault_key_change::types::{KeyChangeFileStep, KeyChangeProgress};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[tokio::test]
+async fn cloud_read_uses_one_get_without_an_unused_size_query() {
+    let (client, server) = OssClient::with_test_response(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc".to_vec(),
+    )
+    .await;
+    let temp = tempfile::tempdir().unwrap();
+    let storage = Storage {
+        remote: true,
+        state: AppState::from_parts(
+            Crypto::new(),
+            client,
+            LocalObjectStore::new(temp.path().into()),
+        ),
+    };
+    let stream = storage.read("object").await.unwrap();
+    assert_eq!(crate::stream::collect_data(stream).await.unwrap(), b"abc");
+    assert_eq!(
+        server.await.unwrap(),
+        "GET /test-bucket/isolated-test/object HTTP/1.1"
+    );
+}
+
 fn tracker(
     size: u64,
     step: KeyChangeFileStep,
