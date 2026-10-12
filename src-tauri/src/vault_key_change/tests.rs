@@ -258,7 +258,7 @@ async fn readback_rejects_different_gcm_ciphertext_even_with_identical_plaintext
     assert_eq!(store.0.lock().unwrap().objects[&target], original);
 }
 
-fn crypto(password: &str) -> (Crypto, VaultBootstrap) {
+pub(super) fn crypto(password: &str) -> (Crypto, VaultBootstrap) {
     let crypto = Crypto::new();
     let params = KeyDerivationParameters::new_random(1024).unwrap();
     crypto
@@ -994,6 +994,27 @@ async fn complete_local_workflow_survives_restart_before_frontend_ack() {
     let result = super::command::start_change(&state, plan.plan_id, channel())
         .await
         .unwrap();
+    let initial_report = state.key_change_report().unwrap();
+    assert_eq!(initial_report.outcome, "awaitingConfirmation");
+    assert_eq!(initial_report.completed_files, 5);
+    assert!(initial_report.read_bytes > initial_report.encrypted_bytes);
+    assert!(initial_report.write_stream_bytes >= initial_report.encrypted_bytes);
+    assert_eq!(initial_report.cloud_copy_bytes, 0);
+    assert!(initial_report
+        .operations
+        .iter()
+        .any(|s| s.name == "checkpoint" && s.count >= 10));
+    let json = serde_json::to_string(&initial_report).unwrap();
+    for secret in [
+        "do-not-log-this-key",
+        "diaries/",
+        "attachments/",
+        "encryptedVerifier",
+        "oldKeyUnderNew",
+        "salt",
+    ] {
+        assert!(!json.contains(secret), "报告不能含有 {secret}");
+    }
     assert!(state.pending_key_change().is_some());
     assert_eq!(state.vault_bootstrap().unwrap(), plan.new_bootstrap);
     for data in [&result.vault_verifier, &result.oss, &result.ai] {
@@ -1002,6 +1023,7 @@ async fn complete_local_workflow_survives_restart_before_frontend_ack() {
 
     // 真正重新读取配置文件，丢弃活跃密钥、计划和检查点。
     let restarted = persistent_state(temp.path());
+    assert_eq!(restarted.key_change_report().unwrap(), initial_report);
     assert!(!restarted.crypto().is_initialized().unwrap());
     assert!(restarted.lock_storage_operation().await.is_err());
     let resumed = super::command::resume_change(&restarted, "new".into(), channel())
@@ -1035,6 +1057,14 @@ async fn complete_local_workflow_survives_restart_before_frontend_ack() {
     assert!(restarted.lock_storage_operation().await.is_ok());
     assert!(!temp.path().join("app-state.json.bak").exists());
     let final_state = persistent_state(temp.path());
+    let report = final_state.key_change_report().unwrap();
+    assert_eq!(report.outcome, "completed");
+    assert_eq!(report.attempts, 2);
+    assert!(!report.incomplete_history);
+    assert!(report
+        .phases
+        .iter()
+        .any(|s| s.name == "finalConfirmation" && s.failed == 1));
     assert!(final_state.pending_key_change().is_none());
     let bootstrap = final_state.vault_bootstrap().unwrap();
     assert!(final_state

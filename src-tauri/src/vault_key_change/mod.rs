@@ -1,4 +1,5 @@
 mod command;
+mod diagnostics;
 mod engine;
 mod inventory;
 mod journal;
@@ -8,6 +9,7 @@ mod stream_digest;
 mod types;
 
 pub use command::*;
+pub(crate) use diagnostics::KeyChangeReport;
 
 use crate::error::AppError;
 use std::fmt::Display;

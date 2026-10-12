@@ -98,9 +98,9 @@ use crate::vault_bootstrap::{
     cmd_prepare_remote_vault,
 };
 use crate::vault_key_change::{
-    cmd_ack_vault_key_change, cmd_discard_vault_key_change_plan, cmd_get_vault_key_change_status,
-    cmd_pause_vault_key_change, cmd_plan_vault_key_change, cmd_resume_vault_key_change,
-    cmd_start_vault_key_change, cmd_sync_changed_vault_key,
+    cmd_ack_vault_key_change, cmd_discard_vault_key_change_plan, cmd_get_vault_key_change_report,
+    cmd_get_vault_key_change_status, cmd_pause_vault_key_change, cmd_plan_vault_key_change,
+    cmd_resume_vault_key_change, cmd_start_vault_key_change, cmd_sync_changed_vault_key,
 };
 use tauri::{App, Manager};
 
@@ -158,6 +158,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_resume_vault_key_change,
             cmd_ack_vault_key_change,
             cmd_get_vault_key_change_status,
+            cmd_get_vault_key_change_report,
             cmd_pause_vault_key_change,
             cmd_sync_changed_vault_key,
             cmd_discard_vault_key_change_plan,

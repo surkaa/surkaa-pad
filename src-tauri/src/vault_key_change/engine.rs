@@ -1,3 +1,4 @@
+use super::diagnostics::{self, Diagnostics};
 use super::inventory::MAX_GCM_BYTES;
 use super::progress::{FileProgress, Notify};
 use super::storage::{byte_stream, read_limited_stream, RekeyStorage};
@@ -14,7 +15,15 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 
-pub(super) async fn digest(mut stream: ByteStream) -> Result<(u64, String)> {
+#[cfg(test)]
+pub(super) async fn digest(stream: ByteStream) -> Result<(u64, String)> {
+    digest_observed(stream, None).await
+}
+
+async fn digest_observed(
+    mut stream: ByteStream,
+    diagnostics: Option<&Diagnostics>,
+) -> Result<(u64, String)> {
     let mut sha = Sha256::new();
     let mut size = 0_u64;
     while let Some(chunk) = stream.next().await {
@@ -22,9 +31,31 @@ pub(super) async fn digest(mut stream: ByteStream) -> Result<(u64, String)> {
         size = size
             .checked_add(chunk.len() as u64)
             .ok_or_else(|| error("对象大小溢出"))?;
-        sha.update(&chunk);
+        diagnostics::hash(diagnostics, || sha.update(&chunk));
     }
-    Ok((size, hex::encode(sha.finalize())))
+    Ok((
+        size,
+        diagnostics::hash(diagnostics, || hex::encode(sha.finalize())),
+    ))
+}
+
+fn ctr_stream(
+    crypto: &Crypto,
+    stream: ByteStream,
+    nonce: &[u8],
+    diagnostics: Option<&Diagnostics>,
+) -> Result<ByteStream> {
+    match diagnostics {
+        Some(diagnostics) => {
+            let diagnostics = diagnostics.clone();
+            crypto
+                .decrypt_streaming_with_timing(stream, nonce, 0, move |elapsed| {
+                    diagnostics.crypto(elapsed)
+                })
+                .map_err(error)
+        }
+        None => crypto.decrypt_streaming(stream, nonce, 0).map_err(error),
+    }
 }
 
 enum PlainHash {
@@ -46,14 +77,16 @@ async fn plain_stream(
     key: &str,
     crypto: &Crypto,
     encoding: &Encoding,
+    diagnostics: Option<&Diagnostics>,
 ) -> Result<ByteStream> {
     match encoding {
-        Encoding::Ctr { nonce } => crypto.decrypt_streaming(stream, nonce, 0).map_err(error),
-        _ => Ok(byte_stream(
-            crypto
-                .decrypt(&read_limited_stream(stream, key, MAX_GCM_BYTES).await?)
-                .map_err(error)?,
-        )),
+        Encoding::Ctr { nonce } => ctr_stream(crypto, stream, nonce, diagnostics),
+        _ => {
+            let bytes = read_limited_stream(stream, key, MAX_GCM_BYTES).await?;
+            Ok(byte_stream(
+                diagnostics::crypto(diagnostics, || crypto.decrypt(&bytes)).map_err(error)?,
+            ))
+        }
     }
 }
 
@@ -87,12 +120,27 @@ pub(super) async fn run(
     paused: impl Fn() -> bool,
 ) -> Result<()> {
     let notify: Notify = Arc::new(notify);
+    let diagnostics = storage.diagnostics();
     while checkpoint.next < checkpoint.items.len() {
         if paused() {
             return Err(error("已暂停改密，保留了检查点，可稍后继续"));
         }
         let index = checkpoint.next;
         let item = checkpoint.items[index].clone();
+        let kind = match item.encoding {
+            Encoding::Ctr { .. } => "ctrAttachment",
+            Encoding::Manifest => "diary",
+            Encoding::Gcm => "gcmObject",
+        };
+        let mut file_timer = diagnostics
+            .as_ref()
+            .map(|d| d.file(index, kind, item.source.size));
+        let mut phases = diagnostics.as_ref().map(|d| d.phases());
+        let set_phase = |phases: &mut Option<diagnostics::PhaseTimer>, name| {
+            if let Some(phases) = phases {
+                phases.set(name);
+            }
+        };
         let stage_key = ObjectLocations::vault_key_change_stage(&journal.transaction_id, index);
         let backup_key = ObjectLocations::vault_key_change_backup(&journal.transaction_id, index);
         let base = progress(checkpoint, "");
@@ -102,6 +150,7 @@ pub(super) async fn run(
             FileProgress::new(base, action, size, notify.clone())
         };
         if checkpoint.staged.is_none() {
+            set_phase(&mut phases, "sourceMetadata");
             notify(progress(checkpoint, "encrypting"));
             if storage.head(&item.source.key).await?.as_ref() != Some(&item.source) {
                 return Err(error(format!(
@@ -114,24 +163,25 @@ pub(super) async fn run(
                 KeyChangeFileStep::WritingStage,
                 item.source.size,
             );
-            let source_digest = StreamDigest::default();
+            set_phase(&mut phases, "writingStage");
+            let source_digest = StreamDigest::observed(diagnostics.as_ref());
             let source = source_digest.wrap(writing.wrap(storage.read(&item.source.key).await?));
             let (stream, size, expected_plain_hash) = match &item.encoding {
                 Encoding::Ctr { nonce } => {
-                    let plain_digest = StreamDigest::default();
+                    let plain_digest = StreamDigest::observed(diagnostics.as_ref());
                     let plain =
-                        plain_digest.wrap(old.decrypt_streaming(source, nonce, 0).map_err(error)?);
+                        plain_digest.wrap(ctr_stream(old, source, nonce, diagnostics.as_ref())?);
                     // CTR 加解密对称。新盐保证是全新的密钥，同一 nonce 在不同密钥下复用安全，
                     // 因而无需同时改写大附件的 IV 与 Manifest。不得用于相同密钥的原地重加密。
-                    let encrypted = new.decrypt_streaming(plain, nonce, 0).map_err(error)?;
+                    let encrypted = ctr_stream(new, plain, nonce, diagnostics.as_ref())?;
                     (encrypted, item.source.size, PlainHash::Stream(plain_digest))
                 }
                 _ => {
+                    let bytes =
+                        read_limited_stream(source, &item.source.key, MAX_GCM_BYTES).await?;
                     let mut plaintext = Zeroizing::new(
-                        old.decrypt(
-                            &read_limited_stream(source, &item.source.key, MAX_GCM_BYTES).await?,
-                        )
-                        .map_err(error)?,
+                        diagnostics::crypto(diagnostics.as_ref(), || old.decrypt(&bytes))
+                            .map_err(error)?,
                     );
                     if matches!(item.encoding, Encoding::Manifest) {
                         let mut json: serde_json::Value =
@@ -156,14 +206,18 @@ pub(super) async fn run(
                         }
                         *plaintext = serde_json::to_vec(&json).map_err(error)?;
                     }
-                    let expected = hex::encode(Sha256::digest(&plaintext));
-                    let encrypted = new.encrypt(&plaintext).map_err(error)?;
+                    let expected = diagnostics::hash(diagnostics.as_ref(), || {
+                        hex::encode(Sha256::digest(&plaintext))
+                    });
+                    let encrypted =
+                        diagnostics::crypto(diagnostics.as_ref(), || new.encrypt(&plaintext))
+                            .map_err(error)?;
                     let size = encrypted.len() as u64;
                     (byte_stream(encrypted), size, PlainHash::Known(expected))
                 }
             };
             // 以实际生成并上传的密文为基准，不能把读回的数据自己当作校验基准。
-            let written_digest = StreamDigest::default();
+            let written_digest = StreamDigest::observed(diagnostics.as_ref());
             storage
                 .write(&stage_key, size, written_digest.wrap(stream))
                 .await?;
@@ -175,12 +229,23 @@ pub(super) async fn run(
             let expected_plain_hash = expected_plain_hash.result()?;
             writing.finish();
             notify(progress(checkpoint, "verifying"));
+            set_phase(&mut phases, "checkingStageContent");
             let checking = step("verifying", KeyChangeFileStep::CheckingStageContent, size);
-            let readback_digest = StreamDigest::default();
+            let readback_digest = StreamDigest::observed(diagnostics.as_ref());
             // 同一次读回中校验密文和解密内容；两种哈希均须与生成时的基准一致。
             let stream = readback_digest.wrap(checking.wrap(storage.read(&stage_key).await?));
-            let (_, actual_plain_hash) =
-                digest(plain_stream(stream, &stage_key, new, &item.encoding).await?).await?;
+            let (_, actual_plain_hash) = digest_observed(
+                plain_stream(
+                    stream,
+                    &stage_key,
+                    new,
+                    &item.encoding,
+                    diagnostics.as_ref(),
+                )
+                .await?,
+                diagnostics.as_ref(),
+            )
+            .await?;
             let (actual_size, new_cipher_hash) = readback_digest.result()?;
             if actual_plain_hash != expected_plain_hash
                 || actual_size != size
@@ -194,6 +259,7 @@ pub(super) async fn run(
                 old_cipher_hash,
                 new_cipher_hash,
             });
+            set_phase(&mut phases, "checkpoint");
             journal.update(new, checkpoint)?;
             storage.checkpoint(&journal.encode()?).await?;
         }
@@ -203,10 +269,15 @@ pub(super) async fn run(
             .as_ref()
             .ok_or_else(|| error("缺少已验证的临时密文"))?;
         notify(progress(checkpoint, "committing"));
+        set_phase(&mut phases, "checkingTarget");
         let current = match storage.head(&item.source.key).await? {
             Some(entry) => {
                 let checking = step("committing", KeyChangeFileStep::CheckingTarget, entry.size);
-                let result = digest(checking.wrap(storage.read(&item.source.key).await?)).await?;
+                let result = digest_observed(
+                    checking.wrap(storage.read(&item.source.key).await?),
+                    diagnostics.as_ref(),
+                )
+                .await?;
                 if result != (staged.size, staged.new_cipher_hash.clone())
                     && result != (item.source.size, staged.old_cipher_hash.clone())
                 {
@@ -223,13 +294,19 @@ pub(super) async fn run(
         let already_committed =
             current.as_ref() == Some(&(staged.size, staged.new_cipher_hash.clone()));
         if !already_committed {
+            set_phase(&mut phases, "checkingStage");
             let checking = step("committing", KeyChangeFileStep::CheckingStage, staged.size);
-            if digest(checking.wrap(storage.read(&stage_key).await?)).await?
+            if digest_observed(
+                checking.wrap(storage.read(&stage_key).await?),
+                diagnostics.as_ref(),
+            )
+            .await?
                 != (staged.size, staged.new_cipher_hash.clone())
             {
                 return Err(error("临时密文已损坏，停止替换数据"));
             }
             checking.finish();
+            set_phase(&mut phases, "backingUp");
             // 原密文备份在替换前读回校验；验证目标与持久保存检查点后才删除。
             if storage.head(&backup_key).await?.is_none() {
                 if current.is_none() {
@@ -246,13 +323,19 @@ pub(super) async fn run(
                 KeyChangeFileStep::CheckingBackup,
                 item.source.size,
             );
-            if digest(checking.wrap(storage.read(&backup_key).await?)).await?
+            set_phase(&mut phases, "checkingBackup");
+            if digest_observed(
+                checking.wrap(storage.read(&backup_key).await?),
+                diagnostics.as_ref(),
+            )
+            .await?
                 != (item.source.size, staged.old_cipher_hash.clone())
             {
                 return Err(error("旧密文备份校验失败，未替换数据"));
             }
             checking.finish();
         }
+        set_phase(&mut phases, "writingTarget");
         let etag = if already_committed
             && storage
                 .head(&item.source.key)
@@ -277,7 +360,12 @@ pub(super) async fn run(
             KeyChangeFileStep::CheckingCommitted,
             staged.size,
         );
-        if digest(checking.wrap(storage.read(&item.source.key).await?)).await?
+        set_phase(&mut phases, "checkingCommitted");
+        if digest_observed(
+            checking.wrap(storage.read(&item.source.key).await?),
+            diagnostics.as_ref(),
+        )
+        .await?
             != (staged.size, staged.new_cipher_hash.clone())
         {
             return Err(error("目标对象校验失败，保留临时密文供恢复"));
@@ -286,11 +374,22 @@ pub(super) async fn run(
         checkpoint.new_etags.insert(item.source.key, etag);
         checkpoint.next += 1;
         checkpoint.staged = None;
+        if let Some(diagnostics) = &diagnostics {
+            diagnostics.completed(checkpoint.next);
+        }
+        set_phase(&mut phases, "checkpoint");
         journal.update(new, checkpoint)?;
         storage.checkpoint(&journal.encode()?).await?;
+        set_phase(&mut phases, "cleanup");
         storage.delete(&stage_key).await?;
         storage.delete(&backup_key).await?;
         notify(progress(checkpoint, "completedObject"));
+        if let Some(phases) = &mut phases {
+            phases.complete();
+        }
+        if let Some(timer) = &mut file_timer {
+            timer.completed = true;
+        }
     }
     Ok(())
 }

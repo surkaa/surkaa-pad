@@ -99,6 +99,25 @@ pub struct AppConfig {
     /// 认证加密的改密记录。与应用配置一起原子保存，不能放在可淘汰的附件缓存中。
     #[serde(rename = "pendingVaultKeyChange", default)]
     pending_vault_key_change: Option<String>,
+    /// 本机的匿名性能报告，不包含恢复密钥，也不参与云同步或解锁判断。
+    #[serde(
+        rename = "lastVaultKeyChangeReport",
+        default,
+        deserialize_with = "deserialize_key_change_report"
+    )]
+    last_vault_key_change_report: Option<crate::vault_key_change::KeyChangeReport>,
+}
+
+fn deserialize_key_change_report<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::vault_key_change::KeyChangeReport>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    // 可选诊断数据损坏/来自未来版本时忽略，不得因此阻止加载 Vault 和恢复记录。
+    Ok(value
+        .and_then(|value| {
+            serde_json::from_value::<crate::vault_key_change::KeyChangeReport>(value).ok()
+        })
+        .filter(|report| report.schema_version == 1))
 }
 
 impl Default for AppConfig {
@@ -112,6 +131,7 @@ impl Default for AppConfig {
             pending_local_storage_migration: None,
             vault_bootstrap: None,
             pending_vault_key_change: None,
+            last_vault_key_change_report: None,
         }
     }
 }
@@ -143,6 +163,10 @@ impl AppConfig {
 
     pub fn pending_vault_key_change(&self) -> Option<&str> {
         self.pending_vault_key_change.as_deref()
+    }
+
+    pub(crate) fn key_change_report(&self) -> Option<&crate::vault_key_change::KeyChangeReport> {
+        self.last_vault_key_change_report.as_ref()
     }
 
     #[cfg(test)]
@@ -247,14 +271,34 @@ impl AppConfigStore {
         &self,
         journal: Option<String>,
     ) -> Result<(), AppConfigError> {
+        self.set_pending_vault_key_change_with_report(journal, None)
+    }
+
+    pub(crate) fn set_pending_vault_key_change_with_report(
+        &self,
+        journal: Option<String>,
+        report: Option<crate::vault_key_change::KeyChangeReport>,
+    ) -> Result<(), AppConfigError> {
         let mut next = self.current();
         next.pending_vault_key_change = journal.clone();
+        if report.is_some() {
+            next.last_vault_key_change_report = report;
+        }
         let result = self.save(next);
         if result.is_err() && journal.is_some() {
             // 文件写入/备份清理可能只完成了一部分；即使报告失败，也不能开放普通操作。
             self.lock_config().pending_vault_key_change = journal;
         }
         result
+    }
+
+    pub(crate) fn set_key_change_report(
+        &self,
+        report: crate::vault_key_change::KeyChangeReport,
+    ) -> Result<(), AppConfigError> {
+        let mut next = self.current();
+        next.last_vault_key_change_report = Some(report);
+        self.save(next)
     }
 
     pub fn begin_local_storage_migration(
@@ -389,6 +433,22 @@ fn backup_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_optional_diagnostics_do_not_block_security_configuration() {
+        for report in [
+            serde_json::Value::Null,
+            serde_json::json!({"schemaVersion": 99}),
+            serde_json::json!("broken-report"),
+        ] {
+            let mut value = serde_json::to_value(AppConfig::default()).unwrap();
+            value["pendingVaultKeyChange"] = "encrypted-journal".into();
+            value["lastVaultKeyChangeReport"] = report;
+            let config: AppConfig = serde_json::from_value(value).unwrap();
+            assert_eq!(config.pending_vault_key_change(), Some("encrypted-journal"));
+            assert!(config.key_change_report().is_none());
+        }
+    }
 
     #[test]
     fn unfinished_key_change_in_backup_keeps_lock_until_cleanup_is_persisted() {

@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tauri_plugin_log::log;
 use tokio::sync::{Mutex, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
 #[derive(Clone)]
@@ -153,7 +154,28 @@ impl AppState {
     }
 
     pub(crate) fn persist_key_change(&self, journal: Option<String>) -> Result<(), AppConfigError> {
-        self.app_config.set_pending_vault_key_change(journal)
+        // 合并到已有的检查点写入，不为每个统计事件增加磁盘/云请求。
+        match self.key_change_manager.report() {
+            Some(report) => self
+                .app_config
+                .set_pending_vault_key_change_with_report(journal, Some(report)),
+            None => self.app_config.set_pending_vault_key_change(journal),
+        }
+    }
+
+    pub(crate) fn key_change_report(&self) -> Option<crate::vault_key_change::KeyChangeReport> {
+        self.key_change_manager
+            .report()
+            .or_else(|| self.app_config.current().key_change_report().cloned())
+    }
+
+    pub(crate) fn persist_key_change_report(&self) {
+        if let Some(report) = self.key_change_manager.report() {
+            if self.app_config.set_key_change_report(report).is_err() {
+                // 统计失败绝不能影响已验证的数据或解除/建立改密锁的安全流程。
+                log::warn!("[vault key change] 无法保存匿名性能报告");
+            }
+        }
     }
 
     pub(crate) fn key_change_manager(&self) -> Arc<crate::vault_key_change::KeyChangeManager> {

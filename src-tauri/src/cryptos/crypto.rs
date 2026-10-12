@@ -110,6 +110,27 @@ impl Crypto {
         nonce: &[u8],
         start_offset: u64,
     ) -> Result<ByteStream, CryptoError> {
+        self.decrypt_streaming_observed(stream, nonce, start_offset, None)
+    }
+
+    /// 仅在改密诊断时观察同步转换耗时，不把上游等待或读取计入加解密。
+    pub(crate) fn decrypt_streaming_with_timing(
+        &self,
+        stream: ByteStream,
+        nonce: &[u8],
+        start_offset: u64,
+        on_chunk: impl Fn(std::time::Duration) + Send + Sync + 'static,
+    ) -> Result<ByteStream, CryptoError> {
+        self.decrypt_streaming_observed(stream, nonce, start_offset, Some(Arc::new(on_chunk)))
+    }
+
+    fn decrypt_streaming_observed(
+        &self,
+        stream: ByteStream,
+        nonce: &[u8],
+        start_offset: u64,
+        on_chunk: Option<Arc<dyn Fn(std::time::Duration) + Send + Sync>>,
+    ) -> Result<ByteStream, CryptoError> {
         let guard = self.inner.read().map_err(|_| CryptoError::LockPoisoned)?;
         let state = guard.as_ref().ok_or(CryptoError::KeyNotDerived)?;
 
@@ -125,7 +146,7 @@ impl Crypto {
         // 计算初始计数器值：start_offset / 16（块大小）
         cipher.seek(start_offset);
 
-        let mapped_stream = ctr_stream_cipher(stream, cipher);
+        let mapped_stream = ctr_stream_cipher_observed(stream, cipher, on_chunk);
 
         Ok(mapped_stream)
     }
@@ -406,12 +427,25 @@ fn decrypt_with_key(key: &DerivedKey, encrypted: &[u8]) -> Result<Vec<u8>, Crypt
         .map_err(|error| CryptoError::DecryptionFailed(format!("{error:?}")))
 }
 
-fn ctr_stream_cipher(stream: ByteStream, mut cipher: Aes256Ctr) -> ByteStream {
+fn ctr_stream_cipher(stream: ByteStream, cipher: Aes256Ctr) -> ByteStream {
+    ctr_stream_cipher_observed(stream, cipher, None)
+}
+
+fn ctr_stream_cipher_observed(
+    stream: ByteStream,
+    mut cipher: Aes256Ctr,
+    on_chunk: Option<Arc<dyn Fn(std::time::Duration) + Send + Sync>>,
+) -> ByteStream {
     Box::pin(stream.map(move |result| match result {
         Ok(bytes) => {
+            let started = on_chunk.as_ref().map(|_| std::time::Instant::now());
             let mut buffer = bytes.to_vec();
             cipher.apply_keystream(&mut buffer);
-            Ok(Bytes::from(buffer))
+            let result = Bytes::from(buffer);
+            if let (Some(observer), Some(started)) = (&on_chunk, started) {
+                observer(started.elapsed());
+            }
+            Ok(result)
         }
         Err(e) => Err(e),
     }))

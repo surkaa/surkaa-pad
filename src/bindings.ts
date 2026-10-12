@@ -241,6 +241,9 @@ async cmdGetVaultKeyChangeStatus() : Promise<Result<KeyChangeStatus, AppError>> 
     else return { status: "error", error: e  as any };
 }
 },
+async cmdGetVaultKeyChangeReport() : Promise<KeyChangeReport | null> {
+    return await TAURI_INVOKE("cmd_get_vault_key_change_report");
+},
 async cmdPauseVaultKeyChange() : Promise<void> {
     await TAURI_INVOKE("cmd_pause_vault_key_change");
 },
@@ -1290,9 +1293,27 @@ export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
 export type KeyChangeFileProgress = { step: KeyChangeFileStep; completedBytes: number; totalBytes: number; completedPoints: number; totalPoints: number }
 export type KeyChangeFileStep = "writingStage" | "checkingStageContent" | "checkingTarget" | "checkingStage" | "backingUp" | "checkingBackup" | "writingTarget" | "checkingCommitted"
+export type KeyChangeFileTiming = { index: number; kind: string; bytes: number; elapsedMs: number; completed: boolean }
 export type KeyChangePlan = { planId: string; remote: boolean; totalFiles: number; totalBytes: number; encryptedFiles: number; encryptedBytes: number; temporaryBytes: number; derivationMs: number; cryptoEstimateMs: number; transferBytes: number; newBootstrap: VaultBootstrap }
 export type KeyChangeProgress = { phase: string; completedFiles: number; totalFiles: number; completedBytes: number; totalBytes: number; currentFile: string | null; fileProgress: KeyChangeFileProgress | null }
+/**
+ * 只保存大小、类型和匿名索引，不保存对象 Key、名称、密码、盐或密钥材料。
+ */
+export type KeyChangeReport = { schemaVersion: number; runId: string; storageMode: string; buildMode: string; platform: string; architecture: string; startedAtMs: number; updatedAtMs: number; outcome: string; attempts: number; 
+/**
+ * 强制退出只能保留最近检查点的统计；不能把遗失的耗时冒充完整历史。
+ */
+incompleteHistory: boolean; encryptedFiles: number; completedFiles: number; encryptedBytes: number; preparationMs: number; derivationMs: number; benchmarkMs: number; activeMs: number; readBytes: number; 
+/**
+ * 已交给写入端的字节，不代表失败请求已成功提交，也不是 HTTP 线上流量。
+ */
+writeStreamBytes: number; cloudCopyBytes: number; 
+/**
+ * next().await 的累计时间，含网络/磁盘与任务调度，不含消费者处理间隔。
+ */
+readAwaitMs: number; cryptoMs: number; hashMs: number; operations: KeyChangeTiming[]; phases: KeyChangeTiming[]; slowestFiles: KeyChangeFileTiming[] }
 export type KeyChangeStatus = { pending: boolean; remote: boolean }
+export type KeyChangeTiming = { name: string; count: number; failed: number; totalMs: number; maxMs: number }
 export type KeyDerivationAlgorithm = "argon2id"
 export type KeyDerivationParameters = { algorithm: KeyDerivationAlgorithm; algorithmVersion: number; salt: string; memoryCostKib: number; timeCost: number; parallelism: number; outputLength: number }
 /**

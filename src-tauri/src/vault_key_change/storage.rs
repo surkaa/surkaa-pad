@@ -11,6 +11,9 @@ use tokio_util::io::ReaderStream;
 
 #[async_trait]
 pub(super) trait RekeyStorage: Send + Sync {
+    fn diagnostics(&self) -> Option<super::diagnostics::Diagnostics> {
+        None
+    }
     async fn list(&self) -> Result<Vec<Entry>>;
     async fn list_prefix(&self, prefix: &str) -> Result<Vec<Entry>> {
         Ok(self

@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
-pub(super) struct StreamDigest(Arc<Mutex<State>>);
+pub(super) struct StreamDigest(Arc<Mutex<State>>, Option<super::diagnostics::Diagnostics>);
 
 #[derive(Default)]
 struct State {
@@ -15,6 +15,9 @@ struct State {
 }
 
 impl StreamDigest {
+    pub fn observed(diagnostics: Option<&super::diagnostics::Diagnostics>) -> Self {
+        Self(Default::default(), diagnostics.cloned())
+    }
     /// 在实际消费的同一条流上计算哈希，不缓存内容或额外读取对象。
     pub fn wrap(&self, stream: ByteStream) -> ByteStream {
         let digest = self.clone();
@@ -30,7 +33,9 @@ impl StreamDigest {
                                 .size
                                 .checked_add(chunk.len() as u64)
                                 .ok_or_else(|| std::io::Error::other("对象大小溢出"))?;
-                            state.sha.update(&chunk);
+                            super::diagnostics::hash(digest.1.as_ref(), || {
+                                state.sha.update(&chunk)
+                            });
                         }
                         Ok(Some((chunk, (stream, digest))))
                     }

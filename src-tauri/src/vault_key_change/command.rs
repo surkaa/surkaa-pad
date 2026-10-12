@@ -1,3 +1,4 @@
+use super::diagnostics::{Diagnostics, KeyChangeReport, ObservedStorage};
 use super::engine::{progress, run};
 use super::inventory::inventory;
 use super::journal::MAX_JOURNAL_BYTES;
@@ -20,11 +21,32 @@ use zeroize::Zeroizing;
 pub(crate) struct KeyChangeManager {
     prepared: Mutex<Option<Prepared>>,
     paused: AtomicBool,
+    diagnostics: std::sync::Mutex<Option<Diagnostics>>,
 }
 
 impl KeyChangeManager {
     pub(crate) fn request_pause(&self) {
         self.paused.store(true, Ordering::SeqCst);
+    }
+
+    fn diagnostics(&self) -> Option<Diagnostics> {
+        self.diagnostics
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn set_diagnostics(&self, diagnostics: Diagnostics) {
+        *self
+            .diagnostics
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(diagnostics);
+    }
+
+    pub(crate) fn report(&self) -> Option<KeyChangeReport> {
+        self.diagnostics()
+            .map(|d| d.snapshot())
+            .filter(|r| r.attempts > 0)
     }
 }
 
@@ -93,6 +115,7 @@ pub(super) async fn plan_change(
     memory_cost_kib: Option<u32>,
     local_config: LocalEncryptedConfig,
 ) -> Result<KeyChangePlan> {
+    let preparation_started = Instant::now();
     state.ensure_storage_available()?;
     let _guard = state
         .try_lock_key_change()
@@ -126,6 +149,7 @@ pub(super) async fn plan_change(
     new.derive_dek_with_parameters(new_password.to_string(), params.clone())
         .map_err(error)?;
     let derivation_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let derivation_duration = start.elapsed();
     let mut new_bootstrap = old_bootstrap.clone();
     new_bootstrap.kdf = params;
     new_bootstrap.encrypted_verifier =
@@ -176,7 +200,8 @@ pub(super) async fn plan_change(
             return Err(error("重加密自检失败"));
         }
     }
-    let crypto_estimate_ms = start.elapsed().as_secs_f64() * 1000.0 * encrypted_bytes as f64
+    let benchmark_duration = start.elapsed();
+    let crypto_estimate_ms = benchmark_duration.as_secs_f64() * 1000.0 * encrypted_bytes as f64
         / (3.0 * sample.len() as f64);
     let (journal, checkpoint) = Journal::create(
         &old,
@@ -207,6 +232,18 @@ pub(super) async fn plan_change(
         },
         new_bootstrap,
     };
+    let diagnostics = Diagnostics::new(
+        journal.transaction_id.clone(),
+        remote,
+        plan.encrypted_files,
+        encrypted_bytes,
+    );
+    diagnostics.preparation(
+        preparation_started.elapsed(),
+        derivation_duration,
+        benchmark_duration,
+    );
+    state.key_change_manager().set_diagnostics(diagnostics);
     *state.key_change_manager().prepared.lock().await = Some(Prepared {
         created: Instant::now(),
         entries,
@@ -504,6 +541,64 @@ async fn execute(
     event: Channel<KeyChangeProgress>,
 ) -> Result<LocalEncryptedConfig> {
     let manager = state.key_change_manager();
+    let diagnostics = manager
+        .diagnostics()
+        .filter(|d| d.snapshot().run_id == journal.transaction_id)
+        .or_else(|| {
+            state
+                .key_change_report()
+                .filter(|r| r.schema_version == 1 && r.run_id == journal.transaction_id)
+                .map(Diagnostics::restore)
+        })
+        .unwrap_or_else(|| {
+            let d = Diagnostics::new(
+                journal.transaction_id.clone(),
+                journal.remote,
+                checkpoint.items.len() as u32,
+                checkpoint.items.iter().map(|i| i.source.size).sum(),
+            );
+            if checkpoint.next > 0 || checkpoint.staged.is_some() {
+                // 从未带统计的旧任务续改，只能报告当前可观测的部分。
+                let mut report = d.snapshot();
+                report.incomplete_history = true;
+                Diagnostics::restore(report)
+            } else {
+                d
+            }
+        });
+    manager.set_diagnostics(diagnostics.clone());
+    diagnostics.completed(checkpoint.next);
+    diagnostics.begin();
+    let measured = ObservedStorage {
+        inner: store,
+        diagnostics: diagnostics.clone(),
+    };
+    let result = execute_measured(state, &measured, journal, checkpoint, old, new, event).await;
+    diagnostics.completed(checkpoint.next);
+    diagnostics.finish(if result.is_ok() {
+        "awaitingConfirmation"
+    } else if result
+        .as_ref()
+        .is_err_and(|error| error.message.starts_with("已暂停改密"))
+    {
+        "paused"
+    } else {
+        "failed"
+    });
+    state.persist_key_change_report();
+    result
+}
+
+async fn execute_measured(
+    state: &AppState,
+    store: &ObservedStorage<'_>,
+    journal: &mut Journal,
+    checkpoint: &mut Checkpoint,
+    old: &Crypto,
+    new: &Crypto,
+    event: Channel<KeyChangeProgress>,
+) -> Result<LocalEncryptedConfig> {
+    let manager = state.key_change_manager();
     manager.paused.store(false, Ordering::SeqCst);
     let progress_event = event.clone();
     run(
@@ -518,11 +613,13 @@ async fn execute(
         || manager.paused.load(Ordering::SeqCst),
     )
     .await?;
+    let mut phases = store.diagnostics.phases();
+    phases.set("switchingKey");
     checkpoint.data_committed = true;
     journal.update(new, checkpoint)?;
     store.checkpoint(&journal.encode()?).await?;
     let _ = event.send(progress(checkpoint, "switchingKey"));
-    if store.remote {
+    if store.inner.remote {
         let current = read_limited(store, ObjectLocations::vault_bootstrap(), 16 * 1024).await?;
         let current = crate::vault_bootstrap::VaultBootstrap::from_json(
             std::str::from_utf8(&current).map_err(error)?,
@@ -541,7 +638,7 @@ async fn execute(
             return Err(error("云端新密钥配置读回校验失败"));
         }
     }
-    if store.remote || checkpoint.refresh_cloud_cache {
+    if store.inner.remote || checkpoint.refresh_cloud_cache {
         state.attachment_cache().deactivate().await.map_err(error)?;
         // 云缓存不是权威数据。删掉旧密文缓存，避免它们被当作新密钥的数据读取。
         for entry in state
@@ -566,6 +663,7 @@ async fn execute(
     state.diary_cache().clear();
     state.ai_session_repository().invalidate_reconciliation();
     let _ = event.send(progress(checkpoint, "savingLocalConfig"));
+    phases.complete();
     Ok(checkpoint.local_config.clone())
 }
 
@@ -671,6 +769,44 @@ pub(super) async fn ack_change(state: &AppState, local_config: LocalEncryptedCon
     let Some(encoded) = state.pending_key_change() else {
         return Ok(());
     };
+    let run_id = Journal::parse(&encoded)?.transaction_id;
+    let started = Instant::now();
+    let diagnostics = state
+        .key_change_manager()
+        .diagnostics()
+        .filter(|d| d.snapshot().run_id == run_id)
+        .or_else(|| {
+            state
+                .key_change_report()
+                .filter(|r| r.run_id == run_id)
+                .map(Diagnostics::restore)
+        });
+    let mut timer = diagnostics.as_ref().map(|d| d.phases());
+    if let Some(timer) = &mut timer {
+        timer.set("finalConfirmation");
+    }
+    let result = ack_change_inner(state, local_config).await;
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.add_active(started.elapsed());
+        if result.is_ok() {
+            if let Some(timer) = &mut timer {
+                timer.complete();
+            }
+            diagnostics.finish("completed");
+        } else {
+            diagnostics.finish("confirmationFailed");
+        }
+        drop(timer);
+        state.key_change_manager().set_diagnostics(diagnostics);
+        state.persist_key_change_report();
+    }
+    result
+}
+
+async fn ack_change_inner(state: &AppState, local_config: LocalEncryptedConfig) -> Result<()> {
+    let Some(encoded) = state.pending_key_change() else {
+        return Ok(());
+    };
     let journal = Journal::parse(&encoded)?;
     let new = state.crypto();
     let checkpoint = journal.checkpoint(&new)?;
@@ -738,6 +874,12 @@ pub fn cmd_get_vault_key_change_status(state: State<'_, AppState>) -> Result<Key
         pending: journal.is_some(),
         remote: journal.is_some_and(|j| j.remote),
     })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_get_vault_key_change_report(state: State<'_, AppState>) -> Option<KeyChangeReport> {
+    state.key_change_report()
 }
 
 #[tauri::command]
