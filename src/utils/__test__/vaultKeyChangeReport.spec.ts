@@ -12,6 +12,7 @@ describe('vault key change performance report', () => {
     expect(JSON.stringify(source)).not.toContain('must-not-be-copied');
     expect(source.notes.join('')).toContain('不是 HTTP 请求数');
     expect(source.notes.join('')).toContain('不能将这些耗时相加');
+    expect(source.notes.join('')).toContain('旧实现还可能包含额外元信息查询');
     expect(source.notes.join('')).toContain('incompleteHistory');
   });
 

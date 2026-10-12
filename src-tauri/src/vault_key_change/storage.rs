@@ -117,21 +117,15 @@ impl RekeyStorage for Storage {
 
     async fn head(&self, key: &str) -> Result<Option<Entry>> {
         if self.remote {
-            if !self
+            let Some(metadata) = self
                 .state
                 .oss_client()
-                .object_exists(key)
+                .get_metadata_if_exists(key)
                 .await
                 .map_err(error)?
-            {
+            else {
                 return Ok(None);
-            }
-            let metadata = self
-                .state
-                .oss_client()
-                .get_metadata(key)
-                .await
-                .map_err(error)?;
+            };
             Ok(Some(Entry {
                 key: key.into(),
                 size: metadata

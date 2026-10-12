@@ -520,39 +520,37 @@ impl OssClient {
     }
 
     pub async fn get_metadata(&self, key: &str) -> Result<HeadObjectOutput, ObjectError> {
+        self.get_metadata_if_exists(key)
+            .await?
+            .ok_or_else(|| ObjectError::OperationFailed("HEAD failed: HTTP 404".into()))
+    }
+
+    /// 一次 HEAD 同时判断存在性并读取元信息；只有明确的 404 表示不存在。
+    pub(crate) async fn get_metadata_if_exists(
+        &self,
+        key: &str,
+    ) -> Result<Option<HeadObjectOutput>, ObjectError> {
         let bucket = self.inner()?;
         let key = self.physical_key(key);
         let (result, status) = bucket
             .head_object(&key)
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
-        if status >= 400 {
-            return Err(ObjectError::OperationFailed(format!(
-                "HEAD failed: HTTP {}",
-                status
-            )));
-        }
-        Ok(HeadObjectOutput {
-            etag: result.e_tag.map(|e| e.trim_matches('"').to_string()),
-            content_length: result.content_length.map(|v| v.max(0) as u64),
-        })
-    }
-
-    /// 判断对象是否存在；只有明确的 404 会返回 false，其他异常仍向上传递。
-    pub async fn object_exists(&self, key: &str) -> Result<bool, ObjectError> {
-        let bucket = self.inner()?;
-        let key = self.physical_key(key);
-        let (_, status) = bucket
-            .head_object(&key)
-            .await
-            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
         match status {
-            200..=299 => Ok(true),
-            404 => Ok(false),
+            200..=299 => Ok(Some(HeadObjectOutput {
+                etag: result.e_tag.map(|e| e.trim_matches('"').to_string()),
+                content_length: result.content_length.map(|v| v.max(0) as u64),
+            })),
+            404 => Ok(None),
             _ => Err(ObjectError::OperationFailed(format!(
                 "HEAD failed: HTTP {status}"
             ))),
         }
+    }
+
+    /// 判断对象是否存在；只有明确的 404 会返回 false，其他异常仍向上传递。
+    pub async fn object_exists(&self, key: &str) -> Result<bool, ObjectError> {
+        Ok(self.get_metadata_if_exists(key).await?.is_some())
     }
 
     /// https://help.aliyun.com/zh/oss/developer-reference/listobjects-v2

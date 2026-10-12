@@ -1,4 +1,4 @@
-use super::OssClient;
+use super::{ObjectError, OssClient};
 use crate::stream::collect_data;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::task::JoinHandle;
@@ -10,7 +10,7 @@ impl OssClient {
             OssClient::with_test_endpoint(&format!("http://{}", listener.local_addr().unwrap()))
                 .with_key_prefix("isolated-test".into());
         let server = tokio::spawn(async move {
-            // 只允许一个请求；旧实现的额外 HEAD 会因监听器关闭而失败。
+            // 只允许一个请求；额外查询会因监听器关闭而失败。
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut request = vec![];
             let mut buffer = [0; 1024];
@@ -104,5 +104,112 @@ async fn streaming_get_propagates_truncation_without_a_head_fallback() {
     assert_eq!(
         server.await.unwrap(),
         "GET /test-bucket/isolated-test/object HTTP/1.1"
+    );
+}
+
+#[tokio::test]
+async fn optional_metadata_uses_one_head_and_preserves_zero_and_large_sizes() {
+    for size in [0, 3, 6 * 1024 * 1024 * 1024] {
+        let (client, server) = OssClient::with_test_response(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {size}\r\nETag: \"object-etag\"\r\nConnection: close\r\n\r\n"
+            ).into_bytes()
+        ).await;
+        let metadata = client
+            .get_metadata_if_exists("/object")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(metadata.content_length, Some(size));
+        assert_eq!(metadata.etag.as_deref(), Some("object-etag"));
+        assert_eq!(
+            server.await.unwrap(),
+            "HEAD /test-bucket/isolated-test/object HTTP/1.1"
+        );
+    }
+}
+
+#[tokio::test]
+async fn optional_metadata_returns_none_only_for_404() {
+    for status in [304, 400, 403, 404, 500] {
+        let (client, server) = OssClient::with_test_response(
+            format!("HTTP/1.1 {status} Status\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .into_bytes(),
+        )
+        .await;
+        let result = client.get_metadata_if_exists("object").await;
+        if status == 404 {
+            assert!(result.unwrap().is_none());
+        } else {
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains(&format!("HTTP {status}")));
+        }
+        assert_eq!(
+            server.await.unwrap(),
+            "HEAD /test-bucket/isolated-test/object HTTP/1.1"
+        );
+    }
+}
+
+#[tokio::test]
+async fn metadata_and_existence_wrappers_preserve_their_error_semantics_with_one_head() {
+    for status in [200, 304, 403, 404, 500] {
+        let response = format!(
+            "HTTP/1.1 {status} Status\r\nContent-Length: 3\r\nETag: \"object-etag\"\r\nConnection: close\r\n\r\n"
+        ).into_bytes();
+        let (client, server) = OssClient::with_test_response(response.clone()).await;
+        let metadata = client.get_metadata("object").await;
+        if status == 200 {
+            let metadata = metadata.unwrap();
+            assert_eq!(metadata.content_length, Some(3));
+            assert_eq!(metadata.etag.as_deref(), Some("object-etag"));
+        } else {
+            assert!(metadata
+                .unwrap_err()
+                .to_string()
+                .contains(&format!("HTTP {status}")));
+        }
+        assert_eq!(
+            server.await.unwrap(),
+            "HEAD /test-bucket/isolated-test/object HTTP/1.1"
+        );
+
+        let (client, server) = OssClient::with_test_response(response).await;
+        let exists = client.object_exists("object").await;
+        match status {
+            200 => assert!(exists.unwrap()),
+            404 => assert!(!exists.unwrap()),
+            _ => assert!(exists
+                .unwrap_err()
+                .to_string()
+                .contains(&format!("HTTP {status}"))),
+        }
+        assert_eq!(
+            server.await.unwrap(),
+            "HEAD /test-bucket/isolated-test/object HTTP/1.1"
+        );
+    }
+}
+
+#[tokio::test]
+async fn optional_metadata_propagates_initialization_and_transport_errors() {
+    assert!(matches!(
+        OssClient::new().get_metadata_if_exists("object").await,
+        Err(ObjectError::NotInitialized)
+    ));
+    // 在收到请求后直接断开连接，不能把网络失败当成对象不存在。
+    let (client, server) = OssClient::with_test_response(vec![]).await;
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        client.get_metadata_if_exists("object"),
+    )
+    .await
+    .unwrap();
+    assert!(result.is_err());
+    assert_eq!(
+        server.await.unwrap(),
+        "HEAD /test-bucket/isolated-test/object HTTP/1.1"
     );
 }

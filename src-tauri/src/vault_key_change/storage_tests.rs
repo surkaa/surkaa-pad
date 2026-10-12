@@ -31,6 +31,85 @@ async fn cloud_read_uses_one_get_without_an_unused_size_query() {
     );
 }
 
+#[tokio::test]
+async fn cloud_head_uses_one_request_and_requires_size_and_etag() {
+    for (headers, expected_size, expected_error) in [
+        (
+            "Content-Length: 3\r\nETag: \"object-etag\"\r\n",
+            Some(3),
+            None,
+        ),
+        (
+            "Content-Length: 0\r\nETag: \"object-etag\"\r\n",
+            Some(0),
+            None,
+        ),
+        ("ETag: \"object-etag\"\r\n", None, Some("对象缺少大小")),
+        ("Content-Length: 3\r\n", None, Some("对象缺少 ETag")),
+    ] {
+        let (client, server) = OssClient::with_test_response(
+            format!("HTTP/1.1 200 OK\r\n{headers}Connection: close\r\n\r\n").into_bytes(),
+        )
+        .await;
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage {
+            remote: true,
+            state: AppState::from_parts(
+                Crypto::new(),
+                client,
+                LocalObjectStore::new(temp.path().into()),
+            ),
+        };
+        let result = storage.head("object").await;
+        if let Some(message) = expected_error {
+            assert!(result.err().unwrap().message.contains(message));
+        } else {
+            let entry = result.unwrap().unwrap();
+            assert_eq!(entry.key, "object");
+            assert_eq!(entry.size, expected_size.unwrap());
+            assert_eq!(entry.etag, "object-etag");
+        }
+        assert_eq!(
+            server.await.unwrap(),
+            "HEAD /test-bucket/isolated-test/object HTTP/1.1"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cloud_head_treats_only_404_as_missing() {
+    for status in [304, 403, 404, 500] {
+        let (client, server) = OssClient::with_test_response(
+            format!("HTTP/1.1 {status} Status\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .into_bytes(),
+        )
+        .await;
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage {
+            remote: true,
+            state: AppState::from_parts(
+                Crypto::new(),
+                client,
+                LocalObjectStore::new(temp.path().into()),
+            ),
+        };
+        let result = storage.head("object").await;
+        if status == 404 {
+            assert!(result.unwrap().is_none());
+        } else {
+            assert!(result
+                .err()
+                .unwrap()
+                .message
+                .contains(&format!("HTTP {status}")));
+        }
+        assert_eq!(
+            server.await.unwrap(),
+            "HEAD /test-bucket/isolated-test/object HTTP/1.1"
+        );
+    }
+}
+
 fn tracker(
     size: u64,
     step: KeyChangeFileStep,
@@ -68,7 +147,7 @@ async fn cloud_copy_never_downloads_or_reuploads_even_above_five_gib() {
                 .with_key_prefix("isolated-test".into());
         let server = tokio::spawn(async move {
             let mut methods = vec![];
-            for _ in 0..if copy_status == 200 { 3 } else { 1 } {
+            for _ in 0..if copy_status == 200 { 2 } else { 1 } {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 let mut request = vec![];
                 let mut buffer = [0_u8; 4096];
@@ -150,7 +229,7 @@ async fn cloud_copy_never_downloads_or_reuploads_even_above_five_gib() {
         assert_eq!(
             server.await.unwrap(),
             if copy_status == 200 {
-                vec!["PUT", "HEAD", "HEAD"]
+                vec!["PUT", "HEAD"]
             } else {
                 vec!["PUT"]
             }
