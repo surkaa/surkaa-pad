@@ -8,6 +8,7 @@ const STEP_INDEX: Record<KeyChangeFileStep, number> = {
 };
 const STEP_COUNT = 8;
 const MIN_SAMPLE_MS = 5000;
+const MAX_SAMPLE_BYTES = 1024 * 1024;
 
 /** 仅在当前运行期间测速；续改 reset 后不把已完成字节或暂停时间计入速度。 */
 export class KeyChangeTimeEstimator {
@@ -58,7 +59,9 @@ export class KeyChangeTimeEstimator {
     if (this.completedBytes >= this.totalBytes) return 0;
     const elapsed = now - this.startedAt;
     const processed = this.processedBytes - this.baselineBytes;
-    if (elapsed < MIN_SAMPLE_MS || processed <= 0) return null;
+    // 避免仅凭几个很小的元数据对象预测整个大 Vault；小任务按剩余数据的 1% 采样。
+    const minBytes = Math.min(MAX_SAMPLE_BYTES, (this.totalBytes - this.baselineBytes) * 0.01);
+    if (elapsed < MIN_SAMPLE_MS || processed <= 0 || processed < minBytes) return null;
     const remaining = (this.totalBytes - this.processedBytes) * (elapsed / processed);
     return Number.isFinite(remaining) && remaining >= 0 ? remaining : null;
   }

@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   cmdGetVaultKeyChangeStatus: vi.fn(async () => ({pending: false, remote: false})),
   cmdDiscardVaultKeyChangePlan: vi.fn(async () => {}),
   cmdResumeVaultKeyChange: vi.fn((_password: string, _event: {onmessage: (p: KeyChangeProgress) => void}) => new Promise<never>(() => {})),
+  cmdPauseVaultKeyChange: vi.fn(async () => {}),
 }));
 vi.mock('../../utils/api', () => ({default: api}));
 vi.mock('@tauri-apps/api/core', () => ({Channel: class { onmessage = (_p: KeyChangeProgress) => {}; }}));
@@ -26,12 +27,32 @@ async function mount(dark = false) {
   await nextTick();
 }
 
+async function resumeChannel() {
+  const input = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  input.value = 'test-only-password'; input.dispatchEvent(new Event('input', {bubbles: true}));
+  if (document.querySelector('.q-checkbox')?.getAttribute('aria-checked') !== 'true') {
+    document.querySelector<HTMLElement>('.q-checkbox')!.click();
+  }
+  await nextTick();
+  [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === '继续改密')!.click();
+  await nextTick();
+  const calls = api.cmdResumeVaultKeyChange.mock.calls;
+  return calls[calls.length - 1][1];
+}
+
+async function startResume(dark = false) {
+  api.cmdGetVaultKeyChangeStatus.mockResolvedValue({pending: true, remote: true});
+  await mount(dark);
+  return resumeChannel();
+}
+
 describe('vault key change dialog', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     api.cmdGetVaultKeyChangeStatus.mockReset().mockResolvedValue({pending: false, remote: false});
     api.cmdDiscardVaultKeyChangePlan.mockReset().mockResolvedValue(undefined);
     api.cmdResumeVaultKeyChange.mockClear();
+    api.cmdPauseVaultKeyChange.mockClear();
   });
   afterEach(() => {
     app?.unmount(); app = undefined;
@@ -106,5 +127,80 @@ describe('vault key change dialog', () => {
     expect(section()?.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('0');
     channel.onmessage({...progress, fileProgress: null}); await nextTick();
     expect(section()).toBeNull();
+  });
+
+  it.each([false, true])('shows byte-based remaining time and a local completion clock in dark=%s', async dark => {
+    const channel = await startResume(dark);
+    const section = () => document.querySelector('[data-testid="key-change-time-estimate"]');
+    expect(section()?.classList.contains('desc-text')).toBe(true);
+    expect(section()?.textContent).toContain('正在按数据量估算');
+    const progress: KeyChangeProgress = {phase: 'encrypting', completedFiles: 0, totalFiles: 100,
+      completedBytes: 0, totalBytes: 1000, currentFile: 'file.enc', fileProgress: null};
+    channel.onmessage(progress);
+    await vi.advanceTimersByTimeAsync(5000); await nextTick();
+    expect(section()?.textContent).toContain('正在按数据量估算');
+    channel.onmessage({...progress, completedFiles: 1, completedBytes: 100}); await nextTick();
+    expect(section()?.textContent).toContain('预计还需约 45 秒');
+    expect(section()?.textContent).toMatch(/预计完成 \d{2}:\d{2}/);
+    expect(section()?.textContent).toContain('仅供参考');
+    const estimate = section()?.textContent;
+    channel.onmessage({...progress, completedFiles: 99, completedBytes: 100}); await nextTick();
+    expect(section()?.textContent).toBe(estimate);
+  });
+
+  it('estimates a large first file without falsely advancing checkpoint progress or declaring final success', async () => {
+    const channel = await startResume();
+    const section = () => document.querySelector('[data-testid="key-change-time-estimate"]');
+    const progress: KeyChangeProgress = {phase: 'encrypting', completedFiles: 0, totalFiles: 2,
+      completedBytes: 0, totalBytes: 1000 * 1024 * 1024, currentFile: 'large.enc',
+      fileProgress: {step: 'writingStage', completedBytes: 0, totalBytes: 800 * 1024 * 1024, completedPoints: 0, totalPoints: 10}};
+    channel.onmessage(progress);
+    await vi.advanceTimersByTimeAsync(5000);
+    channel.onmessage({...progress, fileProgress: {...progress.fileProgress!, completedBytes: 400 * 1024 * 1024, completedPoints: 5}});
+    await nextTick();
+    expect(section()?.textContent).toContain('预计还需约 2 分钟');
+    expect(document.body.textContent).toContain('已完成并保存检查点：0 / 2');
+    expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('0');
+    channel.onmessage({...progress, phase: 'switchingKey', completedBytes: progress.totalBytes, completedFiles: 2, fileProgress: null});
+    await nextTick();
+    expect(section()?.textContent).toContain('数据处理完成，正在完成最后确认');
+    expect(section()?.textContent).not.toContain('预计还需');
+    expect(document.body.textContent).not.toContain('改密已完成');
+  });
+
+  it('stops after a pause and starts fresh when resuming instead of reusing the old sample', async () => {
+    let rejectRun!: (reason: Error) => void;
+    api.cmdResumeVaultKeyChange.mockImplementationOnce(() => new Promise<never>((_, reject) => { rejectRun = reject; }));
+    const channel = await startResume();
+    const progress: KeyChangeProgress = {phase: 'encrypting', completedFiles: 0, totalFiles: 100,
+      completedBytes: 0, totalBytes: 1000, currentFile: 'file.enc', fileProgress: null};
+    channel.onmessage(progress);
+    await vi.advanceTimersByTimeAsync(5000);
+    channel.onmessage({...progress, completedBytes: 100}); await nextTick();
+    [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === '当前对象完成后暂停')!.click();
+    await vi.advanceTimersByTimeAsync(0); await nextTick();
+    expect(document.querySelector('[data-testid="key-change-time-estimate"]')?.textContent).toBe('将在当前对象完成后暂停');
+    expect(api.cmdPauseVaultKeyChange).toHaveBeenCalledOnce();
+    rejectRun(new Error('已暂停改密'));
+    await vi.advanceTimersByTimeAsync(1000); await nextTick();
+    expect(document.querySelector('[data-testid="key-change-time-estimate"]')).toBeNull();
+    const nextChannel = await resumeChannel();
+    expect(document.body.textContent).toContain('正在按数据量估算');
+    channel.onmessage({...progress, completedBytes: 1000, phase: 'switchingKey'}); await nextTick();
+    expect(document.body.textContent).toContain('正在按数据量估算');
+    nextChannel.onmessage({...progress, completedBytes: 900});
+    await vi.advanceTimersByTimeAsync(5000); await nextTick();
+    expect(document.body.textContent).toContain('正在按数据量估算');
+    nextChannel.onmessage({...progress, completedBytes: 950}); await nextTick();
+    expect(document.body.textContent).toContain('预计还需约 5 秒');
+  });
+
+  it('disposes the ticking estimate when an active dialog is unmounted', async () => {
+    await startResume();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    app!.unmount(); app = undefined;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

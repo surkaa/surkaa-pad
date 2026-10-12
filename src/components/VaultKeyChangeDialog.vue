@@ -42,6 +42,10 @@
 
         <div v-if="busy" class="progress-section">
           <div class="row items-center q-gutter-sm"><q-spinner color="primary" size="24px" /><span>{{ preparing ? '正在统计并进行派生、加密测试…' : keyChangeProgressLabel(progress?.phase ?? '') }}</span></div>
+          <div v-if="!preparing" class="text-caption desc-text" data-testid="key-change-time-estimate">
+            <div>{{ timeEstimateLabel }}</div>
+            <div v-if="!pauseRequested">按本次运行的数据量与各步骤进度动态估算；网络、磁盘和请求等待会影响结果，仅供参考。</div>
+          </div>
           <template v-if="progress">
             <div class="text-caption desc-text">已完成并保存检查点：{{ progress.completedFiles }} / {{ progress.totalFiles }} 个对象 · {{ formatBytes(progress.completedBytes) }} / {{ formatBytes(progress.totalBytes) }}</div>
             <div class="text-caption desc-text current-file">{{ progress.currentFile }}</div>
@@ -76,12 +80,14 @@
 import {computed, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {Channel} from '@tauri-apps/api/core';
+import {useIntervalFn} from '@vueuse/core';
 import api from '../utils/api';
 import type {KeyChangePlan, KeyChangeProgress, LocalEncryptedConfig} from '../bindings';
 import {formatBytes} from '../utils/format';
 import {formatError} from '../utils/formatError';
 import {estimateDuration, finishVaultKeyChange, getLocalEncryptedConfig, keyChangeCompletionMessage, keyChangeFileProgressLabel, keyChangeFileProgressValue, keyChangeProgressLabel, keyChangeProgressValue} from '../utils/vaultKeyChange';
 import {useTimeoutStore} from '../stores/timeout';
+import {KeyChangeTimeEstimator, keyChangeEstimatedCompletion} from '../utils/keyChangeTimeEstimate';
 
 const props = defineProps<{modelValue: boolean; resume?: boolean; initialPassword?: string}>();
 const emit = defineEmits<{(e: 'update:modelValue', value: boolean): void; (e: 'completed'): void}>();
@@ -98,6 +104,23 @@ const memoryOptions = [
 const plan = ref<KeyChangePlan | null>(null), progress = ref<KeyChangeProgress | null>(null);
 const busy = ref(false), preparing = ref(false), pauseRequested = ref(false), failure = ref('');
 const canPrepare = computed(() => !!oldPassword.value && devicesClosed.value && (!changePassword.value || (!!newPassword.value && newPassword.value === confirmPassword.value)));
+const timeEstimator = new KeyChangeTimeEstimator();
+const remainingMs = ref<number | null>(null), estimatedCompletion = ref<string | null>(null);
+function refreshTimeEstimate() {
+  remainingMs.value = timeEstimator.remainingMs(performance.now());
+  estimatedCompletion.value = remainingMs.value === null ? null : keyChangeEstimatedCompletion(remainingMs.value, new Date());
+}
+const {pause: pauseEstimateTicker, resume: resumeEstimateTicker} = useIntervalFn(refreshTimeEstimate, 1000, {immediate: false});
+const timeEstimateLabel = computed(() => {
+  if (pauseRequested.value) return '将在当前对象完成后暂停';
+  if (progress.value && (['switchingKey', 'savingLocalConfig'].includes(progress.value.phase)
+    || (progress.value.totalBytes > 0 && progress.value.completedBytes >= progress.value.totalBytes))) {
+    return '数据处理完成，正在完成最后确认';
+  }
+  if (remainingMs.value === null) return '预计完成时间：正在按数据量估算…';
+  if (remainingMs.value === 0) return '即将完成，正在校验和保存检查点…';
+  return `预计还需${estimateDuration(remainingMs.value)}${estimatedCompletion.value ? ` · 预计完成 ${estimatedCompletion.value}` : ''}`;
+});
 
 watch(() => props.modelValue, async (visible) => {
   if (!visible) { oldPassword.value = newPassword.value = confirmPassword.value = resumePassword.value = ''; return; }
@@ -125,9 +148,17 @@ async function prepareChange() {
 async function perform(run: (channel: Channel<KeyChangeProgress>) => Promise<LocalEncryptedConfig>) {
   if (busy.value) return;
   busy.value = true; pauseRequested.value = false; failure.value = '';
+  progress.value = null;
+  timeEstimator.reset(performance.now());
+  refreshTimeEstimate();
+  resumeEstimateTicker();
   timeout.clearCloseTimers();
   const event = new Channel<KeyChangeProgress>();
-  event.onmessage = value => { progress.value = value; };
+  let acceptingProgress = true;
+  event.onmessage = value => {
+    if (!acceptingProgress) return; // 旧运行的延迟事件不能覆盖续改后的测速样本。
+    progress.value = value; timeEstimator.update(value); refreshTimeEstimate();
+  };
   try {
     const local = await run(event);
     const biometricWasEnabled = await finishVaultKeyChange(local);
@@ -138,6 +169,8 @@ async function perform(run: (channel: Channel<KeyChangeProgress>) => Promise<Loc
     try { resumeMode.value = (await api.cmdGetVaultKeyChangeStatus()).pending; } catch { resumeMode.value = true; }
     plan.value = null;
   } finally {
+    acceptingProgress = false;
+    pauseEstimateTicker();
     busy.value = false; resumePassword.value = '';
     timeout.setTimeoutForCloseApp();
   }

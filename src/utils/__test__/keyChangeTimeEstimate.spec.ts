@@ -37,6 +37,17 @@ describe('byte-based key change time estimate', () => {
     }
   });
 
+  it('does not extrapolate a large vault from just a few small metadata files', () => {
+    const value = new KeyChangeTimeEstimator();
+    const totalBytes = 1024 * 1024 * 1024;
+    value.reset(0);
+    value.update(progress(0, {totalBytes}));
+    value.update(progress(128 * 1024, {totalBytes}));
+    expect(value.remainingMs(10000)).toBeNull();
+    value.update(progress(1024 * 1024, {totalBytes}));
+    expect(value.remainingMs(10000)).toBe(10230000);
+  });
+
   it('uses current large-file steps before the first checkpoint without counting repeated passes twice', () => {
     const value = estimator();
     value.update(progress(0, {fileProgress: file('writingStage')}));
