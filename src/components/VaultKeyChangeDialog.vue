@@ -131,7 +131,7 @@ async function perform(run: (channel: Channel<KeyChangeProgress>) => Promise<Loc
   try {
     const local = await run(event);
     const biometricWasEnabled = await finishVaultKeyChange(local);
-    $q.notify({type: 'positive', message: keyChangeCompletionMessage(biometricWasEnabled)});
+    $q.notify({type: 'positive', message: `${keyChangeCompletionMessage(biometricWasEnabled).replace(/。$/, '')}。可在设置 → 诊断信息 → 改密统计复制性能报告。`});
     emit('update:modelValue', false); emit('completed');
   } catch (e) {
     failure.value = formatError(e);
