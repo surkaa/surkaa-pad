@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 pub(super) const MAX_JOURNAL_BYTES: usize = 64 * 1024 * 1024;
+pub(super) const CURRENT_KEY_CHANGE_VERSION: u32 = 2;
 
 impl Journal {
     fn context(&self) -> Result<Vec<u8>> {
@@ -35,7 +36,7 @@ impl Journal {
         let mut random = [0; 16];
         getrandom::fill(&mut random).map_err(error)?;
         let mut journal = Self {
-            version: 1,
+            version: CURRENT_KEY_CHANGE_VERSION,
             transaction_id: hex::encode(random),
             remote,
             old_bootstrap,
@@ -67,6 +68,29 @@ impl Journal {
         Ok(())
     }
 
+    /// V1 -> V2 新增临时对象 ETag 与源 CRC。没有证据的旧检查点仍完整读回恢复。
+    /// 版本参与密钥封装的认证上下文，升级必须同时重新封装旧密钥及加密检查点，
+    /// 不能只改 JSON 中的 version。调用方在新记录持久成功后才采用升级后的副本。
+    pub fn migrate(
+        &mut self,
+        old: &Crypto,
+        new: &Crypto,
+        checkpoint: &mut Checkpoint,
+    ) -> Result<bool> {
+        match self.version {
+            1 => {
+                self.version = 2;
+                let context = self.context()?;
+                self.old_key_under_new = new.wrap_peer(old, &context).map_err(error)?;
+                checkpoint.header_hash = hex::encode(context);
+                self.update(new, checkpoint)?;
+                Ok(true)
+            }
+            CURRENT_KEY_CHANGE_VERSION => Ok(false),
+            _ => Err(error("不支持此版本的改密记录")),
+        }
+    }
+
     pub fn encode(&self) -> Result<String> {
         let json = serde_json::to_string(self).map_err(error)?;
         if json.len() > MAX_JOURNAL_BYTES {
@@ -80,7 +104,7 @@ impl Journal {
             return Err(error("改密记录超过大小限制"));
         }
         let journal: Self = serde_json::from_str(json).map_err(error)?;
-        if journal.version != 1
+        if !(1..=CURRENT_KEY_CHANGE_VERSION).contains(&journal.version)
             || journal.transaction_id.len() != 32
             || !journal
                 .transaction_id

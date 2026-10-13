@@ -4,7 +4,8 @@ use super::progress::{FileProgress, Notify};
 use super::storage::{byte_stream, read_limited_stream, RekeyStorage};
 use super::stream_digest::StreamDigest;
 use super::types::{
-    Checkpoint, Encoding, Journal, KeyChangeFileStep, KeyChangeProgress, VerifiedStage,
+    Checkpoint, CloudStageEvidence, Encoding, Entry, Journal, KeyChangeFileStep, KeyChangeProgress,
+    VerifiedStage,
 };
 use super::{error, Result};
 use crate::cryptos::Crypto;
@@ -121,6 +122,13 @@ pub(super) async fn run(
 ) -> Result<()> {
     let notify: Notify = Arc::new(notify);
     let diagnostics = storage.diagnostics();
+    let mut migrated = journal.clone();
+    let mut migrated_checkpoint = checkpoint.clone();
+    if migrated.migrate(old, new, &mut migrated_checkpoint)? {
+        storage.checkpoint(&migrated.encode()?).await?;
+        *journal = migrated;
+        *checkpoint = migrated_checkpoint;
+    }
     while checkpoint.next < checkpoint.items.len() {
         if paused() {
             return Err(error("已暂停改密，保留了检查点，可稍后继续"));
@@ -149,10 +157,14 @@ pub(super) async fn run(
             base.phase = phase.into();
             FileProgress::new(base, action, size, notify.clone())
         };
+        // 只有本次运行刚完成的校验才可走快速路径。即使检查点存有 ETag/CRC，
+        // 恢复运行也必须重新检查正式对象、临时对象和备份，不信任旧进程的观察。
+        let fresh_cloud = storage.supports_conditions() && checkpoint.staged.is_none();
         if checkpoint.staged.is_none() {
             set_phase(&mut phases, "sourceMetadata");
             notify(progress(checkpoint, "encrypting"));
-            if storage.head(&item.source.key).await?.as_ref() != Some(&item.source) {
+            if !fresh_cloud && storage.head(&item.source.key).await?.as_ref() != Some(&item.source)
+            {
                 return Err(error(format!(
                     "源对象已变化: {}，不会覆盖",
                     item.source.key
@@ -164,8 +176,19 @@ pub(super) async fn run(
                 item.source.size,
             );
             set_phase(&mut phases, "writingStage");
-            let source_digest = StreamDigest::observed(diagnostics.as_ref());
-            let source = source_digest.wrap(writing.wrap(storage.read(&item.source.key).await?));
+            let source_digest = if fresh_cloud {
+                StreamDigest::with_crc(diagnostics.as_ref())
+            } else {
+                StreamDigest::observed(diagnostics.as_ref())
+            };
+            let source = if fresh_cloud {
+                storage
+                    .read_if_match(&item.source.key, &item.source.etag)
+                    .await?
+            } else {
+                storage.read(&item.source.key).await?
+            };
+            let source = source_digest.wrap(writing.wrap(source));
             let (stream, size, expected_plain_hash) = match &item.encoding {
                 Encoding::Ctr { nonce } => {
                     let plain_digest = StreamDigest::observed(diagnostics.as_ref());
@@ -218,7 +241,7 @@ pub(super) async fn run(
             };
             // 以实际生成并上传的密文为基准，不能把读回的数据自己当作校验基准。
             let written_digest = StreamDigest::observed(diagnostics.as_ref());
-            storage
+            let stage_etag = storage
                 .write(&stage_key, size, written_digest.wrap(stream))
                 .await?;
             let (old_size, old_cipher_hash) = source_digest.result()?;
@@ -233,7 +256,12 @@ pub(super) async fn run(
             let checking = step("verifying", KeyChangeFileStep::CheckingStageContent, size);
             let readback_digest = StreamDigest::observed(diagnostics.as_ref());
             // 同一次读回中校验密文和解密内容；两种哈希均须与生成时的基准一致。
-            let stream = readback_digest.wrap(checking.wrap(storage.read(&stage_key).await?));
+            let stream = if fresh_cloud {
+                storage.read_if_match(&stage_key, &stage_etag).await?
+            } else {
+                storage.read(&stage_key).await?
+            };
+            let stream = readback_digest.wrap(checking.wrap(stream));
             let (_, actual_plain_hash) = digest_observed(
                 plain_stream(
                     stream,
@@ -258,6 +286,14 @@ pub(super) async fn run(
                 size,
                 old_cipher_hash,
                 new_cipher_hash,
+                cloud: if fresh_cloud {
+                    Some(CloudStageEvidence {
+                        etag: stage_etag,
+                        old_crc64: source_digest.crc64()?,
+                    })
+                } else {
+                    None
+                },
             });
             set_phase(&mut phases, "checkpoint");
             journal.update(new, checkpoint)?;
@@ -269,91 +305,197 @@ pub(super) async fn run(
             .as_ref()
             .ok_or_else(|| error("缺少已验证的临时密文"))?;
         notify(progress(checkpoint, "committing"));
-        set_phase(&mut phases, "checkingTarget");
-        let current = match storage.head(&item.source.key).await? {
-            Some(entry) => {
-                let checking = step("committing", KeyChangeFileStep::CheckingTarget, entry.size);
-                let result = digest_observed(
-                    checking.wrap(storage.read(&item.source.key).await?),
-                    diagnostics.as_ref(),
-                )
-                .await?;
-                if result != (staged.size, staged.new_cipher_hash.clone())
-                    && result != (item.source.size, staged.old_cipher_hash.clone())
-                {
-                    return Err(error(format!(
-                        "目标对象变化，拒绝覆盖: {}",
-                        item.source.key
-                    )));
-                }
-                checking.finish();
-                Some(result)
-            }
-            None => None, // 本地替换数据/ETag 的中断窗口，由已验证的新密文修复。
-        };
-        let already_committed =
-            current.as_ref() == Some(&(staged.size, staged.new_cipher_hash.clone()));
-        if !already_committed {
-            set_phase(&mut phases, "checkingStage");
-            let checking = step("committing", KeyChangeFileStep::CheckingStage, staged.size);
-            if digest_observed(
-                checking.wrap(storage.read(&stage_key).await?),
-                diagnostics.as_ref(),
-            )
-            .await?
-                != (staged.size, staged.new_cipher_hash.clone())
-            {
-                return Err(error("临时密文已损坏，停止替换数据"));
-            }
-            checking.finish();
+        let etag = if fresh_cloud {
+            let evidence = staged
+                .cloud
+                .as_ref()
+                .ok_or_else(|| error("缺少云端校验证据"))?;
             set_phase(&mut phases, "backingUp");
-            // 原密文备份在替换前读回校验；验证目标与持久保存检查点后才删除。
-            if storage.head(&backup_key).await?.is_none() {
-                if current.is_none() {
-                    return Err(error("原对象及旧密文备份均缺失，停止以免丢失数据"));
-                }
-                let copying = step("committing", KeyChangeFileStep::BackingUp, item.source.size);
-                storage
-                    .copy(&item.source.key, &backup_key, item.source.size, &copying)
-                    .await?;
-                copying.finish();
-            }
-            let checking = step(
-                "committing",
-                KeyChangeFileStep::CheckingBackup,
-                item.source.size,
-            );
-            set_phase(&mut phases, "checkingBackup");
-            if digest_observed(
-                checking.wrap(storage.read(&backup_key).await?),
-                diagnostics.as_ref(),
-            )
-            .await?
-                != (item.source.size, staged.old_cipher_hash.clone())
-            {
-                return Err(error("旧密文备份校验失败，未替换数据"));
-            }
-            checking.finish();
-        }
-        set_phase(&mut phases, "writingTarget");
-        let etag = if already_committed
-            && storage
-                .head(&item.source.key)
-                .await?
-                .is_some_and(|e| !e.etag.is_empty())
-        {
-            storage
-                .head(&item.source.key)
-                .await?
-                .ok_or_else(|| error("目标消失"))?
-                .etag
-        } else {
-            let copying = step("committing", KeyChangeFileStep::WritingTarget, staged.size);
-            let etag = storage
-                .copy(&stage_key, &item.source.key, staged.size, &copying)
+            let copying = step("committing", KeyChangeFileStep::BackingUp, item.source.size);
+            let backup = storage
+                .copy_if_match(&item.source, &backup_key, true)
                 .await?;
             copying.finish();
-            etag
+            set_phase(&mut phases, "checkingBackup");
+            match backup.crc64 {
+                Some(crc) if crc == evidence.old_crc64 => (),
+                Some(_) => return Err(error("旧密文备份 CRC 校验失败，未替换数据")),
+                None => {
+                    // CopyObject 不保证 CRC64 存在。缺失时读回完整备份比对本机源 SHA，
+                    // 不能拿两个服务端元数据互相比对就宣称内容已经验证。
+                    let checking = step(
+                        "committing",
+                        KeyChangeFileStep::CheckingBackup,
+                        item.source.size,
+                    );
+                    if digest_observed(
+                        checking.wrap(
+                            storage
+                                .read_if_match(&backup_key, &backup.entry.etag)
+                                .await?,
+                        ),
+                        diagnostics.as_ref(),
+                    )
+                    .await?
+                        != (item.source.size, staged.old_cipher_hash.clone())
+                    {
+                        return Err(error("旧密文备份校验失败，未替换数据"));
+                    }
+                    checking.finish();
+                }
+            }
+            set_phase(&mut phases, "targetMetadata");
+            if storage.head(&item.source.key).await?.as_ref() != Some(&item.source) {
+                return Err(error("正式对象已变化，拒绝覆盖并保留恢复资料"));
+            }
+            // 该 HEAD 不是对目标的原子写锁；仍要求其他设备退出且本机业务冻结。
+            set_phase(&mut phases, "writingTarget");
+            let copying = step("committing", KeyChangeFileStep::WritingTarget, staged.size);
+            let copied = storage
+                .copy_if_match(
+                    &Entry {
+                        key: stage_key.clone(),
+                        size: staged.size,
+                        etag: evidence.etag.clone(),
+                    },
+                    &item.source.key,
+                    false,
+                )
+                .await?;
+            copying.finish();
+            copied.entry.etag
+        } else {
+            set_phase(&mut phases, "checkingTarget");
+            let current_entry = storage.head(&item.source.key).await?;
+            let current = match &current_entry {
+                Some(entry) => {
+                    let checking =
+                        step("committing", KeyChangeFileStep::CheckingTarget, entry.size);
+                    let result = digest_observed(
+                        checking.wrap(read_entry(storage, entry).await?),
+                        diagnostics.as_ref(),
+                    )
+                    .await?;
+                    if result != (staged.size, staged.new_cipher_hash.clone())
+                        && result != (item.source.size, staged.old_cipher_hash.clone())
+                    {
+                        return Err(error(format!(
+                            "目标对象变化，拒绝覆盖: {}",
+                            item.source.key
+                        )));
+                    }
+                    checking.finish();
+                    Some(result)
+                }
+                None => None, // 本地替换数据/ETag 的中断窗口，由已验证的新密文修复。
+            };
+            let already_committed =
+                current.as_ref() == Some(&(staged.size, staged.new_cipher_hash.clone()));
+            let mut recovered_etag = None;
+            if !already_committed {
+                set_phase(&mut phases, "checkingStage");
+                let stage_entry = if storage.supports_conditions() {
+                    Some(
+                        storage
+                            .head(&stage_key)
+                            .await?
+                            .ok_or_else(|| error("临时密文不存在"))?,
+                    )
+                } else {
+                    None
+                };
+                let checking = step("committing", KeyChangeFileStep::CheckingStage, staged.size);
+                if digest_observed(
+                    checking.wrap(match &stage_entry {
+                        Some(entry) => read_entry(storage, entry).await?,
+                        None => storage.read(&stage_key).await?,
+                    }),
+                    diagnostics.as_ref(),
+                )
+                .await?
+                    != (staged.size, staged.new_cipher_hash.clone())
+                {
+                    return Err(error("临时密文已损坏，停止替换数据"));
+                }
+                checking.finish();
+                set_phase(&mut phases, "backingUp");
+                // 原密文备份在替换前读回校验；验证目标与持久保存检查点后才删除。
+                let mut backup_entry = storage.head(&backup_key).await?;
+                if backup_entry.is_none() {
+                    if current.is_none() {
+                        return Err(error("原对象及旧密文备份均缺失，停止以免丢失数据"));
+                    }
+                    let copying =
+                        step("committing", KeyChangeFileStep::BackingUp, item.source.size);
+                    if storage.supports_conditions() {
+                        backup_entry = Some(
+                            storage
+                                .copy_if_match(
+                                    current_entry
+                                        .as_ref()
+                                        .ok_or_else(|| error("原对象不存在"))?,
+                                    &backup_key,
+                                    true,
+                                )
+                                .await?
+                                .entry,
+                        );
+                    } else {
+                        storage
+                            .copy(&item.source.key, &backup_key, item.source.size, &copying)
+                            .await?;
+                    }
+                    copying.finish();
+                }
+                let checking = step(
+                    "committing",
+                    KeyChangeFileStep::CheckingBackup,
+                    item.source.size,
+                );
+                set_phase(&mut phases, "checkingBackup");
+                if digest_observed(
+                    checking.wrap(match &backup_entry {
+                        Some(entry) => read_entry(storage, entry).await?,
+                        None => storage.read(&backup_key).await?,
+                    }),
+                    diagnostics.as_ref(),
+                )
+                .await?
+                    != (item.source.size, staged.old_cipher_hash.clone())
+                {
+                    return Err(error("旧密文备份校验失败，未替换数据"));
+                }
+                checking.finish();
+                // 恢复路径的临时密文已完整核对 SHA，再以同一源 ETag 条件提交。
+                if let Some(stage_entry) = stage_entry {
+                    if storage.head(&item.source.key).await? != current_entry {
+                        return Err(error("恢复过程中正式对象发生变化，拒绝覆盖"));
+                    }
+                    set_phase(&mut phases, "writingTarget");
+                    let copying = step("committing", KeyChangeFileStep::WritingTarget, staged.size);
+                    let copied = storage
+                        .copy_if_match(&stage_entry, &item.source.key, false)
+                        .await?;
+                    copying.finish();
+                    recovered_etag = Some(copied.entry.etag);
+                    // 统一交给下方最终读回/持久检查点，不提前记作已完成。
+                }
+            }
+            set_phase(&mut phases, "writingTarget");
+            if !already_committed && storage.supports_conditions() {
+                recovered_etag.ok_or_else(|| error("缺少复制后的 ETag"))?
+            } else if already_committed
+                && current_entry.as_ref().is_some_and(|e| !e.etag.is_empty())
+            {
+                current_entry.as_ref().unwrap().etag.clone()
+            } else {
+                let copying = step("committing", KeyChangeFileStep::WritingTarget, staged.size);
+                let etag = storage
+                    .copy(&stage_key, &item.source.key, staged.size, &copying)
+                    .await?;
+                copying.finish();
+                etag
+            }
         };
         let checking = step(
             "committing",
@@ -362,7 +504,11 @@ pub(super) async fn run(
         );
         set_phase(&mut phases, "checkingCommitted");
         if digest_observed(
-            checking.wrap(storage.read(&item.source.key).await?),
+            checking.wrap(if storage.supports_conditions() {
+                storage.read_if_match(&item.source.key, &etag).await?
+            } else {
+                storage.read(&item.source.key).await?
+            }),
             diagnostics.as_ref(),
         )
         .await?
@@ -392,4 +538,12 @@ pub(super) async fn run(
         }
     }
     Ok(())
+}
+
+async fn read_entry(storage: &dyn RekeyStorage, entry: &Entry) -> Result<ByteStream> {
+    if storage.supports_conditions() {
+        storage.read_if_match(&entry.key, &entry.etag).await
+    } else {
+        storage.read(&entry.key).await
+    }
 }

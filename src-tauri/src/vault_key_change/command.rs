@@ -222,11 +222,12 @@ pub(super) async fn plan_change(
         temporary_bytes,
         derivation_ms,
         crypto_estimate_ms,
-        // 合并数据流后 6 次读取 + 1 次写入；备份和正式替换均走 OSS 同桶复制。
+        // 正常云路径 3 次读取 + 1 次写入；保守按缺少备份 CRC 时多一次读取估算。
+        // 备份和正式替换均走 OSS 同桶复制；恢复路径仍会重新进行完整校验。
         // 这里只估算主要数据，GCM/Manifest 格式重写可能有少量大小差异；
         // 不含检查点/请求开销和中断重试，不能当作严格的流量上限或网络耗时。
         transfer_bytes: if remote {
-            encrypted_bytes.saturating_mul(7)
+            encrypted_bytes.saturating_mul(5)
         } else {
             0
         },

@@ -11,6 +11,10 @@ use tokio_util::io::ReaderStream;
 
 #[async_trait]
 pub(super) trait RekeyStorage: Send + Sync {
+    /// 仅 OSS 实现支持；本地存储和其他实现默认保留全量恢复路径。
+    fn supports_conditions(&self) -> bool {
+        false
+    }
     fn diagnostics(&self) -> Option<super::diagnostics::Diagnostics> {
         None
     }
@@ -24,10 +28,21 @@ pub(super) trait RekeyStorage: Send + Sync {
             .collect())
     }
     async fn read(&self, key: &str) -> Result<ByteStream>;
+    async fn read_if_match(&self, _key: &str, _etag: &str) -> Result<ByteStream> {
+        Err(error("此存储不支持条件读取"))
+    }
     async fn head(&self, key: &str) -> Result<Option<Entry>>;
     async fn write(&self, key: &str, size: u64, stream: ByteStream) -> Result<String>;
     async fn delete(&self, key: &str) -> Result<()>;
     async fn checkpoint(&self, journal: &str) -> Result<()>;
+    async fn copy_if_match(
+        &self,
+        _source: &Entry,
+        _target: &str,
+        _forbid_overwrite: bool,
+    ) -> Result<CopyEvidence> {
+        Err(error("此存储不支持条件复制"))
+    }
     async fn copy(
         &self,
         source: &str,
@@ -40,6 +55,11 @@ pub(super) trait RekeyStorage: Send + Sync {
     }
 }
 
+pub(super) struct CopyEvidence {
+    pub entry: Entry,
+    pub crc64: Option<u64>,
+}
+
 pub(super) struct Storage {
     pub state: AppState,
     pub remote: bool,
@@ -47,6 +67,59 @@ pub(super) struct Storage {
 
 #[async_trait]
 impl RekeyStorage for Storage {
+    fn supports_conditions(&self) -> bool {
+        self.remote
+    }
+
+    async fn read_if_match(&self, key: &str, etag: &str) -> Result<ByteStream> {
+        if !self.remote {
+            return Err(error("本地存储不支持 OSS 条件读取"));
+        }
+        self.state
+            .oss_client()
+            .download_stream_if_match(key, etag)
+            .await
+            .map_err(error)
+    }
+
+    async fn copy_if_match(
+        &self,
+        source: &Entry,
+        target: &str,
+        forbid_overwrite: bool,
+    ) -> Result<CopyEvidence> {
+        if !self.remote {
+            return Err(error("本地存储不支持 OSS 条件复制"));
+        }
+        let copied = self
+            .state
+            .oss_client()
+            .copy_object_if_match(&source.key, target, &source.etag, forbid_overwrite)
+            .await
+            .map_err(error)?;
+        let head = self
+            .state
+            .oss_client()
+            .get_metadata(target)
+            .await
+            .map_err(error)?;
+        if head.content_length != Some(source.size)
+            || head.etag.as_deref() != Some(copied.etag.as_str())
+        {
+            return Err(error("云端复制的对象大小或 ETag 不匹配，保留恢复资料"));
+        }
+        if head.crc64.zip(copied.crc64).is_some_and(|(a, b)| a != b) {
+            return Err(error("云端复制的 CRC 响应不一致"));
+        }
+        Ok(CopyEvidence {
+            entry: Entry {
+                key: target.into(),
+                size: source.size,
+                etag: copied.etag,
+            },
+            crc64: head.crc64.or(copied.crc64),
+        })
+    }
     async fn list(&self) -> Result<Vec<Entry>> {
         self.list_prefix("").await
     }

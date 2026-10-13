@@ -9,6 +9,82 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test]
+async fn conditional_copy_checks_real_destination_etag_size_and_optional_crc() {
+    for (size, etag, copy_crc, head_crc, valid) in [
+        (6 * 1024 * 1024 * 1024, "new", Some(7), Some(7), true),
+        (6 * 1024 * 1024 * 1024, "new", Some(7), None, true),
+        (6 * 1024 * 1024 * 1024, "new", None, Some(7), true),
+        (6 * 1024 * 1024 * 1024, "new", None, None, true),
+        (1, "new", Some(7), Some(7), false),
+        (6 * 1024 * 1024 * 1024, "changed", Some(7), Some(7), false),
+        (6 * 1024 * 1024 * 1024, "new", Some(7), Some(8), false),
+    ] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client =
+            OssClient::with_test_endpoint(&format!("http://{}", listener.local_addr().unwrap()));
+        let server = tokio::spawn(async move {
+            let mut requests = vec![];
+            for index in 0..2 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = vec![];
+                let mut buffer = [0; 1024];
+                while !bytes.windows(4).any(|v| v == b"\r\n\r\n") {
+                    let n = socket.read(&mut buffer).await.unwrap();
+                    assert_ne!(n, 0);
+                    bytes.extend_from_slice(&buffer[..n]);
+                }
+                requests.push(String::from_utf8(bytes).unwrap());
+                let body = if index == 0 {
+                    "<CopyObjectResult><ETag>\"new\"</ETag></CopyObjectResult>"
+                } else {
+                    ""
+                };
+                let length = if index == 0 { body.len() as u64 } else { size };
+                let crc = if index == 0 { copy_crc } else { head_crc }
+                    .map(|v| format!("x-oss-hash-crc64ecma: {v}\r\n"))
+                    .unwrap_or_default();
+                let etag = if index == 0 { "new" } else { etag };
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\nETag: \"{etag}\"\r\n{crc}Connection: close\r\n\r\n{body}");
+                socket.write_all(response.as_bytes()).await.unwrap();
+            }
+            requests
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage {
+            remote: true,
+            state: AppState::from_parts(
+                Crypto::new(),
+                client,
+                LocalObjectStore::new(temp.path().into()),
+            ),
+        };
+        let result = storage
+            .copy_if_match(
+                &super::Entry {
+                    key: "source".into(),
+                    size: 6 * 1024 * 1024 * 1024,
+                    etag: "old".into(),
+                },
+                "target",
+                true,
+            )
+            .await;
+        if valid {
+            let result = result.unwrap();
+            assert_eq!(result.entry.etag, "new");
+            assert_eq!(result.entry.size, size);
+            assert_eq!(result.crc64, head_crc.or(copy_crc));
+        } else {
+            assert!(result.is_err());
+        }
+        let requests = server.await.unwrap();
+        assert!(requests[0].starts_with("PUT /test-bucket/target "));
+        assert!(requests[0].contains("x-oss-copy-source-if-match: \"old\"\r\n"));
+        assert!(requests[1].starts_with("HEAD /test-bucket/target "));
+    }
+}
+
+#[tokio::test]
 async fn cloud_read_uses_one_get_without_an_unused_size_query() {
     let (client, server) = OssClient::with_test_response(
         b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc".to_vec(),

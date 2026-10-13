@@ -443,6 +443,9 @@ pub(super) struct ObservedStorage<'a> {
 
 #[async_trait]
 impl RekeyStorage for ObservedStorage<'_> {
+    fn supports_conditions(&self) -> bool {
+        self.inner.supports_conditions()
+    }
     fn diagnostics(&self) -> Option<Diagnostics> {
         Some(self.diagnostics.clone())
     }
@@ -463,6 +466,33 @@ impl RekeyStorage for ObservedStorage<'_> {
         let result = self.inner.read(key).await;
         timer.result(&result);
         result.map(|stream| self.diagnostics.read_stream(stream))
+    }
+
+    async fn read_if_match(&self, key: &str, etag: &str) -> Result<ByteStream> {
+        let mut timer = self.diagnostics.operation("readOpen");
+        let result = self.inner.read_if_match(key, etag).await;
+        timer.result(&result);
+        result.map(|stream| self.diagnostics.read_stream(stream))
+    }
+
+    async fn copy_if_match(
+        &self,
+        source: &Entry,
+        target: &str,
+        forbid_overwrite: bool,
+    ) -> Result<super::storage::CopyEvidence> {
+        let mut timer = self.diagnostics.operation("copy");
+        let result = self
+            .inner
+            .copy_if_match(source, target, forbid_overwrite)
+            .await;
+        timer.result(&result);
+        if result.is_ok() {
+            let mut state = self.diagnostics.state();
+            state.report.cloud_copy_bytes =
+                state.report.cloud_copy_bytes.saturating_add(source.size);
+        }
+        result
     }
 
     async fn head(&self, key: &str) -> Result<Option<Entry>> {

@@ -54,6 +54,8 @@ getrandom = "0.3"
 hmac = "0.12.1"
 sha1 = "0.10.6"
 sha2 = "0.10.9"
+# OSS 的 x-oss-hash-crc64ecma 实际使用 CRC-64/XZ；纯 Rust、流式计算。
+crc = "3.4"
 quick-xml = { version = "0.39", features = ["serialize"] }
 base64 = "0.22.1"
 md5 = "0.8"

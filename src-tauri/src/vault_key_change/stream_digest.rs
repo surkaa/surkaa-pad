@@ -4,19 +4,41 @@ use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
+const OSS_CRC: crc::Crc<u64> = crc::Crc::<u64>::new(&crc::CRC_64_XZ);
+
 #[derive(Clone, Default)]
 pub(super) struct StreamDigest(Arc<Mutex<State>>, Option<super::diagnostics::Diagnostics>);
 
-#[derive(Default)]
 struct State {
     sha: Sha256,
     size: u64,
     complete: bool,
+    crc: Option<crc::Digest<'static, u64>>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            sha: Sha256::new(),
+            size: 0,
+            complete: false,
+            crc: None,
+        }
+    }
 }
 
 impl StreamDigest {
     pub fn observed(diagnostics: Option<&super::diagnostics::Diagnostics>) -> Self {
         Self(Default::default(), diagnostics.cloned())
+    }
+    pub fn with_crc(diagnostics: Option<&super::diagnostics::Diagnostics>) -> Self {
+        Self(
+            Arc::new(Mutex::new(State {
+                crc: Some(OSS_CRC.digest()),
+                ..Default::default()
+            })),
+            diagnostics.cloned(),
+        )
     }
     /// 在实际消费的同一条流上计算哈希，不缓存内容或额外读取对象。
     pub fn wrap(&self, stream: ByteStream) -> ByteStream {
@@ -34,7 +56,10 @@ impl StreamDigest {
                                 .checked_add(chunk.len() as u64)
                                 .ok_or_else(|| std::io::Error::other("对象大小溢出"))?;
                             super::diagnostics::hash(digest.1.as_ref(), || {
-                                state.sha.update(&chunk)
+                                state.sha.update(&chunk);
+                                if let Some(crc) = &mut state.crc {
+                                    crc.update(&chunk);
+                                }
                             });
                         }
                         Ok(Some((chunk, (stream, digest))))
@@ -56,12 +81,60 @@ impl StreamDigest {
         }
         Ok((state.size, hex::encode(state.sha.clone().finalize())))
     }
+
+    pub fn crc64(&self) -> Result<u64> {
+        let state = self.0.lock().expect("改密哈希锁损坏");
+        if !state.complete {
+            return Err(error("CRC 数据流未完整读取"));
+        }
+        state
+            .crc
+            .as_ref()
+            .map(|crc| crc.clone().finalize())
+            .ok_or_else(|| error("未计算源 CRC"))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use bytes::Bytes;
+
+    #[tokio::test]
+    async fn oss_crc_is_xz_and_requires_eof_and_handles_arbitrary_chunks() {
+        for (bytes, expected) in [
+            (b"".as_slice(), 0),
+            (b"123456789".as_slice(), 0x995dc9bbdf1939fa),
+        ] {
+            for chunk_size in 1..=9 {
+                let digest = StreamDigest::with_crc(None);
+                assert!(digest.crc64().is_err());
+                let chunks: Vec<_> = bytes
+                    .chunks(chunk_size)
+                    .map(|v| Ok(Bytes::copy_from_slice(v)))
+                    .collect();
+                let mut stream = digest.wrap(Box::pin(futures_util::stream::iter(chunks)));
+                while let Some(chunk) = stream.next().await {
+                    chunk.unwrap();
+                    assert!(digest.crc64().is_err());
+                }
+                assert_eq!(digest.crc64().unwrap(), expected);
+                assert_eq!(
+                    digest.result().unwrap().1,
+                    hex::encode(Sha256::digest(bytes))
+                );
+            }
+        }
+        let digest = StreamDigest::with_crc(None);
+        let stream: ByteStream = Box::pin(futures_util::stream::iter([
+            Ok(Bytes::from_static(b"123")),
+            Err(std::io::Error::other("断流")),
+        ]));
+        assert!(crate::stream::collect_data(digest.wrap(stream))
+            .await
+            .is_err());
+        assert!(digest.crc64().is_err());
+    }
 
     #[tokio::test]
     async fn hashes_empty_and_uneven_chunks_without_changing_content() {

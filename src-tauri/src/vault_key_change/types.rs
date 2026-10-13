@@ -96,6 +96,15 @@ pub(super) struct VerifiedStage {
     pub size: u64,
     pub old_cipher_hash: String,
     pub new_cipher_hash: String,
+    // V1 记录没有这些证据；恢复时不能凭新增字段省略全量检查。
+    #[serde(default)]
+    pub cloud: Option<CloudStageEvidence>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub(super) struct CloudStageEvidence {
+    pub etag: String,
+    pub old_crc64: u64,
 }
 
 #[derive(Clone, Deserialize, Serialize)]

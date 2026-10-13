@@ -17,6 +17,9 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
+#[path = "fast_tests.rs"]
+mod fast_tests;
+
 #[derive(Clone, Default)]
 struct MemoryStore(Arc<Mutex<Memory>>);
 
@@ -37,6 +40,19 @@ struct Memory {
     read_chunk_size: Option<usize>,
     read_counts: BTreeMap<String, usize>,
     read_fault: Option<(String, ReadFault)>,
+    cloud: bool,
+    omit_crc: bool,
+    bad_crc: bool,
+    copy_fault: Option<CopyFault>,
+    conditional_copies: Vec<(String, String, bool)>,
+}
+
+#[derive(Clone, Copy)]
+enum CopyFault {
+    SourceChangesBeforeBackup,
+    SourceChangesAfterBackup,
+    StageChangesBeforeCommit,
+    FinalCopyCorrupt,
 }
 
 impl MemoryStore {
@@ -62,6 +78,78 @@ impl MemoryStore {
 
 #[async_trait]
 impl RekeyStorage for MemoryStore {
+    fn supports_conditions(&self) -> bool {
+        self.0.lock().unwrap().cloud
+    }
+    async fn read_if_match(&self, key: &str, etag: &str) -> Result<ByteStream> {
+        // 模拟真实服务端：判断与读取原子完成，不新增一个客户端 HEAD。
+        if self
+            .0
+            .lock()
+            .unwrap()
+            .objects
+            .get(key)
+            .is_none_or(|bytes| Self::entry(key, bytes).etag != etag)
+        {
+            return Err(error("HTTP 412"));
+        }
+        self.read(key).await
+    }
+    async fn copy_if_match(
+        &self,
+        source: &Entry,
+        target: &str,
+        forbid_overwrite: bool,
+    ) -> Result<super::storage::CopyEvidence> {
+        self.tick(false)?;
+        let evidence = {
+            let mut data = self.0.lock().unwrap();
+            data.conditional_copies
+                .push((source.key.clone(), target.into(), forbid_overwrite));
+            if (forbid_overwrite
+                && matches!(data.copy_fault, Some(CopyFault::SourceChangesBeforeBackup)))
+                || (!forbid_overwrite
+                    && matches!(data.copy_fault, Some(CopyFault::StageChangesBeforeCommit)))
+            {
+                data.objects.get_mut(&source.key).unwrap()[0] ^= 1;
+                data.copy_fault = None;
+            }
+            let bytes = data
+                .objects
+                .get(&source.key)
+                .ok_or_else(|| error("HTTP 404"))?
+                .clone();
+            if Self::entry(&source.key, &bytes) != *source {
+                return Err(error("HTTP 412"));
+            }
+            if forbid_overwrite && data.objects.contains_key(target) {
+                return Err(error("HTTP 409"));
+            }
+            let crc = crc::Crc::<u64>::new(&crc::CRC_64_XZ).checksum(&bytes);
+            let mut copied = bytes;
+            if !forbid_overwrite && matches!(data.copy_fault, Some(CopyFault::FinalCopyCorrupt)) {
+                copied[0] ^= 1;
+            }
+            let entry = Self::entry(target, &copied);
+            data.objects.insert(target.into(), copied);
+            if forbid_overwrite
+                && matches!(data.copy_fault, Some(CopyFault::SourceChangesAfterBackup))
+            {
+                data.objects.get_mut(&source.key).unwrap()[0] ^= 1;
+                data.copy_fault = None;
+            }
+            super::storage::CopyEvidence {
+                entry,
+                crc64: if data.omit_crc {
+                    None
+                } else {
+                    Some(if data.bad_crc { crc ^ 1 } else { crc })
+                },
+            }
+        };
+        self.tick(true)?;
+        Ok(evidence)
+    }
     async fn list(&self) -> Result<Vec<Entry>> {
         self.tick(false)?;
         let data = self.0.lock().unwrap();
@@ -757,7 +845,6 @@ async fn cloud_streaming_rotation_cleans_multipart_and_resumes() {
     let steps = [
         KeyChangeFileStep::WritingStage,
         KeyChangeFileStep::CheckingStageContent,
-        KeyChangeFileStep::CheckingBackup,
         KeyChangeFileStep::CheckingCommitted,
     ];
     for step in steps {
@@ -773,6 +860,18 @@ async fn cloud_streaming_rotation_cleans_multipart_and_resumes() {
         assert!(file_events
             .windows(2)
             .all(|pair| pair[0].completed_points < pair[1].completed_points));
+    }
+    // CopyObject 若给出可靠 CRC，备份不再全量 GET；缺失 CRC 才显示读回校验进度。
+    let backup_events: Vec<_> = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|p| p.file_progress.as_ref())
+        .filter(|p| p.step == KeyChangeFileStep::CheckingBackup)
+        .cloned()
+        .collect();
+    if !backup_events.is_empty() {
+        assert_eq!(backup_events.last().unwrap().completed_points, 10);
     }
     let saved = read_limited(&store, ObjectLocations::vault_key_change(), 1024 * 1024)
         .await
@@ -1360,7 +1459,7 @@ async fn cloud_workflow_preserves_bootstrap_until_done_and_refreshes_other_devic
     )
     .await
     .unwrap();
-    assert_eq!(plan.transfer_bytes, plan.encrypted_bytes * 7);
+    assert_eq!(plan.transfer_bytes, plan.encrypted_bytes * 5);
     let manager = state.key_change_manager();
     let pause_channel = tauri::ipc::Channel::new(move |body| {
         if let tauri::ipc::InvokeResponseBody::Json(json) = body {
@@ -1401,6 +1500,7 @@ async fn cloud_workflow_preserves_bootstrap_until_done_and_refreshes_other_devic
         size: 0,
         old_cipher_hash: String::new(),
         new_cipher_hash: String::new(),
+        cloud: None,
     });
     let target = checkpoint.items[checkpoint.next].source.key.clone();
     let stage = ObjectLocations::vault_key_change_stage(&journal.transaction_id, checkpoint.next);
