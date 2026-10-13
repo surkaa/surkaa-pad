@@ -20,6 +20,8 @@
               <q-input v-model="confirmPassword" label="再次输入新主密码" type="password" outlined />
             </template>
             <q-select v-model="memoryCost" :options="memoryOptions" emit-value map-options outlined label="派生内存成本" :dark="$q.dark.isActive" :options-dark="$q.dark.isActive" popup-content-class="key-change-memory-popup" />
+            <div class="text-caption desc-text">{{ VAULT_KDF_COST_HINT }}</div>
+            <div v-if="developmentEdition && memoryCost === KIB_PER_MIB" class="text-caption desc-text">{{ DEV_VAULT_KDF_COST_HINT }}</div>
             <div class="notice">每次都会生成新的随机盐。只换盐时密码保持不变，也需要重加密全部已加密数据；未加密附件保持原样。</div>
           </template>
           <q-checkbox v-model="devicesClosed" label="我确保已退出其他设备上的此应用，且不会在改密期间打开它们" color="negative" class="device-acknowledgement" />
@@ -88,6 +90,8 @@ import {formatError} from '../utils/formatError';
 import {estimateDuration, finishVaultKeyChange, getLocalEncryptedConfig, keyChangeCompletionMessage, keyChangeFileProgressLabel, keyChangeFileProgressValue, keyChangeProgressLabel, keyChangeProgressValue} from '../utils/vaultKeyChange';
 import {useTimeoutStore} from '../stores/timeout';
 import {KeyChangeTimeEstimator, keyChangeEstimatedCompletion} from '../utils/keyChangeTimeEstimate';
+import {DEV_VAULT_KDF_COST_HINT, KIB_PER_MIB, newVaultMemoryOptions, VAULT_KDF_COST_HINT} from '../utils/vaultKdfSetup';
+import {useDevelopmentEdition} from '../composables/useDevelopmentEdition';
 
 const props = defineProps<{modelValue: boolean; resume?: boolean; initialPassword?: string}>();
 const emit = defineEmits<{(e: 'update:modelValue', value: boolean): void; (e: 'completed'): void}>();
@@ -96,11 +100,11 @@ const timeout = useTimeoutStore();
 const oldPassword = ref(''), newPassword = ref(''), confirmPassword = ref(''), resumePassword = ref('');
 const changePassword = ref(true), devicesClosed = ref(false), resumeMode = ref(false);
 const memoryCost = ref<number | null>(null);
-const memoryOptions = [
+const developmentEdition = useDevelopmentEdition();
+const memoryOptions = computed(() => [
   {label: '保持当前内存成本', value: null},
-  ...(import.meta.env.DEV ? [{label: '1 MiB · 开发测试', value: 1024}] : []),
-  {label: '64 MiB', value: 65536}, {label: '128 MiB', value: 131072}, {label: '256 MiB', value: 262144},
-];
+  ...newVaultMemoryOptions(developmentEdition.value),
+]);
 const plan = ref<KeyChangePlan | null>(null), progress = ref<KeyChangeProgress | null>(null);
 const busy = ref(false), preparing = ref(false), pauseRequested = ref(false), failure = ref('');
 const canPrepare = computed(() => !!oldPassword.value && devicesClosed.value && (!changePassword.value || (!!newPassword.value && newPassword.value === confirmPassword.value)));

@@ -4,13 +4,22 @@ import {createApp, nextTick, type App} from 'vue';
 import {Quasar, Dark} from 'quasar';
 import Component from '../VaultKeyChangeDialog.vue';
 import type {KeyChangeProgress} from '../../bindings';
+import * as vaultKeyChange from '../../utils/vaultKeyChange';
 
 const api = vi.hoisted(() => ({
   cmdGetVaultKeyChangeStatus: vi.fn(async () => ({pending: false, remote: false})),
   cmdDiscardVaultKeyChangePlan: vi.fn(async () => {}),
   cmdResumeVaultKeyChange: vi.fn((_password: string, _event: {onmessage: (p: KeyChangeProgress) => void}) => new Promise<never>(() => {})),
   cmdPauseVaultKeyChange: vi.fn(async () => {}),
+  cmdPlanVaultKeyChange: vi.fn(async (..._args: unknown[]) => ({planId: 'test-plan', remote: false,
+    totalFiles: 0, totalBytes: 0, encryptedFiles: 0, encryptedBytes: 0, temporaryBytes: 0,
+    derivationMs: 0, cryptoEstimateMs: 0, transferBytes: 0, newBootstrap: {kdf: {salt: 'test-salt'}}})),
 }));
+const appInfo = vi.hoisted(() => ({
+  getIdentifier: vi.fn(async () => 'cn.surkaa.pad'),
+  getName: vi.fn(async () => 'SurKaa Pad'),
+}));
+vi.mock('@tauri-apps/api/app', () => appInfo);
 vi.mock('../../utils/api', () => ({default: api}));
 vi.mock('@tauri-apps/api/core', () => ({Channel: class { onmessage = (_p: KeyChangeProgress) => {}; }}));
 vi.mock('../../stores/timeout', () => ({useTimeoutStore: () => ({clearCloseTimers: vi.fn(), setTimeoutForCloseApp: vi.fn()})}));
@@ -53,12 +62,17 @@ describe('vault key change dialog', () => {
     api.cmdDiscardVaultKeyChangePlan.mockReset().mockResolvedValue(undefined);
     api.cmdResumeVaultKeyChange.mockClear();
     api.cmdPauseVaultKeyChange.mockClear();
+    api.cmdPlanVaultKeyChange.mockClear();
+    appInfo.getIdentifier.mockReset().mockResolvedValue('cn.surkaa.pad');
+    appInfo.getName.mockReset().mockResolvedValue('SurKaa Pad');
   });
   afterEach(() => {
     app?.unmount(); app = undefined;
     Dark.set(false);
     document.body.innerHTML = '';
     vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it('starts disabled until password confirmation and other-device acknowledgement are supplied', async () => {
@@ -84,6 +98,51 @@ describe('vault key change dialog', () => {
     expect(popup).not.toBeNull();
     expect(popup!.classList.contains('q-menu--dark')).toBe(true);
     expect(document.querySelectorAll('.q-field--dark').length).toBe(4);
+  });
+
+  it.each([false, true])('exposes the testing cost in packaged Dev and sends 1024 KiB to the plan command in dark=%s', async dark => {
+    vi.stubEnv('DEV', false);
+    appInfo.getIdentifier.mockResolvedValue('cn.surkaa.pad.dev');
+    const local = {vaultVerifier: null, oss: null, ai: null};
+    vi.spyOn(vaultKeyChange, 'getLocalEncryptedConfig').mockResolvedValue(local);
+    await mount(dark);
+    document.querySelector<HTMLElement>('.q-select')!.click();
+    await vi.advanceTimersByTimeAsync(500); await nextTick();
+    const popup = document.querySelector('.key-change-memory-popup')!;
+    expect(popup.classList.contains('q-menu--dark')).toBe(dark);
+    [...popup.querySelectorAll<HTMLElement>('.q-item')].find(item => item.textContent?.includes('1 MiB'))!.click();
+    await nextTick();
+    expect(document.body.textContent).toContain('1 MiB 仅供开发测试');
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="password"]');
+    for (const [index, value] of ['old-test', 'new-test', 'new-test'].entries()) {
+      inputs[index].value = value; inputs[index].dispatchEvent(new Event('input', {bubbles: true}));
+    }
+    document.querySelector<HTMLElement>('.q-checkbox')!.click(); await nextTick();
+    [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '统计数据并估算')!.click();
+    await vi.advanceTimersByTimeAsync(0); await nextTick();
+    expect(api.cmdPlanVaultKeyChange).toHaveBeenCalledWith('old-test', 'new-test', 'new-test', 1024, local);
+  });
+
+  it.each([false, true])('does not offer the testing cost in production and explains the security tradeoff in dark=%s', async dark => {
+    vi.stubEnv('DEV', false);
+    await mount(dark);
+    expect(document.body.textContent).toContain('暴力破解主密码的耗时');
+    expect(document.body.textContent).toContain('不能替代强主密码');
+    document.querySelector<HTMLElement>('.q-select')!.click();
+    await vi.advanceTimersByTimeAsync(500); await nextTick();
+    const popup = document.querySelector('.key-change-memory-popup')!;
+    expect(popup.textContent).not.toContain('1 MiB');
+    expect(popup.textContent).toContain('保持当前内存成本');
+    expect(popup.classList.contains('q-menu--dark')).toBe(dark);
+  });
+
+  it('does not offer 1 MiB when edition lookup fails for an installed app', async () => {
+    vi.stubEnv('DEV', false);
+    appInfo.getName.mockRejectedValue(new Error('test unavailable'));
+    await mount();
+    document.querySelector<HTMLElement>('.q-select')!.click();
+    await vi.advanceTimersByTimeAsync(500); await nextTick();
+    expect(document.querySelector('.key-change-memory-popup')!.textContent).not.toContain('1 MiB');
   });
 
   it('shows new-password recovery rather than the normal old-password form when a journal is pending', async () => {

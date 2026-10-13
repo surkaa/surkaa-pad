@@ -17,17 +17,17 @@
     >
       <template #prepend><q-icon name="memory"/></template>
     </q-select>
-    <div class="field-hint">
-      {{ remoteSetup
-        ? '仅在云端为空时用于创建新 Vault；已有 Vault 会采用云端参数。'
-        : '数值越高越难暴力破解，也会增加解锁时的内存占用。创建后不能直接修改。' }}
-    </div>
+    <div class="field-hint">{{ VAULT_KDF_COST_HINT }}</div>
+    <div v-if="remoteSetup" class="field-hint">仅在云端为空时用于创建新 Vault；已有 Vault 会采用云端参数。</div>
+    <div v-if="developmentEdition && modelValue === KIB_PER_MIB" class="field-hint">{{ DEV_VAULT_KDF_COST_HINT }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
 import {useQuasar} from 'quasar';
-import {newVaultMemoryOptions} from '../../utils/vaultKdfSetup';
+import {computed} from 'vue';
+import {DEV_VAULT_KDF_COST_HINT, KIB_PER_MIB, newVaultMemoryOptions, VAULT_KDF_COST_HINT} from '../../utils/vaultKdfSetup';
+import {useDevelopmentEdition} from '../../composables/useDevelopmentEdition';
 
 defineProps<{
   modelValue: number;
@@ -39,7 +39,8 @@ const emit = defineEmits<{
 }>();
 
 const $q = useQuasar();
-const options = newVaultMemoryOptions();
+const developmentEdition = useDevelopmentEdition();
+const options = computed(() => newVaultMemoryOptions(developmentEdition.value));
 </script>
 
 <style scoped lang="scss">
