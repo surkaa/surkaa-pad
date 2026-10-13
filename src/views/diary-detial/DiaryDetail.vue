@@ -38,6 +38,7 @@ import {useAndroidShareStore} from '../../stores/androidShare';
 import {appendAndroidShareToDiaryContent} from '../../utils/androidShare';
 import {formatError} from '../../utils/formatError';
 import {copyTextToClipboard} from '../../utils/clipboard';
+import {diaryContentToMarkdown} from '../../utils/diaryMarkdown';
 import type {AttachmentMeta} from '../../bindings';
 import AttachmentPreviewDialog from '../../components/AttachmentPreviewDialog.vue';
 
@@ -305,6 +306,16 @@ async function copyDiaryId() {
   }
 }
 
+async function copyDiaryMarkdown() {
+  showMenu.value = false;
+  try {
+    await copyTextToClipboard(diaryContentToMarkdown(diaryContent.value, attachments.value));
+    $q.notify({type: 'positive', message: 'Markdown 已复制'});
+  } catch (error) {
+    $q.notify({type: 'negative', message: `复制 Markdown 失败：${formatError(error)}`});
+  }
+}
+
 async function showBlockOrder() {
   showMenu.value = false;
   await nextTick();
@@ -501,6 +512,9 @@ onActivated(async () => {
           </q-item>
           <q-item clickable v-ripple @click="copyDiaryId">
             <q-item-section>复制日记 ID</q-item-section>
+          </q-item>
+          <q-item clickable v-ripple @click="copyDiaryMarkdown">
+            <q-item-section>复制 Markdown</q-item-section>
           </q-item>
           <q-item clickable v-ripple @click="showBlockOrder">
             <q-item-section>调整内容顺序</q-item-section>
