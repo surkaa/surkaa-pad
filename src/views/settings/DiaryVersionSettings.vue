@@ -134,10 +134,25 @@
           />
         </template>
         <template v-else>
-          <q-btn flat label="关闭" class="secondary-action" v-close-popup/>
           <q-btn
+            v-if="auditReport"
+            flat
+            label="重新检查"
+            class="secondary-action"
+            @click="runInspection"
+          />
+          <q-btn
+            :flat="!auditReport"
+            :unelevated="Boolean(auditReport)"
+            :label="auditReport ? '取消' : '关闭'"
+            :color="auditReport ? 'primary' : undefined"
+            :class="{'secondary-action': !auditReport}"
+            v-close-popup
+          />
+          <q-btn
+            v-if="!auditReport"
             unelevated
-            :label="auditReport ? '重新检查' : '开始检查'"
+            label="开始检查"
             color="primary"
             @click="runInspection"
           />
