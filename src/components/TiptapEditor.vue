@@ -64,6 +64,7 @@ import {
 import {TaskCompletionOrder} from './editor/taskCompletionOrder'
 import {createTaskItemExtension} from './editor/taskItem'
 import {ListIndentation} from './editor/listEditing'
+import {createDiaryTableExtensions, pasteMarkdownTable} from './editor/tableEditing'
 import {isMobileEditorPlatform} from './editor/editorClick'
 import {isHtmlAttachment} from '../utils/attachmentOpen'
 import {attachmentPreviewKind} from '../utils/attachmentPreview'
@@ -169,6 +170,7 @@ const editor = useEditor({
     }),
     TaskCompletionOrder,
     ListIndentation,
+    ...createDiaryTableExtensions(),
     ImageNode,
     VideoNode,
     AudioNode.configure({
@@ -205,14 +207,14 @@ const editor = useEditor({
       })
       return DecorationSet.create(state.doc, decorations)
     },
-    handlePaste: (_view, event) => {
+    handlePaste: (view, event) => {
       const files = event.clipboardData?.files
       if (files && files.length > 0) {
         event.preventDefault()
         emit('pasteAttachments', Array.from(files))
         return true
       }
-      return false
+      return pasteMarkdownTable(view, event)
     },
   },
   onUpdate({ editor: ed }) {
@@ -678,6 +680,47 @@ defineExpose({
     border-radius: 2px;
     background-color: color-mix(in srgb, var(--pad-warning-color) 45%, transparent);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--pad-warning-color) 22%, transparent);
+  }
+
+  .tableWrapper {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .editor-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    color: var(--pad-text-color);
+
+    th, td {
+      position: relative;
+      box-sizing: border-box;
+      min-width: 96px;
+      padding: 8px 10px;
+      border: 1px solid var(--pad-border-color-200);
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      background: var(--pad-bg-color-100);
+
+      > p { margin: 0; }
+      > p + p { margin-top: 0.4em; }
+    }
+
+    th {
+      font-weight: 600;
+      text-align: left;
+      background: var(--pad-bg-color-200);
+    }
+
+    .selectedCell::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: color-mix(in srgb, var(--pad-primary-color) 18%, transparent);
+    }
   }
 
 }

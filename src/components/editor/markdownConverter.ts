@@ -225,6 +225,9 @@ function walkBlocks(parent: Node, out: string[]): void {
       case 'LI':
         out.push(`- ${serializeInline(element)}`)
         break
+      case 'TABLE':
+        out.push(serializeTable(element as HTMLTableElement))
+        break
       case 'BLOCKQUOTE': {
         const text = serializeInline(element)
         out.push(text.split('\n').map(line => `> ${line}`).join('\n'))
@@ -254,11 +257,11 @@ function walkBlocks(parent: Node, out: string[]): void {
   }
 }
 
-function serializeInline(parent: Node): string {
+function serializeInline(parent: Node, tableCell = false): string {
   let result = ''
   for (const child of parent.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
-      result += child.textContent || ''
+      result += tableCell ? escapeTableText(child.textContent || '') : child.textContent || ''
       continue
     }
     if (child.nodeType !== Node.ELEMENT_NODE) continue
@@ -266,20 +269,77 @@ function serializeInline(parent: Node): string {
     const element = child as HTMLElement
     const tag = element.tagName.toUpperCase()
     if (tag === 'BR') {
-      result += '\n'
+      result += tableCell ? '<br>' : '\n'
+      continue
+    }
+
+    if (tag === 'CODE') {
+      const text = element.textContent || ''
+      if (tableCell && /\\+\|/.test(text)) {
+        // Markdown 表格先分列再解析行内代码；这种组合改用 HTML code 保留反斜杠。
+        result += `<code>${escapeTableText(text)}</code>`
+      } else {
+        const fence = '`'.repeat(Math.max(0, ...(text.match(/`+/g) || []).map(run => run.length)) + 1)
+        const padding = /^[` ]|[` ]$/.test(text) ? ' ' : ''
+        result += fence + padding + (tableCell ? text.replace(/\|/g, '\\|') : text) + padding + fence
+      }
       continue
     }
 
     const marker = INLINE_TAGS[tag]
     if (marker) {
-      result += marker[0] + serializeInline(element) + marker[1]
+      result += marker[0] + serializeInline(element, tableCell) + marker[1]
     } else if (tag === 'A') {
-      result += `[${serializeInline(element)}](${element.getAttribute('href') || ''})`
+      const href = element.getAttribute('href') || ''
+      result += `[${serializeInline(element, tableCell)}](${tableCell ? href.replace(/\|/g, '%7C') : href})`
     } else {
-      result += serializeInline(element)
+      result += serializeInline(element, tableCell)
     }
   }
   return result
+}
+
+function escapeTableText(text: string): string {
+  return escapeHtml(text.replace(/\\/g, '\\\\').replace(/([|`*_\[\]~])/g, '\\$1'))
+}
+
+function serializeTable(table: HTMLTableElement): string {
+  const rows = Array.from(table.rows)
+  const grid: string[][] = []
+  const alignments: string[] = []
+  rows.forEach((row, rowIndex) => {
+    grid[rowIndex] ||= []
+    let column = 0
+    for (const cell of Array.from(row.cells)) {
+      while (grid[rowIndex][column] !== undefined) column++
+      const blocks = Array.from(cell.childNodes).map(child => {
+        if (child instanceof HTMLElement && child.tagName === 'P') return serializeInline(child, true)
+        const wrapper = document.createElement('div')
+        wrapper.append(child.cloneNode(true))
+        return serializeInline(wrapper, true)
+      }).filter(Boolean)
+      const text = blocks.join('<br>').replace(/\r?\n/g, '<br>')
+      const alignment = cell.style.textAlign || cell.getAttribute('align') || ''
+      const colspan = Math.max(1, cell.colSpan)
+      const rowspan = Math.min(Math.max(1, cell.rowSpan), rows.length - rowIndex)
+      // GFM 没有合并单元格；展开占用位置，保留每个原始单元格的文字。
+      for (let down = 0; down < rowspan; down++) {
+        grid[rowIndex + down] ||= []
+        for (let across = 0; across < colspan; across++) {
+          grid[rowIndex + down][column + across] = down === 0 && across === 0 ? text : ''
+        }
+      }
+      if (rowIndex === 0) alignments[column] = alignment
+      column += colspan
+    }
+  })
+  if (!grid.length) return ''
+  const columns = Math.max(...grid.map(row => row.length))
+  const line = (row: string[]) => '| ' + Array.from({length: columns}, (_, index) => row[index] || '').join(' | ') + ' |'
+  const separator = Array.from({length: columns}, (_, index) => ({
+    left: ':---', center: ':---:', right: '---:',
+  }[alignments[index]] || '---'))
+  return [line(grid[0]), line(separator), ...grid.slice(1).map(line)].join('\n')
 }
 
 export function markdownToHtml(markdown: string): string {

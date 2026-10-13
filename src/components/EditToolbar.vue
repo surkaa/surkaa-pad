@@ -160,6 +160,15 @@ function toolbarActionTitle(action: EditorToolbarAction) {
             <q-btn flat icon="format_indent_decrease" label="升级" class="panel-item-btn"
                    :disable="!editor || (!editor.isActive('listItem') && !editor.isActive('taskItem'))"
                    title="提升列表层级（Shift+Tab）" @click="changeEditorListLevel(editor, false)"/>
+            <q-btn flat icon="table_chart" label="表格" class="panel-item-btn"
+                   :disable="!editor || editor.isActive('table')"
+                   @click="editor?.chain().focus().insertTable({rows: 3, cols: 3, withHeaderRow: true}).run()"/>
+            <template v-if="editor?.isActive('table')">
+              <q-btn flat icon="playlist_add" label="添加行" class="panel-item-btn"
+                     @click="editor.chain().focus().addRowAfter().run()"/>
+              <q-btn flat icon="view_column" label="添加列" class="panel-item-btn"
+                     @click="editor.chain().focus().addColumnAfter().run()"/>
+            </template>
           </div>
           <div>
             <q-btn flat stack color="grey-8" class="panel-item-btn"
