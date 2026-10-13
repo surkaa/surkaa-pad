@@ -27,7 +27,7 @@ describe('upload task domain model', () => {
     applyUploadTaskEvent(task, {event: 'progress', data: 42});
     expect(uploadTaskStatusText(task)).toBe('下载中 42%');
     applyUploadTaskEvent(task, {event: 'finalizing'});
-    expect(uploadTaskStatusText(task)).toBe('即将完成：写入本地缓存');
+    expect(uploadTaskStatusText(task)).toBe('即将完成：写入本地文件');
 
     const queued = createQueuedUploadTask('queued-download', 'video.mp4', 'download');
     expect(uploadTaskStatusText(queued)).toBe('等待下载');

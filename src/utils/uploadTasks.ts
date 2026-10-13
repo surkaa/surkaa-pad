@@ -133,7 +133,7 @@ export function uploadTaskStatusText(task: UploadTask): string {
       : (isDownload ? '下载失败' : '上传失败');
   }
   if (task.phase === 'finalizing') {
-    return isDownload ? '即将完成：写入本地缓存' : '即将完成：提交附件并保存日记';
+    return isDownload ? '即将完成：写入本地文件' : '即将完成：提交附件并保存日记';
   }
   if (task.status === 'queued') {
     return isDownload ? '等待下载' : '等待上传';

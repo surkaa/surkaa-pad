@@ -30,6 +30,7 @@ import {
 import {useAttachmentUploader} from './useAttachmentUploader';
 import {sharedAttachmentNodeKind} from '../utils/androidShare';
 import {isHtmlAttachment} from '../utils/attachmentOpen';
+import type {AttachmentTransferDirection} from '../utils/uploadTasks';
 
 export type {UploadTask} from './useAttachmentUploader';
 
@@ -237,6 +238,7 @@ export function useMediaAction(
     async function performAttachmentOperation<Args extends any[]>(
         attachmentId: string,
         operationName: string,
+        direction: AttachmentTransferDirection,
         apiCall: (event: Channel<AttachmentProcessEvent>, diaryId: string, attachmentId: string, ...args: Args) => Promise<string>,
         ...apiArgs: Args
     ) {
@@ -254,7 +256,7 @@ export function useMediaAction(
 
         const displayFilename = currentDiaryAttachments.value
             .find(attachment => attachment.id === attachmentId)?.filename || attachmentId;
-        const key = createTask(displayFilename);
+        const key = createTask(displayFilename, false, direction);
 
         const event = createUploadChannel(key, (_meta, url) => {
             if (!editorContentRef.value) {
@@ -441,12 +443,14 @@ export function useMediaAction(
         saveDecryptAttachment: async (attachmentId: string) => await performAttachmentOperation(
             attachmentId,
             '保存解密附件',
+            'download',
             api.cmdSaveDecryptAttachment
         ),
         // 切换附件加密状态
         toggleAttachmentEncryption: async (attachmentId: string) => await performAttachmentOperation(
             attachmentId,
             '切换附件加密',
+            'upload',
             api.cmdToggleAttachmentEncryption
         ),
         // 旋转图片附件
@@ -461,6 +465,7 @@ export function useMediaAction(
             await performAttachmentOperation(
                 attachmentId,
                 '旋转图片',
+                'upload',
                 api.cmdRotateImageAttachment,
                 rotation
             );
