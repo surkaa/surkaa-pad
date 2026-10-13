@@ -1291,7 +1291,11 @@ export type EditorShortcutSettings = { bold: string; underline: string; strike: 
 export type EditorToolbarAction = "bold" | "underline" | "strike" | "heading1" | "heading2" | "heading3" | "heading4" | "heading5" | "taskList" | "summary" | "undo" | "redo"
 export type EncryptionAlgorithm = "AES256-GCM_v1" | "AES-256-CTR"
 export type ImageSize = "normal" | "small"
-export type KeyChangeFileProgress = { step: KeyChangeFileStep; completedBytes: number; totalBytes: number; completedPoints: number; totalPoints: number }
+/**
+ * 仅用于本次运行的时间估算，不作为持久检查点或完成证明。
+ */
+export type KeyChangeFilePath = "full" | "cloudFast" | "cloudWithBackupRead" | "alreadyCommitted"
+export type KeyChangeFileProgress = { step: KeyChangeFileStep; path: KeyChangeFilePath; completedBytes: number; totalBytes: number; completedPoints: number; totalPoints: number }
 export type KeyChangeFileStep = "writingStage" | "checkingStageContent" | "checkingTarget" | "checkingStage" | "backingUp" | "checkingBackup" | "writingTarget" | "checkingCommitted"
 export type KeyChangeFileTiming = { index: number; kind: string; bytes: number; elapsedMs: number; completed: boolean }
 export type KeyChangePlan = { planId: string; remote: boolean; totalFiles: number; totalBytes: number; encryptedFiles: number; encryptedBytes: number; temporaryBytes: number; derivationMs: number; cryptoEstimateMs: number; transferBytes: number; newBootstrap: VaultBootstrap }

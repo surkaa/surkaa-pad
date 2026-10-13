@@ -4,8 +4,8 @@ use super::progress::{FileProgress, Notify};
 use super::storage::{byte_stream, read_limited_stream, RekeyStorage};
 use super::stream_digest::StreamDigest;
 use super::types::{
-    Checkpoint, CloudStageEvidence, Encoding, Entry, Journal, KeyChangeFileStep, KeyChangeProgress,
-    VerifiedStage,
+    Checkpoint, CloudStageEvidence, Encoding, Entry, Journal, KeyChangeFilePath, KeyChangeFileStep,
+    KeyChangeProgress, VerifiedStage,
 };
 use super::{error, Result};
 use crate::cryptos::Crypto;
@@ -151,15 +151,27 @@ pub(super) async fn run(
         };
         let stage_key = ObjectLocations::vault_key_change_stage(&journal.transaction_id, index);
         let backup_key = ObjectLocations::vault_key_change_backup(&journal.transaction_id, index);
+        // 只有本次运行刚完成的校验才可走快速路径。即使检查点存有 ETag/CRC，
+        // 恢复运行也必须重新检查正式对象、临时对象和备份，不信任旧进程的观察。
+        let fresh_cloud = storage.supports_conditions() && checkpoint.staged.is_none();
+        // CRC 是否存在要等备份复制完成后才知道；之前按可能需要读回备份估算。
+        let work_path = std::sync::Mutex::new(if fresh_cloud {
+            KeyChangeFilePath::CloudWithBackupRead
+        } else {
+            KeyChangeFilePath::Full
+        });
         let base = progress(checkpoint, "");
         let step = |phase: &str, action, size| {
             let mut base = base.clone();
             base.phase = phase.into();
-            FileProgress::new(base, action, size, notify.clone())
+            FileProgress::new(
+                base,
+                action,
+                size,
+                notify.clone(),
+                work_path.lock().expect("改密路径锁损坏").clone(),
+            )
         };
-        // 只有本次运行刚完成的校验才可走快速路径。即使检查点存有 ETag/CRC，
-        // 恢复运行也必须重新检查正式对象、临时对象和备份，不信任旧进程的观察。
-        let fresh_cloud = storage.supports_conditions() && checkpoint.staged.is_none();
         if checkpoint.staged.is_none() {
             set_phase(&mut phases, "sourceMetadata");
             notify(progress(checkpoint, "encrypting"));
@@ -318,7 +330,9 @@ pub(super) async fn run(
             copying.finish();
             set_phase(&mut phases, "checkingBackup");
             match backup.crc64 {
-                Some(crc) if crc == evidence.old_crc64 => (),
+                Some(crc) if crc == evidence.old_crc64 => {
+                    *work_path.lock().expect("改密路径锁损坏") = KeyChangeFilePath::CloudFast;
+                }
                 Some(_) => return Err(error("旧密文备份 CRC 校验失败，未替换数据")),
                 None => {
                     // CopyObject 不保证 CRC64 存在。缺失时读回完整备份比对本机源 SHA，
@@ -391,6 +405,9 @@ pub(super) async fn run(
             };
             let already_committed =
                 current.as_ref() == Some(&(staged.size, staged.new_cipher_hash.clone()));
+            if already_committed && current_entry.as_ref().is_some_and(|e| !e.etag.is_empty()) {
+                *work_path.lock().expect("改密路径锁损坏") = KeyChangeFilePath::AlreadyCommitted;
+            }
             let mut recovered_etag = None;
             if !already_committed {
                 set_phase(&mut phases, "checkingStage");

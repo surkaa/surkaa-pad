@@ -74,7 +74,7 @@ describe('key change progress and estimates', () => {
     expect(keyChangeProgressValue({...p, completedBytes: -1})).toBe(0);
   });
   it('shows the quantized points rather than pretending consumed bytes are verified completion', () => {
-    const p = {step: 'checkingStageContent' as const, completedBytes: 100, totalBytes: 100, completedPoints: 9, totalPoints: 10};
+    const p = {step: 'checkingStageContent' as const, path: 'full' as const, completedBytes: 100, totalBytes: 100, completedPoints: 9, totalPoints: 10};
     expect(keyChangeFileProgressValue(p)).toBe(0.9);
     expect(keyChangeFileProgressValue({...p, completedPoints: 10})).toBe(1);
     expect(keyChangeFileProgressValue({...p, completedPoints: 31, totalPoints: 100})).toBe(0.31);

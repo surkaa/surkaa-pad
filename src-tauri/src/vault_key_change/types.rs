@@ -59,10 +59,21 @@ pub enum KeyChangeFileStep {
     CheckingCommitted,
 }
 
+/// 仅用于本次运行的时间估算，不作为持久检查点或完成证明。
+#[derive(Clone, Debug, Serialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum KeyChangeFilePath {
+    Full,
+    CloudFast,
+    CloudWithBackupRead,
+    AlreadyCommitted,
+}
+
 #[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyChangeFileProgress {
     pub step: KeyChangeFileStep,
+    pub path: KeyChangeFilePath,
     #[specta(type = f64)]
     pub completed_bytes: u64,
     #[specta(type = f64)]

@@ -204,6 +204,7 @@ fn tracker(
         step,
         size,
         Arc::new(move |p| events.lock().unwrap().push(p)),
+        crate::vault_key_change::types::KeyChangeFilePath::Full,
     )
 }
 

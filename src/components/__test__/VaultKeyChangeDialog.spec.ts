@@ -114,7 +114,7 @@ describe('vault key change dialog', () => {
     const channel = api.cmdResumeVaultKeyChange.mock.calls[0][1];
     const progress: KeyChangeProgress = {phase: 'verifying', completedFiles: 1, totalFiles: 3,
       completedBytes: 10, totalBytes: 104857600, currentFile: 'file.enc',
-      fileProgress: {step: 'checkingStageContent', completedBytes: 10485760, totalBytes: 10485760, completedPoints: 9, totalPoints: 10}};
+      fileProgress: {step: 'checkingStageContent', path: 'full', completedBytes: 10485760, totalBytes: 10485760, completedPoints: 9, totalPoints: 10}};
     channel.onmessage(progress); await nextTick();
     const section = () => document.querySelector('[data-testid="key-change-file-progress"]');
     expect(section()?.textContent).toContain('读回、解密并校验新内容');
@@ -153,7 +153,7 @@ describe('vault key change dialog', () => {
     const section = () => document.querySelector('[data-testid="key-change-time-estimate"]');
     const progress: KeyChangeProgress = {phase: 'encrypting', completedFiles: 0, totalFiles: 2,
       completedBytes: 0, totalBytes: 1000 * 1024 * 1024, currentFile: 'large.enc',
-      fileProgress: {step: 'writingStage', completedBytes: 0, totalBytes: 800 * 1024 * 1024, completedPoints: 0, totalPoints: 10}};
+      fileProgress: {step: 'writingStage', path: 'full', completedBytes: 0, totalBytes: 800 * 1024 * 1024, completedPoints: 0, totalPoints: 10}};
     channel.onmessage(progress);
     await vi.advanceTimersByTimeAsync(5000);
     channel.onmessage({...progress, fileProgress: {...progress.fileProgress!, completedBytes: 400 * 1024 * 1024, completedPoints: 5}});

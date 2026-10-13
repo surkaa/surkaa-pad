@@ -8,7 +8,7 @@ function progress(completedBytes: number, extra: Partial<KeyChangeProgress> = {}
 }
 
 function file(step: KeyChangeFileProgress['step'], points = 0, size = 800): KeyChangeFileProgress {
-  return {step, completedBytes: size * points / 10, totalBytes: size, completedPoints: points, totalPoints: 10};
+  return {step, path: 'full', completedBytes: size * points / 10, totalBytes: size, completedPoints: points, totalPoints: 10};
 }
 
 function estimator() {
@@ -72,6 +72,70 @@ describe('byte-based key change time estimate', () => {
     expect(value.remainingMs(10000)).toBe(2500);
     value.update(progress(800, {currentFile: 'next-object', fileProgress: file('writingStage', 5, 200)}));
     expect(value.remainingMs(10000)).toBeCloseTo(187.5 / 812.5 * 10000);
+  });
+
+  it('weights actual cloud transfers without crediting omitted checks or cloud copies', () => {
+    const value = estimator();
+    const cloud = (step: KeyChangeFileProgress['step'], points = 0) => ({...file(step, points), path: 'cloudWithBackupRead' as const});
+    value.update(progress(0, {fileProgress: cloud('writingStage')}));
+    value.update(progress(0, {fileProgress: cloud('writingStage', 5)}));
+    expect(value.remainingMs(10000)).toBe(52500); // 800 × 1 / 5 = 160 字节。
+    value.update(progress(0, {fileProgress: cloud('checkingStageContent', 10)}));
+    expect(value.remainingMs(10000)).toBeCloseTo(520 / 480 * 10000);
+    value.update(progress(0, {fileProgress: cloud('backingUp', 10)}));
+    expect(value.remainingMs(10000)).toBeCloseTo(520 / 480 * 10000); // 云内复制没有传输量进度。
+    value.update(progress(0, {fileProgress: {...file('writingTarget'), path: 'cloudFast'}}));
+    expect(value.remainingMs(10000)).toBeCloseTo(400 / 480 * 10000); // 缩短剩余工作，但不冒充新处理 120 字节。
+    value.update(progress(0, {fileProgress: {...file('writingTarget', 10), path: 'cloudFast'}}));
+    expect(value.remainingMs(10000)).toBeCloseTo(400 / 480 * 10000);
+    value.update(progress(0, {fileProgress: {...file('checkingCommitted', 5), path: 'cloudFast'}}));
+    expect(value.remainingMs(10000)).toBeCloseTo(300 / 580 * 10000);
+    value.update(progress(0, {fileProgress: {...file('checkingCommitted', 10), path: 'cloudFast'}}));
+    value.update(progress(800, {currentFile: 'next'}));
+    expect(value.remainingMs(10000)).toBeCloseTo(200 / 680 * 10000);
+  });
+
+  it('counts an actual backup read only when the server CRC is absent', () => {
+    const value = estimator();
+    const cloud = (step: KeyChangeFileProgress['step'], points = 0) => ({...file(step, points), path: 'cloudWithBackupRead' as const});
+    value.update(progress(0, {fileProgress: cloud('writingStage')}));
+    value.update(progress(0, {fileProgress: cloud('checkingBackup', 5)}));
+    expect(value.remainingMs(10000)).toBeCloseTo(440 / 560 * 10000);
+    value.update(progress(0, {fileProgress: cloud('writingTarget', 10)}));
+    expect(value.remainingMs(10000)).toBeCloseTo(360 / 640 * 10000);
+    value.update(progress(0, {fileProgress: cloud('checkingCommitted', 10)}));
+    expect(value.remainingMs(10000)).toBe(2500);
+  });
+
+  it('does not invent a speed sample when the CRC confirmation skips a backup read', () => {
+    const value = estimator();
+    value.update(progress(0, {fileProgress: {...file('backingUp'), path: 'cloudWithBackupRead'}}));
+    value.update(progress(0, {fileProgress: {...file('writingTarget'), path: 'cloudFast'}}));
+    expect(value.remainingMs(10000)).toBeNull();
+    // 延迟的旧路径事件不能把任务切回未确定的工作计划。
+    value.update(progress(0, {fileProgress: {...file('checkingBackup', 10), path: 'cloudWithBackupRead'}}));
+    expect(value.remainingMs(10000)).toBeNull();
+  });
+
+  it('accounts for an already-committed object without crediting skipped copies or rereads', () => {
+    const value = estimator();
+    value.update(progress(0, {fileProgress: file('checkingTarget')}));
+    value.update(progress(0, {fileProgress: file('checkingTarget', 10)}));
+    value.update(progress(0, {fileProgress: {...file('checkingCommitted'), path: 'alreadyCommitted'}}));
+    expect(value.remainingMs(10000)).toBe(60000); // 观察到的检查仅处理 100 字节，跳过的步骤不计速度。
+    value.update(progress(0, {fileProgress: {...file('checkingCommitted', 5), path: 'alreadyCommitted'}}));
+    expect(value.remainingMs(10000)).toBeCloseTo(400 / 300 * 10000);
+  });
+
+  it('ignores steps impossible in the selected cloud path and stale same-step events', () => {
+    const value = estimator();
+    value.update(progress(0, {fileProgress: {...file('writingStage'), path: 'cloudWithBackupRead'}}));
+    value.update(progress(0, {fileProgress: {...file('checkingStageContent', 10), path: 'cloudWithBackupRead'}}));
+    const expected = value.remainingMs(10000);
+    value.update(progress(0, {fileProgress: {...file('checkingStageContent'), path: 'cloudWithBackupRead'}}));
+    expect(value.remainingMs(10000)).toBe(expected);
+    value.update(progress(0, {fileProgress: {...file('checkingTarget', 10), path: 'cloudFast'}}));
+    expect(value.remainingMs(10000)).toBe(expected);
   });
 
   it('resets baseline and elapsed time after a pause or restart', () => {

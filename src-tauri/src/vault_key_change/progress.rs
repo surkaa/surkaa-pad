@@ -1,4 +1,6 @@
-use super::types::{KeyChangeFileProgress, KeyChangeFileStep, KeyChangeProgress};
+use super::types::{
+    KeyChangeFilePath, KeyChangeFileProgress, KeyChangeFileStep, KeyChangeProgress,
+};
 use crate::stream::ByteStream;
 use futures_util::StreamExt;
 use std::sync::{Arc, Mutex};
@@ -25,6 +27,7 @@ struct State {
 struct Inner {
     base: KeyChangeProgress,
     step: KeyChangeFileStep,
+    path: KeyChangeFilePath,
     size: u64,
     points: u32,
     state: Mutex<State>,
@@ -42,11 +45,13 @@ impl FileProgress {
         step: KeyChangeFileStep,
         size: u64,
         notify: Notify,
+        path: KeyChangeFilePath,
     ) -> Self {
         let tracker = Self(progress_points(size).map(|points| {
             Arc::new(Inner {
                 base,
                 step,
+                path,
                 size,
                 points,
                 state: Mutex::new(State {
@@ -107,6 +112,7 @@ impl Inner {
         let mut event = self.base.clone();
         event.file_progress = Some(KeyChangeFileProgress {
             step: self.step.clone(),
+            path: self.path.clone(),
             completed_bytes: bytes,
             total_bytes: self.size,
             completed_points: points,
@@ -138,6 +144,7 @@ mod tests {
                 KeyChangeFileStep::CheckingStageContent,
                 size,
                 Arc::new(move |p| saved.lock().unwrap().push(p)),
+                KeyChangeFilePath::Full,
             ),
             events,
         )
@@ -151,6 +158,42 @@ mod tests {
         assert_eq!(progress_points(LARGE_FILE_BYTES - 1), Some(10));
         assert_eq!(progress_points(LARGE_FILE_BYTES), Some(100));
         assert_eq!(progress_points(u64::MAX), Some(100));
+    }
+
+    #[test]
+    fn runtime_path_is_reported_without_changing_durable_progress() {
+        for path in [
+            KeyChangeFilePath::Full,
+            KeyChangeFilePath::CloudFast,
+            KeyChangeFilePath::CloudWithBackupRead,
+            KeyChangeFilePath::AlreadyCommitted,
+        ] {
+            let events = Arc::new(Mutex::new(vec![]));
+            let saved = events.clone();
+            let base = KeyChangeProgress {
+                phase: "committing".into(),
+                completed_files: 0,
+                total_files: 1,
+                completed_bytes: 0,
+                total_bytes: MIN_FILE_BYTES,
+                current_file: Some("file".into()),
+                file_progress: None,
+            };
+            let progress = FileProgress::new(
+                base,
+                KeyChangeFileStep::CheckingCommitted,
+                MIN_FILE_BYTES,
+                Arc::new(move |p| saved.lock().unwrap().push(p)),
+                path.clone(),
+            );
+            progress.advance(MIN_FILE_BYTES / 2);
+            progress.finish();
+            for event in events.lock().unwrap().iter() {
+                assert_eq!(event.file_progress.as_ref().unwrap().path, path);
+                assert_eq!(event.completed_bytes, 0);
+                assert_eq!(event.completed_files, 0);
+            }
+        }
     }
 
     #[tokio::test]

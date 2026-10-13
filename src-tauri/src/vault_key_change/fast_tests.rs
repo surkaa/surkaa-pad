@@ -1,6 +1,107 @@
 use super::*;
 
 #[tokio::test]
+async fn cloud_engine_reports_actual_path_and_uses_full_check_after_lost_commit_response() {
+    for omit_crc in [false, true] {
+        let store = MemoryStore::default();
+        store.0.lock().unwrap().read_chunk_size = Some(1024 * 1024);
+        let (old, ob) = crypto("old");
+        let (new, nb) = crypto("new");
+        let expected = fixture(&store, &old, 10 * 1024 * 1024 + 17).await;
+        let (_, items) = inventory(&store, &old).await.unwrap();
+        let (mut journal, mut cp) =
+            Journal::create(&old, &new, ob, nb, true, items, Default::default()).unwrap();
+        {
+            let mut data = store.0.lock().unwrap();
+            data.cloud = true;
+            data.omit_crc = omit_crc;
+            data.journal = Some(journal.encode().unwrap());
+        }
+        let events = Arc::new(Mutex::new(vec![]));
+        let saved = events.clone();
+        let fault_store = store.clone();
+        assert!(run(
+            &store,
+            &mut journal,
+            &mut cp,
+            &old,
+            &new,
+            move |p| {
+                if p.file_progress.as_ref().is_some_and(|file| {
+                    file.step == KeyChangeFileStep::WritingTarget && file.completed_points == 0
+                }) {
+                    let mut data = fault_store.0.lock().unwrap();
+                    data.fail_at = Some(data.calls + 1);
+                    data.fail_after = true;
+                }
+                saved.lock().unwrap().push(p);
+            },
+            || false
+        )
+        .await
+        .is_err());
+        let target_path = if omit_crc {
+            KeyChangeFilePath::CloudWithBackupRead
+        } else {
+            KeyChangeFilePath::CloudFast
+        };
+        {
+            let events = events.lock().unwrap();
+            assert!(events.iter().any(|p| p
+                .file_progress
+                .as_ref()
+                .is_some_and(|file| file.step == KeyChangeFileStep::WritingTarget
+                    && file.path == target_path)));
+            assert!(events
+                .iter()
+                .filter_map(|p| p.file_progress.as_ref())
+                .filter(|file| file.step == KeyChangeFileStep::WritingStage
+                    || file.step == KeyChangeFileStep::CheckingStageContent)
+                .all(|file| file.path == KeyChangeFilePath::CloudWithBackupRead));
+            assert_eq!(
+                events.iter().any(|p| p
+                    .file_progress
+                    .as_ref()
+                    .is_some_and(|file| file.step == KeyChangeFileStep::CheckingBackup)),
+                omit_crc
+            );
+        }
+        let encoded = {
+            let mut data = store.0.lock().unwrap();
+            data.fail_at = None;
+            data.journal.clone().unwrap()
+        };
+        let mut journal = Journal::parse(&encoded).unwrap();
+        let (old, new, mut cp) = journal.open("new".into()).unwrap();
+        assert!(cp.staged.is_some());
+        let resumed = Arc::new(Mutex::new(vec![]));
+        let saved = resumed.clone();
+        run(
+            &store,
+            &mut journal,
+            &mut cp,
+            &old,
+            &new,
+            move |p| saved.lock().unwrap().push(p),
+            || false,
+        )
+        .await
+        .unwrap();
+        assert!(resumed.lock().unwrap().iter().any(|p| p
+            .file_progress
+            .as_ref()
+            .is_some_and(|file| file.step == KeyChangeFileStep::CheckingTarget
+                && file.path == KeyChangeFilePath::Full)));
+        assert!(resumed.lock().unwrap().iter().any(|p| p
+            .file_progress
+            .as_ref()
+            .is_some_and(|file| file.step == KeyChangeFileStep::CheckingCommitted
+                && file.path == KeyChangeFilePath::AlreadyCommitted)));
+        assert_data(&store, &new, &expected).await;
+    }
+}
+
+#[tokio::test]
 async fn cloud_fast_path_reads_only_source_stage_and_final_or_backup_fallback() {
     for omit_crc in [false, true] {
         let store = MemoryStore::default();
