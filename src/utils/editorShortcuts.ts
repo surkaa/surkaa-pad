@@ -38,6 +38,7 @@ export const DEFAULT_WINDOWS_EDITOR_SHORTCUTS: EditorShortcutConfig = {
   heading3: 'Ctrl+Digit3',
   heading4: 'Ctrl+Digit4',
   heading5: 'Ctrl+Digit5',
+  bulletList: 'Ctrl+Shift+Digit8',
   taskList: 'Ctrl+KeyT',
   summary: 'Ctrl+Alt+KeyS',
   insertPhoto: 'Ctrl+Alt+KeyP',
@@ -57,6 +58,7 @@ export const NATIVE_EDITOR_SHORTCUTS: Partial<Record<EditorFormattingAction, rea
   heading3: ['Ctrl+Alt+Digit3'],
   heading4: ['Ctrl+Alt+Digit4'],
   heading5: ['Ctrl+Alt+Digit5'],
+  bulletList: ['Ctrl+Shift+Digit8'],
 }
 
 const MODIFIER_CODES = new Set([

@@ -16,6 +16,7 @@ describe('editor toolbar order', () => {
 
   it('keeps valid unique actions and appends missing actions', () => {
     expect(normalizeEditorToolbarOrder(['taskList', 'bold', 'taskList', 'unknown'])).toEqual([
+      'bulletList',
       'taskList',
       'bold',
       'underline',
@@ -49,6 +50,7 @@ describe('editor toolbar order', () => {
       'heading4',
       'heading5',
       'bold',
+      'bulletList',
       'taskList',
       'heading2',
       'heading1',
@@ -57,6 +59,16 @@ describe('editor toolbar order', () => {
       'strike',
       'undo',
     ]);
+  });
+
+  it('adds the list action to old orders without disturbing custom relative order', () => {
+    const oldOrder = [...DEFAULT_EDITOR_TOOLBAR_ORDER].reverse().filter(action => action !== 'bulletList');
+    const upgraded = normalizeEditorToolbarOrder(oldOrder);
+    expect(upgraded.indexOf('bulletList')).toBe(upgraded.indexOf('taskList') - 1);
+    expect(upgraded.filter(action => action !== 'bulletList')).toEqual(oldOrder);
+    const custom = reorderEditorToolbarAction(upgraded, 'bulletList', 0);
+    expect(normalizeEditorToolbarOrder(custom)).toEqual(custom);
+    expect(custom[0]).toBe('bulletList');
   });
 
   it('moves one action without crossing the order boundaries', () => {

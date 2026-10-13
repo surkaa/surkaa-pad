@@ -54,6 +54,7 @@ describe('editor shortcuts', () => {
       heading3: 'Ctrl+Digit3',
       heading4: 'Ctrl+Digit4',
       heading5: 'Ctrl+Digit5',
+      bulletList: 'Ctrl+Shift+Digit8',
       summary: 'Ctrl+Alt+KeyS',
       taskList: 'Ctrl+KeyT',
     })
@@ -70,9 +71,20 @@ describe('editor shortcuts', () => {
     })
 
     expect(normalized.bold).toBe('Ctrl+KeyB')
+    expect(normalized.bulletList).toBe('Ctrl+Shift+Digit8')
     expect(normalized.insertPhoto).toBe('Ctrl+Alt+KeyI')
     expect(normalized.insertAudio).toBe('')
     expect(normalized.insertFile).toBe('Ctrl+Alt+KeyF')
+  })
+
+  it('supports a custom list shortcut and suppresses the old native combination', () => {
+    const event = keyEvent({ctrlKey: true, shiftKey: true, code: 'Digit8'})
+    expect(findEditorShortcutAction(event, DEFAULT_WINDOWS_EDITOR_SHORTCUTS)).toBe('bulletList')
+    const config = normalizeEditorShortcutConfig({bulletList: 'Ctrl+Alt+KeyL'})
+    expect(findReassignedNativeEditorShortcut(event, config)).toBe('bulletList')
+    expect(findEditorShortcutAction(keyEvent({ctrlKey: true, altKey: true, code: 'KeyL'}), config))
+      .toBe('bulletList')
+    expect(normalizeEditorShortcutConfig({bulletList: ''}).bulletList).toBe('')
   })
 
   it('detects a native Tiptap shortcut that must be suppressed after reassignment', () => {

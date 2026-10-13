@@ -4,7 +4,7 @@ use specta::Type;
 use std::collections::HashSet;
 use thiserror::Error;
 
-pub const CURRENT_SYNCED_SETTINGS_VERSION: u32 = 3;
+pub const CURRENT_SYNCED_SETTINGS_VERSION: u32 = 4;
 const MAX_PINNED_DIARIES: usize = 100_000;
 const MAX_SHORTCUT_CHARS: usize = 100;
 
@@ -27,6 +27,7 @@ pub enum EditorToolbarAction {
     Heading3,
     Heading4,
     Heading5,
+    BulletList,
     TaskList,
     Summary,
     Undo,
@@ -34,7 +35,7 @@ pub enum EditorToolbarAction {
 }
 
 impl EditorToolbarAction {
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::Bold,
         Self::Underline,
         Self::Strike,
@@ -43,6 +44,7 @@ impl EditorToolbarAction {
         Self::Heading3,
         Self::Heading4,
         Self::Heading5,
+        Self::BulletList,
         Self::TaskList,
         Self::Summary,
         Self::Undo,
@@ -77,6 +79,7 @@ pub struct EditorShortcutSettings {
     pub heading3: String,
     pub heading4: String,
     pub heading5: String,
+    pub bullet_list: String,
     pub task_list: String,
     pub summary: String,
     pub insert_photo: String,
@@ -97,6 +100,7 @@ impl Default for EditorShortcutSettings {
             heading3: "Ctrl+Digit3".into(),
             heading4: "Ctrl+Digit4".into(),
             heading5: "Ctrl+Digit5".into(),
+            bullet_list: "Ctrl+Shift+Digit8".into(),
             task_list: "Ctrl+KeyT".into(),
             summary: "Ctrl+Alt+KeyS".into(),
             insert_photo: "Ctrl+Alt+KeyP".into(),
@@ -227,6 +231,7 @@ impl SyncedSettingsData {
             ("heading3", &editor.heading3),
             ("heading4", &editor.heading4),
             ("heading5", &editor.heading5),
+            ("bulletList", &editor.bullet_list),
             ("taskList", &editor.task_list),
             ("summary", &editor.summary),
             ("insertPhoto", &editor.insert_photo),
@@ -268,6 +273,9 @@ pub fn deserialize_synced_settings(
     if value.get("version").and_then(Value::as_u64) == Some(2) {
         migrate_v2_to_v3(&mut value)?;
     }
+    if value.get("version").and_then(Value::as_u64) == Some(3) {
+        migrate_v3_to_v4(&mut value)?;
+    }
     let document: SyncedSettingsDocument = serde_json::from_value(value)?;
     if document.updated_at < 0 {
         return Err(SyncedSettingsError::InvalidData(
@@ -305,6 +313,23 @@ fn migrate_v2_to_v3(value: &mut Value) -> Result<(), SyncedSettingsError> {
     toolbar_order.insert(heading3_index + 1, Value::String("heading4".into()));
     toolbar_order.insert(heading3_index + 2, Value::String("heading5".into()));
     value["version"] = Value::from(3);
+    Ok(())
+}
+
+fn migrate_v3_to_v4(value: &mut Value) -> Result<(), SyncedSettingsError> {
+    let toolbar_order = value
+        .pointer_mut("/editor/toolbarOrder")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| {
+            SyncedSettingsError::InvalidData("缺少有效的 editor.toolbarOrder 字段".into())
+        })?;
+    let task_list_index = toolbar_order
+        .iter()
+        .position(|action| action.as_str() == Some("taskList"))
+        .ok_or_else(|| SyncedSettingsError::InvalidData("编辑器工具栏顺序缺少 taskList".into()))?;
+    toolbar_order.insert(task_list_index, Value::String("bulletList".into()));
+    // 新增快捷键由 EditorShortcutSettings 的 serde default 填充，保留所有原有自定义值。
+    value["version"] = Value::from(4);
     Ok(())
 }
 
@@ -352,13 +377,18 @@ mod tests {
         };
         let value = serde_json::to_value(&document).unwrap();
 
-        assert_eq!(value["version"], 3);
+        assert_eq!(value["version"], 4);
         assert_eq!(value["updatedAt"], 123);
         assert_eq!(value["appearance"]["theme"], "dark");
         assert_eq!(value["editor"]["toolbarOrder"][6], "heading4");
-        assert_eq!(value["editor"]["toolbarOrder"][8], "taskList");
-        assert_eq!(value["editor"]["toolbarOrder"][10], "undo");
-        assert_eq!(value["editor"]["toolbarOrder"][11], "redo");
+        assert_eq!(value["editor"]["toolbarOrder"][8], "bulletList");
+        assert_eq!(value["editor"]["toolbarOrder"][9], "taskList");
+        assert_eq!(value["editor"]["toolbarOrder"][11], "undo");
+        assert_eq!(value["editor"]["toolbarOrder"][12], "redo");
+        assert_eq!(
+            value["windows"]["editorShortcuts"]["bulletList"],
+            "Ctrl+Shift+Digit8"
+        );
         assert_eq!(
             value["windows"]["editorShortcuts"]["insertPhoto"],
             "Ctrl+Alt+KeyP"
@@ -377,8 +407,8 @@ mod tests {
         assert!(matches!(
             deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()),
             Err(SyncedSettingsError::UnsupportedVersion {
-                found: 4,
-                supported: 3
+                found: 5,
+                supported: 4
             })
         ));
 
@@ -462,6 +492,7 @@ mod tests {
                 EditorToolbarAction::Heading4,
                 EditorToolbarAction::Heading5,
                 EditorToolbarAction::Bold,
+                EditorToolbarAction::BulletList,
                 EditorToolbarAction::TaskList,
                 EditorToolbarAction::Heading1,
                 EditorToolbarAction::Underline,
@@ -498,6 +529,7 @@ mod tests {
             "heading3",
             "heading4",
             "heading5",
+            "bulletList",
             "taskList",
             "summary",
         ] {
@@ -508,6 +540,118 @@ mod tests {
         assert_eq!(
             document.data.windows.editor_shortcuts,
             EditorShortcutSettings::default()
+        );
+    }
+
+    fn legacy_v3_value() -> Value {
+        let mut value = serde_json::to_value(SyncedSettingsDocument {
+            version: 3,
+            updated_at: 123,
+            data: sample_settings(),
+        })
+        .unwrap();
+        value["editor"]["toolbarOrder"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|action| action.as_str() != Some("bulletList"));
+        value["windows"]["editorShortcuts"]
+            .as_object_mut()
+            .unwrap()
+            .remove("bulletList");
+        value
+    }
+
+    #[test]
+    fn migrates_v3_list_action_without_changing_existing_order_or_shortcuts() {
+        let mut value = legacy_v3_value();
+        let order = value["editor"]["toolbarOrder"].as_array_mut().unwrap();
+        order.reverse();
+        let old_order = order.clone();
+        value["windows"]["editorShortcuts"]["bold"] = "Ctrl+Alt+KeyB".into();
+        value["windows"]["editorShortcuts"]["taskList"] = "".into();
+        let document = deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(document.version, 4);
+        assert_eq!(document.updated_at, 123);
+        let upgraded = serde_json::to_value(&document).unwrap();
+        let order = upgraded["editor"]["toolbarOrder"].as_array().unwrap();
+        let index = order
+            .iter()
+            .position(|action| action == "bulletList")
+            .unwrap();
+        assert_eq!(order[index + 1], "taskList");
+        assert_eq!(
+            order
+                .iter()
+                .filter(|action| *action != "bulletList")
+                .cloned()
+                .collect::<Vec<_>>(),
+            old_order
+        );
+        assert_eq!(
+            document.data.windows.editor_shortcuts.bullet_list,
+            "Ctrl+Shift+Digit8"
+        );
+        assert_eq!(document.data.windows.editor_shortcuts.bold, "Ctrl+Alt+KeyB");
+        assert_eq!(document.data.windows.editor_shortcuts.task_list, "");
+        // 重读最新格式不应再次插入新按钮，也不能覆盖用户移动后的顺序。
+        let mut moved = document;
+        moved
+            .data
+            .editor
+            .toolbar_order
+            .retain(|action| *action != EditorToolbarAction::BulletList);
+        moved
+            .data
+            .editor
+            .toolbar_order
+            .insert(0, EditorToolbarAction::BulletList);
+        assert_eq!(
+            deserialize_synced_settings(&serde_json::to_vec(&moved).unwrap()).unwrap(),
+            moved
+        );
+    }
+
+    #[test]
+    fn rejects_incomplete_or_duplicate_v3_toolbar_orders() {
+        for missing in ["taskList", "bold"] {
+            let mut value = legacy_v3_value();
+            value["editor"]["toolbarOrder"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|action| action != missing);
+            assert!(matches!(
+                deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()),
+                Err(SyncedSettingsError::InvalidData(_))
+            ));
+        }
+        let mut value = legacy_v3_value();
+        value["editor"]["toolbarOrder"]
+            .as_array_mut()
+            .unwrap()
+            .push("taskList".into());
+        assert!(matches!(
+            deserialize_synced_settings(&serde_json::to_vec(&value).unwrap()),
+            Err(SyncedSettingsError::InvalidData(_))
+        ));
+    }
+
+    #[test]
+    fn validates_list_shortcut_length_and_preserves_it_in_latest_documents() {
+        let mut data = sample_settings();
+        data.windows.editor_shortcuts.bullet_list = "L".repeat(MAX_SHORTCUT_CHARS + 1);
+        assert!(matches!(
+            data.validate(),
+            Err(SyncedSettingsError::InvalidData(_))
+        ));
+        data.windows.editor_shortcuts.bullet_list = "Ctrl+Alt+KeyL".into();
+        let document = SyncedSettingsDocument {
+            version: 4,
+            updated_at: 123,
+            data,
+        };
+        assert_eq!(
+            deserialize_synced_settings(&serde_json::to_vec(&document).unwrap()).unwrap(),
+            document
         );
     }
 }

@@ -108,6 +108,7 @@ mod tests {
                     EditorToolbarAction::Heading3,
                     EditorToolbarAction::Heading4,
                     EditorToolbarAction::Heading5,
+                    EditorToolbarAction::BulletList,
                     EditorToolbarAction::TaskList,
                     EditorToolbarAction::Summary,
                     EditorToolbarAction::Undo,

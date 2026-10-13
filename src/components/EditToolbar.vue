@@ -57,6 +57,7 @@ function isToolbarActionActive(action: EditorToolbarAction): boolean {
     case 'heading3': return editor.isActive('heading', {level: 3});
     case 'heading4': return editor.isActive('heading', {level: 4});
     case 'heading5': return editor.isActive('heading', {level: 5});
+    case 'bulletList': return editor.isActive('bulletList');
     case 'taskList': return editor.isActive('taskList');
     case 'summary': return editor.isActive('summaryNode');
     case 'undo':
@@ -78,6 +79,7 @@ function toolbarActionText(action: EditorToolbarAction): string {
     heading3: 'H3',
     heading4: 'H4',
     heading5: 'H5',
+    bulletList: '',
     taskList: '',
     summary: '',
     undo: '',
@@ -86,7 +88,8 @@ function toolbarActionText(action: EditorToolbarAction): string {
 }
 
 function toolbarActionUsesIcon(action: EditorToolbarAction): boolean {
-  return action === 'taskList'
+  return action === 'bulletList'
+    || action === 'taskList'
     || action === 'summary'
     || action === 'undo'
     || action === 'redo';

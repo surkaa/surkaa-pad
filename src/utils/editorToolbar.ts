@@ -1,4 +1,5 @@
 import type {Editor} from '@tiptap/vue-3';
+import {toggleEditorList} from './editorLists';
 
 export const EDITOR_FORMATTING_ACTIONS = [
   'bold',
@@ -9,6 +10,7 @@ export const EDITOR_FORMATTING_ACTIONS = [
   'heading3',
   'heading4',
   'heading5',
+  'bulletList',
   'taskList',
   'summary',
 ] as const;
@@ -32,6 +34,7 @@ export const EDITOR_TOOLBAR_LABELS: Record<EditorToolbarAction, string> = {
   heading3: '三级标题',
   heading4: '四级标题',
   heading5: '五级标题',
+  bulletList: '普通列表',
   taskList: '待办列表',
   summary: '折叠内容',
   undo: '撤销',
@@ -47,6 +50,7 @@ export const EDITOR_TOOLBAR_ICONS: Record<EditorToolbarAction, string> = {
   heading3: 'looks_3',
   heading4: 'looks_4',
   heading5: 'looks_5',
+  bulletList: 'format_list_bulleted',
   taskList: 'checklist',
   summary: 'unfold_more',
   undo: 'undo',
@@ -77,6 +81,12 @@ export function normalizeEditorToolbarOrder(value: unknown): EditorToolbarAction
     if (result.includes(action)) continue;
     const previousIndex = result.indexOf(previous);
     if (previousIndex >= 0) result.splice(previousIndex + 1, 0, action);
+  }
+
+  // 旧配置没有普通列表按钮；放到待办列表前，保留其余按钮的相对顺序。
+  if (!result.includes('bulletList')) {
+    const taskListIndex = result.indexOf('taskList');
+    if (taskListIndex >= 0) result.splice(taskListIndex, 0, 'bulletList');
   }
 
   for (const action of EDITOR_TOOLBAR_ACTIONS) {
@@ -121,6 +131,7 @@ export function runEditorToolbarAction(
   openSummary: () => void,
 ): boolean {
   if (!editor) return false;
+  if (action === 'bulletList') return toggleEditorList(editor, 'bulletList');
   if (action === 'summary') {
     openSummary();
     return true;

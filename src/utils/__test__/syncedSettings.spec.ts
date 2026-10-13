@@ -30,6 +30,7 @@ function settingsData(theme: 'light' | 'dark' | 'system' = 'dark'): SyncedSettin
         'undo',
         'summary',
         'taskList',
+        'bulletList',
         'heading5',
         'heading4',
         'heading3',
@@ -51,6 +52,7 @@ function settingsData(theme: 'light' | 'dark' | 'system' = 'dark'): SyncedSettin
         heading3: 'Ctrl+Digit3',
         heading4: 'Ctrl+Digit4',
         heading5: 'Ctrl+Digit5',
+        bulletList: 'Ctrl+Shift+Digit8',
         taskList: 'Ctrl+KeyT',
         summary: 'Ctrl+Alt+KeyS',
         insertPhoto: 'Ctrl+Alt+KeyP',
@@ -72,12 +74,12 @@ function settingsData(theme: 'light' | 'dark' | 'system' = 'dark'): SyncedSettin
 
 function document(updatedAt: number, theme: 'light' | 'dark' | 'system' = 'dark'):
 SyncedSettingsDocument {
-  return {version: 3, updatedAt, ...settingsData(theme)};
+  return {version: 4, updatedAt, ...settingsData(theme)};
 }
 
 function fakeApi(remote: SyncedSettingsDocument | null) {
   const save = vi.fn(async (settings: SyncedSettingsData) => ({
-    version: 3,
+    version: 4,
     updatedAt: 300,
     ...settings,
   }));
