@@ -57,11 +57,11 @@ export function renderEditorMarkdown(source: string): string {
   return markdown.render(source).replace(/>\n+(?=<)/g, '>').trim() || '<p></p>';
 }
 
-/** 只识别真正的 Markdown 表格，代码块中的示例不应转换；剪贴板 HTML 不执行。 */
-export function renderPastedMarkdownTable(source: string): string | null {
+/** 识别 Markdown 列表和表格；代码块中的示例不转换，剪贴板 HTML 不执行。 */
+export function renderPastedEditorMarkdown(source: string): string | null {
   const env = {};
   const tokens = clipboardMarkdown.parse(source, env);
-  if (!tokens.some(token => token.type === 'table_open')) return null;
+  if (!tokens.some(token => ['table_open', 'bullet_list_open', 'ordered_list_open'].includes(token.type))) return null;
   return clipboardMarkdown.renderer.render(tokens, clipboardMarkdown.options, env)
     .replace(/>\n+(?=<)/g, '>').trim();
 }

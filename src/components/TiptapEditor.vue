@@ -65,7 +65,8 @@ import {
 import {TaskCompletionOrder} from './editor/taskCompletionOrder'
 import {createTaskItemExtension} from './editor/taskItem'
 import {ListIndentation} from './editor/listEditing'
-import {createDiaryTableExtensions, pasteMarkdownTable} from './editor/tableEditing'
+import {createDiaryTableExtensions} from './editor/tableEditing'
+import {pasteEditorMarkdown} from './editor/markdownPaste'
 import {isMobileEditorPlatform} from './editor/editorClick'
 import {isHtmlAttachment} from '../utils/attachmentOpen'
 import {attachmentPreviewKind} from '../utils/attachmentPreview'
@@ -217,7 +218,7 @@ const editor = useEditor({
         emit('pasteAttachments', Array.from(files))
         return true
       }
-      return pasteMarkdownTable(view, event)
+      return pasteEditorMarkdown(view, event)
     },
   },
   onUpdate({ editor: ed }) {

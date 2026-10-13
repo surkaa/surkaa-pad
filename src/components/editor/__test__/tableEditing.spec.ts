@@ -2,10 +2,11 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {Editor} from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
-import {createDiaryTableExtensions, pasteMarkdownTable} from '../tableEditing';
+import {createDiaryTableExtensions} from '../tableEditing';
+import {pasteEditorMarkdown} from '../markdownPaste';
 import {diaryContentToHtml, htmlToDiaryContent, htmlToMarkdown, markdownToHtml} from '../markdownConverter';
 import {ListIndentation} from '../listEditing';
-import {renderPastedMarkdownTable} from '../markdownParser';
+import {renderPastedEditorMarkdown} from '../markdownParser';
 
 let editor: Editor | undefined;
 afterEach(() => { editor?.destroy(); editor = undefined; document.body.innerHTML = ''; });
@@ -87,7 +88,7 @@ describe('pasting Markdown tables', () => {
     current.commands.setTextSelection({from: 5, to: 7});
     const before = current.getJSON();
     const event = clipboardEvent('| A | B |\n| --- | --- |\n| 1 | 2 |');
-    expect(pasteMarkdownTable(current.view, event)).toBe(true);
+    expect(pasteEditorMarkdown(current.view, event)).toBe(true);
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(current.view.dom.querySelectorAll('table')).toHaveLength(1);
     expect(current.state.doc.textContent).toContain('前面');
@@ -99,10 +100,10 @@ describe('pasting Markdown tables', () => {
   it('escapes pasted HTML and does not create executable links or remote images', () => {
     const current = createEditor();
     const event = clipboardEvent('| A | B |\n| --- | --- |\n| <script>alert(1)</script> | ![图片](https://example.com/a.jpg) |');
-    expect(pasteMarkdownTable(current.view, event)).toBe(true);
+    expect(pasteEditorMarkdown(current.view, event)).toBe(true);
     expect(current.view.dom.querySelector('script, img')).toBeNull();
     expect(current.state.doc.textContent).toContain('<script>alert(1)</script>');
-    const badLink = renderPastedMarkdownTable('| A |\n| --- |\n| [bad](javascript:alert%281%29) |');
+    const badLink = renderPastedEditorMarkdown('| A |\n| --- |\n| [bad](javascript:alert%281%29) |');
     expect(badLink).not.toContain('href="javascript:');
   });
 
@@ -111,7 +112,7 @@ describe('pasting Markdown tables', () => {
       const current = createEditor();
       const before = current.getJSON();
       const event = clipboardEvent(text);
-      expect(pasteMarkdownTable(current.view, event)).toBe(false);
+      expect(pasteEditorMarkdown(current.view, event)).toBe(false);
       expect(event.preventDefault).not.toHaveBeenCalled();
       expect(current.getJSON()).toEqual(before);
     });
@@ -119,11 +120,11 @@ describe('pasting Markdown tables', () => {
   it('does not convert tables inside a code block or an existing table', () => {
     const current = createEditor('<pre><code>示例</code></pre><p></p>');
     const text = '| A | B |\n| --- | --- |\n| 1 | 2 |';
-    expect(pasteMarkdownTable(current.view, clipboardEvent(text))).toBe(false);
+    expect(pasteEditorMarkdown(current.view, clipboardEvent(text))).toBe(false);
     current.commands.setContent(markdownToHtml(text) + '<p></p>');
     current.commands.setTextSelection(4);
-    expect(pasteMarkdownTable(current.view, clipboardEvent(text))).toBe(false);
+    expect(pasteEditorMarkdown(current.view, clipboardEvent(text))).toBe(false);
     current.setEditable(false);
-    expect(pasteMarkdownTable(current.view, clipboardEvent(text))).toBe(false);
+    expect(pasteEditorMarkdown(current.view, clipboardEvent(text))).toBe(false);
   });
 });
