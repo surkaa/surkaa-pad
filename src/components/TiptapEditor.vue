@@ -4,7 +4,6 @@ import { useEditor, EditorContent } from '@tiptap/vue-3'
 import {useQuasar} from 'quasar'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import TaskItem from '@tiptap/extension-task-item'
 import TaskList from '@tiptap/extension-task-list'
 import { useScroll, useStorage } from '@vueuse/core'
 import { platform } from '@tauri-apps/plugin-os'
@@ -63,6 +62,8 @@ import {
   type DiaryBlockDescriptor,
 } from './editor/blockOrder'
 import {TaskCompletionOrder} from './editor/taskCompletionOrder'
+import {createTaskItemExtension} from './editor/taskItem'
+import {isMobileEditorPlatform} from './editor/editorClick'
 import {isHtmlAttachment} from '../utils/attachmentOpen'
 import {attachmentPreviewKind} from '../utils/attachmentPreview'
 import {insertImageAndMoveCursorAfter} from './editor/imageInsertion'
@@ -156,7 +157,7 @@ const editor = useEditor({
         class: 'editor-task-list',
       },
     }),
-    TaskItem.configure({
+    createTaskItemExtension(isMobileEditorPlatform(currentPlatform)).configure({
       HTMLAttributes: {
         class: 'editor-task-item',
       },

@@ -1,6 +1,6 @@
 import {Extension} from '@tiptap/vue-3';
 import type {Node as ProseMirrorNode} from '@tiptap/pm/model';
-import {Plugin, PluginKey, type EditorState, type Transaction} from '@tiptap/pm/state';
+import {Plugin, PluginKey, TextSelection, type EditorState, type Transaction} from '@tiptap/pm/state';
 
 const taskCompletionOrderKey = new PluginKey('taskCompletionOrder');
 
@@ -35,9 +35,20 @@ export function createTaskCompletionOrderTransaction(
   if (completedPosition < insertPosition) insertPosition -= completedTask.nodeSize;
   if (insertPosition === completedPosition) return null;
 
-  return newState.tr
+  const transaction = newState.tr
     .delete(completedPosition, completedPosition + completedTask.nodeSize)
     .insert(insertPosition, completedTask);
+  const selection = newState.selection;
+  // 删除再插入会把该项内部的光标映射到删除边界；编辑时应跟随同一项移动。
+  if (selection instanceof TextSelection
+    && selection.from > completedPosition
+    && selection.to < completedPosition + completedTask.nodeSize) {
+    const offset = insertPosition - completedPosition;
+    transaction.setSelection(TextSelection.create(
+      transaction.doc, selection.anchor + offset, selection.head + offset,
+    ));
+  }
+  return transaction;
 }
 
 function findNewlyCompletedTask(
