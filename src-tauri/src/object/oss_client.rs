@@ -28,6 +28,15 @@ fn oss_config_diagnostics(endpoint: &str, akid: &str, sakey: &str, bucket: &str)
 pub struct HeadObjectOutput {
     pub etag: Option<String>,
     pub content_length: Option<u64>,
+    /// OSS 计算的 CRC-64/XZ；缺失时调用方必须采用其他完整性校验。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crc64: Option<u64>,
+}
+
+/// 条件复制的真实服务端结果；ETag 用于版本匹配，不能当作内容哈希。
+pub struct CopyObjectOutput {
+    pub etag: String,
+    pub crc64: Option<u64>,
 }
 
 /// 包装 rust-s3 的 Object，保持外部 API 字段名不变
@@ -532,14 +541,24 @@ impl OssClient {
     ) -> Result<Option<HeadObjectOutput>, ObjectError> {
         let bucket = self.inner()?;
         let key = self.physical_key(key);
-        let (result, status) = bucket
-            .head_object(&key)
+        let request = s3::request::tokio_backend::ReqwestRequest::new(
+            &bucket,
+            &key,
+            s3::command::Command::HeadObject,
+        )
+        .await
+        .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        use s3::request::Request;
+        let (headers, status) = request
+            .response_header()
             .await
             .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
         match status {
             200..=299 => Ok(Some(HeadObjectOutput {
-                etag: result.e_tag.map(|e| e.trim_matches('"').to_string()),
-                content_length: result.content_length.map(|v| v.max(0) as u64),
+                etag: conditional::header_text(&headers, "etag")?
+                    .map(|e| e.trim_matches('"').to_owned()),
+                content_length: conditional::header_u64(&headers, "content-length")?,
+                crc64: conditional::header_u64(&headers, "x-oss-hash-crc64ecma")?,
             })),
             404 => Ok(None),
             _ => Err(ObjectError::OperationFailed(format!(
@@ -816,6 +835,8 @@ mod copy_tests;
 
 #[cfg(test)]
 mod request_tests;
+
+mod conditional;
 
 #[cfg(test)]
 mod tests {
