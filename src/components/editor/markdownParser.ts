@@ -8,8 +8,12 @@ function createMarkdownParser(html: boolean) {
   markdown.renderer.rules.paragraph_close = () => '</p>';
   markdown.renderer.rules.softbreak = () => '<br>';
   markdown.renderer.rules.hardbreak = () => '<br>';
-  markdown.renderer.rules.fence = markdown.renderer.rules.code_block = (tokens, index) =>
-    `<pre><code>${markdown.utils.escapeHtml(tokens[index].content.replace(/\n$/, ''))}</code></pre>`;
+  markdown.renderer.rules.fence = markdown.renderer.rules.code_block = (tokens, index) => {
+    const token = tokens[index];
+    const language = token.info.trim().split(/\s+/)[0];
+    const className = language ? ` class="language-${markdown.utils.escapeHtml(language)}"` : '';
+    return `<pre><code${className}>${markdown.utils.escapeHtml(token.content.replace(/\n$/, ''))}</code></pre>`;
+  };
   // 普通 Markdown 图片不是日记附件，不自动加载远程 URL。
   markdown.renderer.rules.image = (tokens, index) =>
     `[图片：${markdown.utils.escapeHtml(tokens[index].content)}]`;

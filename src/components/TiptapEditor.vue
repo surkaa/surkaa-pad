@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import {useQuasar} from 'quasar'
 import StarterKit from '@tiptap/starter-kit'
+import {DiaryDocument} from './editor/editorSchema'
 import Placeholder from '@tiptap/extension-placeholder'
 import TaskList from '@tiptap/extension-task-list'
 import { useScroll, useStorage } from '@vueuse/core'
@@ -149,8 +150,10 @@ const editor = useEditor({
   content: diaryContentToHtml(props.modelValue, props.attachmentMap, attachmentFilenames.value),
   extensions: [
     StarterKit.configure({
+      document: false,
       heading: { levels: [1, 2, 3, 4, 5] },
     }),
+    DiaryDocument,
     Placeholder.configure({
       placeholder: '开始记录...',
     }),
@@ -171,20 +174,20 @@ const editor = useEditor({
     TaskCompletionOrder,
     ListIndentation,
     ...createDiaryTableExtensions(),
-    ImageNode,
-    VideoNode,
-    AudioNode.configure({
+    ImageNode.extend({group: 'diaryBlock'}),
+    VideoNode.extend({group: 'diaryBlock'}),
+    AudioNode.extend({group: 'diaryBlock'}).configure({
       getAttachment: getAttachmentMeta,
       onAudioInfoGenerated: (attachmentId, durationMs, waveform) => {
         emit('audioInfoGenerated', attachmentId, durationMs, waveform)
       },
     }),
-    FileNode,
-    AlbumNode,
-    SummaryNode.configure({
+    FileNode.extend({group: 'diaryBlock'}),
+    AlbumNode.extend({group: 'diaryBlock'}),
+    SummaryNode.extend({group: 'diaryBlock'}).configure({
       onEdit: (position, attrs) => openSummaryDialog(position, attrs),
     }),
-    LocationNode.configure({
+    LocationNode.extend({group: 'diaryBlock'}).configure({
       onOpen: location => emit('openLocation', location),
     }),
   ],

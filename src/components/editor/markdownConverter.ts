@@ -22,7 +22,7 @@ export function htmlToMarkdown(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const parts: string[] = []
   walkBlocks(doc.body, parts)
-  return parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()
+  return parts.filter(part => part.trim()).join('\n\n').trim()
 }
 
 export function diaryContentToHtml(
@@ -66,7 +66,7 @@ export function htmlToDiaryContent(html: string): DiaryContent {
 
   const flushMarkdown = () => {
     if (!markdownBlocks.length) return
-    const text = markdownBlocks.join('\n\n').replace(/\n{3,}/g, '\n\n')
+    const text = markdownBlocks.join('\n\n')
     if (text) nodes.push({type: 'markdown', text})
     markdownBlocks = []
   }
@@ -140,7 +140,7 @@ function nodeToMarkdown(node: Node): string {
   container.appendChild(node.cloneNode(true))
   const parts: string[] = []
   walkBlocks(container, parts)
-  return parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()
+  return parts.filter(part => part.trim()).join('\n\n').trim()
 }
 
 function renderImage(
@@ -238,7 +238,11 @@ function walkBlocks(parent: Node, out: string[]): void {
         break
       case 'PRE': {
         const code = element.querySelector('code')
-        out.push(`\`\`\`\n${(code || element).textContent || ''}\n\`\`\``)
+        const text = (code || element).textContent || ''
+        const language = Array.from(code?.classList || []).find(name => name.startsWith('language-'))?.slice(9) || ''
+        const longestRun = (text.match(/`+/g) || []).reduce((maximum, run) => Math.max(maximum, run.length), 0)
+        const fence = '`'.repeat(Math.max(3, longestRun + 1))
+        out.push(`${fence}${language}\n${text}\n${fence}`)
         break
       }
       case 'DIV':
@@ -279,7 +283,8 @@ function serializeInline(parent: Node, tableCell = false): string {
         // Markdown 表格先分列再解析行内代码；这种组合改用 HTML code 保留反斜杠。
         result += `<code>${escapeTableText(text)}</code>`
       } else {
-        const fence = '`'.repeat(Math.max(0, ...(text.match(/`+/g) || []).map(run => run.length)) + 1)
+        const longestRun = (text.match(/`+/g) || []).reduce((maximum, run) => Math.max(maximum, run.length), 0)
+        const fence = '`'.repeat(longestRun + 1)
         const padding = /^[` ]|[` ]$/.test(text) ? ' ' : ''
         result += fence + padding + (tableCell ? text.replace(/\|/g, '\\|') : text) + padding + fence
       }
@@ -334,7 +339,7 @@ function serializeTable(table: HTMLTableElement): string {
     }
   })
   if (!grid.length) return ''
-  const columns = Math.max(...grid.map(row => row.length))
+  const columns = grid.reduce((maximum, row) => Math.max(maximum, row.length), 0)
   const line = (row: string[]) => '| ' + Array.from({length: columns}, (_, index) => row[index] || '').join(' | ') + ' |'
   const separator = Array.from({length: columns}, (_, index) => ({
     left: ':---', center: ':---:', right: '---:',

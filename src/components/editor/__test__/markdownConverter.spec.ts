@@ -179,6 +179,14 @@ describe('markdownToHtml', () => {
     expect(htmlToMarkdown(markdownToHtml(markdown))).toBe(markdown)
   })
 
+  it('preserves code-block language, blank lines and nested fence examples', () => {
+    const markdown = '````ts\nconst text = "```";\n\n\nconsole.log(text);\n````'
+    const html = markdownToHtml(markdown)
+    expect(html).toContain('class="language-ts"')
+    expect(htmlToMarkdown(html)).toBe(markdown)
+    expect(htmlToDiaryContent(html)).toEqual({nodes: [{type: 'markdown', text: markdown}]})
+  })
+
   it('loads task-list Markdown into the Tiptap task extensions', () => {
     const element = document.createElement('div')
     document.body.appendChild(element)
