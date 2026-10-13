@@ -63,6 +63,7 @@ import {
 } from './editor/blockOrder'
 import {TaskCompletionOrder} from './editor/taskCompletionOrder'
 import {createTaskItemExtension} from './editor/taskItem'
+import {ListIndentation} from './editor/listEditing'
 import {isMobileEditorPlatform} from './editor/editorClick'
 import {isHtmlAttachment} from '../utils/attachmentOpen'
 import {attachmentPreviewKind} from '../utils/attachmentPreview'
@@ -158,6 +159,7 @@ const editor = useEditor({
       },
     }),
     createTaskItemExtension(isMobileEditorPlatform(currentPlatform)).configure({
+      nested: true,
       HTMLAttributes: {
         class: 'editor-task-item',
       },
@@ -166,6 +168,7 @@ const editor = useEditor({
       },
     }),
     TaskCompletionOrder,
+    ListIndentation,
     ImageNode,
     VideoNode,
     AudioNode.configure({

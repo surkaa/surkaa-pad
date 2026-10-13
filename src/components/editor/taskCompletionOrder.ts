@@ -64,7 +64,8 @@ function findNewlyCompletedTask(
     if (oldNode?.type.name === 'taskItem' && oldNode.attrs.checked !== true) {
       result = position;
     }
-    return false;
+    // 已完成的父项仍可能包含本次刚完成的子项。
+    return result === null;
   });
   return result;
 }

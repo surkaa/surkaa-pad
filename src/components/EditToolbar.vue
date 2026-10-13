@@ -16,6 +16,7 @@ import {
   runEditorToolbarAction,
   type EditorToolbarAction,
 } from '../utils/editorToolbar';
+import {changeEditorListLevel, toggleEditorList} from './editor/listEditing';
 
 const {
   view,
@@ -148,6 +149,18 @@ function toolbarActionTitle(action: EditorToolbarAction) {
 
       <transition name="panel-expand">
         <div v-show="panelOpen" class="more-panel">
+          <div class="list-actions" @mousedown.prevent>
+            <q-btn flat icon="format_list_bulleted" label="普通列表" class="panel-item-btn"
+                   :disable="!editor" @click="toggleEditorList(editor, 'bulletList')"/>
+            <q-btn flat icon="format_list_numbered" label="编号列表" class="panel-item-btn"
+                   :disable="!editor" @click="toggleEditorList(editor, 'orderedList')"/>
+            <q-btn flat icon="format_indent_increase" label="降级" class="panel-item-btn"
+                   :disable="!editor || (!editor.isActive('listItem') && !editor.isActive('taskItem'))"
+                   title="降级为子列表（Tab）" @click="changeEditorListLevel(editor, true)"/>
+            <q-btn flat icon="format_indent_decrease" label="升级" class="panel-item-btn"
+                   :disable="!editor || (!editor.isActive('listItem') && !editor.isActive('taskItem'))"
+                   title="提升列表层级（Shift+Tab）" @click="changeEditorListLevel(editor, false)"/>
+          </div>
           <div>
             <q-btn flat stack color="grey-8" class="panel-item-btn"
                    :title="attachmentActionTitle('照片', 'insertPhoto')" @click="emit('insertPhoto')">
@@ -291,7 +304,18 @@ function toolbarActionTitle(action: EditorToolbarAction) {
     background-color: var(--pad-bg-color-200);
     overflow: hidden;
 
+    .list-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--pad-border-color-100);
+      color: var(--pad-text-color);
+    }
+
     .panel-item-btn {
+      color: var(--pad-text-color);
       :deep(.q-icon) {
         color: var(--pad-text-color);
       }

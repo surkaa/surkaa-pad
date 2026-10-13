@@ -127,6 +127,27 @@ describe('task completion order', () => {
     expect(editor.getJSON()).toEqual(original);
     editor.destroy();
   });
+
+  it('reorders a completed child even when its parent was already checked', () => {
+    const editor = new Editor({
+      extensions: [StarterKit, TaskList, TaskItem.configure({nested: true}), TaskCompletionOrder],
+      content: {
+        type: 'doc', content: [{type: 'taskList', content: [{
+          type: 'taskItem', attrs: {checked: true}, content: [
+            {type: 'paragraph', content: [{type: 'text', text: '父项'}]},
+            taskListNode([{text: '子项一', checked: false}, {text: '子项二', checked: false}]),
+          ],
+        }]}, {type: 'paragraph'}],
+      },
+    });
+    completeTask(editor, '子项一');
+    const parent = editor.state.doc.child(0).child(0);
+    expect(parent.attrs.checked).toBe(true);
+    expect(parent.child(1).child(0).textContent).toBe('子项二');
+    expect(parent.child(1).child(1).textContent).toBe('子项一');
+    expect(parent.child(1).child(1).attrs.checked).toBe(true);
+    editor.destroy();
+  });
 });
 
 function createEditor(tasks: TaskInput[]): Editor {

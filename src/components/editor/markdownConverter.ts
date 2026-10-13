@@ -3,6 +3,7 @@
  * Markdown 只负责文本节点；附件节点始终直接转换，不经过文本标记。
  */
 import type {DiaryContent, DiaryContentNode, DiaryLocation} from '../../bindings'
+import {renderEditorMarkdown} from './markdownParser'
 
 const INLINE_TAGS: Record<string, [string, string]> = {
   STRONG: ['**', '**'],
@@ -218,24 +219,7 @@ function walkBlocks(parent: Node, out: string[]): void {
       }
       case 'UL':
       case 'OL': {
-        if (tag === 'UL' && isTaskList(element)) {
-          const items: string[] = []
-          for (const listItem of element.children) {
-            if (!isTaskItem(listItem)) continue
-            const checked = listItem.getAttribute('data-checked') === 'true'
-              || (listItem.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked
-            items.push(`- [${checked ? 'x' : ' '}] ${serializeTaskItem(listItem)}`.trimEnd())
-          }
-          if (items.length) out.push(items.join('\n'))
-          break
-        }
-        const items: string[] = []
-        for (const listItem of element.children) {
-          if (listItem.tagName.toUpperCase() !== 'LI') continue
-          const prefix = tag === 'OL' ? `${items.length + 1}. ` : '- '
-          items.push(prefix + serializeInline(listItem))
-        }
-        if (items.length) out.push(items.join('\n'))
+        out.push(serializeList(element))
         break
       }
       case 'LI':
@@ -301,66 +285,7 @@ function serializeInline(parent: Node): string {
 export function markdownToHtml(markdown: string): string {
   if (!markdown) return '<p></p>'
   if (markdown.startsWith('<')) return markdown
-
-  const blocks = markdown.split(/\n{2,}/)
-  const htmlBlocks: string[] = []
-
-  for (const block of blocks) {
-    if (!block.trim()) continue
-    const trimmed = block.trim()
-
-    if (/^```[\s\S]*```$/.test(trimmed)) {
-      const code = trimmed.replace(/^```\n?/, '').replace(/\n?```$/, '')
-      htmlBlocks.push(`<pre><code>${escapeHtml(code)}</code></pre>`)
-      continue
-    }
-
-    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/m)
-    if (headingMatch) {
-      const level = headingMatch[1].length
-      htmlBlocks.push(`<h${level}>${processInline(headingMatch[2])}</h${level}>`)
-      continue
-    }
-
-    if (/^---$/.test(trimmed) || /^\*\*\*$/.test(trimmed)) {
-      htmlBlocks.push('<hr>')
-      continue
-    }
-
-    if (trimmed.startsWith('> ')) {
-      const lines = trimmed.split('\n').map(line => line.replace(/^> /, '')).join('\n')
-      htmlBlocks.push(`<blockquote><p>${processInline(lines)}</p></blockquote>`)
-      continue
-    }
-
-    const taskItems = parseTaskListItems(trimmed)
-    if (taskItems) {
-      htmlBlocks.push('<ul data-type="taskList">' + taskItems.map(item =>
-        `<li data-type="taskItem" data-checked="${item.checked}"><p>${processInline(item.text)}</p></li>`
-      ).join('') + '</ul>')
-      continue
-    }
-
-    if (/^- .+/.test(trimmed)) {
-      const items = trimmed.split('\n').filter(line => line.startsWith('- '))
-      htmlBlocks.push('<ul>' + items.map(item =>
-        `<li><p>${processInline(item.slice(2))}</p></li>`
-      ).join('') + '</ul>')
-      continue
-    }
-
-    if (/^\d+\. .+/.test(trimmed)) {
-      const items = trimmed.split('\n').filter(line => /^\d+\. .+/.test(line))
-      htmlBlocks.push('<ol>' + items.map(item =>
-        `<li><p>${processInline(item.replace(/^\d+\. /, ''))}</p></li>`
-      ).join('') + '</ol>')
-      continue
-    }
-
-    htmlBlocks.push(`<p>${trimmed.split('\n').map(processInline).join('<br>')}</p>`)
-  }
-
-  return htmlBlocks.join('') || '<p></p>'
+  return renderEditorMarkdown(markdown)
 }
 
 function isTaskList(element: HTMLElement): boolean {
@@ -373,29 +298,33 @@ function isTaskItem(element: Element): element is HTMLElement {
     && (element as HTMLElement).dataset.type === 'taskItem'
 }
 
-function serializeTaskItem(element: HTMLElement): string {
-  const content = Array.from(element.children).find(child => child.tagName.toUpperCase() === 'DIV')
-  return serializeInline(content || element).trim()
-}
-
-function parseTaskListItems(markdown: string): Array<{checked: boolean; text: string}> | null {
-  const lines = markdown.split('\n')
-  const items = lines.map(line => line.match(/^- \[([ xX])\](?:\s+(.*))?$/))
-  if (items.some(item => !item)) return null
-  return items.map(item => ({
-    checked: item![1].toLowerCase() === 'x',
-    text: item![2] || '',
-  }))
-}
-
-function processInline(text: string): string {
-  return text
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
-    .replace(/~~([^~]+)~~/g, '<s>$1</s>')
-    .replace(/<u>([^<]*)<\/u>/g, '<u>$1</u>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+function serializeList(list: HTMLElement, indent = ''): string {
+  const taskList = isTaskList(list)
+  const ordered = list.tagName === 'OL'
+  let number = Number.parseInt(list.getAttribute('start') || '1', 10)
+  if (!Number.isFinite(number)) number = 1
+  return Array.from(list.children).filter(item => item.tagName === 'LI').map(item => {
+    const task = item as HTMLElement
+    const checked = task.dataset.checked === 'true'
+      || task.querySelector<HTMLInputElement>(':scope > label > input[type="checkbox"]')?.checked
+    const prefix = taskList ? `- [${checked ? 'x' : ' '}] ` : ordered ? `${number++}. ` : '- '
+    const content = taskList
+      ? Array.from(task.children).find(child => child.tagName === 'DIV') || task : task
+    // [ ] 是列表正文的一部分；Markdown 子列表缩进按 - 的标记宽度计算。
+    const continuationIndent = indent + ' '.repeat(taskList ? 2 : prefix.length)
+    const body: string[] = []
+    for (const child of content.childNodes) {
+      if (child instanceof HTMLElement && child.tagName === 'LABEL') continue
+      if (child instanceof HTMLElement && ['UL', 'OL'].includes(child.tagName)) {
+        body.push('\n' + serializeList(child, continuationIndent))
+      } else {
+        const text = nodeToMarkdown(child)
+        if (text) body.push((body.length ? '\n\n' + continuationIndent : '')
+          + text.replace(/\n/g, '\n' + continuationIndent))
+      }
+    }
+    return (indent + prefix + body.join('')).trimEnd()
+  }).join('\n')
 }
 
 function escapeAttr(value: string): string {
