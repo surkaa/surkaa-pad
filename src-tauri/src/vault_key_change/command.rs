@@ -1,3 +1,4 @@
+use super::cloud_claim::CloudClaim;
 use super::diagnostics::{Diagnostics, KeyChangeReport, ObservedStorage};
 use super::engine::{progress, run};
 use super::inventory::inventory;
@@ -260,18 +261,19 @@ async fn check_cloud_start(
     store: &Storage,
     expected: &crate::vault_bootstrap::VaultBootstrap,
 ) -> Result<()> {
-    store
-        .state
-        .oss_client()
-        .require_unversioned_bucket()
-        .await
-        .map_err(error)?;
     if store
         .head(ObjectLocations::vault_key_change())
         .await?
         .is_some()
     {
         return Err(error("云端有未完成的改密，请先继续已有改密"));
+    }
+    if !store
+        .list_prefix(ObjectLocations::vault_key_change_claims_prefix())
+        .await?
+        .is_empty()
+    {
+        return Err(error("云端有未完成的改密占位，请先在发起设备继续原任务"));
     }
     let json = read_limited(store, ObjectLocations::vault_bootstrap(), 16 * 1024).await?;
     let bootstrap = crate::vault_bootstrap::VaultBootstrap::from_json(
@@ -342,16 +344,45 @@ pub(super) async fn start_change(
         .persist_key_change(Some(encoded.clone()))
         .map_err(error)?;
     if store.remote {
-        let created = state
-            .oss_client()
-            .upload_bytes_if_absent(ObjectLocations::vault_key_change(), encoded.as_bytes())
-            .await
-            .map_err(error)?;
-        if !created {
-            // 尚未替换任何对象，也未取得云锁，可以安全撤销本机的启动标记。
+        let claim = CloudClaim::new(
+            &prepared.journal.transaction_id,
+            &prepared.journal.old_bootstrap.vault_id,
+        )?;
+        if !claim.acquire(&store).await? {
+            // 本次尚未运行迁移；只撤回自己的占位，不触碰另一个任务的记录。
+            // 删除失败时仍保留本机 Journal，不能留下无从续改的云占位。
+            claim.release(&store).await?;
+            state.persist_key_change(None).map_err(error)?;
+            return Err(error(
+                "其他设备同时申请改密，本次未修改数据，请重新统计后重试",
+            ));
+        }
+        // 取得占位后再次确认旧版记录及 bootstrap；兼容已有旧任务，但不覆盖它们。
+        if store
+            .head(ObjectLocations::vault_key_change())
+            .await?
+            .is_some()
+        {
+            claim.release(&store).await?;
             state.persist_key_change(None).map_err(error)?;
             return Err(error("云端已有改密记录，停止启动以避免并发修改"));
         }
+        let bootstrap = read_limited(&store, ObjectLocations::vault_bootstrap(), 16 * 1024).await?;
+        let current = crate::vault_bootstrap::VaultBootstrap::from_json(
+            std::str::from_utf8(&bootstrap).map_err(error)?,
+        )
+        .map_err(error)?;
+        if current != prepared.journal.old_bootstrap {
+            claim.release(&store).await?;
+            state.persist_key_change(None).map_err(error)?;
+            return Err(error("取得改密占位前云端密钥已变化，请重新解锁并同步"));
+        }
+        // 独占来自占位协议，不再依赖版本控制桶会忽略的 forbid-overwrite 头。
+        state
+            .oss_client()
+            .upload_bytes(ObjectLocations::vault_key_change(), encoded.as_bytes())
+            .await
+            .map_err(error)?;
         let read_back = read_limited(
             &store,
             ObjectLocations::vault_key_change(),
@@ -424,12 +455,7 @@ pub(super) async fn resume_change(
     let store = storage(state, journal.remote);
     if store.remote {
         initialize_resume_oss(state, &new, &checkpoint.local_config).await?;
-        state
-            .oss_client()
-            .require_unversioned_bucket()
-            .await
-            .map_err(error)?;
-        verify_cloud_bootstrap(&store, &journal, false).await?;
+        let claim = CloudClaim::new(&journal.transaction_id, &journal.old_bootstrap.vault_id)?;
         if store
             .head(ObjectLocations::vault_key_change())
             .await?
@@ -442,18 +468,44 @@ pub(super) async fn resume_change(
             )
             .await?;
             let remote = Journal::parse(std::str::from_utf8(&remote).map_err(error)?)?;
-            verify_same_transaction(&journal, &remote)?;
+            if let Err(conflict) = verify_same_transaction(&journal, &remote) {
+                withdraw_unstarted_claim(state, &store, &journal, &checkpoint, &claim).await?;
+                return Err(conflict);
+            }
+            verify_cloud_bootstrap(&store, &journal, false).await?;
+            // 当前活动 Journal 已确认是本任务：其他尚未获准的竞争占位不能
+            // 阻止原任务续改。它们仍不能通过“唯一占位”检查，更不能抢占原任务。
+            // 旧版 Journal 没有占位，先发布自己的占位再恢复即可。
+            claim.publish(&store).await?;
         } else {
+            if let Err(changed) = verify_cloud_bootstrap(&store, &journal, false).await {
+                withdraw_unstarted_claim(state, &store, &journal, &checkpoint, &claim).await?;
+                return Err(changed);
+            }
             // 云记录创建响应丢失或最终确认中断时，本机仍保留检查点。
             // 重新取得云锁后才允许恢复，不能直接覆盖可能由另一设备创建的记录。
-            let created = state
-                .oss_client()
-                .upload_bytes_if_absent(ObjectLocations::vault_key_change(), encoded.as_bytes())
-                .await
-                .map_err(error)?;
-            if !created {
+            if !claim.acquire(&store).await? {
+                let withdrawn =
+                    withdraw_unstarted_claim(state, &store, &journal, &checkpoint, &claim).await?;
+                return Err(error(if withdrawn {
+                    "云端有其他改密占位，本次尚未修改数据，已撤回本次申请；请先完成其他设备的任务"
+                } else {
+                    "云端有其他改密占位，保留本机恢复记录；请先完成或恢复其他设备的任务"
+                }));
+            }
+            // 占位保证没有另一个获准的任务；再次检查，不能覆盖旧应用的活动记录。
+            if store
+                .head(ObjectLocations::vault_key_change())
+                .await?
+                .is_some()
+            {
                 return Err(error("云端已出现其他改密记录，请停止并检查其他设备"));
             }
+            state
+                .oss_client()
+                .upload_bytes(ObjectLocations::vault_key_change(), encoded.as_bytes())
+                .await
+                .map_err(error)?;
             let saved = read_limited(
                 &store,
                 ObjectLocations::vault_key_change(),
@@ -476,6 +528,31 @@ pub(super) async fn resume_change(
         event,
     )
     .await
+}
+
+/// 仅清理尚未建立迁移进度的竞争者；已开始处理的任务绝不能自动丢弃恢复材料。
+pub(super) async fn withdraw_unstarted_claim(
+    state: &AppState,
+    store: &dyn RekeyStorage,
+    journal: &Journal,
+    checkpoint: &Checkpoint,
+    claim: &CloudClaim,
+) -> Result<bool> {
+    if checkpoint.next == 0
+        && checkpoint.staged.is_none()
+        && !checkpoint.data_committed
+        && store
+            .list_prefix(&ObjectLocations::vault_key_change_staging_prefix(
+                &journal.transaction_id,
+            ))
+            .await?
+            .is_empty()
+    {
+        claim.release(store).await?;
+        state.persist_key_change(None).map_err(error)?;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 fn verify_same_transaction(expected: &Journal, actual: &Journal) -> Result<()> {
@@ -680,6 +757,13 @@ pub(crate) async fn ensure_no_remote_key_change(state: &AppState) -> Result<()> 
             "云端正在改密，请先在发起改密的设备完成续改，再重新解锁此设备",
         ));
     }
+    if !storage(state, true)
+        .list_prefix(ObjectLocations::vault_key_change_claims_prefix())
+        .await?
+        .is_empty()
+    {
+        return Err(error("云端正在准备或结束改密，请先在发起设备继续完成任务"));
+    }
     Ok(())
 }
 
@@ -821,6 +905,7 @@ async fn ack_change_inner(state: &AppState, local_config: LocalEncryptedConfig) 
     let store = storage(state, journal.remote);
     if store.remote {
         verify_cloud_bootstrap(&store, &journal, true).await?;
+        let claim = CloudClaim::new(&journal.transaction_id, &journal.old_bootstrap.vault_id)?;
         if store
             .head(ObjectLocations::vault_key_change())
             .await?
@@ -834,6 +919,10 @@ async fn ack_change_inner(state: &AppState, local_config: LocalEncryptedConfig) 
             .await?;
             let remote = Journal::parse(std::str::from_utf8(&saved).map_err(error)?)?;
             verify_same_transaction(&journal, &remote)?;
+            claim.publish(&store).await?;
+        } else if !claim.acquire(&store).await? {
+            // 上次确认可能已删除自己的 Journal。此时不能盲删刚出现的新任务记录。
+            return Err(error("云端有其他改密占位，不能清理本次任务之外的记录"));
         }
     }
     // 恢复时清理已经提交、但上次删除失败的临时对象。任何删除失败都保留记录供重试。
@@ -859,6 +948,10 @@ async fn ack_change_inner(state: &AppState, local_config: LocalEncryptedConfig) 
     }
     if store.remote {
         store.delete(ObjectLocations::vault_key_change()).await?;
+        // 最后释放占位。删除 Journal 后崩溃仍阻止其他任务启动；续改可重建 Journal。
+        CloudClaim::new(&journal.transaction_id, &journal.old_bootstrap.vault_id)?
+            .release(&store)
+            .await?;
     }
     state.persist_key_change(None).map_err(error)?;
     Ok(())

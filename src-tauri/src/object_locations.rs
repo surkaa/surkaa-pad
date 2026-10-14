@@ -124,12 +124,10 @@ impl ObjectLocations {
         "vault/key-change.json"
     }
 
-    #[cfg(test)]
     pub const fn vault_key_change_claims_prefix() -> &'static str {
         "vault/key-change-claims/"
     }
 
-    #[cfg(test)]
     pub fn vault_key_change_claim(transaction_id: &str) -> String {
         format!(
             "{}{transaction_id}.json",

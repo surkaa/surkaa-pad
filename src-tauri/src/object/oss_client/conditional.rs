@@ -133,7 +133,8 @@ impl OssClient {
         })))
     }
 
-    /// 源 ETag 条件和备份的禁止覆盖都由 OSS 执行。复制响应不明时交由恢复逻辑核查，
+    /// 源 ETag 条件由 OSS 执行；forbid-overwrite 在版本控制桶无效，上层必须
+    /// 通过任务占位及目标存在性检查保护备份。复制响应不明时交由恢复逻辑核查，
     /// 不在这里重试 PUT 或退回下载重传，以免覆盖已存在的恢复资料。
     pub async fn copy_object_if_match(
         &self,

@@ -335,7 +335,9 @@ async fn cloud_detects_source_stage_and_final_changes_without_marking_complete()
 
 #[tokio::test]
 async fn fresh_cloud_does_not_overwrite_existing_backup_and_resume_checks_its_content() {
-    for valid in [false, true] {
+    for (valid, ignore_forbid_overwrite) in
+        [(false, false), (true, false), (false, true), (true, true)]
+    {
         let store = MemoryStore::default();
         let (old, ob) = crypto("old");
         let (new, nb) = crypto("new");
@@ -354,6 +356,7 @@ async fn fresh_cloud_does_not_overwrite_existing_backup_and_resume_checks_its_co
         {
             let mut data = store.0.lock().unwrap();
             data.cloud = true;
+            data.ignore_forbid_overwrite = ignore_forbid_overwrite;
             data.objects.insert(backup.clone(), bytes.clone());
         }
         assert!(
@@ -361,7 +364,7 @@ async fn fresh_cloud_does_not_overwrite_existing_backup_and_resume_checks_its_co
                 .await
                 .unwrap_err()
                 .to_string()
-                .contains("409")
+                .contains("备份已存在")
         );
         assert_eq!(store.0.lock().unwrap().objects[&backup], bytes);
         assert_eq!(store.0.lock().unwrap().objects[&source], original);

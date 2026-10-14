@@ -324,6 +324,11 @@ pub(super) async fn run(
                 .ok_or_else(|| error("缺少云端校验证据"))?;
             set_phase(&mut phases, "backingUp");
             let copying = step("committing", KeyChangeFileStep::BackingUp, item.source.size);
+            // 版本控制桶忽略 forbid-overwrite。上层任务占位确保唯一写者，
+            // 此处仍必须检查未知/遗留备份，不能把它直接覆盖；不新增整文件读取。
+            if storage.head(&backup_key).await?.is_some() {
+                return Err(error("旧密文备份已存在，拒绝覆盖，保留记录供续改校验"));
+            }
             let backup = storage
                 .copy_if_match(&item.source, &backup_key, true)
                 .await?;

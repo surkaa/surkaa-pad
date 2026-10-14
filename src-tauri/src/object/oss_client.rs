@@ -390,7 +390,8 @@ impl OssClient {
         }
     }
 
-    /// 改密恢复记录不能留在 OSS 版本历史中；空 Status 才是从未开启版本控制。
+    /// 实桶测试要求普通 DELETE 可以清理全部夹具；业务改密不再限制版本控制状态。
+    #[cfg(test)]
     pub async fn require_unversioned_bucket(&self) -> Result<(), ObjectError> {
         #[derive(serde::Deserialize)]
         #[serde(rename = "VersioningConfiguration")]
@@ -412,7 +413,7 @@ impl OssClient {
         })?;
         if response.status_code() != 200 || response.as_slice().len() > 16 * 1024 {
             return Err(ObjectError::OperationFailed(
-                "无法确认桶版本控制状态，不能安全改密".into(),
+                "无法确认测试桶版本控制状态，不能安全清理夹具".into(),
             ));
         }
         let xml = std::str::from_utf8(response.as_slice())
@@ -429,7 +430,7 @@ impl OssClient {
             .is_some_and(|status| !status.is_empty())
         {
             return Err(ObjectError::OperationFailed(
-                "第一版改密不支持启用或暂停版本控制的桶，避免恢复密钥遗留在版本历史中".into(),
+                "实桶测试需要未启用版本控制的桶，避免测试夹具遗留在历史版本中".into(),
             ));
         }
         Ok(())

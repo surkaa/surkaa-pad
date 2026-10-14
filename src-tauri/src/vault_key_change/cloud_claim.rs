@@ -45,7 +45,7 @@ impl CloudClaim {
     }
 
     /// 调用前必须已经持久保存本机 Journal。PUT 响应丢失也保留记录供续改核对。
-    pub async fn acquire(&self, store: &dyn RekeyStorage) -> Result<bool> {
+    pub async fn publish(&self, store: &dyn RekeyStorage) -> Result<()> {
         let key = self.key();
         if store.head(&key).await?.is_none() {
             let bytes = serde_json::to_vec(self).map_err(error)?;
@@ -53,7 +53,12 @@ impl CloudClaim {
                 .write(&key, bytes.len() as u64, byte_stream(bytes))
                 .await?;
         }
-        self.verify(store).await?;
+        self.verify(store).await
+    }
+
+    pub async fn acquire(&self, store: &dyn RekeyStorage) -> Result<bool> {
+        self.publish(store).await?;
+        let key = self.key();
         let claims = store
             .list_prefix(ObjectLocations::vault_key_change_claims_prefix())
             .await?;

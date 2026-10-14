@@ -37,6 +37,7 @@
             <template v-if="plan.remote"><span>累计传输量估算</span><strong>{{ formatBytes(plan.transferBytes) }}</strong></template>
           </div>
           <div v-if="plan.remote" class="text-caption desc-text">正常流程约传输重加密数据量的 4 倍；这里按备份校验值缺失时的 5 倍保守估算。备份与替换由云端复制，不经过本机传输。这不是最终占用空间或严格上限，不含改密检查点、请求开销及中断恢复的额外校验。</div>
+          <div v-if="plan.remote" class="notice" data-testid="key-change-version-history">本应用不会永久清理云端历史版本。启用版本控制时，旧密文、临时文件及恢复记录的历史可能继续占用空间，以上空间估算不包含它们；暂停版本控制时按 OSS 自身规则保留历史。旧密码仍能读取改密前的历史数据，持有新密钥及恢复记录历史也可能追溯旧密钥。</div>
           <div class="notice">耗时基于本机实测，不包含磁盘读写、校验及网络等待；云端改密还会产生读取、写入请求和流量。实际耗时可能明显更长。请备份重要数据并保持供电。{{ changePassword ? '中断续改时需要新主密码，请务必记住。' : '本次只更换盐，续改时仍输入原主密码。' }}</div>
           <div v-if="!plan.remote" class="notice">本次只更改本地数据，不会修改已断开云同步的旧云端副本或其他备份；新旧密钥的副本不能直接混用。</div>
           <div class="text-caption desc-text">新盐：{{ plan.newBootstrap.kdf.salt }}</div>

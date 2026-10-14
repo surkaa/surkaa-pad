@@ -100,6 +100,26 @@ describe('vault key change dialog', () => {
     expect(document.querySelectorAll('.q-field--dark').length).toBe(4);
   });
 
+  it.each([false, true])('explains retained cloud history without changing the theme in dark=%s', async dark => {
+    api.cmdPlanVaultKeyChange.mockResolvedValueOnce({planId: 'test-plan', remote: true,
+      totalFiles: 0, totalBytes: 0, encryptedFiles: 0, encryptedBytes: 0, temporaryBytes: 0,
+      derivationMs: 0, cryptoEstimateMs: 0, transferBytes: 0, newBootstrap: {kdf: {salt: 'test-salt'}}});
+    vi.spyOn(vaultKeyChange, 'getLocalEncryptedConfig').mockResolvedValue({vaultVerifier: null, oss: null, ai: null});
+    await mount(dark);
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="password"]');
+    for (const [index, value] of ['old-test', 'new-test', 'new-test'].entries()) {
+      inputs[index].value = value; inputs[index].dispatchEvent(new Event('input', {bubbles: true}));
+    }
+    document.querySelector<HTMLElement>('.q-checkbox')!.click(); await nextTick();
+    [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '统计数据并估算')!.click();
+    await vi.advanceTimersByTimeAsync(0); await nextTick();
+    const notice = document.querySelector('[data-testid="key-change-version-history"]')!;
+    expect(notice.textContent).toContain('不会永久清理云端历史版本');
+    expect(notice.textContent).toContain('空间估算不包含');
+    expect(notice.textContent).toContain('可能追溯旧密钥');
+    expect(document.body.classList.contains('body--dark')).toBe(dark);
+  });
+
   it.each([false, true])('exposes the testing cost in packaged Dev and sends 1024 KiB to the plan command in dark=%s', async dark => {
     vi.stubEnv('DEV', false);
     appInfo.getIdentifier.mockResolvedValue('cn.surkaa.pad.dev');

@@ -20,6 +20,9 @@ use std::sync::{Arc, Mutex};
 #[path = "fast_tests.rs"]
 mod fast_tests;
 
+#[path = "command_claim_tests.rs"]
+mod command_claim_tests;
+
 #[derive(Clone, Default)]
 struct MemoryStore(Arc<Mutex<Memory>>);
 
@@ -41,6 +44,7 @@ struct Memory {
     read_counts: BTreeMap<String, usize>,
     read_fault: Option<(String, ReadFault)>,
     cloud: bool,
+    ignore_forbid_overwrite: bool,
     omit_crc: bool,
     bad_crc: bool,
     copy_fault: Option<CopyFault>,
@@ -122,7 +126,10 @@ impl RekeyStorage for MemoryStore {
             if Self::entry(&source.key, &bytes) != *source {
                 return Err(error("HTTP 412"));
             }
-            if forbid_overwrite && data.objects.contains_key(target) {
+            if forbid_overwrite
+                && !data.ignore_forbid_overwrite
+                && data.objects.contains_key(target)
+            {
                 return Err(error("HTTP 409"));
             }
             let crc = crc::Crc::<u64>::new(&crc::CRC_64_XZ).checksum(&bytes);
@@ -1403,6 +1410,7 @@ fn cloud_config(old: &Crypto) -> LocalEncryptedConfig {
 #[tokio::test]
 async fn cloud_workflow_preserves_bootstrap_until_done_and_refreshes_other_device_locally() {
     let (client, guard) = crate::test_utils::TestOssGuard::new(OssClient::from_env()).await;
+    client.require_unversioned_bucket().await.unwrap();
     let temp = tempfile::tempdir().unwrap();
     let other_temp = tempfile::tempdir().unwrap();
     let (old, ob) = crypto("old");
@@ -1494,6 +1502,33 @@ async fn cloud_workflow_preserves_bootstrap_until_done_and_refreshes_other_devic
     let journal = Journal::parse(&encoded).unwrap();
     assert!(journal.open("old".into()).is_err());
 
+    // 已获准的活动任务不能被后来者的占位阻塞；竞争者也不能抢占原任务。
+    let contender =
+        super::cloud_claim::CloudClaim::new(&"a".repeat(32), &journal.old_bootstrap.vault_id)
+            .unwrap();
+    assert!(!contender.acquire(&cloud).await.unwrap());
+    let manager = state.key_change_manager();
+    let pause_again = tauri::ipc::Channel::new(move |body| {
+        if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+            if serde_json::from_str::<serde_json::Value>(&json).unwrap()["phase"]
+                == "completedObject"
+            {
+                manager.request_pause();
+            }
+        }
+        Ok(())
+    });
+    assert!(
+        super::command::resume_change(&state, "new".into(), pause_again)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("已暂停")
+    );
+    let encoded = state.pending_key_change().unwrap();
+    let journal = Journal::parse(&encoded).unwrap();
+    assert!(journal.open("new".into()).unwrap().2.next >= 2);
+
     // 恢复只清理本事务/当前替换目标的分片，不能误删其他对象的未完成上传。
     let (_, _, mut checkpoint) = journal.open("new".into()).unwrap();
     checkpoint.staged = Some(VerifiedStage {
@@ -1538,6 +1573,21 @@ async fn cloud_workflow_preserves_bootstrap_until_done_and_refreshes_other_devic
     restarted.persist_vault_bootstrap(ob.clone()).unwrap();
     restarted.persist_remote_enabled(true).unwrap();
     restarted.persist_key_change(Some(encoded)).unwrap();
+    assert!(
+        super::command::resume_change(&restarted, "new".into(), channel())
+            .await
+            .is_err(),
+        "Journal 缺失时不能在还有竞争占位的情况下修改数据"
+    );
+    assert!(restarted.pending_key_change().is_some());
+    contender.release(&cloud).await.unwrap();
+    // 旧版暂停任务没有占位，仍可在确认唯一后补建占位并续改。
+    client
+        .delete(&ObjectLocations::vault_key_change_claim(
+            &journal.transaction_id,
+        ))
+        .await
+        .unwrap();
     let config = super::command::resume_change(&restarted, "new".into(), channel())
         .await
         .unwrap();
@@ -1555,6 +1605,7 @@ async fn cloud_workflow_preserves_bootstrap_until_done_and_refreshes_other_devic
         "旧云缓存不能混入新密钥数据"
     );
     let saved = restarted.pending_key_change().unwrap();
+    assert!(!contender.acquire(&cloud).await.unwrap());
     let mut foreign = Journal::parse(&saved).unwrap();
     foreign.transaction_id = "ffffffffffffffffffffffffffffffff".into();
     client
@@ -1577,6 +1628,24 @@ async fn cloud_workflow_preserves_bootstrap_until_done_and_refreshes_other_devic
     super::command::ack_change(&restarted, config)
         .await
         .unwrap();
+    assert!(!client
+        .object_exists(&ObjectLocations::vault_key_change_claim(
+            &journal.transaction_id
+        ))
+        .await
+        .unwrap());
+    assert!(
+        super::command::ensure_no_remote_key_change(&other)
+            .await
+            .is_err(),
+        "竞争者未撤回的占位也必须阻止普通操作"
+    );
+    contender.release(&cloud).await.unwrap();
+    assert!(cloud
+        .list_prefix(ObjectLocations::vault_key_change_claims_prefix())
+        .await
+        .unwrap()
+        .is_empty());
     assert!(!client
         .object_exists(ObjectLocations::vault_key_change())
         .await
