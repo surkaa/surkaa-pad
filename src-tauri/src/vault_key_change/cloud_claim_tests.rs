@@ -11,6 +11,7 @@ struct VersionedStore {
     history: Mutex<Vec<(String, Vec<u8>)>>,
     writes: Mutex<usize>,
     lose_write_ack: Mutex<bool>,
+    lose_delete_ack: Mutex<bool>,
     incomplete_list: Mutex<bool>,
     after_write: Option<Arc<tokio::sync::Barrier>>,
 }
@@ -73,6 +74,9 @@ impl RekeyStorage for VersionedStore {
         // 模拟版本控制桶的删除：当前对象消失，但旧字节仍在历史中。
         if let Some(old) = self.objects.lock().unwrap().remove(key) {
             self.history.lock().unwrap().push((key.into(), old));
+        }
+        if std::mem::take(&mut *self.lose_delete_ack.lock().unwrap()) {
+            return Err(error("删除成功但响应丢失"));
         }
         Ok(())
     }
@@ -139,10 +143,29 @@ async fn resumes_a_claim_whose_write_ack_was_lost_and_rejects_a_missing_list_res
 }
 
 #[tokio::test]
+async fn release_is_idempotent_after_a_lost_delete_ack_and_keeps_history() {
+    let store = VersionedStore::default();
+    let owner = claim('a');
+    assert!(owner.acquire(&store).await.unwrap());
+    *store.lose_delete_ack.lock().unwrap() = true;
+    assert!(owner.release(&store).await.is_err());
+    assert!(store.head(&owner.key()).await.unwrap().is_none());
+    owner.release(&store).await.unwrap();
+    assert_eq!(store.history.lock().unwrap().len(), 1);
+    assert!(claim('b').acquire(&store).await.unwrap());
+}
+
+#[tokio::test]
 async fn corrupt_or_foreign_claim_is_never_overwritten_or_deleted() {
     for bytes in [
         b"invalid json".to_vec(),
         serde_json::to_vec(&claim('b')).unwrap(),
+        vec![b' '; 4097],
+        serde_json::to_vec(&CloudClaim {
+            version: 99,
+            ..claim('a')
+        })
+        .unwrap(),
     ] {
         let store = VersionedStore::default();
         let owner = claim('a');

@@ -366,6 +366,8 @@ impl OssClient {
 
     /// 仅在对象不存在时创建，避免多个设备首次迁移同一份不可变引导配置时互相覆盖。
     /// 返回 `true` 表示本次创建成功，`false` 表示对象已经存在。
+    /// 仅未启用版本控制的桶具备禁止覆盖保证；已启用/暂停时 OSS 会忽略此头。
+    /// 此时不能把本方法当作原子锁，bootstrap 多设备初始化的适配记录在 TODO.md。
     pub async fn upload_bytes_if_absent(
         &self,
         key: &str,
