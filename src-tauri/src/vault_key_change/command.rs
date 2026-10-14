@@ -121,6 +121,8 @@ pub(super) async fn plan_change(
     let _guard = state
         .try_lock_key_change()
         .ok_or_else(|| error("请等待当前日记、附件或 AI 操作完成后再改密"))?;
+    let _process_guard = state.lock_key_change_process().map_err(error)?;
+    state.ensure_storage_available()?;
     let old_password = Zeroizing::new(old_password);
     let new_password = Zeroizing::new(new_password);
     let confirm_password = Zeroizing::new(confirm_password);
@@ -316,6 +318,8 @@ pub(super) async fn start_change(
     let _guard = state
         .try_lock_key_change()
         .ok_or_else(|| error("存储正在使用，请稍后再试"))?;
+    let _process_guard = state.lock_key_change_process().map_err(error)?;
+    state.ensure_storage_available()?;
     let manager = state.key_change_manager();
     let mut prepared = manager
         .prepared
@@ -447,6 +451,7 @@ pub(super) async fn resume_change(
     let _guard = state
         .try_lock_key_change()
         .ok_or_else(|| error("改密任务正在运行"))?;
+    let _process_guard = state.lock_key_change_process().map_err(error)?;
     let encoded = state
         .pending_key_change()
         .ok_or_else(|| error("没有需要续改的任务"))?;
@@ -790,6 +795,8 @@ pub(super) async fn sync_changed_key(
     let _guard = state
         .try_lock_key_change()
         .ok_or_else(|| error("存储正在使用"))?;
+    let _process_guard = state.lock_key_change_process().map_err(error)?;
+    state.ensure_storage_available()?;
     if state.configured_remote_enabled() != Some(true) {
         return Err(error("本机没有启用云同步"));
     }
@@ -851,6 +858,7 @@ pub(super) async fn ack_change(state: &AppState, local_config: LocalEncryptedCon
     let _guard = state
         .try_lock_key_change()
         .ok_or_else(|| error("改密任务正在运行"))?;
+    let _process_guard = state.lock_key_change_process().map_err(error)?;
     let Some(encoded) = state.pending_key_change() else {
         return Ok(());
     };

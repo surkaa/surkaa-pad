@@ -146,6 +146,10 @@ impl AppState {
         self.storage_mode_gate.clone().try_write_owned().ok()
     }
 
+    pub(crate) fn lock_key_change_process(&self) -> Result<Option<std::fs::File>, AppConfigError> {
+        self.app_config.lock_key_change_process()
+    }
+
     pub(crate) fn pending_key_change(&self) -> Option<String> {
         self.app_config
             .current()

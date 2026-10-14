@@ -194,6 +194,8 @@ pub enum AppConfigError {
     Json(#[from] serde_json::Error),
     #[error("不支持的应用配置版本: {0}")]
     UnsupportedVersion(u32),
+    #[error("本机另一应用实例正在执行改密，请先关闭它")]
+    KeyChangeProcessBusy,
 }
 
 impl From<AppConfigError> for AppError {
@@ -230,6 +232,32 @@ impl AppConfigStore {
 
     pub fn current(&self) -> AppConfig {
         self.lock_config().clone()
+    }
+
+    /// 文件锁只保护本机改密执行者；崩溃时 OS 自动释放，云端占位仍保留供续改。
+    /// 锁文件固定且不删除，避免删除/重建使并发进程锁住不同文件。
+    pub(crate) fn lock_key_change_process(&self) -> Result<Option<fs::File>, AppConfigError> {
+        let Some(path) = &self.path else {
+            // 只有测试用的纯内存配置没有文件路径。
+            return Ok(None);
+        };
+        let parent = path.parent().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "应用配置路径缺少父目录")
+        })?;
+        fs::create_dir_all(parent)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path.with_extension("key-change.lock"))?;
+        fs4::FileExt::try_lock(&file).map_err(|failure| match failure {
+            fs4::TryLockError::WouldBlock => AppConfigError::KeyChangeProcessBusy,
+            fs4::TryLockError::Error(error) => AppConfigError::Io(error),
+        })?;
+        // 上一个执行者可能在另一进程中保存了检查点，不能使用启动时的旧缓存。
+        *self.lock_config() = load_config(path)?;
+        Ok(Some(file))
     }
 
     pub fn initialize_remote_enabled(&self, legacy_enabled: bool) -> Result<bool, AppConfigError> {
@@ -433,6 +461,101 @@ fn backup_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_change_process_lock_probe() {
+        let Ok(path) = std::env::var("SURKAA_TEST_KEY_CHANGE_LOCK_PATH") else {
+            return;
+        };
+        let store = AppConfigStore::load(path.into()).unwrap();
+        let result = store.lock_key_change_process();
+        if std::env::var("SURKAA_TEST_KEY_CHANGE_LOCK_EXPECT").unwrap() == "busy" {
+            assert!(matches!(result, Err(AppConfigError::KeyChangeProcessBusy)));
+        } else {
+            let _guard = result.unwrap().unwrap();
+            assert_eq!(
+                store.current().pending_vault_key_change(),
+                Some("protected-checkpoint")
+            );
+            if std::env::var("SURKAA_TEST_KEY_CHANGE_LOCK_EXPECT").unwrap() == "exit-with-lock" {
+                // 模拟进程突然结束：不运行 File 的 Rust 析构，仍须由 OS 释放锁。
+                std::process::exit(0);
+            }
+        }
+    }
+
+    #[test]
+    fn key_change_process_lock_excludes_another_process_and_preserves_recovery_after_release() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join(APP_CONFIG_FILENAME);
+        let store = AppConfigStore::load(path.clone()).unwrap();
+        let guard = store.lock_key_change_process().unwrap().unwrap();
+        store
+            .set_pending_vault_key_change(Some("protected-checkpoint".into()))
+            .unwrap();
+        let probe = |expected| {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "app_config::tests::key_change_process_lock_probe",
+                    "--nocapture",
+                ])
+                .env("SURKAA_TEST_KEY_CHANGE_LOCK_PATH", &path)
+                .env("SURKAA_TEST_KEY_CHANGE_LOCK_EXPECT", expected)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+        };
+        probe("busy");
+        drop(guard);
+        probe("exit-with-lock");
+        probe("available");
+        assert_eq!(
+            store.current().pending_vault_key_change(),
+            Some("protected-checkpoint")
+        );
+        assert!(path.with_extension("key-change.lock").exists());
+    }
+
+    #[test]
+    fn key_change_process_lock_refreshes_stale_state_and_fails_closed_on_corruption() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join(APP_CONFIG_FILENAME);
+        let first = AppConfigStore::load(path.clone()).unwrap();
+        let stale = AppConfigStore::load(path.clone()).unwrap();
+        let guard = first.lock_key_change_process().unwrap().unwrap();
+        first
+            .set_pending_vault_key_change(Some("protected-checkpoint".into()))
+            .unwrap();
+        assert!(matches!(
+            stale.lock_key_change_process(),
+            Err(AppConfigError::KeyChangeProcessBusy)
+        ));
+        drop(guard);
+        let guard = stale.lock_key_change_process().unwrap().unwrap();
+        assert_eq!(
+            stale.current().pending_vault_key_change(),
+            Some("protected-checkpoint")
+        );
+        let independent = AppConfigStore::load(temp.path().join("other.json")).unwrap();
+        let _independent_guard = independent.lock_key_change_process().unwrap().unwrap();
+        drop(guard);
+        fs::write(&path, "broken-json").unwrap();
+        assert!(stale.lock_key_change_process().is_err());
+        assert_eq!(
+            stale.current().pending_vault_key_change(),
+            Some("protected-checkpoint")
+        );
+        // 重读失败也释放 OS 锁，修复磁盘配置后可继续，不能永久卡死。
+        first
+            .set_pending_vault_key_change(Some("protected-checkpoint".into()))
+            .unwrap();
+        assert!(stale.lock_key_change_process().is_ok());
+    }
 
     #[test]
     fn invalid_optional_diagnostics_do_not_block_security_configuration() {

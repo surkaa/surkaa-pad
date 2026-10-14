@@ -2,6 +2,74 @@ use super::*;
 use crate::vault_key_change::cloud_claim::CloudClaim;
 
 #[tokio::test]
+async fn rekey_commands_cannot_touch_data_while_another_instance_holds_the_process_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = persistent_state(temp.path());
+    let (_, bootstrap) = crypto("old");
+    state.persist_vault_bootstrap(bootstrap).unwrap();
+    let another = persistent_state(temp.path());
+    let guard = another.lock_key_change_process().unwrap().unwrap();
+    let before = std::fs::read(temp.path().join("app-state.json")).unwrap();
+    let busy =
+        |failure: crate::error::AppError| assert!(failure.to_string().contains("本机另一应用实例"));
+    use crate::vault_key_change::command;
+    busy(
+        command::plan_change(
+            &state,
+            "old".into(),
+            "new".into(),
+            "new".into(),
+            None,
+            Default::default(),
+        )
+        .await
+        .err()
+        .unwrap(),
+    );
+    busy(
+        command::start_change(&state, "no-plan".into(), channel())
+            .await
+            .err()
+            .unwrap(),
+    );
+    busy(
+        command::resume_change(&state, "new".into(), channel())
+            .await
+            .err()
+            .unwrap(),
+    );
+    busy(
+        command::sync_changed_key(&state, "new".into(), Default::default(), channel())
+            .await
+            .err()
+            .unwrap(),
+    );
+    busy(
+        command::ack_change(&state, Default::default())
+            .await
+            .err()
+            .unwrap(),
+    );
+    assert_eq!(
+        std::fs::read(temp.path().join("app-state.json")).unwrap(),
+        before
+    );
+    assert!(Storage {
+        state: state.clone(),
+        remote: false
+    }
+    .list()
+    .await
+    .unwrap()
+    .is_empty());
+    assert!(state.pending_key_change().is_none());
+    drop(guard);
+    command::ack_change(&state, Default::default())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn withdraws_only_an_unstarted_owned_claim_and_keeps_all_recovery_on_uncertainty() {
     for case in [
         "fresh",
