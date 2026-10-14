@@ -22,7 +22,7 @@ const appInfo = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/app', () => appInfo);
 vi.mock('../../utils/api', () => ({default: api}));
 vi.mock('@tauri-apps/api/core', () => ({Channel: class { onmessage = (_p: KeyChangeProgress) => {}; }}));
-vi.mock('../../stores/timeout', () => ({useTimeoutStore: () => ({clearCloseTimers: vi.fn(), setTimeoutForCloseApp: vi.fn()})}));
+vi.mock('../../stores/timeout', () => ({useTimeoutStore: () => ({pauseAutoClose: vi.fn(() => vi.fn())})}));
 
 let app: App | undefined;
 async function mount(dark = false) {

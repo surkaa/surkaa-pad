@@ -13,7 +13,11 @@ export const useTimeoutStore = defineStore('timeout', () => {
     let closeTimer: ReturnType<typeof setTimeout> | null = null;
     let exitTimer: ReturnType<typeof setTimeout> | null = null;
     let finalWarningTimer: ReturnType<typeof setTimeout> | null = null;
+    let dismissInitialWarning: (() => void) | null = null;
     let dismissFinalWarning: (() => void) | null = null;
+    let timerGeneration = 0;
+    const pauseCount = ref(0);
+    const autoClosePaused = computed(() => pauseCount.value > 0);
     const startTime = ref(Date.now());
     const $q = useQuasar();
 
@@ -22,6 +26,7 @@ export const useTimeoutStore = defineStore('timeout', () => {
 
     // 计算剩余时间字符串，格式为 MM:SS
     const remainingStr = computed(() => {
+        if (autoClosePaused.value) return "已暂停";
         if (!startTime.value) return "00:00"; // 尚未加载时显示 00:00
 
         const diff = new Date(startTime.value + AUTO_CLOSE_APP_TIMEOUT).getTime() - now.value;
@@ -34,18 +39,25 @@ export const useTimeoutStore = defineStore('timeout', () => {
 
     function setTimeoutForCloseApp() {
         clearCloseTimers();
+        // 改密期间即使解锁/其他代码请求重新计时，也不能恢复自动退出。
+        if (autoClosePaused.value) return;
         console.log('设置自动关闭应用定时器');
         startTime.value = Date.now();
+        const generation = timerGeneration;
+        const isCurrent = () => generation === timerGeneration && !autoClosePaused.value;
         closeTimer = setTimeout(() => {
+            if (!isCurrent()) return;
             closeTimer = null;
             console.log('即将自动关闭应用');
             // 60s后退出
-            $q.dialog({
+            const warning = $q.dialog({
                 title: '安全提示',
                 message: '为了保护您的数据安全，应用将于一分钟后自动关闭。请保存您的工作。'
             });
+            dismissInitialWarning = () => warning.hide();
             exitTimer = setTimeout(
                 () => {
+                    if (!isCurrent()) return;
                     exitTimer = null;
                     dismissFinalWarning?.();
                     dismissFinalWarning = null;
@@ -54,6 +66,7 @@ export const useTimeoutStore = defineStore('timeout', () => {
                 AUTO_CLOSE_APP_WARNING_TIME
             );
             finalWarningTimer = setTimeout(() => {
+                if (!isCurrent()) return;
                 finalWarningTimer = null;
                 dismissFinalWarning = $q.notify({
                     type: 'warning',
@@ -69,18 +82,36 @@ export const useTimeoutStore = defineStore('timeout', () => {
     }
 
     function clearCloseTimers() {
+        timerGeneration += 1;
         if (closeTimer) clearTimeout(closeTimer);
         if (exitTimer) clearTimeout(exitTimer);
         if (finalWarningTimer) clearTimeout(finalWarningTimer);
         closeTimer = null;
         exitTimer = null;
         finalWarningTimer = null;
+        dismissInitialWarning?.();
+        dismissInitialWarning = null;
         dismissFinalWarning?.();
         dismissFinalWarning = null;
     }
 
+    /** 改密任务持有暂停直到 finally；重复释放无效，全部任务结束后重新计时一小时。 */
+    function pauseAutoClose() {
+        pauseCount.value += 1;
+        clearCloseTimers();
+        let released = false;
+        return () => {
+            if (released) return;
+            released = true;
+            pauseCount.value -= 1;
+            if (!autoClosePaused.value) setTimeoutForCloseApp();
+        };
+    }
+
     return {
         remainingStr,
+        autoClosePaused,
+        pauseAutoClose,
         setTimeoutForCloseApp,
         clearCloseTimers,
     }

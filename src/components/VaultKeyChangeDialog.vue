@@ -45,6 +45,7 @@
 
         <div v-if="busy" class="progress-section">
           <div class="row items-center q-gutter-sm"><q-spinner color="primary" size="24px" /><span>{{ preparing ? '正在统计并进行派生、加密测试…' : keyChangeProgressLabel(progress?.phase ?? '') }}</span></div>
+          <div class="text-caption desc-text" data-testid="key-change-lock-paused">应用自动关闭已暂停，任务结束后重新计时 1 小时。</div>
           <div v-if="!preparing" class="text-caption desc-text" data-testid="key-change-time-estimate">
             <div>{{ timeEstimateLabel }}</div>
             <div v-if="!pauseRequested">按本次运行的数据量与各步骤进度动态估算；网络、磁盘和请求等待会影响结果，仅供参考。</div>
@@ -139,7 +140,7 @@ watch(() => props.modelValue, async (visible) => {
 async function prepareChange() {
   if (!canPrepare.value || busy.value) return;
   busy.value = preparing.value = true; failure.value = '';
-  timeout.clearCloseTimers();
+  const resumeAutoClose = timeout.pauseAutoClose();
   try {
     plan.value = await api.cmdPlanVaultKeyChange(oldPassword.value,
       changePassword.value ? newPassword.value : oldPassword.value,
@@ -147,24 +148,24 @@ async function prepareChange() {
       memoryCost.value, await getLocalEncryptedConfig());
     oldPassword.value = newPassword.value = confirmPassword.value = '';
   } catch (e) { failure.value = formatError(e); }
-  finally { busy.value = preparing.value = false; timeout.setTimeoutForCloseApp(); }
+  finally { busy.value = preparing.value = false; resumeAutoClose(); }
 }
 
 async function perform(run: (channel: Channel<KeyChangeProgress>) => Promise<LocalEncryptedConfig>) {
   if (busy.value) return;
   busy.value = true; pauseRequested.value = false; failure.value = '';
   progress.value = null;
-  timeEstimator.reset(performance.now());
-  refreshTimeEstimate();
-  resumeEstimateTicker();
-  timeout.clearCloseTimers();
-  const event = new Channel<KeyChangeProgress>();
+  const resumeAutoClose = timeout.pauseAutoClose();
   let acceptingProgress = true;
-  event.onmessage = value => {
-    if (!acceptingProgress) return; // 旧运行的延迟事件不能覆盖续改后的测速样本。
-    progress.value = value; timeEstimator.update(value); refreshTimeEstimate();
-  };
   try {
+    timeEstimator.reset(performance.now());
+    refreshTimeEstimate();
+    resumeEstimateTicker();
+    const event = new Channel<KeyChangeProgress>();
+    event.onmessage = value => {
+      if (!acceptingProgress) return; // 旧运行的延迟事件不能覆盖续改后的测速样本。
+      progress.value = value; timeEstimator.update(value); refreshTimeEstimate();
+    };
     const local = await run(event);
     const biometricWasEnabled = await finishVaultKeyChange(local);
     $q.notify({type: 'positive', message: `${keyChangeCompletionMessage(biometricWasEnabled).replace(/。$/, '')}。可在设置 → 诊断信息 → 改密统计复制性能报告。`});
@@ -177,7 +178,7 @@ async function perform(run: (channel: Channel<KeyChangeProgress>) => Promise<Loc
     acceptingProgress = false;
     pauseEstimateTicker();
     busy.value = false; resumePassword.value = '';
-    timeout.setTimeoutForCloseApp();
+    resumeAutoClose();
   }
 }
 
