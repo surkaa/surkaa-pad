@@ -1,3 +1,6 @@
+// 先独立验证协调协议；后续接入开始、续改和确认三个业务入口。
+#[cfg(test)]
+mod cloud_claim;
 mod command;
 mod diagnostics;
 mod engine;
