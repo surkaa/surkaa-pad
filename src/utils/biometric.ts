@@ -8,7 +8,7 @@ export interface BiometricCipherOptions {
 }
 
 /**
- * 调用 Android 生物识别插件中由项目扩展的加解密命令。
+ * 调用官方 Android 生物识别插件的加解密命令（2.5.0 起提供）。
  */
 export async function biometricCipher(
     reason: string,
