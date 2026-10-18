@@ -245,7 +245,7 @@ import {platform} from "@tauri-apps/plugin-os";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {useQuasar} from "quasar";
 import {useConfigStore} from "../../stores/config.ts";
-import {biometricCipher} from "../../utils/biometric.ts";
+import {biometricCipher} from "@tauri-apps/plugin-biometric";
 import api from "../../utils/api.ts";
 import {formatError} from "../../utils/formatError.ts";
 import {biometricToggleAction} from "../../utils/biometricToggle.ts";

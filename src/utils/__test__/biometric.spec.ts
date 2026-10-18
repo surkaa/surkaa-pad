@@ -1,19 +1,17 @@
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+// @vitest-environment happy-dom
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {clearMocks, mockIPC} from '@tauri-apps/api/mocks';
+import {biometricCipher} from '@tauri-apps/plugin-biometric';
 
-const {invokeMock} = vi.hoisted(() => ({
-  invokeMock: vi.fn(),
-}));
+const invokeMock = vi.fn();
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: invokeMock,
-}));
-
-import {biometricCipher} from '../biometric.ts';
-
-describe('biometricCipher', () => {
+describe('official biometricCipher integration', () => {
   beforeEach(() => {
     invokeMock.mockReset();
+    mockIPC(invokeMock);
   });
+
+  afterEach(() => clearMocks());
 
   it('passes encryption data to the official plugin command', async () => {
     invokeMock.mockResolvedValue({data: 'encrypted'});

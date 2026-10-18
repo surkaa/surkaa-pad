@@ -14,6 +14,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.12.4
         version: 2.12.4
+      '@tauri-apps/plugin-biometric':
+        specifier: ~2.5.0
+        version: 2.5.0
       '@tauri-apps/plugin-dialog':
         specifier: ~2.6.0
         version: 2.6.0
@@ -664,6 +667,9 @@ packages:
     resolution: {integrity: sha512-f7/LsY74SVb1ChmOPw1ajOpxii0GSzDAgmWHRci8JUYuuai04rXsSbFobpmB0sP2DdlvMD/B5ZotEn8GOGMRUg==}
     engines: {node: '>= 10'}
     hasBin: true
+
+  '@tauri-apps/plugin-biometric@2.5.0':
+    resolution: {integrity: sha512-7QbLoU/0osFAOVI1pcwg8SqJH9mnrAN0zZ3x8T9yGC/r3FU5S6OxZDveVN6+vFfirbx43AUxJMTX6XrEUwerQw==}
 
   '@tauri-apps/plugin-dialog@2.6.0':
     resolution: {integrity: sha512-q4Uq3eY87TdcYzXACiYSPhmpBA76shgmQswGkSVio4C82Sz2W4iehe9TnKYwbq7weHiL88Yw19XZm7v28+Micg==}
@@ -1931,6 +1937,10 @@ snapshots:
       '@tauri-apps/cli-win32-arm64-msvc': 2.12.3
       '@tauri-apps/cli-win32-ia32-msvc': 2.12.3
       '@tauri-apps/cli-win32-x64-msvc': 2.12.3
+
+  '@tauri-apps/plugin-biometric@2.5.0':
+    dependencies:
+      '@tauri-apps/api': 2.12.4
 
   '@tauri-apps/plugin-dialog@2.6.0':
     dependencies:
