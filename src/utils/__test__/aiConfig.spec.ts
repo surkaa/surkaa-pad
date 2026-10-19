@@ -196,6 +196,50 @@ describe('AI service config', () => {
     }
   });
 
+  it('migrates only the active legacy DeepSeek configuration into global settings', async () => {
+    const legacyProfile = (id: string, apiKey: string) => ({
+      id, name: id, baseUrl: 'http://localhost:11434/v1', apiKey: 'chat-key', model: 'qwen',
+      webTools: {enabled: true, baseUrl: 'https://api.deepseek.com/v1/', apiKey, maxResults: 8},
+    });
+    const legacy = {version: 1, activeProfileId: 'second', profiles: [
+      legacyProfile('first', 'first-web-key'), legacyProfile('second', ' second-web-key '),
+    ]};
+    const migrated = normalizeAiServiceConfigSet(legacy);
+    expect(migrated.webSearch).toEqual({enabled: true, apiKey: 'second-web-key'});
+    expect(migrated.profiles.every(profile => !('webTools' in profile))).toBe(true);
+    const {storage, cipher, current} = dependencies();
+    await saveAiServiceConfigSet({...migrated, activeProfileId: 'first'}, storage, cipher);
+    expect((await loadAiServiceConfig(storage, cipher))?.webSearch).toEqual(migrated.webSearch);
+    expect(JSON.stringify(current())).not.toContain('second-web-key');
+  });
+
+  it('makes a previously reused DeepSeek chat key independent after migration', () => {
+    const profile = {id: 'old', name: '旧环境', baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: 'chat-key', model: 'deepseek-chat',
+      webTools: {enabled: true, baseUrl: 'https://api.deepseek.com', apiKey: ''}};
+    const migrated = normalizeAiServiceConfigSet({version: 1, activeProfileId: 'old', profiles: [profile]});
+    expect(migrated.webSearch).toEqual({enabled: true, apiKey: 'chat-key'});
+    migrated.profiles[0].apiKey = 'new-chat-key';
+    expect(normalizeAiServiceConfigSet(migrated).webSearch.apiKey).toBe('chat-key');
+    expect(normalizeAiServiceConfigSet({version: 1, activeProfileId: 'old', profiles: [{
+      ...profile, webTools: {...profile.webTools, enabled: false, apiKey: 'saved-web-key'},
+    }]}).webSearch).toEqual({enabled: false, apiKey: 'saved-web-key'});
+  });
+
+  it('does not redirect custom-endpoint credentials to DeepSeek during migration', () => {
+    for (const baseUrl of ['https://proxy.example.com/v1', 'http://api.deepseek.com',
+      'https://api.deepseek.com:8443', 'https://api.deepseek.com/proxy',
+      'https://user:password@api.deepseek.com', 'https://api.deepseek.com?token=x', 'invalid']) {
+      const legacy = {version: 1, activeProfileId: 'old', profiles: [{
+        id: 'old', name: '旧环境', baseUrl: 'http://localhost:11434/v1', apiKey: 'chat-key', model: 'qwen',
+        webTools: {enabled: true, baseUrl, apiKey: 'proxy-key'},
+      }]};
+      const migrated = normalizeAiServiceConfigSet(legacy);
+      expect(migrated.profiles).toHaveLength(1);
+      expect(migrated.webSearch).toEqual({enabled: false, apiKey: ''});
+    }
+  });
+
   it('encrypts the independent search key and preserves it when updating the model', async () => {
     const {storage, cipher, current} = dependencies();
     const webSearch = {enabled: true, apiKey: 'independent-web-secret'};

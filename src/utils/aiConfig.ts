@@ -143,22 +143,27 @@ export function normalizeAiServiceConfigSet(value: unknown): AiServiceConfigSet 
     throw new Error('不支持此版本的 AI 服务配置');
   }
   if ((input.version === 1 || input.version === CURRENT_AI_CONFIG_VERSION) && Array.isArray(input.profiles)) {
-    const profiles = input.profiles.flatMap((profile, index) => {
+    const entries = input.profiles.flatMap((profile, index) => {
       try {
-        return [normalizeAiServiceProfile(profile, `profile-${index + 1}`, `环境 ${index + 1}`)];
+        return [{
+          profile: normalizeAiServiceProfile(profile, `profile-${index + 1}`, `环境 ${index + 1}`),
+          legacyWebTools: (profile as {webTools?: unknown}).webTools,
+        }];
       } catch {
         return [];
       }
     });
+    const profiles = entries.map(entry => entry.profile);
     const requestedId = typeof input.activeProfileId === 'string' ? input.activeProfileId : null;
+    const active = entries.find(entry => entry.profile.id === requestedId) ?? entries[0];
     return {
       version: CURRENT_AI_CONFIG_VERSION,
-      activeProfileId: profiles.some(profile => profile.id === requestedId)
-        ? requestedId
-        : profiles[0]?.id ?? null,
+      activeProfileId: active?.profile.id ?? null,
       profiles,
-      // V1 → V2：聊天环境保持原样；新增的联网能力必须由用户主动开启。
-      webSearch: input.version === 1 ? normalizeAiWebSearchConfig(undefined) : normalizeAiWebSearchConfig(input.webSearch),
+      // V1 曾按环境存放联网配置；仅迁移当前环境一次，此后联网配置不再跟随环境切换。
+      webSearch: input.version === 1
+        ? migrateLegacyWebSearch(active?.legacyWebTools, active?.profile.apiKey ?? '')
+        : normalizeAiWebSearchConfig(input.webSearch),
     };
   }
 
@@ -169,6 +174,29 @@ export function normalizeAiServiceConfigSet(value: unknown): AiServiceConfigSet 
     profiles: [normalizeAiServiceProfile(value, 'default', '默认环境')],
     webSearch: normalizeAiWebSearchConfig(undefined),
   };
+}
+
+function migrateLegacyWebSearch(value: unknown, chatApiKey: string): AiWebSearchConfig {
+  const disabled = normalizeAiWebSearchConfig(undefined);
+  if (!value || typeof value !== 'object') return disabled;
+  const input = value as {enabled?: unknown; baseUrl?: unknown; apiKey?: unknown};
+  let endpoint: URL;
+  try {
+    endpoint = new URL(typeof input.baseUrl === 'string' && input.baseUrl.trim()
+      ? input.baseUrl.trim() : 'https://api.deepseek.com');
+  } catch {
+    return disabled;
+  }
+  // 新实现固定使用官方服务，不能把旧代理或其他站点的凭据自动发送到不同的服务。
+  if (endpoint.origin !== 'https://api.deepseek.com'
+    || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
+    || !['/', '/v1', '/v1/'].includes(endpoint.pathname)) {
+    return disabled;
+  }
+  const enabled = input.enabled === true;
+  const apiKey = (typeof input.apiKey === 'string' ? input.apiKey.trim() : '')
+    || (enabled ? chatApiKey : '');
+  return normalizeAiWebSearchConfig({enabled, apiKey});
 }
 
 export function classifyAiEndpoint(baseUrl: string): AiEndpointSecurity | null {
