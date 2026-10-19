@@ -55,6 +55,8 @@ describe('AI web search settings', () => {
     expect(input.type).toBe('password'); expect(input.disabled).toBe(true);
     expect(testSearch).not.toHaveBeenCalled();
     expect(document.querySelector('.web-search-notice')?.textContent).toContain('按请求计费');
+    expect(document.querySelector('.web-search-notice')?.textContent).toContain('按需提供的原始问题');
+    expect(document.querySelector('.web-search-notice')?.textContent).toContain('模型可选择搜索条数及是否直接获取正文');
     const body = document.querySelector('.ai-config-body')!;
     expect(body.contains(button('保存'))).toBe(false);
     await enable(); expect(input.disabled).toBe(false);
