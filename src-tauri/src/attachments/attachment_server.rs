@@ -12,7 +12,7 @@ use crate::state::AppState;
 use crate::stream::{collect_data_with_capacity, ByteStream};
 use bytes::Bytes;
 use dashmap::DashMap;
-use futures_util::TryStreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use hmac::{Hmac, Mac};
 use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt, Full, StreamBody};
@@ -45,7 +45,11 @@ const MAX_CONCURRENT_REQUESTS_PER_ATTACHMENT: usize = 4;
 const MOTION_PHOTO_VIEW: &str = "motion-photo-video";
 const HTML_VIEW: &str = "html";
 const PDF_VIEW: &str = "pdf";
+const JSONL_VIEW: &str = "jsonl";
 type ResponseBody = UnsyncBoxBody<Bytes, io::Error>;
+
+#[path = "jsonl_preview.rs"]
+mod jsonl_preview;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AttachmentView {
@@ -53,6 +57,7 @@ enum AttachmentView {
     MotionPhotoVideo,
     Html,
     Pdf,
+    Jsonl,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -420,6 +425,39 @@ async fn process_attachment(
     if attachment.algorithm == Gcm {
         return Err(ServerError::Forbidden("GCM decryption is not supported"));
     }
+    if attachment_view == AttachmentView::Jsonl {
+        if !jsonl_preview::is_jsonl_attachment(attachment) {
+            return Err(ServerError::Forbidden("JSONL view is not allowed"));
+        }
+        if request.method() != Method::GET || request.headers().contains_key(RANGE) {
+            return Err(ServerError::BadRequest(
+                "JSONL 分页仅支持不带 Range 的 GET 请求",
+            ));
+        }
+        let size = store
+            .get_attachment_size(&id, &attachment_id, attachment.etag.as_deref())
+            .await?;
+        let page = jsonl_preview::preview_jsonl(
+            &*store,
+            &crypto,
+            &id,
+            attachment,
+            size,
+            request.uri().query(),
+        )
+        .await?;
+        let data =
+            serde_json::to_vec(&page).map_err(|error| ServerError::Internal(error.to_string()))?;
+        return hold_request_permit(
+            response_builder_with_status(StatusCode::OK)
+                .header(CONTENT_TYPE, "application/json; charset=utf-8")
+                .header(CONTENT_LENGTH, data.len())
+                .body(full_body(Bytes::from(data)))
+                .map_err(|error| ServerError::Internal(error.to_string())),
+            request_permit,
+            storage_guard,
+        );
+    }
 
     let raw_range = request
         .headers()
@@ -448,6 +486,9 @@ async fn process_attachment(
         AttachmentView::Original => (0, file_size, attachment.mimetype.as_str(), false),
         AttachmentView::Html => (0, file_size, "text/html; charset=utf-8", false),
         AttachmentView::Pdf => (0, file_size, "application/pdf", false),
+        AttachmentView::Jsonl => {
+            unreachable!("JSONL pagination returns before byte-range responses")
+        }
         AttachmentView::MotionPhotoVideo => {
             let layout = resolve_motion_photo_layout(
                 &state.attachment_server(),
@@ -587,6 +628,7 @@ fn parse_attachment_view(query: Option<&str>) -> Result<AttachmentView, ServerEr
         Some(MOTION_PHOTO_VIEW) => Ok(AttachmentView::MotionPhotoVideo),
         Some(HTML_VIEW) => Ok(AttachmentView::Html),
         Some(PDF_VIEW) => Ok(AttachmentView::Pdf),
+        Some(JSONL_VIEW) => Ok(AttachmentView::Jsonl),
         Some(_) => Err(ServerError::BadRequest("Unsupported attachment view")),
     }
 }
@@ -683,13 +725,19 @@ async fn read_plain_attachment_range(
             attachment.etag.as_deref(),
         )
         .await?;
-    let stream = if attachment.encrypted {
+    let mut stream = if attachment.encrypted {
         crypto.decrypt_streaming(stream, &attachment.nonce, range.0)?
     } else {
         stream
     };
-    let data =
-        collect_data_with_capacity(stream, min(expected_length, MAX_CHUNK_SIZE) as usize).await?;
+    let mut data = Vec::with_capacity(min(expected_length, MAX_CHUNK_SIZE) as usize);
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if data.len().saturating_add(chunk.len()) as u64 > expected_length {
+            return Err(ServerError::Internal("附件 Range 响应超过预期长度".into()));
+        }
+        data.extend_from_slice(&chunk);
+    }
     if data.len() as u64 != expected_length {
         return Err(ServerError::Internal(format!(
             "Attachment length mismatch: expected {expected_length}, got {}",
@@ -1137,6 +1185,10 @@ mod tests {
             parse_attachment_view(Some("t=123&view=pdf")).unwrap(),
             AttachmentView::Pdf
         );
+        assert_eq!(
+            parse_attachment_view(Some("t=123&view=jsonl")).unwrap(),
+            AttachmentView::Jsonl
+        );
         assert!(matches!(
             parse_attachment_view(Some("view=unknown")),
             Err(ServerError::BadRequest(_))
@@ -1145,6 +1197,101 @@ mod tests {
             parse_attachment_view(Some("view=motion-photo-video&view=motion-photo-video")),
             Err(ServerError::BadRequest(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn serves_jsonl_pages_for_plain_and_ctr_encrypted_files() {
+        for encrypted in [false, true] {
+            let text = (1..=25)
+                .map(|i| format!("{{\"id\":{i},\"text\":\"中文\"}}\r\n"))
+                .collect::<String>();
+            let server = start_test_server(
+                "jsonl",
+                "data.jsonl",
+                "application/octet-stream",
+                text.as_bytes(),
+                encrypted,
+            )
+            .await;
+            let url = format!("{}&view=jsonl", server.handle.url("jsonl", "data.jsonl"));
+            let client = reqwest::Client::new();
+            let mut cursor = None;
+            let mut numbers = Vec::new();
+            for expected_count in [10, 10, 5] {
+                let page_url = match &cursor {
+                    Some(cursor) => format!("{url}&cursor={cursor}"),
+                    None => url.clone(),
+                };
+                let response = client.get(page_url).send().await.unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+                assert!(response.headers()[CONTENT_TYPE]
+                    .to_str()
+                    .unwrap()
+                    .starts_with("application/json"));
+                let value: serde_json::Value = response.json().await.unwrap();
+                let lines = value["lines"].as_array().unwrap();
+                assert_eq!(lines.len(), expected_count);
+                for line in lines {
+                    numbers.push(line["lineNumber"].as_u64().unwrap());
+                    let record: serde_json::Value =
+                        serde_json::from_str(line["text"].as_str().unwrap()).unwrap();
+                    assert_eq!(record["id"], line["lineNumber"]);
+                    assert_eq!(record["text"], "中文");
+                }
+                cursor = value["nextCursor"].as_str().map(str::to_owned);
+            }
+            assert_eq!(numbers, (1..=25).collect::<Vec<_>>());
+            assert!(cursor.is_none());
+            assert_eq!(
+                client
+                    .get(format!("{url}&cursor=bad"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::BAD_REQUEST
+            );
+            assert_eq!(
+                client
+                    .get(&url)
+                    .header(RANGE, "bytes=0-10")
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn jsonl_view_does_not_bypass_type_token_or_vault_lock_checks() {
+        let server = start_test_server("jsonl", "data.txt", "text/plain", b"{}\n", false).await;
+        let url = format!("{}&view=jsonl", server.handle.url("jsonl", "data.txt"));
+        assert_eq!(
+            reqwest::get(url).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
+        let server =
+            start_test_server("jsonl", "data.jsonl", "application/jsonl", b"{}\n", true).await;
+        let url = format!("{}&view=jsonl", server.handle.url("jsonl", "data.jsonl"));
+        let token = server.handle.token_for("jsonl", "data.jsonl");
+        assert_eq!(
+            reqwest::get(url.replace(&token, "wrong"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        server
+            .state
+            .persist_key_change(Some("pending".into()))
+            .unwrap();
+        assert_eq!(
+            reqwest::get(url).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
     }
 
     #[tokio::test]
