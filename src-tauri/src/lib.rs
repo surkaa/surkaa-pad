@@ -9,6 +9,7 @@ mod diaries;
 mod error;
 mod local_storage;
 mod location;
+mod logging;
 mod object;
 pub use object::{ObjectError, OssClient};
 pub mod object_locations;
@@ -259,24 +260,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // 注册文件系统插件
         .plugin(tauri_plugin_fs::init())
-        // 注册日志插件
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                // 应用业务日志保留 INFO；网络/TLS 依赖只保留真正需要诊断的警告，
-                // 避免握手和重试状态机的 TRACE 淹没同步过程。
-                .level(tauri_plugin_log::log::LevelFilter::Info)
-                .level_for("rustls", tauri_plugin_log::log::LevelFilter::Warn)
-                .level_for("reqwest", tauri_plugin_log::log::LevelFilter::Warn)
-                .level_for("s3", tauri_plugin_log::log::LevelFilter::Warn)
-                .targets([
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
-                        file_name: None,
-                    }),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
-                ])
-                .build(),
-        )
+        // 先注册官方日志命令，再初始化输出端。文件不可写时不能阻止应用启动。
+        .plugin(tauri_plugin_log::Builder::new().skip_logger().build())
+        .plugin(logging::init())
         // 注册 os 插件
         .plugin(tauri_plugin_os::init())
         // 注册 dialog 插件
