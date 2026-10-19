@@ -997,20 +997,29 @@ async cmdDetectAiContextWindow(baseUrl: string, apiKey: string | null, model: st
 }
 },
 /**
- * 使用只读日记工具运行一次 AI Agent 问答。
+ * 用户主动测试一次搜索接口；该操作会按 DeepSeek 的规则产生一次 API 请求。
+ */
+async cmdTestAiWebSearch(connection: DeepSeekWebSearchConnection) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_test_ai_web_search", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 使用日记及用户主动开启的联网工具运行一次 AI Agent 问答。
  * # Arguments
- * * `base_url` - OpenAI 兼容 API 根地址
- * * `api_key` - 可选的 Bearer API Key
- * * `model` - 本次问答使用的模型 ID
+ * * `connection` - 聊天服务、模型及可选的独立联网凭据
  * * `history` - 当前会话中此前已完成的用户问题和最终回答
  * * `prompt` - 用户问题
  * * `event` - 接收模型状态、增量回答和最终结果的事件通道
  * # Returns
  * * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
  */
-async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, model: string, history: AiConversationTurn[], prompt: string) : Promise<Result<string, AppError>> {
+async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, connection: AiSessionAgentConnection, history: AiConversationTurn[], prompt: string) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_agent", { event, baseUrl, apiKey, model, history, prompt }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_agent", { event, connection, history, prompt }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1182,7 +1191,7 @@ export type AiModel = { id: string; ownedBy: string | null }
 export type AiProcessStepKind = "model" | "tool"
 export type AiProcessStepRecord = { id: string; kind: AiProcessStepKind; title: string; detail: string | null; reasoning: string; state: AiProcessStepState; durationMs: number | null }
 export type AiProcessStepState = "completed" | "failed" | "cancelled"
-export type AiSessionAgentConnection = { baseUrl: string; apiKey: string | null; model: string; contextWindowTokens: number | null }
+export type AiSessionAgentConnection = { baseUrl: string; apiKey: string | null; model: string; contextWindowTokens: number | null; webSearch?: DeepSeekWebSearchConnection | null }
 export type AiSessionContextSummary = { version: number; coveredMessageCount: number; content: string; createdAt: number }
 export type AiSessionDetail = { meta: AiSessionMeta; messages: AiSessionMessage[] }
 export type AiSessionMessage = { index: number; createdAt: number; payload: AiSessionMessagePayload }
@@ -1250,6 +1259,10 @@ export type CoordinateSystem =
  * 世界大地测量系统 1984；日记持久化统一保存这一原始坐标。
  */
 "wgs84"
+/**
+ * 独立于聊天模型的凭据；只交给后端 HTTP 客户端，不进入工具定义或会话源码。
+ */
+export type DeepSeekWebSearchConnection = { apiKey: string }
 export type DiaryAttachmentCounts = { image: number; audio: number; video: number; file: number }
 export type DiaryContent = { nodes: DiaryContentNode[] }
 export type DiaryContentNode = { type: "markdown"; text: string } | { type: "summary"; summary: string; content: string } | { type: "location"; location: DiaryLocation } | { type: "image"; attachmentId: string; size: ImageSize } | { type: "video"; attachmentId: string } | { type: "audio"; attachmentId: string } | { type: "file"; attachmentId: string } | { type: "album"; id: string; attachmentIds: string[]; displayMode: AlbumDisplayMode }

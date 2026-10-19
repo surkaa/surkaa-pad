@@ -3,10 +3,11 @@ import type {
   AiAgentEvent,
   AiAgentResponse,
   AiConversationTurn,
+  AiSessionAgentConnection,
   AiSessionMessage,
 } from '../bindings';
 import api from './api';
-import type {AiServiceConfig} from './aiConfig';
+import {normalizeAiWebSearchConfig, type AiServiceConfig} from './aiConfig';
 
 export type AiExchangeState = 'running' | 'canceling' | 'completed' | 'failed' | 'cancelled';
 export type AiProcessStepState = 'running' | 'completed' | 'failed' | 'cancelled';
@@ -62,9 +63,7 @@ export async function startAiQuestion(
 
   return runner(
     event,
-    config.baseUrl,
-    config.apiKey.trim() || null,
-    config.model,
+    agentConnection(config),
     history,
     normalizedPrompt,
   );
@@ -84,15 +83,25 @@ export async function startAiSessionQuestion(
 
   return runner(
     event,
-    {
-      baseUrl: config.baseUrl,
-      apiKey: config.apiKey.trim() || null,
-      model: config.model,
-      contextWindowTokens: config.contextWindowTokens,
-    },
+    agentConnection(config),
     normalizedSessionId,
     normalizedPrompt,
   );
+}
+
+function agentConnection(config: AiServiceConfig): AiSessionAgentConnection {
+  return {
+    baseUrl: config.baseUrl,
+    apiKey: config.apiKey.trim() || null,
+    model: config.model,
+    contextWindowTokens: config.contextWindowTokens,
+    webSearch: webSearchConnection(config),
+  };
+}
+
+function webSearchConnection(config: AiServiceConfig): {apiKey: string} | null {
+  if (!config.webSearch?.enabled) return null;
+  return {apiKey: normalizeAiWebSearchConfig(config.webSearch).apiKey};
 }
 
 /**
@@ -214,17 +223,17 @@ export function reduceAiAgentEvent(
         processSteps: [...state.processSteps, {
           id: modelStepId(message.data.round),
           kind: 'model',
-          title: message.data.round === 1 ? '分析问题' : '分析日记内容',
+          title: message.data.round === 1 ? '分析问题' : '分析资料',
           detail: message.data.round === 1
-            ? '理解问题并判断需要读取哪些日记'
-            : '根据已读取的日记继续分析',
+            ? '理解问题并判断需要使用哪些工具'
+            : '根据已获取的信息继续分析',
           reasoning: '',
           state: 'running',
           durationMs: null,
         }],
         status: message.data.round === 1
           ? 'AI 正在理解问题…'
-          : 'AI 正在分析日记内容…',
+          : 'AI 正在分析资料…',
       };
     case 'reasoningDelta':
       if (state.state === 'canceling') return state;
@@ -257,7 +266,7 @@ export function reduceAiAgentEvent(
           }),
         ),
         status: message.data.toolCount > 0
-          ? '正在准备读取日记…'
+          ? '正在准备调用工具…'
           : '正在完成回答…',
       };
     case 'toolStarted':
@@ -292,7 +301,7 @@ export function reduceAiAgentEvent(
         ),
         status: message.data.succeeded
           ? '正在继续分析…'
-          : '日记操作失败，AI 正在继续处理…',
+          : '工具调用失败，AI 正在继续处理…',
       };
     case 'answerDelta':
       if (state.state === 'canceling') return state;
@@ -359,7 +368,7 @@ export function formatAiProcessSummary(steps: AiProcessStep[]): string {
   const toolCount = steps.filter(step => step.kind === 'tool').length;
   const durationMs = steps.reduce((total, step) => total + (step.durationMs ?? 0), 0);
   const parts: string[] = [];
-  if (toolCount > 0) parts.push(`${toolCount} 次日记操作`);
+  if (toolCount > 0) parts.push(`${toolCount} 次工具调用`);
   if (durationMs > 0) parts.push(formatProcessDuration(durationMs));
   return parts.length > 0 ? parts.join(' · ') : '处理完成';
 }
@@ -389,7 +398,7 @@ function toolStepId(operationId: number): string {
 
 function formatModelResultDetail(toolCount: number): string {
   return toolCount > 0
-    ? `决定执行 ${toolCount} 个日记操作`
+    ? `决定执行 ${toolCount} 个工具调用`
     : '回答生成完成';
 }
 

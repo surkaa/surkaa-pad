@@ -808,6 +808,7 @@ async function scrollToBottom(expectedLoadId?: number) {
         />
       </div>
       <div class="privacy-hint">当前会话历史、问题及 Agent 读取的日记文字会发送到你配置的 AI 服务</div>
+      <div v-if="config?.webSearch?.enabled" class="privacy-hint">联网搜索已开启：搜索词与网页地址会发送到 DeepSeek，调用按次计费</div>
     </div>
     </main>
     <AiSessionPersistenceDialog

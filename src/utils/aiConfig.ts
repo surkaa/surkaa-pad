@@ -3,8 +3,9 @@ import api from './api';
 import type {AiModel} from '../bindings';
 
 export const DEFAULT_AI_BASE_URL = 'http://localhost:11434/v1';
+export const CURRENT_AI_CONFIG_VERSION = 2;
 
-export interface AiServiceConfig {
+interface AiModelConnectionConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -12,16 +13,27 @@ export interface AiServiceConfig {
   contextWindowTokens: number | null;
 }
 
-export interface AiServiceProfile extends AiServiceConfig {
+export interface AiWebSearchConfig {
+  enabled: boolean;
+  apiKey: string;
+}
+
+export interface AiServiceConfig extends AiModelConnectionConfig {
+  /** 仅启用后才随本次请求交给后端，独立于聊天模型的服务和密钥。 */
+  webSearch?: AiWebSearchConfig;
+}
+
+export interface AiServiceProfile extends AiModelConnectionConfig {
   id: string;
   name: string;
   models: AiModel[];
 }
 
 export interface AiServiceConfigSet {
-  version: 1;
+  version: 2;
   activeProfileId: string | null;
   profiles: AiServiceProfile[];
+  webSearch: AiWebSearchConfig;
 }
 
 export type AiEndpointSecurity = 'secure' | 'localHttp' | 'remoteHttp';
@@ -38,6 +50,21 @@ export interface AiConfigCipher {
 }
 
 export type AiModelLister = typeof api.cmdListAiModels;
+
+export function normalizeAiWebSearchConfig(value: unknown): AiWebSearchConfig {
+  if (value === undefined) return {enabled: false, apiKey: ''};
+  if (!value || typeof value !== 'object') throw new Error('联网搜索配置格式无效');
+  const input = value as Partial<AiWebSearchConfig>;
+  if (typeof input.enabled !== 'boolean' || typeof input.apiKey !== 'string') {
+    throw new Error('联网搜索配置格式无效');
+  }
+  const apiKey = input.apiKey.trim();
+  if (apiKey.length > 4096 || /[\s\u0000-\u001f\u007f]/.test(apiKey)) {
+    throw new Error('DeepSeek API Key 不能包含空白或控制字符');
+  }
+  if (input.enabled && !apiKey) throw new Error('请填写 DeepSeek 联网搜索 API Key');
+  return {enabled: input.enabled, apiKey};
+}
 
 export function normalizeAiServiceConfig(value: unknown): AiServiceConfig {
   if (!value || typeof value !== 'object') {
@@ -111,8 +138,11 @@ export function normalizeAiServiceConfigSet(value: unknown): AiServiceConfigSet 
     throw new Error('AI 服务配置格式无效');
   }
 
-  const input = value as Partial<AiServiceConfigSet> & Partial<AiServiceConfig>;
-  if (input.version === 1 && Array.isArray(input.profiles)) {
+  const input = value as Partial<Omit<AiServiceConfigSet, 'version'>> & Partial<AiServiceConfig> & {version?: number};
+  if (input.version !== undefined && input.version !== 1 && input.version !== CURRENT_AI_CONFIG_VERSION) {
+    throw new Error('不支持此版本的 AI 服务配置');
+  }
+  if ((input.version === 1 || input.version === CURRENT_AI_CONFIG_VERSION) && Array.isArray(input.profiles)) {
     const profiles = input.profiles.flatMap((profile, index) => {
       try {
         return [normalizeAiServiceProfile(profile, `profile-${index + 1}`, `环境 ${index + 1}`)];
@@ -122,19 +152,22 @@ export function normalizeAiServiceConfigSet(value: unknown): AiServiceConfigSet 
     });
     const requestedId = typeof input.activeProfileId === 'string' ? input.activeProfileId : null;
     return {
-      version: 1,
+      version: CURRENT_AI_CONFIG_VERSION,
       activeProfileId: profiles.some(profile => profile.id === requestedId)
         ? requestedId
         : profiles[0]?.id ?? null,
       profiles,
+      // V1 → V2：聊天环境保持原样；新增的联网能力必须由用户主动开启。
+      webSearch: input.version === 1 ? normalizeAiWebSearchConfig(undefined) : normalizeAiWebSearchConfig(input.webSearch),
     };
   }
 
   // 兼容只有一组环境的旧配置，首次读取时自动包装成配置集合。
   return {
-    version: 1,
+    version: CURRENT_AI_CONFIG_VERSION,
     activeProfileId: 'default',
     profiles: [normalizeAiServiceProfile(value, 'default', '默认环境')],
+    webSearch: normalizeAiWebSearchConfig(undefined),
   };
 }
 
@@ -160,7 +193,7 @@ export async function loadAiServiceConfig(
 ): Promise<AiServiceConfig | null> {
   const set = await loadAiServiceConfigSet(storage, cipher);
   const active = set?.profiles.find(profile => profile.id === set.activeProfileId);
-  return active ? toAiServiceConfig(active) : null;
+  return active && set ? toAiServiceConfig(active, set.webSearch) : null;
 }
 
 export async function loadAiServiceConfigSet(
@@ -180,21 +213,26 @@ export async function saveAiServiceConfig(
 ): Promise<AiServiceConfig> {
   const normalized = normalizeAiServiceConfig(config);
   const current = await loadAiServiceConfigSet(storage, cipher);
+  const webSearch = config.webSearch === undefined
+    ? current?.webSearch ?? normalizeAiWebSearchConfig(undefined)
+    : normalizeAiWebSearchConfig(config.webSearch);
   const profile = current?.profiles.find(item => item.id === current.activeProfileId);
   const nextSet: AiServiceConfigSet = current && profile
     ? {
       ...current,
+      webSearch,
       profiles: current.profiles.map(item => item.id === profile.id
         ? {...item, ...normalized}
         : item),
     }
     : {
-      version: 1,
+      version: CURRENT_AI_CONFIG_VERSION,
       activeProfileId: 'default',
       profiles: [{...normalized, id: 'default', name: '默认环境', models: []}],
+      webSearch,
     };
   await saveAiServiceConfigSet(nextSet, storage, cipher);
-  return normalized;
+  return {...normalized, ...(webSearch.enabled ? {webSearch} : {})};
 }
 
 export async function saveAiServiceConfigSet(
@@ -225,12 +263,13 @@ export async function isAiModelAvailable(
   return models.some(model => model.id === config.model);
 }
 
-function toAiServiceConfig(profile: AiServiceProfile): AiServiceConfig {
+function toAiServiceConfig(profile: AiServiceProfile, webSearch: AiWebSearchConfig): AiServiceConfig {
   return {
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,
     model: profile.model,
     contextWindowTokens: profile.contextWindowTokens,
+    ...(webSearch.enabled ? {webSearch: {...webSearch}} : {}),
   };
 }
 

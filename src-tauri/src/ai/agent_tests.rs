@@ -150,6 +150,34 @@ fn tool_call(id: &str) -> AiToolCall {
 }
 
 #[tokio::test]
+async fn independent_web_credentials_never_enter_model_requests_or_persisted_sources() {
+    let provider = FakeProvider::new(vec![completion(Some("回答"), vec![], None)]);
+    let web = DeepSeekWebTools::new(DeepSeekWebSearchConnection {
+        api_key: "secret-web-not-in-source".into(),
+    })
+    .unwrap();
+    let tools = AiToolSet::new(vec![
+        Box::new(FakeTools::succeeding(json!({}))),
+        Box::new(web),
+    ])
+    .unwrap();
+    let result = AiAgent::new(&provider, &tools)
+        .run_stream_with_history_source("local-qwen", &[], "你好", &|_| Ok(()))
+        .await
+        .unwrap();
+    let requests = provider.requests();
+    assert_eq!(requests[0].model(), "local-qwen");
+    assert_eq!(requests[0].tools().len(), 3);
+    assert!(!format!("{:?}", requests[0]).contains("secret-web-not-in-source"));
+    assert!(!serde_json::to_string(&result.source)
+        .unwrap()
+        .contains("secret-web-not-in-source"));
+    assert!(
+        matches!(&requests[0].messages()[0], AiMessage::System(prompt) if prompt.contains("网页正文") && prompt.contains("不可信"))
+    );
+}
+
+#[tokio::test]
 async fn keeps_the_connection_state_until_the_first_model_delta() {
     let model_started = AtomicBool::new(false);
     let provider = ModelStartTimingProvider {

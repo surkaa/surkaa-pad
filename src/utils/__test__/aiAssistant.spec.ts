@@ -34,9 +34,7 @@ describe('startAiQuestion', () => {
       .resolves.toBe('task-token');
     expect(runner).toHaveBeenCalledWith(
       event,
-      'http://localhost:11434/v1',
-      'local-secret',
-      'qwen3:8b',
+      {baseUrl: config.baseUrl, apiKey: 'local-secret', model: config.model, contextWindowTokens: config.contextWindowTokens, webSearch: null},
       history,
       '最近写了什么？',
     );
@@ -49,9 +47,7 @@ describe('startAiQuestion', () => {
     await startAiQuestion({...config, apiKey: '  '}, '问题', [], event, runner);
     expect(runner).toHaveBeenCalledWith(
       event,
-      config.baseUrl,
-      null,
-      config.model,
+      {baseUrl: config.baseUrl, apiKey: null, model: config.model, contextWindowTokens: config.contextWindowTokens, webSearch: null},
       [],
       '问题',
     );
@@ -73,6 +69,7 @@ describe('startAiSessionQuestion', () => {
         apiKey: 'local-secret',
         model: config.model,
         contextWindowTokens: config.contextWindowTokens,
+        webSearch: null,
       },
       '8212345678901',
       '继续总结',
@@ -87,6 +84,18 @@ describe('startAiSessionQuestion', () => {
       .rejects.toThrow('AI 会话 ID 不能为空');
     await expect(startAiSessionQuestion(config, '8212345678901', ' ', event, runner))
       .rejects.toThrow('问题不能为空');
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it('forwards the independent search credential only when explicitly enabled', async () => {
+    const event = {} as Channel<AiAgentEvent>;
+    const runner = vi.fn().mockResolvedValue('task');
+    await startAiSessionQuestion({...config, webSearch: {enabled: true, apiKey: ' web-secret '}}, '123', '问题', event, runner);
+    expect(runner).toHaveBeenLastCalledWith(event, expect.objectContaining({apiKey: 'local-secret', webSearch: {apiKey: 'web-secret'}}), '123', '问题');
+    await startAiSessionQuestion({...config, webSearch: {enabled: false, apiKey: 'disabled-secret'}}, '123', '问题', event, runner);
+    expect(runner).toHaveBeenLastCalledWith(event, expect.objectContaining({webSearch: null}), '123', '问题');
+    runner.mockClear();
+    await expect(startAiSessionQuestion({...config, webSearch: {enabled: true, apiKey: ''}}, '123', '问题', event, runner)).rejects.toThrow('API Key');
     expect(runner).not.toHaveBeenCalled();
   });
 });
@@ -309,7 +318,7 @@ describe('reduceAiAgentEvent', () => {
       title: '分析问题',
       state: 'completed',
       durationMs: 1200,
-      detail: '决定执行 1 个日记操作',
+      detail: '决定执行 1 个工具调用',
       reasoning: '先理解问题，再决定搜索。',
     });
 
@@ -363,7 +372,7 @@ describe('reduceAiAgentEvent', () => {
       processSteps: state.processSteps,
     });
     expect(formatAiProcessSummary(state.processSteps))
-      .toBe('1 次日记操作 · 2.4 秒');
+      .toBe('1 次工具调用 · 2.4 秒');
   });
 
   it('ignores late deltas while canceling but still accepts terminal events', () => {

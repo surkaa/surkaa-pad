@@ -2,15 +2,18 @@ import {describe, expect, it, vi} from 'vitest';
 import {
   classifyAiEndpoint,
   clearAiServiceConfig,
+  CURRENT_AI_CONFIG_VERSION,
   isAiModelAvailable,
   loadAiServiceConfig,
   loadAiServiceConfigSet,
   normalizeAiServiceConfig,
   normalizeAiServiceConfigSet,
+  normalizeAiWebSearchConfig,
   saveAiServiceConfig,
   saveAiServiceConfigSet,
   type AiConfigCipher,
   type AiConfigStorage,
+  type AiServiceConfigSet,
 } from '../aiConfig';
 
 function dependencies() {
@@ -102,8 +105,9 @@ describe('AI service config', () => {
       apiKey: 'secret-key',
       model: 'model-1',
     })).toEqual({
-      version: 1,
+      version: CURRENT_AI_CONFIG_VERSION,
       activeProfileId: 'default',
+      webSearch: {enabled: false, apiKey: ''},
       profiles: [{
         id: 'default',
         name: '默认环境',
@@ -118,9 +122,10 @@ describe('AI service config', () => {
 
   it('persists multiple environments, active selection and cached model lists', async () => {
     const {storage, cipher} = dependencies();
-    const configSet = {
-      version: 1 as const,
+    const configSet: AiServiceConfigSet = {
+      version: CURRENT_AI_CONFIG_VERSION,
       activeProfileId: 'remote',
+      webSearch: {enabled: false, apiKey: ''},
       profiles: [
         {
           id: 'local',
@@ -168,6 +173,47 @@ describe('AI service config', () => {
 
     expect(current()).toBeNull();
     await expect(loadAiServiceConfig(storage, cipher)).resolves.toBeNull();
+  });
+
+  it('migrates v1 profiles without enabling search or changing cached models', () => {
+    const legacy = {version: 1, activeProfileId: 'old', profiles: [{
+      id: 'old', name: '旧环境', baseUrl: 'http://localhost:11434/v1', apiKey: '', model: 'qwen',
+      contextWindowTokens: 4096, models: [{id: 'qwen', ownedBy: 'ollama'}],
+    }]};
+    const migrated = normalizeAiServiceConfigSet(legacy);
+    expect(migrated.version).toBe(CURRENT_AI_CONFIG_VERSION);
+    expect(migrated.profiles).toEqual(legacy.profiles);
+    expect(migrated.webSearch).toEqual({enabled: false, apiKey: ''});
+    expect(() => normalizeAiServiceConfigSet({...legacy, version: 99})).toThrow('不支持');
+  });
+
+  it('validates search opt-in and rejects header-unsafe keys without exposing them', () => {
+    expect(normalizeAiWebSearchConfig(undefined)).toEqual({enabled: false, apiKey: ''});
+    expect(normalizeAiWebSearchConfig({enabled: true, apiKey: ' sk-web '})).toEqual({enabled: true, apiKey: 'sk-web'});
+    for (const value of [null, {}, {enabled: true, apiKey: ''}, {enabled: 'yes', apiKey: 'key'},
+      {enabled: true, apiKey: 'secret\nkey'}, {enabled: false, apiKey: 'secret key'}, {enabled: true, apiKey: 'k'.repeat(4097)}]) {
+      expect(() => normalizeAiWebSearchConfig(value)).toThrow();
+    }
+  });
+
+  it('encrypts the independent search key and preserves it when updating the model', async () => {
+    const {storage, cipher, current} = dependencies();
+    const webSearch = {enabled: true, apiKey: 'independent-web-secret'};
+    const model = {baseUrl: 'http://localhost:11434/v1', apiKey: '', model: 'qwen', contextWindowTokens: null};
+    await saveAiServiceConfig({...model, webSearch}, storage, cipher);
+    expect(JSON.stringify(current())).not.toContain(webSearch.apiKey);
+    await expect(loadAiServiceConfig(storage, cipher)).resolves.toEqual({...model, webSearch});
+    await saveAiServiceConfig({...model, model: 'new-model'}, storage, cipher);
+    expect((await loadAiServiceConfigSet(storage, cipher))?.webSearch).toEqual(webSearch);
+    expect((await loadAiServiceConfig(storage, cipher))?.webSearch).toEqual(webSearch);
+  });
+
+  it('keeps a disabled key encrypted but does not send it to the agent', async () => {
+    const {storage, cipher} = dependencies();
+    await saveAiServiceConfig({baseUrl: 'http://localhost:11434/v1', apiKey: '', model: 'qwen', contextWindowTokens: null,
+      webSearch: {enabled: false, apiKey: 'disabled-web-secret'}}, storage, cipher);
+    expect((await loadAiServiceConfigSet(storage, cipher))?.webSearch.apiKey).toBe('disabled-web-secret');
+    expect(await loadAiServiceConfig(storage, cipher)).not.toHaveProperty('webSearch');
   });
 
   it('checks the configured model against the latest model list', async () => {

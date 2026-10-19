@@ -9,6 +9,7 @@
         <q-item-section>
           <q-item-label class="label-text text-weight-medium">AI 服务</q-item-label>
           <q-item-label caption class="desc-text">{{ configSummary }}</q-item-label>
+          <q-item-label v-if="savedSet?.webSearch.enabled" caption class="desc-text">DeepSeek 联网搜索已开启</q-item-label>
         </q-item-section>
         <q-item-section side>
           <q-icon name="chevron_right" class="desc-text"/>
@@ -25,7 +26,7 @@
           </div>
         </q-card-section>
 
-        <q-card-section class="q-pt-none q-gutter-y-sm">
+        <q-card-section class="ai-config-body q-pt-none q-gutter-y-sm">
           <q-banner rounded class="privacy-notice">
             问题以及 Agent 按需读取的日记文本会发送到此服务，请确认你信任服务提供方。
           </q-banner>
@@ -148,13 +149,59 @@
               @click="detectContextWindow"
             />
           </div>
+
+          <q-separator class="q-my-md"/>
+          <div class="text-subtitle2 title-text">联网搜索（DeepSeek）</div>
+          <q-toggle
+            v-model="webSearchDraft.enabled"
+            label="允许 AI 搜索和读取公开网页"
+            color="primary"
+            :disable="saving"
+            class="web-search-toggle"
+          />
+          <div class="text-caption desc-text">对所有聊天环境生效；本地 Ollama 等模型也可使用，需支持工具调用。</div>
+          <q-input
+            v-model="webSearchDraft.apiKey"
+            :type="showWebApiKey ? 'text' : 'password'"
+            label="DeepSeek 联网搜索 API Key"
+            hint="独立于上面的聊天服务 Key；加密保存在本机，改密时会一同更新"
+            outlined
+            dense
+            :dark="$q.dark.isActive"
+            :disable="!webSearchDraft.enabled || saving"
+            color="primary"
+            class="web-search-key"
+          >
+            <template #append>
+              <q-icon
+                :name="showWebApiKey ? 'visibility_off' : 'visibility'"
+                class="cursor-pointer"
+                :aria-label="showWebApiKey ? '隐藏联网搜索密钥' : '显示联网搜索密钥'"
+                @click="showWebApiKey = !showWebApiKey"
+              />
+            </template>
+          </q-input>
+          <q-banner rounded class="privacy-notice web-search-notice">
+            开启后，模型生成的搜索词和网页地址会发送给 DeepSeek，可能包含对话中的信息；检索结果和网页正文会发送给当前聊天模型。
+            应用不会自动附带完整问题、会话历史或设备位置。搜索与网页抓取均按请求计费，每轮最多调用 10 次；具体以 DeepSeek 官方规则为准。
+          </q-banner>
+          <q-btn
+            outline
+            no-caps
+            color="primary"
+            label="测试搜索（调用 1 次接口）"
+            :loading="testingWebSearch"
+            :disable="!webSearchDraft.enabled || !webSearchDraft.apiKey.trim() || saving"
+            class="web-search-test"
+            @click="testWebSearch"
+          />
         </q-card-section>
 
         <q-card-actions align="between" class="q-px-md q-pb-md">
           <q-btn
             v-if="savedSet"
             flat
-            label="清除配置"
+            label="清除全部配置"
             color="negative"
             :disable="saving"
             @click="clearConfig"
@@ -185,10 +232,12 @@ import api from '../../utils/api';
 import {
   classifyAiEndpoint,
   clearAiServiceConfig,
+  CURRENT_AI_CONFIG_VERSION,
   DEFAULT_AI_BASE_URL,
   loadAiServiceConfigSet,
   normalizeAiServiceConfigSet,
   normalizeAiServiceProfile,
+  normalizeAiWebSearchConfig,
   saveAiServiceConfigSet,
   type AiServiceConfigSet,
   type AiServiceProfile,
@@ -198,6 +247,9 @@ import {formatError} from '../../utils/formatError';
 const $q = useQuasar();
 const showDialog = ref(false);
 const showApiKey = ref(false);
+const showWebApiKey = ref(false);
+const testingWebSearch = ref(false);
+const webSearchDraft = reactive(normalizeAiWebSearchConfig(undefined));
 const loadingModels = ref(false);
 const detectingContextWindow = ref(false);
 const saving = ref(false);
@@ -285,7 +337,9 @@ function openConfigDialog() {
   profiles.value = set?.profiles.map(copyProfile) ?? [emptyProfile()];
   selectedProfileId.value = set?.activeProfileId ?? profiles.value[0].id;
   loadDraft(profiles.value.find(profile => profile.id === selectedProfileId.value) ?? profiles.value[0]);
+  Object.assign(webSearchDraft, savedSet.value?.webSearch ?? normalizeAiWebSearchConfig(undefined));
   showApiKey.value = false;
+  showWebApiKey.value = false;
   showDialog.value = true;
 }
 
@@ -396,9 +450,10 @@ async function saveConfig() {
     normalizeAiServiceProfile(draft, draft.id, draft.name);
     commitDraft();
     const normalizedSet = normalizeAiServiceConfigSet({
-      version: 1,
+      version: CURRENT_AI_CONFIG_VERSION,
       activeProfileId: selectedProfileId.value,
       profiles: profiles.value,
+      webSearch: normalizeAiWebSearchConfig(webSearchDraft),
     });
     savedSet.value = await saveAiServiceConfigSet(normalizedSet);
     showDialog.value = false;
@@ -407,6 +462,19 @@ async function saveConfig() {
     $q.notify({type: 'negative', message: `保存 AI 配置失败: ${formatError(error)}`});
   } finally {
     saving.value = false;
+  }
+}
+
+async function testWebSearch() {
+  testingWebSearch.value = true;
+  try {
+    const config = normalizeAiWebSearchConfig(webSearchDraft);
+    await api.cmdTestAiWebSearch({apiKey: config.apiKey});
+    $q.notify({type: 'positive', message: 'DeepSeek 联网搜索连接成功'});
+  } catch (error) {
+    $q.notify({type: 'negative', message: `测试联网搜索失败：${formatError(error)}`});
+  } finally {
+    testingWebSearch.value = false;
   }
 }
 
@@ -436,6 +504,15 @@ async function clearConfig() {
   background-color: var(--pad-bg-color-100);
   color: var(--pad-text-color-100);
   border-radius: var(--pad-radius-xl);
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  > .q-card__section:not(.ai-config-body),
+  > .q-card__actions { flex-shrink: 0; }
+
+  .ai-config-body { min-height: 0; overflow-y: auto; }
 
   .title-text {
     color: var(--pad-text-color-100);

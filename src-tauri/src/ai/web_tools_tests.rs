@@ -396,3 +396,69 @@ async fn read_request(stream: &mut TcpStream) -> String {
 fn json_body(request: &str) -> Value {
     serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap()
 }
+
+#[tokio::test]
+async fn agent_searches_through_the_http_tool_then_uses_the_result_in_its_final_answer() {
+    use crate::ai::{
+        AiAgent, AiAgentEvent, AiAssistantMessage, AiCompletion, AiCompletionRequest, AiMessage,
+        AiModel, AiModelProvider,
+    };
+    struct Provider(AtomicUsize);
+    #[async_trait]
+    impl AiModelProvider for Provider {
+        async fn list_models(&self) -> Result<Vec<AiModel>, AiError> {
+            Ok(vec![])
+        }
+        async fn complete(&self, request: AiCompletionRequest) -> Result<AiCompletion, AiError> {
+            assert_eq!(request.model(), "local-qwen");
+            assert_eq!(request.tools().len(), 2);
+            let message = if self.0.fetch_add(1, Ordering::AcqRel) == 0 {
+                AiAssistantMessage {
+                    reasoning_content: None,
+                    content: None,
+                    tool_calls: vec![call(SEARCH_TOOL, json!({"query":"最新文档"}))],
+                }
+            } else {
+                let AiMessage::Tool(result) = request.messages().last().unwrap() else {
+                    panic!("tool result missing")
+                };
+                let result: Value = serde_json::from_str(&result.content).unwrap();
+                assert_eq!(
+                    result["result"]["results"][0]["summary"],
+                    "真实接口返回的资料"
+                );
+                AiAssistantMessage {
+                    reasoning_content: None,
+                    content: Some("参考[官方文档](https://example.com/docs)作答".into()),
+                    tool_calls: vec![],
+                }
+            };
+            Ok(AiCompletion {
+                message,
+                finish_reason: None,
+                usage: None,
+            })
+        }
+    }
+    let (base, request) = response(200, json!({"results":[{"title":"官方文档","url":"https://example.com/docs","summary":"真实接口返回的资料"}]}).to_string()).await;
+    let provider = Provider(AtomicUsize::new(0));
+    let tools = tools(&base);
+    let events = std::sync::Mutex::new(Vec::new());
+    let result = AiAgent::new(&provider, &tools)
+        .run_stream_with_history_source("local-qwen", &[], "请查阅最新资料", &|event| {
+            events.lock().unwrap().push(event);
+            Ok(())
+        })
+        .await
+        .unwrap();
+    assert_eq!(provider.0.load(Ordering::Acquire), 2);
+    assert!(result.response.answer.contains("https://example.com/docs"));
+    assert!(events.lock().unwrap().iter().any(
+        |event| matches!(event, AiAgentEvent::ToolStarted { title, .. } if title == "搜索网页")
+    ));
+    assert!(events.lock().unwrap().iter().any(|event| matches!(event, AiAgentEvent::ToolCompleted { succeeded: true, summary, .. } if summary == "找到 1 个网页")));
+    let source = serde_json::to_string(&result.source).unwrap();
+    assert!(source.contains("真实接口返回的资料"));
+    assert!(!source.contains("sk-test-not-in-trace"));
+    assert_eq!(json_body(&request.await.unwrap())["query"], "最新文档");
+}

@@ -50,6 +50,7 @@ mod android_tls {
 
 use crate::ai::ai_command::{
     cmd_detect_ai_context_window, cmd_list_ai_models, cmd_run_ai_agent, cmd_run_ai_session_agent,
+    cmd_test_ai_web_search,
 };
 use crate::ai::session_command::{
     cmd_create_ai_session, cmd_delete_ai_session, cmd_get_ai_session, cmd_get_ai_session_meta,
@@ -221,6 +222,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             // AI Agent
             cmd_list_ai_models,
             cmd_detect_ai_context_window,
+            cmd_test_ai_web_search,
             cmd_run_ai_agent,
             cmd_run_ai_session_agent,
             // AI 会话持久化

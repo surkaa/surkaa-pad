@@ -1,7 +1,8 @@
 use super::session_agent::{AiSessionAgentOutcome, AiSessionAgentRunner};
 use super::{
     AiAgent, AiAgentEvent, AiAgentRunResult, AiContextWindow, AiConversationTurn, AiError, AiModel,
-    AiModelProvider, AiProviderConfig, DiaryReadTools, OpenAiCompatibleClient,
+    AiModelProvider, AiProviderConfig, AiToolCall, AiToolExecutor, AiToolSet,
+    DeepSeekWebSearchConnection, DeepSeekWebTools, DiaryReadTools, OpenAiCompatibleClient,
 };
 use crate::error::AppError;
 use crate::state::AppState;
@@ -19,6 +20,37 @@ pub struct AiSessionAgentConnection {
     pub model: String,
     #[specta(type = Option<f64>)]
     pub context_window_tokens: Option<u64>,
+    #[serde(default)]
+    pub web_search: Option<DeepSeekWebSearchConnection>,
+}
+
+/// 用户主动测试一次搜索接口；该操作会按 DeepSeek 的规则产生一次 API 请求。
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_test_ai_web_search(
+    connection: DeepSeekWebSearchConnection,
+) -> Result<(), AppError> {
+    let tools = DeepSeekWebTools::new(connection)?;
+    tools
+        .execute(&AiToolCall {
+            id: "connection-test".into(),
+            name: "search_web".into(),
+            arguments: serde_json::json!({"query":"DeepSeek","count":1}),
+        })
+        .await
+        .map_err(|error| AiError::InvalidRequest(error.display_reason()))?;
+    Ok(())
+}
+
+fn build_tools(
+    diary: DiaryReadTools,
+    web_search: Option<DeepSeekWebSearchConnection>,
+) -> Result<AiToolSet, AiError> {
+    let mut executors: Vec<Box<dyn AiToolExecutor>> = vec![Box::new(diary)];
+    if let Some(connection) = web_search {
+        executors.push(Box::new(DeepSeekWebTools::new(connection)?));
+    }
+    AiToolSet::new(executors)
 }
 
 /// 获取 OpenAI 兼容服务提供的模型列表。
@@ -52,11 +84,9 @@ pub async fn cmd_detect_ai_context_window(
     Ok(client.detect_context_window(&model).await?)
 }
 
-/// 使用只读日记工具运行一次 AI Agent 问答。
+/// 使用日记及用户主动开启的联网工具运行一次 AI Agent 问答。
 /// # Arguments
-/// * `base_url` - OpenAI 兼容 API 根地址
-/// * `api_key` - 可选的 Bearer API Key
-/// * `model` - 本次问答使用的模型 ID
+/// * `connection` - 聊天服务、模型及可选的独立联网凭据
 /// * `history` - 当前会话中此前已完成的用户问题和最终回答
 /// * `prompt` - 用户问题
 /// * `event` - 接收模型状态、增量回答和最终结果的事件通道
@@ -67,18 +97,17 @@ pub async fn cmd_detect_ai_context_window(
 pub fn cmd_run_ai_agent(
     state: State<'_, AppState>,
     event: Channel<AiAgentEvent>,
-    base_url: String,
-    api_key: Option<String>,
-    model: String,
+    connection: AiSessionAgentConnection,
     history: Vec<AiConversationTurn>,
     prompt: String,
 ) -> Result<String, AppError> {
-    let config = AiProviderConfig::new(&base_url, api_key)?;
+    let config = AiProviderConfig::new(&connection.base_url, connection.api_key)?;
     let client = OpenAiCompatibleClient::new(config)?;
+    let model = connection.model;
     let task_pool = state.task_pool();
     let state = state.inner().clone();
+    let tools = build_tools(DiaryReadTools::new(state), connection.web_search)?;
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
-        let tools = DiaryReadTools::new(state);
         let agent = AiAgent::new(&client, &tools);
         let emit = |message| send_event(&event, message);
         let run = agent.run_stream_with_history_source(&model, &history, &prompt, &emit);
@@ -127,6 +156,10 @@ pub fn cmd_run_ai_session_agent(
     let run_guard = repository.try_begin_run(&session_id)?;
     let task_pool = state.task_pool();
     let state = state.inner().clone();
+    let tools = build_tools(
+        DiaryReadTools::new_with_locked_storage(state.clone()),
+        connection.web_search,
+    )?;
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         let _run_guard = run_guard;
         let storage_guard = tokio::select! {
@@ -143,7 +176,6 @@ pub fn cmd_run_ai_session_agent(
                 return;
             }
         };
-        let tools = DiaryReadTools::new_with_locked_storage(state);
         let runner = AiSessionAgentRunner::new(&repository, &client, &tools);
         let emit = |message| send_event(&event, message);
 
@@ -214,5 +246,47 @@ mod tests {
         for value in [0, 255, 10_000_001] {
             assert!(normalize_context_window_tokens(Some(value)).is_err());
         }
+    }
+
+    #[test]
+    fn old_connections_default_to_disabled_web_tools() {
+        let connection: AiSessionAgentConnection = serde_json::from_value(serde_json::json!({
+            "baseUrl":"http://localhost:11434/v1", "apiKey":null, "model":"qwen", "contextWindowTokens":null,
+        })).unwrap();
+        assert!(connection.web_search.is_none());
+    }
+
+    #[test]
+    fn only_explicitly_configured_web_tools_are_registered() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = AppState::from_parts(
+            crate::cryptos::Crypto::new(),
+            crate::object::OssClient::new(),
+            crate::caches::LocalObjectStore::new(temp.path().to_path_buf()),
+        );
+        let disabled = build_tools(DiaryReadTools::new(state.clone()), None).unwrap();
+        assert_eq!(disabled.definitions().len(), 4);
+        let enabled = build_tools(
+            DiaryReadTools::new(state.clone()),
+            Some(DeepSeekWebSearchConnection {
+                api_key: "independent-web-key".into(),
+            }),
+        )
+        .unwrap();
+        let names = enabled
+            .definitions()
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 6);
+        assert!(names.contains(&"search_web".into()));
+        assert!(names.contains(&"fetch_webpage".into()));
+        assert!(build_tools(
+            DiaryReadTools::new(state),
+            Some(DeepSeekWebSearchConnection {
+                api_key: " ".into()
+            })
+        )
+        .is_err());
     }
 }
