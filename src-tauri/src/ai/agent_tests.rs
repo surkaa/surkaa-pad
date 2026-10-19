@@ -410,7 +410,7 @@ async fn streams_model_tool_and_answer_events_in_order() {
         AiAgentEvent::ToolStarted {
             operation_id: 1,
             round: 1,
-            title: "执行日记操作".into(),
+            title: "执行工具".into(),
             detail: None,
         }
     );

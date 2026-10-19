@@ -383,7 +383,10 @@ async fn send_optional_ollama_request(
     Ok(Some(body))
 }
 
-async fn read_limited_body(response: Response, limit: usize) -> Result<Vec<u8>, AiError> {
+pub(crate) async fn read_limited_body(
+    response: Response,
+    limit: usize,
+) -> Result<Vec<u8>, AiError> {
     if response
         .content_length()
         .is_some_and(|length| length > limit as u64)
