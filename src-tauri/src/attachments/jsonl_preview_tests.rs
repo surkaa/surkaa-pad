@@ -97,6 +97,50 @@ async fn preserves_long_lines_and_utf8_characters_across_range_boundaries() {
 }
 
 #[tokio::test]
+async fn restores_all_records_across_many_pages_and_split_crlf() {
+    let first = format!("\"{}\"\r\n", "a".repeat(READ_CHUNK_BYTES as usize - 3));
+    assert_eq!(first.as_bytes()[READ_CHUNK_BYTES as usize - 1], b'\r');
+    let text = first + &(2..=333).map(|i| format!("{i}\n")).collect::<String>();
+    let requests = Mutex::new(Vec::new());
+    let mut next = cursor(text.len());
+    let mut count = 0;
+    loop {
+        let result = page(text.as_bytes(), next, &requests).await.unwrap();
+        assert!(result.lines.len() <= PAGE_LINES);
+        for line in result.lines {
+            count += 1;
+            assert_eq!(line.line_number, count);
+            if count != 1 {
+                assert_eq!(line.text, count.to_string());
+            }
+        }
+        let Some(encoded) = result.next_cursor else {
+            break;
+        };
+        next = parse_cursor(
+            Some(&format!("cursor={encoded}")),
+            "diary",
+            &attachment(),
+            text.len() as u64,
+        )
+        .unwrap();
+    }
+    assert_eq!(count, 333);
+    for trailing in ["", "\n"] {
+        let text = (1..=10)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + trailing;
+        let result = page(text.as_bytes(), cursor(text.len()), &requests)
+            .await
+            .unwrap();
+        assert_eq!(result.lines.len(), 10);
+        assert!(result.next_cursor.is_none());
+    }
+}
+
+#[tokio::test]
 async fn reports_non_utf8_per_line_without_blocking_following_lines() {
     let data = b"\"\xff\"\n{}\n";
     let result = page(data, cursor(data.len()), &Mutex::new(Vec::new()))

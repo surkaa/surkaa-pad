@@ -63,6 +63,7 @@
         v-else-if="modelValue && kind === 'pdf' && url"
         :url="buildPdfPreviewUrl(url)"
       />
+      <JsonlAttachmentPreview v-else-if="modelValue && kind === 'jsonl' && url" :key="url" :url="url"/>
       <template v-else-if="kind === 'json'">
         <q-banner v-if="jsonError" class="attachment-preview-warning" dense>
           JSON 格式错误，已按普通文本显示：{{ jsonError }}
@@ -120,6 +121,7 @@ import {copyTextToClipboard} from '../utils/clipboard';
 import {formatError} from '../utils/formatError';
 import JsonTreeViewer from './JsonTreeViewer.vue';
 import ArchiveAttachmentPreview from './ArchiveAttachmentPreview.vue';
+import JsonlAttachmentPreview from './JsonlAttachmentPreview.vue';
 
 const PdfAttachmentPreview = defineAsyncComponent(() => import('./PdfAttachmentPreview.vue'));
 
@@ -154,6 +156,7 @@ const previewIcons: Record<AttachmentPreviewKind, string> = {
   pdf: 'picture_as_pdf',
   markdown: 'markdown',
   json: 'data_object',
+  jsonl: 'format_list_bulleted',
   text: 'description',
   archive: 'folder_zip',
 };
@@ -196,6 +199,7 @@ async function loadPreview() {
     return;
   }
   if (attachmentKind === 'pdf') return;
+  if (attachmentKind === 'jsonl') return;
 
   const url = props.url;
   if (!url) {
