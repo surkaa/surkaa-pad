@@ -1266,6 +1266,142 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn real_oss_jsonl_pages_read_uncached_plain_and_encrypted_attachments() {
+        let client = OssClient::from_env();
+        assert_eq!(
+            std::env::var("ALIYUN_BUCKET_NAME").unwrap(),
+            "surkaa-test",
+            "JSONL 真实 OSS 测试只允许测试桶"
+        );
+        client.require_unversioned_bucket().await.unwrap();
+        let (client, guard) = crate::test_utils::TestOssGuard::new(client).await;
+        let text = (1..=25)
+            .map(|index| {
+                format!(
+                    "{{\"id\":{index},\"text\":\"{}\"}}\r\n",
+                    "中".repeat(if index == 1 { 30_000 } else { 6_000 })
+                )
+            })
+            .collect::<String>();
+        assert!(text.len() > 256 * 1024);
+        for encrypted in [false, true] {
+            let diary_id = "8215021834823";
+            let attachment_id = if encrypted { "encrypted" } else { "plain" };
+            let object_key =
+                crate::object_locations::ObjectLocations::diary_attachment(diary_id, attachment_id);
+            // 上传前检查真正发往 OSS 的路径，确认逻辑 ID 已被唯一测试前缀隔离。
+            // 签名 URL 只在内存中检查路径，不能输出其中的临时凭据。
+            let signed_url = client.direct_url(&object_key).await.unwrap();
+            let url = reqwest::Url::parse(&signed_url).unwrap();
+            let physical_path = urlencoding::decode(url.path()).unwrap();
+            let expected_prefix = format!(
+                "/rust-tests/attachments--attachment-server--tests--real-oss-jsonl-pages-read-uncached-plain-and-encrypted-attachments/{}-",
+                std::process::id()
+            );
+            assert!(
+                physical_path.starts_with(&expected_prefix),
+                "拒绝写入未隔离的测试对象"
+            );
+            assert!(physical_path.ends_with(&format!("/{object_key}")));
+            let crypto = Crypto::new();
+            crypto.init_by_dek_string("42".repeat(32)).unwrap();
+            let source = create_mock_stream(text.as_bytes().to_vec(), 64 * 1024);
+            let (stream, nonce) = if encrypted {
+                crypto.encrypt_streaming(source).unwrap()
+            } else {
+                (source, Vec::new())
+            };
+            // 直接上传到 OSS，不经过 RemoteStore 写透缓存，确保后续分页走真实网络。
+            let etag = client
+                .upload(&object_key, text.len() as u64, stream, "application/jsonl")
+                .await
+                .unwrap();
+            let temp_dir = tempfile::tempdir().unwrap();
+            let los = LocalObjectStore::new(temp_dir.path().to_path_buf());
+            let (listener, handle) = bind_attachment_server().unwrap();
+            let state = AppState::from_parts_with_attachment_server(
+                crypto,
+                client.clone(),
+                los.clone(),
+                handle.clone(),
+            );
+            state.set_remote_enabled(true);
+            state.diary_cache().insert(
+                diary_id,
+                DiaryManifest {
+                    id: diary_id.into(),
+                    algorithm: Gcm,
+                    content: DiaryContent::default(),
+                    created: 0,
+                    updated: 0,
+                    version: CURRENT_VERSION,
+                    attachments: vec![AttachmentMeta {
+                        id: attachment_id.into(),
+                        filename: "data.jsonl".into(),
+                        mimetype: "application/jsonl".into(),
+                        size: 1,
+                        encrypted,
+                        nonce,
+                        algorithm: Ctr,
+                        etag: Some(etag),
+                        content_info: None,
+                    }],
+                },
+                "manifest-etag".into(),
+            );
+            let task = tokio::spawn(run_attachment_server(listener, state.clone()));
+            let server = TestServer {
+                _temp_dir: temp_dir,
+                handle,
+                state,
+                task,
+            };
+            let url = format!("{}&view=jsonl", server.handle.url(diary_id, attachment_id));
+            let http = reqwest::Client::new();
+            let mut cursor = None;
+            let mut numbers = Vec::new();
+            for expected_count in [10, 10, 5] {
+                let page_url = match &cursor {
+                    Some(cursor) => format!("{url}&cursor={cursor}"),
+                    None => url.clone(),
+                };
+                let response = http.get(page_url).send().await.unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                let value: serde_json::Value = response.json().await.unwrap();
+                let lines = value["lines"].as_array().unwrap();
+                assert_eq!(lines.len(), expected_count);
+                for line in lines {
+                    let number = line["lineNumber"].as_u64().unwrap();
+                    let record: serde_json::Value =
+                        serde_json::from_str(line["text"].as_str().unwrap()).unwrap();
+                    assert_eq!(record["id"], number);
+                    assert_eq!(
+                        record["text"],
+                        "中".repeat(if number == 1 { 30_000 } else { 6_000 })
+                    );
+                    numbers.push(number);
+                }
+                cursor = value["nextCursor"].as_str().map(str::to_owned);
+                assert!(
+                    los.get(&object_key).await.unwrap().is_none(),
+                    "分页不应缓存完整附件"
+                );
+            }
+            assert_eq!(numbers, (1..=25).collect::<Vec<_>>());
+            assert!(cursor.is_none());
+            drop(http);
+            drop(server);
+        }
+        guard.cleanup().await;
+        let (remaining, next) = client.list("", None).await.unwrap();
+        assert!(
+            remaining.is_empty() && next.is_none(),
+            "JSONL 测试对象未清理干净"
+        );
+        assert!(client.list_multipart_uploads("").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn jsonl_view_does_not_bypass_type_token_or_vault_lock_checks() {
         let server = start_test_server("jsonl", "data.txt", "text/plain", b"{}\n", false).await;
         let url = format!("{}&view=jsonl", server.handle.url("jsonl", "data.txt"));
