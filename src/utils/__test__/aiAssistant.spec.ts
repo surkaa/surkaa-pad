@@ -22,6 +22,12 @@ const config: AiServiceConfig = {
   apiKey: ' local-secret ',
   model: 'qwen3:8b',
   contextWindowTokens: 32_768,
+  webTools: {
+    enabled: false,
+    baseUrl: 'https://api.deepseek.com',
+    apiKey: '',
+    maxResults: 5,
+  },
 };
 
 describe('startAiQuestion', () => {
@@ -39,6 +45,7 @@ describe('startAiQuestion', () => {
       'qwen3:8b',
       history,
       '最近写了什么？',
+      null,
     );
   });
 
@@ -54,6 +61,7 @@ describe('startAiQuestion', () => {
       config.model,
       [],
       '问题',
+      null,
     );
     await expect(startAiQuestion(config, ' \n ', [], event, runner)).rejects.toThrow('问题不能为空');
   });
@@ -73,9 +81,38 @@ describe('startAiSessionQuestion', () => {
         apiKey: 'local-secret',
         model: config.model,
         contextWindowTokens: config.contextWindowTokens,
+        webTools: null,
       },
       '8212345678901',
       '继续总结',
+    );
+  });
+
+  it('forwards enabled web tool settings to the session runner', async () => {
+    const event = {} as Channel<AiAgentEvent>;
+    const runner = vi.fn().mockResolvedValue('session-task-token');
+
+    await startAiSessionQuestion({
+      ...config,
+      webTools: {
+        enabled: true,
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: 'web-key',
+        maxResults: 8,
+      },
+    }, '8212345678901', '问题', event, runner);
+
+    expect(runner).toHaveBeenCalledWith(
+      event,
+      expect.objectContaining({
+        webTools: {
+          baseUrl: 'https://api.deepseek.com',
+          apiKey: 'web-key',
+          maxResults: 8,
+        },
+      }),
+      '8212345678901',
+      '问题',
     );
   });
 

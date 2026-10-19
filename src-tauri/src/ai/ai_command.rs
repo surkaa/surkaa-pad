@@ -1,7 +1,8 @@
 use super::session_agent::{AiSessionAgentOutcome, AiSessionAgentRunner};
 use super::{
     AiAgent, AiAgentEvent, AiAgentRunResult, AiContextWindow, AiConversationTurn, AiError, AiModel,
-    AiModelProvider, AiProviderConfig, DiaryReadTools, OpenAiCompatibleClient,
+    AiModelProvider, AiProviderConfig, AiToolExecutor, AiWebToolsConnection, CompositeToolExecutor,
+    DiaryReadTools, OpenAiCompatibleClient, WebTools,
 };
 use crate::error::AppError;
 use crate::state::AppState;
@@ -19,6 +20,9 @@ pub struct AiSessionAgentConnection {
     pub model: String,
     #[specta(type = Option<f64>)]
     pub context_window_tokens: Option<u64>,
+    /// 可选的联网工具配置；为 `None` 时不向模型提供搜索和抓取工具。
+    #[serde(default)]
+    pub web_tools: Option<AiWebToolsConnection>,
 }
 
 /// 获取 OpenAI 兼容服务提供的模型列表。
@@ -59,9 +63,12 @@ pub async fn cmd_detect_ai_context_window(
 /// * `model` - 本次问答使用的模型 ID
 /// * `history` - 当前会话中此前已完成的用户问题和最终回答
 /// * `prompt` - 用户问题
+/// * `web_tools` - 可选的联网工具配置；启用后模型可以搜索网页或抓取指定网址
 /// * `event` - 接收模型状态、增量回答和最终结果的事件通道
 /// # Returns
 /// * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
+// Tauri 命令参数需要与前端 bindings 逐项对应，拆成结构体会改变 IPC 协议。
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
 pub fn cmd_run_ai_agent(
@@ -72,13 +79,22 @@ pub fn cmd_run_ai_agent(
     model: String,
     history: Vec<AiConversationTurn>,
     prompt: String,
+    web_tools: Option<AiWebToolsConnection>,
 ) -> Result<String, AppError> {
-    let config = AiProviderConfig::new(&base_url, api_key)?;
+    let config = AiProviderConfig::new(&base_url, api_key.clone())?;
     let client = OpenAiCompatibleClient::new(config)?;
+    let web_tools = web_tools
+        .map(|connection| WebTools::from_connection(&connection, api_key.as_deref()))
+        .transpose()?;
     let task_pool = state.task_pool();
     let state = state.inner().clone();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
-        let tools = DiaryReadTools::new(state);
+        let mut executors: Vec<Box<dyn AiToolExecutor>> =
+            vec![Box::new(DiaryReadTools::new(state))];
+        if let Some(web_tools) = web_tools {
+            executors.push(Box::new(web_tools));
+        }
+        let tools = CompositeToolExecutor::new(executors);
         let agent = AiAgent::new(&client, &tools);
         let emit = |message| send_event(&event, message);
         let run = agent.run_stream_with_history_source(&model, &history, &prompt, &emit);
@@ -105,7 +121,7 @@ pub fn cmd_run_ai_agent(
 /// 同时运行两个问答。任务运行期间存储模式保持不变。
 /// # Arguments
 /// * `event` - 接收模型状态、增量回答和最终结果的事件通道
-/// * `connection` - 本轮的服务地址、可选 API Key、模型与可选上下文上限
+/// * `connection` - 本轮的服务地址、可选 API Key、模型、可选上下文上限与联网工具配置
 /// * `session_id` - 已创建的数字 AI 会话 ID；历史消息从会话中读取
 /// * `prompt` - 本轮用户问题
 /// # Returns
@@ -119,6 +135,11 @@ pub fn cmd_run_ai_session_agent(
     session_id: String,
     prompt: String,
 ) -> Result<String, AppError> {
+    let web_tools = connection
+        .web_tools
+        .as_ref()
+        .map(|web_tools| WebTools::from_connection(web_tools, connection.api_key.as_deref()))
+        .transpose()?;
     let config = AiProviderConfig::new(&connection.base_url, connection.api_key)?;
     let client = OpenAiCompatibleClient::new(config)?;
     let context_window_tokens = normalize_context_window_tokens(connection.context_window_tokens)?;
@@ -143,7 +164,12 @@ pub fn cmd_run_ai_session_agent(
                 return;
             }
         };
-        let tools = DiaryReadTools::new_with_locked_storage(state);
+        let mut executors: Vec<Box<dyn AiToolExecutor>> =
+            vec![Box::new(DiaryReadTools::new_with_locked_storage(state))];
+        if let Some(web_tools) = web_tools {
+            executors.push(Box::new(web_tools));
+        }
+        let tools = CompositeToolExecutor::new(executors);
         let runner = AiSessionAgentRunner::new(&repository, &client, &tools);
         let emit = |message| send_event(&event, message);
 

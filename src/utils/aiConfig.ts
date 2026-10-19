@@ -1,8 +1,21 @@
 import {useConfigStore} from '../stores/config';
 import api from './api';
-import type {AiModel} from '../bindings';
+import type {AiModel, AiWebToolsConnection} from '../bindings';
 
 export const DEFAULT_AI_BASE_URL = 'http://localhost:11434/v1';
+export const DEFAULT_AI_WEB_TOOLS_BASE_URL = 'https://api.deepseek.com';
+export const DEFAULT_AI_WEB_TOOLS_MAX_RESULTS = 5;
+export const MAX_AI_WEB_TOOLS_RESULTS = 50;
+
+/** DeepSeek Search/Fetch 联网工具配置。 */
+export interface AiWebToolsConfig {
+  enabled: boolean;
+  baseUrl: string;
+  /** 留空时复用对话服务的 API Key。 */
+  apiKey: string;
+  /** 单次搜索最多返回的网页条数，1-50。 */
+  maxResults: number;
+}
 
 export interface AiServiceConfig {
   baseUrl: string;
@@ -10,6 +23,7 @@ export interface AiServiceConfig {
   model: string;
   /** 模型最大上下文 Token；空值表示不自动压缩历史。 */
   contextWindowTokens: number | null;
+  webTools: AiWebToolsConfig;
 }
 
 export interface AiServiceProfile extends AiServiceConfig {
@@ -75,7 +89,43 @@ export function normalizeAiServiceConfig(value: unknown): AiServiceConfig {
     throw new Error('AI 服务地址不能包含凭证、查询参数或片段');
   }
 
-  return {baseUrl, apiKey, model, contextWindowTokens};
+  const webTools = normalizeAiWebTools(input.webTools);
+
+  return {baseUrl, apiKey, model, contextWindowTokens, webTools};
+}
+
+export function normalizeAiWebTools(value: unknown): AiWebToolsConfig {
+  const input = value && typeof value === 'object' ? value as Partial<AiWebToolsConfig> : {};
+  const enabled = input.enabled === true;
+  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.trim()
+    ? input.baseUrl.trim()
+    : DEFAULT_AI_WEB_TOOLS_BASE_URL;
+  const apiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : '';
+  const maxResults = input.maxResults === undefined || input.maxResults === null
+    ? DEFAULT_AI_WEB_TOOLS_MAX_RESULTS
+    : input.maxResults;
+
+  if (typeof maxResults !== 'number'
+    || !Number.isSafeInteger(maxResults)
+    || maxResults < 1
+    || maxResults > MAX_AI_WEB_TOOLS_RESULTS) {
+    throw new Error(`联网工具返回条数必须是 1 到 ${MAX_AI_WEB_TOOLS_RESULTS} 之间的整数`);
+  }
+
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new Error('联网服务地址格式无效');
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error('联网服务地址仅支持 HTTP 或 HTTPS');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error('联网服务地址不能包含凭证、查询参数或片段');
+  }
+
+  return {enabled, baseUrl, apiKey, maxResults};
 }
 
 export function normalizeAiServiceProfile(
@@ -225,12 +275,22 @@ export async function isAiModelAvailable(
   return models.some(model => model.id === config.model);
 }
 
+export function toAiWebToolsConnection(config: AiServiceConfig): AiWebToolsConnection | null {
+  if (!config.webTools.enabled) return null;
+  return {
+    baseUrl: config.webTools.baseUrl,
+    apiKey: config.webTools.apiKey.trim() || null,
+    maxResults: config.webTools.maxResults,
+  };
+}
+
 function toAiServiceConfig(profile: AiServiceProfile): AiServiceConfig {
   return {
     baseUrl: profile.baseUrl,
     apiKey: profile.apiKey,
     model: profile.model,
     contextWindowTokens: profile.contextWindowTokens,
+    webTools: {...profile.webTools},
   };
 }
 

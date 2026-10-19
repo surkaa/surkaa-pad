@@ -7,11 +7,20 @@ import {
   loadAiServiceConfigSet,
   normalizeAiServiceConfig,
   normalizeAiServiceConfigSet,
+  normalizeAiWebTools,
   saveAiServiceConfig,
   saveAiServiceConfigSet,
+  toAiWebToolsConnection,
   type AiConfigCipher,
   type AiConfigStorage,
 } from '../aiConfig';
+
+const defaultWebTools = {
+  enabled: false,
+  baseUrl: 'https://api.deepseek.com',
+  apiKey: '',
+  maxResults: 5,
+};
 
 function dependencies() {
   let stored: number[] | null = null;
@@ -42,6 +51,7 @@ describe('AI service config', () => {
       apiKey: '',
       model: 'qwen3:8b',
       contextWindowTokens: null,
+      webTools: defaultWebTools,
     });
   });
 
@@ -87,6 +97,7 @@ describe('AI service config', () => {
       apiKey: 'secret-key',
       model: 'model-1',
       contextWindowTokens: null,
+      webTools: defaultWebTools,
     };
 
     await saveAiServiceConfig(config, storage, cipher);
@@ -111,6 +122,7 @@ describe('AI service config', () => {
         apiKey: 'secret-key',
         model: 'model-1',
         contextWindowTokens: null,
+        webTools: defaultWebTools,
         models: [],
       }],
     });
@@ -129,6 +141,7 @@ describe('AI service config', () => {
           apiKey: '',
           model: 'qwen3:8b',
           contextWindowTokens: null,
+          webTools: defaultWebTools,
           models: [{id: 'qwen3:8b', ownedBy: 'ollama'}],
         },
         {
@@ -138,6 +151,7 @@ describe('AI service config', () => {
           apiKey: 'secret-key',
           model: 'model-2',
           contextWindowTokens: null,
+          webTools: defaultWebTools,
           models: [{id: 'model-2', ownedBy: 'provider'}],
         },
       ],
@@ -152,6 +166,7 @@ describe('AI service config', () => {
       apiKey: 'secret-key',
       model: 'model-2',
       contextWindowTokens: null,
+      webTools: defaultWebTools,
     });
   });
 
@@ -162,6 +177,7 @@ describe('AI service config', () => {
       apiKey: '',
       model: 'model-1',
       contextWindowTokens: null,
+      webTools: defaultWebTools,
     }, storage, cipher);
 
     await clearAiServiceConfig(storage);
@@ -180,6 +196,7 @@ describe('AI service config', () => {
       apiKey: ' secret-key ',
       model: 'model-2',
       contextWindowTokens: null,
+      webTools: defaultWebTools,
     };
 
     await expect(isAiModelAvailable(config, listModels)).resolves.toBe(true);
@@ -193,6 +210,7 @@ describe('AI service config', () => {
       apiKey: '  ',
       model: 'missing-model',
       contextWindowTokens: null,
+      webTools: defaultWebTools,
     };
 
     await expect(isAiModelAvailable(config, listModels)).resolves.toBe(false);
@@ -210,6 +228,78 @@ describe('AI service config', () => {
       apiKey: '',
       model: 'model-1',
       contextWindowTokens: null,
+      webTools: defaultWebTools,
     }, listModels)).rejects.toBe(requestError);
+  });
+
+  it('defaults web tools for legacy configs and normalizes explicit settings', () => {
+    expect(normalizeAiServiceConfig({
+      baseUrl: 'https://example.com/v1',
+      apiKey: '',
+      model: 'model-1',
+    }).webTools).toEqual(defaultWebTools);
+
+    expect(normalizeAiWebTools({
+      enabled: true,
+      baseUrl: ' https://api.deepseek.com/v1 ',
+      apiKey: ' search-key ',
+      maxResults: 10,
+    })).toEqual({
+      enabled: true,
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: 'search-key',
+      maxResults: 10,
+    });
+  });
+
+  it('rejects invalid web tool limits and URLs', () => {
+    for (const maxResults of [0, 51, 1.5]) {
+      expect(() => normalizeAiWebTools({enabled: true, maxResults})).toThrow();
+    }
+    for (const baseUrl of [
+      'not-a-url',
+      'ftp://example.com',
+      'https://user:password@example.com',
+      'https://example.com?token=secret',
+    ]) {
+      expect(() => normalizeAiWebTools({enabled: true, baseUrl})).toThrow();
+    }
+  });
+
+  it('builds the backend web tool connection only when enabled', () => {
+    const base = {
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'chat-key',
+      model: 'model-1',
+      contextWindowTokens: null,
+    };
+
+    expect(toAiWebToolsConnection({...base, webTools: defaultWebTools})).toBeNull();
+    expect(toAiWebToolsConnection({
+      ...base,
+      webTools: {
+        enabled: true,
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: '  ',
+        maxResults: 5,
+      },
+    })).toEqual({
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: null,
+      maxResults: 5,
+    });
+    expect(toAiWebToolsConnection({
+      ...base,
+      webTools: {
+        enabled: true,
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: 'web-key',
+        maxResults: 8,
+      },
+    })).toEqual({
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'web-key',
+      maxResults: 8,
+    });
   });
 });

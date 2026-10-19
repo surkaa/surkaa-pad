@@ -1004,13 +1004,14 @@ async cmdDetectAiContextWindow(baseUrl: string, apiKey: string | null, model: st
  * * `model` - 本次问答使用的模型 ID
  * * `history` - 当前会话中此前已完成的用户问题和最终回答
  * * `prompt` - 用户问题
+ * * `web_tools` - 可选的联网工具配置；启用后模型可以搜索网页或抓取指定网址
  * * `event` - 接收模型状态、增量回答和最终结果的事件通道
  * # Returns
  * * `Result<String, AppError>` - 后台问答任务令牌，可通过 `cmd_cancel_task` 取消
  */
-async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, model: string, history: AiConversationTurn[], prompt: string) : Promise<Result<string, AppError>> {
+async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey: string | null, model: string, history: AiConversationTurn[], prompt: string, webTools: AiWebToolsConnection | null) : Promise<Result<string, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_agent", { event, baseUrl, apiKey, model, history, prompt }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_run_ai_agent", { event, baseUrl, apiKey, model, history, prompt, webTools }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1022,7 +1023,7 @@ async cmdRunAiAgent(event: TAURI_CHANNEL<AiAgentEvent>, baseUrl: string, apiKey:
  * 同时运行两个问答。任务运行期间存储模式保持不变。
  * # Arguments
  * * `event` - 接收模型状态、增量回答和最终结果的事件通道
- * * `connection` - 本轮的服务地址、可选 API Key、模型与可选上下文上限
+ * * `connection` - 本轮的服务地址、可选 API Key、模型、可选上下文上限与联网工具配置
  * * `session_id` - 已创建的数字 AI 会话 ID；历史消息从会话中读取
  * * `prompt` - 本轮用户问题
  * # Returns
@@ -1182,7 +1183,11 @@ export type AiModel = { id: string; ownedBy: string | null }
 export type AiProcessStepKind = "model" | "tool"
 export type AiProcessStepRecord = { id: string; kind: AiProcessStepKind; title: string; detail: string | null; reasoning: string; state: AiProcessStepState; durationMs: number | null }
 export type AiProcessStepState = "completed" | "failed" | "cancelled"
-export type AiSessionAgentConnection = { baseUrl: string; apiKey: string | null; model: string; contextWindowTokens: number | null }
+export type AiSessionAgentConnection = { baseUrl: string; apiKey: string | null; model: string; contextWindowTokens: number | null; 
+/**
+ * 可选的联网工具配置；为 `None` 时不向模型提供搜索和抓取工具。
+ */
+webTools?: AiWebToolsConnection | null }
 export type AiSessionContextSummary = { version: number; coveredMessageCount: number; content: string; createdAt: number }
 export type AiSessionDetail = { meta: AiSessionMeta; messages: AiSessionMessage[] }
 export type AiSessionMessage = { index: number; createdAt: number; payload: AiSessionMessagePayload }
@@ -1190,6 +1195,10 @@ export type AiSessionMessagePage = { messages: AiSessionMessage[]; totalCount: n
 export type AiSessionMessagePayload = { role: "user"; content: string; timezoneOffsetMinutes?: number | null } | { role: "assistant"; state: AiAssistantRecordState; content: string; error: string | null; model: string; usage: AiUsage | null; contextTokens?: number | null; processSteps: AiProcessStepRecord[]; trace: AiConversationSourceMessage[] }
 export type AiSessionMeta = { version: number; id: string; title: string; aiTitle: string | null; contextSummary?: AiSessionContextSummary | null; createdAt: number; updatedAt: number; committedMessageCount: number }
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
+/**
+ * 前端传入的联网工具配置。API Key 留空时由 Agent 复用对话服务的 Key。
+ */
+export type AiWebToolsConnection = { baseUrl: string; apiKey: string | null; maxResults?: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }
 export type ArchiveFormat = "zip" | "sevenZip"

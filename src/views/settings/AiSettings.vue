@@ -148,6 +148,59 @@
               @click="detectContextWindow"
             />
           </div>
+
+          <div class="web-tools-block q-gutter-y-sm">
+            <div class="row items-center justify-between no-wrap q-gutter-sm">
+              <div>
+                <div class="label-text text-weight-medium">联网工具（Search / Fetch）</div>
+                <div class="text-caption desc-text">允许 AI 搜索网页或抓取指定网址</div>
+              </div>
+              <q-toggle v-model="draft.webTools.enabled" color="primary"/>
+            </div>
+
+            <template v-if="draft.webTools.enabled">
+              <q-input
+                v-model="draft.webTools.baseUrl"
+                label="联网 API 地址"
+                hint="默认 https://api.deepseek.com，也可填写带 /v1 的地址"
+                outlined
+                dense
+                color="primary"
+              />
+              <q-input
+                v-model="draft.webTools.apiKey"
+                :type="showWebApiKey ? 'text' : 'password'"
+                label="联网 API Key（可选）"
+                hint="留空则复用上方的 API Key"
+                outlined
+                dense
+                color="primary"
+              >
+                <template #append>
+                  <q-icon
+                    :name="showWebApiKey ? 'visibility_off' : 'visibility'"
+                    class="cursor-pointer"
+                    @click="showWebApiKey = !showWebApiKey"
+                  />
+                </template>
+              </q-input>
+              <q-input
+                v-model.number="draft.webTools.maxResults"
+                type="number"
+                label="单次搜索最多返回条数"
+                hint="1-50，默认 5"
+                outlined
+                dense
+                color="primary"
+              />
+              <q-banner rounded class="privacy-notice">
+                搜索词和目标网址会发送到该服务；联网结果会作为不可信数据提供给模型。
+              </q-banner>
+              <q-banner v-if="webToolsEndpointSecurity === 'remoteHttp'" rounded class="http-warning">
+                联网服务使用远程 HTTP 连接，内容不会加密传输，建议改用 HTTPS。
+              </q-banner>
+            </template>
+          </div>
         </q-card-section>
 
         <q-card-actions align="between" class="q-px-md q-pb-md">
@@ -186,6 +239,8 @@ import {
   classifyAiEndpoint,
   clearAiServiceConfig,
   DEFAULT_AI_BASE_URL,
+  DEFAULT_AI_WEB_TOOLS_BASE_URL,
+  DEFAULT_AI_WEB_TOOLS_MAX_RESULTS,
   loadAiServiceConfigSet,
   normalizeAiServiceConfigSet,
   normalizeAiServiceProfile,
@@ -198,6 +253,7 @@ import {formatError} from '../../utils/formatError';
 const $q = useQuasar();
 const showDialog = ref(false);
 const showApiKey = ref(false);
+const showWebApiKey = ref(false);
 const loadingModels = ref(false);
 const detectingContextWindow = ref(false);
 const saving = ref(false);
@@ -212,6 +268,12 @@ const draft = reactive<AiServiceProfile>({
   apiKey: '',
   model: '',
   contextWindowTokens: null,
+  webTools: {
+    enabled: false,
+    baseUrl: DEFAULT_AI_WEB_TOOLS_BASE_URL,
+    apiKey: '',
+    maxResults: DEFAULT_AI_WEB_TOOLS_MAX_RESULTS,
+  },
   models: [],
 });
 
@@ -220,13 +282,15 @@ const configSummary = computed(() => {
     profile => profile.id === savedSet.value?.activeProfileId,
   );
   if (!savedProfile) return '未配置';
+  const webSuffix = savedProfile.webTools.enabled ? ' · 联网' : '';
   try {
-    return `${savedProfile.name} · ${savedProfile.model} · ${new URL(savedProfile.baseUrl).host}`;
+    return `${savedProfile.name} · ${savedProfile.model} · ${new URL(savedProfile.baseUrl).host}${webSuffix}`;
   } catch {
-    return `${savedProfile.name} · ${savedProfile.model}`;
+    return `${savedProfile.name} · ${savedProfile.model}${webSuffix}`;
   }
 });
 const endpointSecurity = computed(() => classifyAiEndpoint(draft.baseUrl));
+const webToolsEndpointSecurity = computed(() => classifyAiEndpoint(draft.webTools.baseUrl));
 const profileOptions = computed(() => profiles.value.map(profile => ({
   label: profile.name,
   value: profile.id,
@@ -256,12 +320,22 @@ function emptyProfile(id = 'default', name = '默认环境'): AiServiceProfile {
     apiKey: '',
     model: '',
     contextWindowTokens: null,
+    webTools: {
+      enabled: false,
+      baseUrl: DEFAULT_AI_WEB_TOOLS_BASE_URL,
+      apiKey: '',
+      maxResults: DEFAULT_AI_WEB_TOOLS_MAX_RESULTS,
+    },
     models: [],
   };
 }
 
 function copyProfile(profile: AiServiceProfile): AiServiceProfile {
-  return {...profile, models: profile.models.map(model => ({...model}))};
+  return {
+    ...profile,
+    webTools: {...profile.webTools},
+    models: profile.models.map(model => ({...model})),
+  };
 }
 
 function loadDraft(profile: AiServiceProfile) {
@@ -286,6 +360,7 @@ function openConfigDialog() {
   selectedProfileId.value = set?.activeProfileId ?? profiles.value[0].id;
   loadDraft(profiles.value.find(profile => profile.id === selectedProfileId.value) ?? profiles.value[0]);
   showApiKey.value = false;
+  showWebApiKey.value = false;
   showDialog.value = true;
 }
 
@@ -295,6 +370,7 @@ function switchProfile(profileId: string) {
   const profile = profiles.value.find(item => item.id === profileId);
   if (profile) loadDraft(profile);
   showApiKey.value = false;
+  showWebApiKey.value = false;
 }
 
 function addProfile() {
@@ -305,6 +381,7 @@ function addProfile() {
   selectedProfileId.value = id;
   loadDraft(profile);
   showApiKey.value = false;
+  showWebApiKey.value = false;
 }
 
 function deleteProfile() {
@@ -315,6 +392,7 @@ function deleteProfile() {
   selectedProfileId.value = next.id;
   loadDraft(next);
   showApiKey.value = false;
+  showWebApiKey.value = false;
 }
 
 function resetDiscoveredModels() {
@@ -390,6 +468,13 @@ async function detectContextWindow() {
 }
 
 async function saveConfig() {
+  if (draft.webTools.enabled && !draft.webTools.apiKey.trim() && !draft.apiKey.trim()) {
+    $q.notify({
+      type: 'warning',
+      message: '启用联网工具需要填写联网 API Key，或先填写上方的 API Key',
+    });
+    return;
+  }
   saving.value = true;
   try {
     // 先单独校验当前草稿，避免多个环境中某个输入错误时被静默丢弃。
@@ -433,6 +518,8 @@ async function clearConfig() {
 .ai-config-modal {
   width: min(520px, calc(100vw - 32px));
   max-width: 520px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   background-color: var(--pad-bg-color-100);
   color: var(--pad-text-color-100);
   border-radius: var(--pad-radius-xl);
@@ -454,6 +541,13 @@ async function clearConfig() {
   .http-warning {
     color: var(--pad-warning-dark);
     background: color-mix(in srgb, var(--pad-warning-color) 16%, transparent);
+  }
+
+  .web-tools-block {
+    padding: 12px;
+    border: 1px solid var(--pad-border-color-100);
+    border-radius: var(--pad-radius-md);
+    background: var(--pad-bg-color-200);
   }
 
   :deep(.q-field__control) {

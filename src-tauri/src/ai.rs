@@ -18,6 +18,7 @@ mod session_repository;
 mod session_types;
 mod tools;
 mod types;
+mod web_tools;
 
 pub(crate) use agent::AiAgentRunResult;
 pub use agent::{AiAgent, AiAgentEvent, AiAgentResponse};
@@ -38,10 +39,11 @@ pub use session_types::{
     AiSessionMessage, AiSessionMessageBlock, AiSessionMessagePage, AiSessionMessagePayload,
     AiSessionMeta, CURRENT_AI_CONTEXT_SUMMARY_VERSION, CURRENT_AI_SESSION_VERSION,
 };
-pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor};
+pub use tools::{AiToolCallDisplay, AiToolError, AiToolExecutor, CompositeToolExecutor};
 pub use types::{
     AiAssistantMessage, AiCompletion, AiCompletionDelta, AiCompletionRequest, AiContextWindow,
     AiContextWindowSource, AiConversationSource, AiConversationSourceMessage,
     AiConversationSourceToolCall, AiConversationSourceToolDefinition, AiConversationTurn,
     AiMessage, AiModel, AiToolCall, AiToolDefinition, AiToolResult, AiUsage,
 };
+pub use web_tools::{AiWebToolsConnection, WebTools};

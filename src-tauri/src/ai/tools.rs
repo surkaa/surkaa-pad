@@ -1,6 +1,7 @@
 use super::{AiToolCall, AiToolDefinition};
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use thiserror::Error;
 
 const MAX_TOOL_ERROR_DISPLAY_CHARS: usize = 300;
@@ -21,6 +22,68 @@ pub trait AiToolExecutor: Send + Sync {
     }
 
     async fn execute(&self, call: &AiToolCall) -> Result<Value, AiToolError>;
+}
+
+/// 将多个工具提供者组合成一个执行器。
+///
+/// 工具名称重复时保留先注册的定义，保证发给模型的工具列表合法。
+pub struct CompositeToolExecutor {
+    executors: Vec<Box<dyn AiToolExecutor>>,
+    definitions: Vec<AiToolDefinition>,
+    routes: HashMap<String, usize>,
+}
+
+impl CompositeToolExecutor {
+    pub fn new(executors: Vec<Box<dyn AiToolExecutor>>) -> Self {
+        let mut routes = HashMap::new();
+        let mut definitions = Vec::new();
+        for (index, executor) in executors.iter().enumerate() {
+            for definition in executor.definitions() {
+                if routes.contains_key(&definition.name) {
+                    continue;
+                }
+                routes.insert(definition.name.clone(), index);
+                definitions.push(definition);
+            }
+        }
+        Self {
+            executors,
+            definitions,
+            routes,
+        }
+    }
+
+    fn executor_for(&self, name: &str) -> Option<&dyn AiToolExecutor> {
+        self.routes
+            .get(name)
+            .map(|index| self.executors[*index].as_ref())
+    }
+}
+
+#[async_trait]
+impl AiToolExecutor for CompositeToolExecutor {
+    fn definitions(&self) -> Vec<AiToolDefinition> {
+        self.definitions.clone()
+    }
+
+    fn describe_call(&self, call: &AiToolCall) -> AiToolCallDisplay {
+        self.executor_for(&call.name)
+            .map(|executor| executor.describe_call(call))
+            .unwrap_or_else(|| AiToolCallDisplay::new("执行工具操作", None))
+    }
+
+    fn summarize_result(&self, call: &AiToolCall, result: Result<&Value, &AiToolError>) -> String {
+        self.executor_for(&call.name)
+            .map(|executor| executor.summarize_result(call, result))
+            .unwrap_or_else(|| "操作完成".into())
+    }
+
+    async fn execute(&self, call: &AiToolCall) -> Result<Value, AiToolError> {
+        match self.executor_for(&call.name) {
+            Some(executor) => executor.execute(call).await,
+            None => Err(AiToolError::UnknownTool(call.name.clone())),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -121,5 +184,101 @@ mod tests {
             MAX_TOOL_ERROR_DISPLAY_CHARS + 1
         );
         assert!(long.display_reason().ends_with('…'));
+    }
+
+    struct StubExecutor {
+        name: &'static str,
+    }
+
+    #[async_trait]
+    impl AiToolExecutor for StubExecutor {
+        fn definitions(&self) -> Vec<AiToolDefinition> {
+            vec![AiToolDefinition {
+                name: self.name.into(),
+                description: format!("{} 工具", self.name),
+                parameters: json!({"type": "object"}),
+            }]
+        }
+
+        fn describe_call(&self, _call: &AiToolCall) -> AiToolCallDisplay {
+            AiToolCallDisplay::new(format!("调用 {}", self.name), None)
+        }
+
+        fn summarize_result(
+            &self,
+            _call: &AiToolCall,
+            result: Result<&Value, &AiToolError>,
+        ) -> String {
+            if result.is_ok() {
+                format!("{} 完成", self.name)
+            } else {
+                "失败".into()
+            }
+        }
+
+        async fn execute(&self, call: &AiToolCall) -> Result<Value, AiToolError> {
+            Ok(json!({"handledBy": self.name, "name": call.name}))
+        }
+    }
+
+    fn stub_call(name: &str) -> AiToolCall {
+        AiToolCall {
+            id: "call-1".into(),
+            name: name.into(),
+            arguments: json!({}),
+        }
+    }
+
+    #[tokio::test]
+    async fn merges_definitions_and_routes_calls_by_name() {
+        let tools = CompositeToolExecutor::new(vec![
+            Box::new(StubExecutor { name: "first" }),
+            Box::new(StubExecutor { name: "second" }),
+        ]);
+
+        assert_eq!(
+            tools
+                .definitions()
+                .into_iter()
+                .map(|definition| definition.name)
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        assert_eq!(
+            tools.describe_call(&stub_call("second")).title,
+            "调用 second"
+        );
+        assert_eq!(
+            tools.execute(&stub_call("second")).await.unwrap()["handledBy"],
+            "second"
+        );
+        assert_eq!(
+            tools.summarize_result(&stub_call("first"), Ok(&json!({}))),
+            "first 完成"
+        );
+    }
+
+    #[tokio::test]
+    async fn keeps_first_definition_when_names_duplicate() {
+        let tools = CompositeToolExecutor::new(vec![
+            Box::new(StubExecutor { name: "same" }),
+            Box::new(StubExecutor { name: "same" }),
+        ]);
+
+        assert_eq!(tools.definitions().len(), 1);
+        assert_eq!(
+            tools.execute(&stub_call("same")).await.unwrap()["handledBy"],
+            "same"
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_unknown_tool_for_unregistered_name() {
+        let tools = CompositeToolExecutor::new(vec![Box::new(StubExecutor { name: "known" })]);
+
+        assert_eq!(
+            tools.execute(&stub_call("missing")).await,
+            Err(AiToolError::UnknownTool("missing".into()))
+        );
     }
 }

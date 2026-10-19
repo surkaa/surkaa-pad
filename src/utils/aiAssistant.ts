@@ -6,7 +6,7 @@ import type {
   AiSessionMessage,
 } from '../bindings';
 import api from './api';
-import type {AiServiceConfig} from './aiConfig';
+import {toAiWebToolsConnection, type AiServiceConfig} from './aiConfig';
 
 export type AiExchangeState = 'running' | 'canceling' | 'completed' | 'failed' | 'cancelled';
 export type AiProcessStepState = 'running' | 'completed' | 'failed' | 'cancelled';
@@ -67,6 +67,7 @@ export async function startAiQuestion(
     config.model,
     history,
     normalizedPrompt,
+    toAiWebToolsConnection(config),
   );
 }
 
@@ -89,6 +90,7 @@ export async function startAiSessionQuestion(
       apiKey: config.apiKey.trim() || null,
       model: config.model,
       contextWindowTokens: config.contextWindowTokens,
+      webTools: toAiWebToolsConnection(config),
     },
     normalizedSessionId,
     normalizedPrompt,
