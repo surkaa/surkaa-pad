@@ -38,6 +38,7 @@ function confirm() {
           <div class="text-h6">插入表格</div>
           <q-space/>
           <DialogMaximizeButton v-if="!autoMaximized" :maximized="isMaximized" @toggle="toggleMaximized"/>
+          <q-btn icon="close" flat round dense v-close-popup aria-label="关闭插入表格弹窗"/>
         </div>
         <div class="table-description">第一行为表头，行数包含表头</div>
       </q-card-section>
@@ -112,8 +113,8 @@ function confirm() {
 .table-dialog-header, .table-dialog-actions { flex: 0 0 auto; }
 .table-dialog-body { min-height: 0; overflow-y: auto; }
 .is-maximized .table-dialog-body { flex: 1; display: flex; flex-direction: column; }
-.is-maximized .table-dialog-body > * { flex-shrink: 0; }
-.is-maximized .table-preview { flex: 1 0 184px; height: auto; min-height: 184px; }
+.is-maximized .table-dialog-body > :not(.table-preview) { flex-shrink: 0; }
+.is-maximized .table-preview { flex: 0 1 auto; min-height: 0; max-height: none; }
 .table-description { color: var(--pad-text-color-400); font-size: 12px; margin-top: 8px; }
 .table-dimension { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
 .table-dimension > span { flex: 1; }
@@ -122,7 +123,8 @@ function confirm() {
 .table-preview-heading { display: flex; justify-content: space-between; gap: 8px; margin: 16px 0 8px; }
 .table-preview-size { font-size: 12px; color: var(--pad-text-color-300); align-self: center; }
 .table-preview {
-  height: 280px;
+  height: auto;
+  max-height: 280px;
   box-sizing: border-box;
   overflow: auto;
   overscroll-behavior: contain;
@@ -143,5 +145,5 @@ function confirm() {
   text-align: left;
 }
 .table-preview-grid th { position: sticky; top: 0; background: var(--pad-bg-color-300); white-space: nowrap; }
-.table-preview-message { height: 100%; display: grid; place-items: center; color: var(--pad-text-color-300); font-size: 12px; }
+.table-preview-message { padding: 16px; display: grid; place-items: center; color: var(--pad-text-color-300); font-size: 12px; }
 </style>

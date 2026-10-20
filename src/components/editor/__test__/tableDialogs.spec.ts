@@ -25,7 +25,7 @@ function button(label: string) {
 beforeEach(() => {
   vi.useFakeTimers();
   Screen.lt.sm = false;
-  // Vitest 默认不注入 SFC 样式；使用组件自身的 CSS 检查预览容器的固定尺寸。
+  // Vitest 默认不注入 SFC 样式；使用组件自身的 CSS 检查预览容器的尺寸约束。
   dialogStyle = document.createElement('style');
   dialogStyle.textContent = dialogSource.match(/<style scoped>([\s\S]*?)<\/style>/)![1];
   document.head.append(dialogStyle);
@@ -92,7 +92,8 @@ describe.each([false, true])('table dialogs (dark=%s)', dark => {
     expect(preview.querySelectorAll('tr')).toHaveLength(100);
     expect(preview.querySelectorAll('th, td')).toHaveLength(1000);
     expect(preview.querySelector<HTMLTableElement>('table')?.style.width).toBe('640px');
-    expect(getComputedStyle(preview).height).toBe('280px');
+    expect(getComputedStyle(preview).height).toBe('auto');
+    expect(getComputedStyle(preview).maxHeight).toBe('280px');
     expect(getComputedStyle(preview).overflow).toBe('auto');
     expect(preview.querySelector('[contenteditable], input, textarea')).toBeNull();
     expect(insert).not.toHaveBeenCalled();
@@ -101,7 +102,7 @@ describe.each([false, true])('table dialogs (dark=%s)', dark => {
     await setSize('1', '1');
     expect(preview.querySelectorAll('th')).toHaveLength(1);
     expect(preview.querySelectorAll('td')).toHaveLength(0);
-    expect(getComputedStyle(preview).height).toBe('280px');
+    expect(getComputedStyle(preview).height).toBe('auto');
     button('插入').click(); await settle();
     expect(insert).toHaveBeenCalledExactlyOnceWith(1, 1);
   });
@@ -120,7 +121,9 @@ describe.each([false, true])('table dialogs (dark=%s)', dark => {
     expect(document.querySelector('.q-dialog__inner--maximized')).not.toBeNull();
     expect(getComputedStyle(card).maxWidth).toBe('none');
     expect(document.querySelector('.table-preview')).toBe(preview);
-    expect(getComputedStyle(preview).flexGrow).toBe('1');
+    expect(getComputedStyle(preview).flexGrow).toBe('0');
+    expect(getComputedStyle(preview).flexShrink).toBe('1');
+    expect(getComputedStyle(preview).minHeight).toBe('0');
     expect(preview.scrollTop).toBe(24); expect(preview.scrollLeft).toBe(16);
     expect(Array.from(document.querySelectorAll<HTMLInputElement>('input'), input => input.value)).toEqual(['4', '4']);
     button('退出全屏').click(); await settle();
@@ -139,13 +142,51 @@ describe.each([false, true])('table dialogs (dark=%s)', dark => {
     visible.value = true; await settle();
     expect(document.querySelector('.table-insert-dialog.is-maximized')).toBeNull();
     expect(button('全屏查看')).toBeDefined();
+    expect(button('关闭插入表格弹窗')).toBeDefined();
     Screen.lt.sm = true; await settle();
     expect(document.querySelector('.table-insert-dialog.is-maximized')).not.toBeNull();
     expect(button('全屏查看')).toBeUndefined();
     expect(button('退出全屏')).toBeUndefined();
+    expect(button('关闭插入表格弹窗')).toBeDefined();
     expect(button('插入')).toBeDefined();
     expect(button('取消')).toBeDefined();
     Screen.lt.sm = false; await settle();
     expect(document.querySelector('.table-insert-dialog.is-maximized')).toBeNull();
+  });
+
+  it.each(['window', 'fullscreen', 'mobile'])('always offers a close button without inserting a table (%s)', async mode => {
+    Screen.lt.sm = mode === 'mobile';
+    const insert = vi.fn();
+    const visible = await mount(TableInsertDialog, {onInsert: insert}, dark);
+    if (mode === 'fullscreen') { button('全屏查看').click(); await settle(); }
+    const close = button('关闭插入表格弹窗');
+    expect(close).toBeDefined();
+    expect(close.closest('.table-dialog-header')).not.toBeNull();
+    close.click(); await settle();
+    expect(visible.value).toBe(false);
+    expect(document.querySelector('.table-insert-dialog')).toBeNull();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('sizes the preview to its content instead of filling empty space (fullscreen=%s)', async fullscreen => {
+    Screen.lt.sm = fullscreen;
+    await mount(TableInsertDialog, {}, dark);
+    const inputs = document.querySelectorAll<HTMLInputElement>('input');
+    inputs[0].value = '6'; inputs[0].dispatchEvent(new Event('input', {bubbles: true}));
+    inputs[1].value = '4'; inputs[1].dispatchEvent(new Event('input', {bubbles: true}));
+    await settle();
+    const preview = document.querySelector<HTMLElement>('.table-preview')!;
+    expect(preview.querySelectorAll('tr')).toHaveLength(6);
+    expect(preview.querySelectorAll('th, td')).toHaveLength(24);
+    expect(getComputedStyle(preview).height).toBe('auto');
+    if (fullscreen) {
+      expect(getComputedStyle(preview).flexGrow).toBe('0');
+      expect(getComputedStyle(preview).flexShrink).toBe('1');
+      expect(getComputedStyle(preview).minHeight).toBe('0');
+      expect(getComputedStyle(preview).maxHeight).toBe('none');
+    } else {
+      expect(getComputedStyle(preview).maxHeight).toBe('280px');
+    }
+    expect(getComputedStyle(preview).overflow).toBe('auto');
   });
 });
