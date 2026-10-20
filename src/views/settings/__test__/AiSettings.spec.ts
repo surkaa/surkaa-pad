@@ -5,14 +5,16 @@ import {Dark, Notify, Quasar} from 'quasar';
 import Component from '../AiSettings.vue';
 import {CURRENT_AI_CONFIG_VERSION, type AiServiceConfigSet} from '../../../utils/aiConfig';
 
-const {loadConfig, saveConfig, testSearch} = vi.hoisted(() => ({
-  loadConfig: vi.fn(), saveConfig: vi.fn(), testSearch: vi.fn(),
+const {loadConfig, saveConfig, testSearch, listModels, detectContext} = vi.hoisted(() => ({
+  loadConfig: vi.fn(), saveConfig: vi.fn(), testSearch: vi.fn(), listModels: vi.fn(), detectContext: vi.fn(),
 }));
 vi.mock('../../../utils/aiConfig', async original => ({
   ...await original<typeof import('../../../utils/aiConfig')>(),
   loadAiServiceConfigSet: loadConfig, saveAiServiceConfigSet: saveConfig,
 }));
-vi.mock('../../../utils/api', () => ({default: {cmdTestAiWebSearch: testSearch}}));
+vi.mock('../../../utils/api', () => ({default: {
+  cmdTestAiWebSearch: testSearch, cmdListAiModels: listModels, cmdDetectAiContextWindow: detectContext,
+}}));
 
 let app: App | undefined;
 function savedConfig(): AiServiceConfigSet {
@@ -41,6 +43,8 @@ beforeEach(() => {
   vi.useFakeTimers(); loadConfig.mockReset().mockResolvedValue(savedConfig());
   saveConfig.mockReset().mockImplementation(async config => config);
   testSearch.mockReset().mockResolvedValue(null);
+  listModels.mockReset().mockResolvedValue([{id: 'qwen', ownedBy: null}]);
+  detectContext.mockReset().mockResolvedValue({tokens: 32768, source: 'ollamaLoadedModel'});
 });
 afterEach(() => {
   app?.unmount(); app = undefined; Dark.set(false); document.body.innerHTML = ''; vi.useRealTimers();
@@ -54,12 +58,51 @@ describe('AI web search settings', () => {
     expect(field.classList.contains('q-field--dark')).toBe(dark);
     expect(input.type).toBe('password'); expect(input.disabled).toBe(true);
     expect(testSearch).not.toHaveBeenCalled();
-    expect(document.querySelector('.web-search-notice')?.textContent).toContain('按请求计费');
-    expect(document.querySelector('.web-search-notice')?.textContent).toContain('按需提供的原始问题');
-    expect(document.querySelector('.web-search-notice')?.textContent).toContain('模型可选择搜索条数及是否直接获取正文');
+    expect(document.body.textContent).toContain('按请求计费，可能向第三方发送对话信息');
+    expect(document.body.textContent).not.toContain('按需提供的原始问题');
+    document.querySelector<HTMLElement>('[aria-label="联网搜索说明"]')!.click(); await settle();
+    const tooltip = document.querySelector('[role="tooltip"]')!;
+    expect(tooltip.textContent).toContain('按请求计费');
+    expect(tooltip.textContent).toContain('按需提供的原始问题');
+    expect(tooltip.textContent).toContain('模型可选择搜索条数及是否直接获取正文');
+    expect(tooltip.textContent).toContain('加密保存在本机');
+    expect(document.querySelectorAll('.q-dialog').length).toBe(1);
+    expect(testSearch).not.toHaveBeenCalled();
     const body = document.querySelector('.ai-config-body')!;
     expect(body.contains(button('保存'))).toBe(false);
     await enable(); expect(input.disabled).toBe(false);
+  });
+
+  it.each([false, true])('places both fetch buttons after their fields and keeps them functional, dark=%s', async dark => {
+    await open(dark);
+    const rows = document.querySelectorAll('.ai-field-action-row');
+    expect(rows.length).toBe(2);
+    for (const [index, label] of ['获取模型', '获取上下文'].entries()) {
+      expect(rows[index].firstElementChild?.classList.contains('q-field')).toBe(true);
+      expect(rows[index].lastElementChild).toBe(button(label));
+      expect(button(label).classList.contains('ai-fetch-button')).toBe(true);
+    }
+    expect(listModels).not.toHaveBeenCalled(); expect(detectContext).not.toHaveBeenCalled();
+    button('获取模型').click(); await settle();
+    expect(listModels).toHaveBeenCalledExactlyOnceWith('http://localhost:11434/v1', 'model-secret');
+    button('获取上下文').click(); await settle();
+    expect(detectContext).toHaveBeenCalledExactlyOnceWith('http://localhost:11434/v1', 'model-secret', 'qwen');
+    expect(rows[1].querySelector<HTMLInputElement>('input')!.value).toBe('32768');
+    document.querySelector<HTMLElement>('[aria-label="AI 服务与上下文说明"]')!.click(); await settle();
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('70%');
+    expect(saveConfig).not.toHaveBeenCalled();
+  });
+
+  it('closes help with Escape without closing the AI configuration dialog or saving a draft', async () => {
+    await open();
+    const trigger = document.querySelector<HTMLElement>('[aria-label="联网搜索说明"]')!;
+    trigger.click(); await settle();
+    trigger.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', keyCode: 27, bubbles: true}));
+    trigger.dispatchEvent(new KeyboardEvent('keyup', {key: 'Escape', keyCode: 27, bubbles: true}));
+    await settle();
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    expect(document.querySelector('.ai-config-modal')).not.toBeNull();
+    expect(saveConfig).not.toHaveBeenCalled();
   });
 
   it('saves one encrypted-config payload with a separate search key', async () => {

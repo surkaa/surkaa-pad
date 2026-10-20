@@ -54,8 +54,11 @@ const content = ref<HTMLElement>();
 const contentId = `details-help-${useId()}`;
 
 // QTooltip 的默认触摸行为会在松手时隐藏，长说明改为点击开关，并允许在浮层内滚动、复制。
-onClickOutside(content, () => {
-  if (props.inDialog) opened.value = false;
+onClickOutside(content, event => {
+  // 内容 ref 不包含 QTooltip 的 padding 与滚动条；操作浮层边缘同样不应收起说明。
+  if (props.inDialog && !content.value?.closest('.details-help-tooltip')?.contains(event.target as Node)) {
+    opened.value = false;
+  }
 }, {ignore: [trigger]});
 
 useEventListener(window, 'keydown', event => {

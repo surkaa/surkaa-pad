@@ -19,11 +19,15 @@
 
     <q-dialog v-model="showDialog">
       <q-card class="ai-config-modal">
-        <q-card-section>
+        <q-card-section class="row items-center no-wrap">
           <div class="text-h6 title-text">配置 AI 服务</div>
-          <div class="text-caption desc-text">
-            支持提供模型列表和 Chat Completions 的 OpenAI 兼容接口
-          </div>
+          <q-space />
+          <DetailsHelpButton title="AI 服务与上下文说明" in-dialog>
+            <p>支持提供模型列表和 Chat Completions 的 OpenAI 兼容接口。</p>
+            <p>问题以及 Agent 按需读取的日记文本会发送到此服务，请确认你信任服务提供方。</p>
+            <p>上下文上限可选；服务返回用量达到约 70% 时自动整理较早对话，留空则不启用自动压缩。</p>
+            <p>获取上下文目前支持 Ollama；其他服务未检测到上限时，可按模型文档手动填写。</p>
+          </DetailsHelpButton>
         </q-card-section>
 
         <q-card-section class="ai-config-body q-pt-none q-gutter-y-sm">
@@ -100,15 +104,7 @@
             本机 Ollama 通常使用 HTTP；如果地址指向其他设备，建议改用 HTTPS。
           </q-banner>
 
-          <div class="row items-center q-gutter-sm no-wrap">
-            <q-btn
-              outline
-              no-caps
-              color="primary"
-              label="获取模型"
-              :loading="loadingModels"
-              @click="loadModels"
-            />
+          <div class="ai-field-action-row">
             <q-select
               v-model="draft.model"
               :options="modelOptions"
@@ -121,29 +117,38 @@
               :dark="$q.dark.isActive"
               :options-dark="$q.dark.isActive"
               popup-content-class="settings-select-popup"
-              class="col model-select"
+              class="model-select"
               :disable="modelOptions.length === 0"
               @update:model-value="draft.contextWindowTokens = null"
-            />
-          </div>
-
-          <div class="row items-start q-gutter-sm no-wrap">
-            <q-input
-              v-model.number="draft.contextWindowTokens"
-              type="number"
-              label="上下文上限（Token，可选）"
-              hint="服务返回用量达到约 70% 时自动整理较早对话；留空则不启用"
-              outlined
-              dense
-              clearable
-              color="primary"
-              class="col"
             />
             <q-btn
               outline
               no-caps
               color="primary"
-              label="自动检测"
+              label="获取模型"
+              class="ai-fetch-button"
+              :loading="loadingModels"
+              @click="loadModels"
+            />
+          </div>
+
+          <div class="ai-field-action-row">
+            <q-input
+              v-model.number="draft.contextWindowTokens"
+              type="number"
+              label="上下文上限（Token）"
+              hint="可选；留空不自动压缩"
+              outlined
+              dense
+              clearable
+              color="primary"
+            />
+            <q-btn
+              outline
+              no-caps
+              color="primary"
+              label="获取上下文"
+              class="ai-fetch-button"
               :loading="detectingContextWindow"
               :disable="!draft.model"
               @click="detectContextWindow"
@@ -151,7 +156,17 @@
           </div>
 
           <q-separator class="q-my-md"/>
-          <div class="text-subtitle2 title-text">联网搜索（DeepSeek）</div>
+          <div class="row items-center no-wrap">
+            <div class="text-subtitle2 title-text">联网搜索（DeepSeek）</div>
+            <q-space />
+            <DetailsHelpButton title="联网搜索说明" in-dialog>
+              <p>对所有聊天环境生效；本地 Ollama 等模型也可使用，需支持工具调用。</p>
+              <p>联网搜索 API Key 独立于聊天服务 Key，加密保存在本机，改密时会一同更新。</p>
+              <p>开启后，模型生成的搜索词、按需提供的原始问题和网页地址会发送给 DeepSeek，可能包含对话中的信息；检索结果和网页正文会发送给当前聊天模型。</p>
+              <p>模型可选择搜索条数及是否直接获取正文；应用不会自动附带会话历史或设备位置。</p>
+              <p>搜索与网页抓取均按请求计费，每轮最多调用 10 次；具体以 DeepSeek 官方规则为准。</p>
+            </DetailsHelpButton>
+          </div>
           <q-toggle
             v-model="webSearchDraft.enabled"
             label="允许 AI 搜索和读取公开网页"
@@ -159,12 +174,11 @@
             :disable="saving"
             class="web-search-toggle"
           />
-          <div class="text-caption desc-text">对所有聊天环境生效；本地 Ollama 等模型也可使用，需支持工具调用。</div>
+          <div class="text-caption desc-text">按请求计费，可能向第三方发送对话信息</div>
           <q-input
             v-model="webSearchDraft.apiKey"
             :type="showWebApiKey ? 'text' : 'password'"
             label="DeepSeek 联网搜索 API Key"
-            hint="独立于上面的聊天服务 Key；加密保存在本机，改密时会一同更新"
             outlined
             dense
             :dark="$q.dark.isActive"
@@ -181,20 +195,18 @@
               />
             </template>
           </q-input>
-          <q-banner rounded class="privacy-notice web-search-notice">
-            开启后，模型生成的搜索词、按需提供的原始问题和网页地址会发送给 DeepSeek，可能包含对话中的信息；检索结果和网页正文会发送给当前聊天模型。
-            模型可选择搜索条数及是否直接获取正文；应用不会自动附带会话历史或设备位置。搜索与网页抓取均按请求计费，每轮最多调用 10 次；具体以 DeepSeek 官方规则为准。
-          </q-banner>
-          <q-btn
-            outline
-            no-caps
-            color="primary"
-            label="测试搜索（调用 1 次接口）"
-            :loading="testingWebSearch"
-            :disable="!webSearchDraft.enabled || !webSearchDraft.apiKey.trim() || saving"
-            class="web-search-test"
-            @click="testWebSearch"
-          />
+          <div class="row justify-end">
+            <q-btn
+              outline
+              no-caps
+              color="primary"
+              label="测试搜索（调用 1 次接口）"
+              :loading="testingWebSearch"
+              :disable="!webSearchDraft.enabled || !webSearchDraft.apiKey.trim() || saving"
+              class="web-search-test"
+              @click="testWebSearch"
+            />
+          </div>
         </q-card-section>
 
         <q-card-actions align="between" class="q-px-md q-pb-md">
@@ -229,6 +241,7 @@ import {computed, onMounted, reactive, ref} from 'vue';
 import {useQuasar} from 'quasar';
 import type {AiModel} from '../../bindings';
 import api from '../../utils/api';
+import DetailsHelpButton from '../../components/DetailsHelpButton.vue';
 import {
   classifyAiEndpoint,
   clearAiServiceConfig,
@@ -499,8 +512,8 @@ async function clearConfig() {
 
 <style scoped lang="scss">
 .ai-config-modal {
-  width: min(520px, calc(100vw - 32px));
-  max-width: 520px;
+  width: min(600px, calc(100vw - 32px));
+  max-width: 600px;
   background-color: var(--pad-bg-color-100);
   color: var(--pad-text-color-100);
   border-radius: var(--pad-radius-xl);
@@ -546,6 +559,15 @@ async function clearConfig() {
 .profile-select {
   min-width: 0;
 }
+
+.ai-field-action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.ai-fetch-button { min-width: 108px; min-height: 40px; }
 
 :global(.settings-select-popup) {
   color: var(--pad-text-color-200);
