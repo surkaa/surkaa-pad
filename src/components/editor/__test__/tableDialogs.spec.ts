@@ -3,7 +3,6 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {createApp, defineComponent, h, nextTick, ref, type App, type Component} from 'vue';
 import {Dark, Quasar} from 'quasar';
 import TableInsertDialog from '../TableInsertDialog.vue';
-import TableCellMenu from '../TableCellMenu.vue';
 
 let app: App | undefined;
 async function settle() { await nextTick(); await vi.advanceTimersByTimeAsync(400); await nextTick(); }
@@ -53,19 +52,4 @@ describe.each([false, true])('table dialogs (dark=%s)', dark => {
     button('取消').click(); await settle(); expect(insert).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])('shows context actions with disabled boundaries (mobile=%s)', async mobile => {
-    const anchor = document.createElement('div'); document.body.append(anchor);
-    const select = vi.fn();
-    await mount(TableCellMenu, {mobile, anchor, onSelect: select, items: [
-      {action: 'copy', label: '复制单元格内容', enabled: true},
-      {action: 'rowUp', label: '当前行上移', enabled: false},
-      {action: 'rowAfter', label: '在下方插入行', enabled: true},
-    ]}, dark);
-    expect(document.querySelector('.table-cell-menu')).not.toBeNull();
-    const items = Array.from(document.querySelectorAll<HTMLElement>('.table-menu-list .q-item'));
-    expect(items).toHaveLength(3);
-    expect(items[1].classList.contains('disabled')).toBe(true);
-    items[1].click(); expect(select).not.toHaveBeenCalled();
-    items[0].click(); await settle(); expect(select).toHaveBeenCalledExactlyOnceWith('copy');
-  });
 });

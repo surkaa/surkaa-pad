@@ -1,7 +1,6 @@
 import type { Editor } from '@tiptap/vue-3'
 import type { Ref, ShallowRef } from 'vue'
-import { Menu, MenuItem } from '@tauri-apps/api/menu'
-import { useQuasar } from 'quasar'
+import {useEditorContextMenu} from './useEditorContextMenu'
 import type { AttachmentMeta } from '../bindings'
 import { isHtmlAttachment } from '../utils/attachmentOpen'
 import { attachmentPreviewKind } from '../utils/attachmentPreview'
@@ -46,7 +45,7 @@ interface MenuAction {
 }
 
 export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) {
-  const $q = useQuasar()
+  const {showMenu} = useEditorContextMenu(options.currentPlatform)
 
   async function handleContextMenu(event: MouseEvent) {
     const found = findAttachmentNode(event.target as HTMLElement, options.editorElement.value)
@@ -88,7 +87,7 @@ export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) 
       addRenameAction(buttons, found.attachmentId, attachment.filename)
     }
 
-    await showMenu(buttons)
+    await showMenu([buttons])
   }
 
   function addImageActions(
@@ -190,30 +189,6 @@ export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) 
         })
       }),
     })
-  }
-
-  async function showMenu(buttons: MenuAction[]) {
-    if (options.currentPlatform === 'android') {
-      let selectedAction: MenuAction | undefined
-      $q.bottomSheet({
-        actions: buttons.map(button => ({ label: button.label, id: button.label })),
-      }).onOk((action: { id: string }) => {
-        selectedAction = buttons.find(button => button.label === action.id)
-      }).onDismiss(() => {
-        selectedAction?.action()
-      })
-      return
-    }
-
-    try {
-      const items = await Promise.all(
-        buttons.map(button => MenuItem.new({ text: button.label, action: button.action })),
-      )
-      const menu = await Menu.new({ items })
-      await menu.popup()
-    } catch (error) {
-      console.error('上下文菜单失败:', error)
-    }
   }
 
   return { handleContextMenu }

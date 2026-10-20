@@ -23,14 +23,18 @@ export interface TableTarget {
   cellPosition: number;
 }
 
-export const TABLE_ACTIONS = [
+export const TABLE_ACTION_GROUPS = [[
   ['rowBefore', '在上方插入行'], ['rowAfter', '在下方插入行'],
   ['columnBefore', '在左侧插入列'], ['columnAfter', '在右侧插入列'],
+], [
   ['rowUp', '当前行上移'], ['rowDown', '当前行下移'],
   ['columnLeft', '当前列左移'], ['columnRight', '当前列右移'],
+], [
   ['clearRow', '清空当前行'], ['clearColumn', '清空当前列'],
+], [
   ['deleteRow', '删除当前行'], ['deleteColumn', '删除当前列'], ['deleteTable', '删除整个表格'],
-] as const;
+]] as const;
+export const TABLE_ACTIONS = TABLE_ACTION_GROUPS.flat();
 export type TableAction = typeof TABLE_ACTIONS[number][0];
 
 export function tableTargetAt(editor: Editor, position: number): TableTarget | null {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, nextTick } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import {useQuasar} from 'quasar'
 import StarterKit from '@tiptap/starter-kit'
@@ -46,6 +46,7 @@ import {NodeSelection} from '@tiptap/pm/state'
 import { findSearchHighlightRanges } from '../utils/searchHighlight'
 import { useEditorAlbumActions } from '../composables/useEditorAlbumActions'
 import { useAttachmentContextMenu } from '../composables/useAttachmentContextMenu'
+import {useEditorContextMenu, type EditorMenuAction} from '../composables/useEditorContextMenu'
 import {
   appendSelectionToSummary,
   listSummaryTargets,
@@ -74,10 +75,9 @@ import {insertImageAndMoveCursorAfter} from './editor/imageInsertion'
 import {useConfigStore} from '../stores/config'
 import {editorFontSizeCssVariables} from '../utils/editorFontSizes'
 import TableInsertDialog from './editor/TableInsertDialog.vue'
-import TableCellMenu, {type TableMenuItem} from './editor/TableCellMenu.vue'
 import {
-  TABLE_ACTIONS, canRunTableAction, runTableAction, tableTargetFromElement, validTableSize,
-  type TableTarget,
+  TABLE_ACTION_GROUPS, canRunTableAction, runTableAction, tableTargetFromElement, validTableSize,
+  type TableAction, type TableTarget,
 } from './editor/tableCommands'
 import {installTableLongPress} from './editor/tableLongPress'
 import type {Node as ProseMirrorNode} from '@tiptap/pm/model'
@@ -111,6 +111,7 @@ const emit = defineEmits<{
 const editorElement = ref<HTMLDivElement>()
 const currentPlatform = platform()
 const $q = useQuasar()
+const {showMenu: showEditorMenu} = useEditorContextMenu(currentPlatform)
 const configStore = useConfigStore()
 const editorFontSizes = configStore.useTauriConfig('editor_font_sizes')
 const editorFontSizeStyle = computed(() => editorFontSizeCssVariables(editorFontSizes.value))
@@ -143,19 +144,6 @@ const blockOrderBlocks = ref<DiaryBlockDescriptor[]>([])
 const blockOrderSnapshot = ref<string[]>([])
 const showTableDialog = ref(false)
 let tableInsertion: {document: ProseMirrorNode; selection: Selection} | null = null
-const tableTarget = shallowRef<TableTarget | null>(null)
-const tableMenuAnchor = shallowRef<HTMLElement | null>(null)
-const showTableMenu = ref(false)
-const tableMenuItems = computed<TableMenuItem[]>(() => {
-  const current = editor.value
-  const target = tableTarget.value
-  return [
-    {action: 'copy', label: '复制单元格内容', enabled: Boolean(current && target && target.document === current.state.doc)},
-    ...TABLE_ACTIONS.map(([action, label]) => ({
-      action, label, enabled: Boolean(current && target && canRunTableAction(current, target, action)),
-    })),
-  ]
-})
 
 function openTableDialog() {
   const current = editor.value
@@ -185,19 +173,27 @@ function insertTable(rows: number, columns: number) {
 function openTableMenu(target: TableTarget, cell: HTMLElement) {
   const current = editor.value
   if (!current || target.document !== current.state.doc) return
-  if (isMobileEditorPlatform(currentPlatform)) current.commands.blur()
+  if (isMobileEditorPlatform(currentPlatform)) {
+    current.commands.blur()
+    // 在 BottomSheet 记录回焦目标前同步收起编辑焦点，关闭菜单时不再唤起键盘。
+    current.view.dom.blur()
+  }
   // blur 也会提交事务，可能触发自动补尾段落；以事务完成后的真实单元格重新取位置。
   const refreshed = tableTargetFromElement(current, cell)
   if (!refreshed) return
-  tableTarget.value = refreshed
-  tableMenuAnchor.value = cell
-  showTableMenu.value = true
+  const groups: EditorMenuAction[][] = TABLE_ACTION_GROUPS.map(group => group.map(([action, label]) => ({
+    label,
+    enabled: canRunTableAction(current, refreshed, action),
+    danger: action.startsWith('delete'),
+    action: () => selectTableAction(refreshed, action),
+  })))
+  groups[0].unshift({label: '复制单元格内容', action: () => selectTableAction(refreshed, 'copy')})
+  void showEditorMenu(groups)
 }
 
-async function selectTableAction(action: TableMenuItem['action']) {
+async function selectTableAction(target: TableTarget, action: TableAction | 'copy') {
   const current = editor.value
-  const target = tableTarget.value
-  if (!current || !target) return
+  if (!current || current.isDestroyed) return
   if (target.document !== current.state.doc) {
     $q.notify({type: 'warning', message: '日记内容已经发生变化，请重新打开表格菜单'})
     return
@@ -676,8 +672,6 @@ defineExpose({
   >
     <EditorContent :editor="editor" />
     <TableInsertDialog v-model="showTableDialog" @insert="insertTable"/>
-    <TableCellMenu v-model="showTableMenu" :mobile="isMobileEditorPlatform(currentPlatform)"
-                   :anchor="tableMenuAnchor" :items="tableMenuItems" @select="selectTableAction"/>
     <SummaryEditorDialog
       v-model="showSummaryDialog"
       v-model:summary-text="summaryText"
