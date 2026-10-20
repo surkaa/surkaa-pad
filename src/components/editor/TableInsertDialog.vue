@@ -2,6 +2,8 @@
 import {computed, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {MAX_TABLE_CELLS, MAX_TABLE_COLUMNS, MAX_TABLE_ROWS, validTableSize} from './tableCommands';
+import DialogMaximizeButton from '../DialogMaximizeButton.vue';
+import {useDialogMaximized} from '../../composables/useDialogMaximized';
 
 const props = defineProps<{modelValue: boolean}>();
 const emit = defineEmits<{
@@ -12,6 +14,7 @@ const $q = useQuasar();
 const rows = ref<number | string | null>(3);
 const columns = ref<number | string | null>(3);
 const visible = computed({get: () => props.modelValue, set: value => emit('update:modelValue', value)});
+const {autoMaximized, isMaximized, toggleMaximized} = useDialogMaximized(visible);
 const valid = computed(() => validTableSize(Number(rows.value), Number(columns.value)));
 // 只有通过现有大小校验才渲染网格，避免输入中的无效数字或超大数创建大量 DOM。
 const previewSize = computed(() => valid.value ? {rows: Number(rows.value), columns: Number(columns.value)} : null);
@@ -28,10 +31,14 @@ function confirm() {
 </script>
 
 <template>
-  <q-dialog v-model="visible" no-refocus>
-    <q-card class="table-insert-dialog">
+  <q-dialog v-model="visible" :maximized="isMaximized" no-refocus>
+    <q-card class="table-insert-dialog" :class="{'is-maximized': isMaximized}">
       <q-card-section class="table-dialog-header">
-        <div class="text-h6">插入表格</div>
+        <div class="row items-center no-wrap">
+          <div class="text-h6">插入表格</div>
+          <q-space/>
+          <DialogMaximizeButton v-if="!autoMaximized" :maximized="isMaximized" @toggle="toggleMaximized"/>
+        </div>
         <div class="table-description">第一行为表头，行数包含表头</div>
       </q-card-section>
       <q-card-section class="q-pt-none table-dialog-body">
@@ -85,7 +92,7 @@ function confirm() {
 
 <style scoped>
 .table-insert-dialog {
-  width: 380px;
+  width: 640px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
@@ -95,8 +102,18 @@ function confirm() {
   background: var(--pad-bg-color-200);
   color: var(--pad-text-color);
 }
+.table-insert-dialog.is-maximized {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+}
 .table-dialog-header, .table-dialog-actions { flex: 0 0 auto; }
 .table-dialog-body { min-height: 0; overflow-y: auto; }
+.is-maximized .table-dialog-body { flex: 1; display: flex; flex-direction: column; }
+.is-maximized .table-dialog-body > * { flex-shrink: 0; }
+.is-maximized .table-preview { flex: 1 0 184px; height: auto; min-height: 184px; }
 .table-description { color: var(--pad-text-color-400); font-size: 12px; margin-top: 8px; }
 .table-dimension { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
 .table-dimension > span { flex: 1; }
@@ -105,7 +122,7 @@ function confirm() {
 .table-preview-heading { display: flex; justify-content: space-between; gap: 8px; margin: 16px 0 8px; }
 .table-preview-size { font-size: 12px; color: var(--pad-text-color-300); align-self: center; }
 .table-preview {
-  height: 184px;
+  height: 280px;
   box-sizing: border-box;
   overflow: auto;
   overscroll-behavior: contain;
