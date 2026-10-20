@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import {computed, ref, watch} from 'vue';
-import {useQuasar} from 'quasar';
+import {useQuasar, type QList} from 'quasar';
 import {moveDiaryBlock, type DiaryBlockDescriptor} from './blockOrder';
+import {useListDragSort} from '../../composables/useListDragSort';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -15,6 +16,14 @@ const emit = defineEmits<{
 
 const $q = useQuasar();
 const draft = ref<DiaryBlockDescriptor[]>([]);
+const blockListRef = ref<QList | null>(null);
+const {draggedKey: draggedBlock, dropIndicator, startDrag} = useListDragSort({
+  keys: () => draft.value.map(block => block.sourceIndex),
+  visible: () => props.modelValue,
+  list: () => blockListRef.value?.$el instanceof HTMLElement ? blockListRef.value.$el : null,
+  itemAttribute: 'data-block-index',
+  onDrop: (sourceIndex, index) => move(draft.value.findIndex(block => block.sourceIndex === sourceIndex), index),
+});
 const visible = computed({
   get: () => props.modelValue,
   set: value => emit('update:modelValue', value),
@@ -32,6 +41,7 @@ function resetOrder() {
 }
 
 function move(fromIndex: number, toIndex: number) {
+  if (draggedBlock.value !== null) return;
   draft.value = moveDiaryBlock(draft.value, fromIndex, toIndex);
 }
 
@@ -57,6 +67,7 @@ function requestPosition(index: number) {
 }
 
 function confirmOrder() {
+  if (draggedBlock.value !== null) return;
   emit('confirm', draft.value.map(block => block.sourceIndex));
 }
 </script>
@@ -67,17 +78,23 @@ function confirmOrder() {
       <q-card-section class="block-order-header">
         <div class="text-h6 block-order-title">调整内容顺序</div>
         <div class="text-caption block-order-description">
-          共 {{ draft.length }} 个内容块；确认后可使用一次撤销恢复原顺序
+          共 {{ draft.length }} 个内容块；拖动把手调整顺序，确认后可一次撤销
         </div>
       </q-card-section>
       <q-separator/>
 
-      <q-list separator class="block-order-list">
+      <q-list ref="blockListRef" separator class="block-order-list">
         <TransitionGroup name="block-order" tag="div">
           <q-item
             v-for="(block, index) in draft"
             :key="block.sourceIndex"
+            :data-block-index="block.sourceIndex"
             class="block-order-item"
+            :class="{
+              'is-dragging': draggedBlock === block.sourceIndex,
+              'drop-before': dropIndicator?.key === block.sourceIndex && dropIndicator.position === 'before',
+              'drop-after': dropIndicator?.key === block.sourceIndex && dropIndicator.position === 'after',
+            }"
           >
             <q-item-section avatar class="block-order-leading">
               <div class="block-order-index">{{ index + 1 }}</div>
@@ -94,9 +111,22 @@ function confirmOrder() {
                 flat
                 round
                 dense
+                icon="drag_indicator"
+                color="primary"
+                class="block-order-drag-handle"
+                :ripple="false"
+                :aria-label="`拖动第 ${index + 1} 个内容块`"
+                :disable="draft.length < 2"
+                @pointerdown="startDrag($event, block.sourceIndex)"
+                @contextmenu.prevent
+              />
+              <q-btn
+                flat
+                round
+                dense
                 icon="keyboard_arrow_up"
                 color="primary"
-                :disable="index === 0"
+                :disable="index === 0 || draggedBlock !== null"
                 :aria-label="`上移第 ${index + 1} 个内容块`"
                 @click="move(index, index - 1)"
               />
@@ -106,7 +136,7 @@ function confirmOrder() {
                 dense
                 icon="keyboard_arrow_down"
                 color="primary"
-                :disable="index === draft.length - 1"
+                :disable="index === draft.length - 1 || draggedBlock !== null"
                 :aria-label="`下移第 ${index + 1} 个内容块`"
                 @click="move(index, index + 1)"
               />
@@ -117,6 +147,7 @@ function confirmOrder() {
                 icon="more_vert"
                 color="primary"
                 :aria-label="`移动第 ${index + 1} 个内容块到其他位置`"
+                :disable="draggedBlock !== null"
               >
                 <q-menu class="block-order-menu">
                   <q-list dense>
@@ -147,14 +178,14 @@ function confirmOrder() {
 
       <q-separator/>
       <q-card-actions align="right" class="block-order-footer">
-        <q-btn flat label="恢复原顺序" color="primary" :disable="!hasChanges" @click="resetOrder"/>
+        <q-btn flat label="恢复原顺序" color="primary" :disable="!hasChanges || draggedBlock !== null" @click="resetOrder"/>
         <q-space/>
         <q-btn flat label="取消" color="primary" v-close-popup/>
         <q-btn
           unelevated
           label="确认调整"
           color="primary"
-          :disable="!hasChanges"
+          :disable="!hasChanges || draggedBlock !== null"
           @click="confirmOrder"
         />
       </q-card-actions>
@@ -195,9 +226,39 @@ function confirmOrder() {
 }
 
 .block-order-item {
+  position: relative;
   min-height: 72px;
   border-color: var(--pad-border-color-100);
+  transition: background-color 160ms ease, opacity 160ms ease;
 }
+
+.block-order-item.is-dragging {
+  opacity: 0.72;
+  background: color-mix(in srgb, var(--pad-primary-color) 14%, var(--pad-bg-color-100));
+}
+
+.block-order-item.drop-before::before,
+.block-order-item.drop-after::after {
+  position: absolute;
+  right: 12px;
+  left: 12px;
+  z-index: 1;
+  height: 3px;
+  border-radius: var(--pad-radius-full);
+  background: var(--pad-primary-color);
+  content: '';
+  pointer-events: none;
+}
+
+.block-order-item.drop-before::before { top: -2px; }
+.block-order-item.drop-after::after { bottom: -2px; }
+
+.block-order-drag-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.block-order-drag-handle:active { cursor: grabbing; }
 
 .block-order-leading {
   position: relative;

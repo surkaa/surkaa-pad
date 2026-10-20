@@ -49,12 +49,12 @@ export function useListDragSort<Key extends string | number>(options: {
     else if (event.clientY > bounds.bottom - 48) list.scrollTop += 12;
 
     const remaining = options.keys().filter(key => key !== draggedKey.value);
+    const positions = new Map(remaining.map((key, index) => [String(key), index]));
     const rows = list.querySelectorAll<HTMLElement>(`[${options.itemAttribute}]`);
     let index = remaining.length;
     for (const row of rows) {
-      const rowKey = row.getAttribute(options.itemAttribute);
-      const rowIndex = remaining.findIndex(key => String(key) === rowKey);
-      if (rowIndex < 0) continue;
+      const rowIndex = positions.get(row.getAttribute(options.itemAttribute) ?? '');
+      if (rowIndex === undefined) continue;
       const bounds = row.getBoundingClientRect();
       if (event.clientY < bounds.top + bounds.height / 2) {
         index = rowIndex;
