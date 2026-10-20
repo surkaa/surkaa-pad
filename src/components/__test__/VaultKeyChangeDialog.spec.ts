@@ -113,10 +113,16 @@ describe('vault key change dialog', () => {
     document.querySelector<HTMLElement>('.q-checkbox')!.click(); await nextTick();
     [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '统计数据并估算')!.click();
     await vi.advanceTimersByTimeAsync(0); await nextTick();
+    expect(document.querySelector('[data-testid="key-change-version-history"]')).toBeNull();
+    expect(document.querySelector('.notice')?.textContent).toContain('中断续改时需要新主密码');
+    document.querySelector<HTMLElement>('[aria-label="改密估算说明"]')!.click();
+    await vi.advanceTimersByTimeAsync(400); await nextTick();
     const notice = document.querySelector('[data-testid="key-change-version-history"]')!;
     expect(notice.textContent).toContain('不会永久清理云端历史版本');
     expect(notice.textContent).toContain('空间估算不包含');
     expect(notice.textContent).toContain('可能追溯旧密钥');
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('5 倍保守估算');
+    expect(document.querySelectorAll('.q-dialog').length).toBe(1);
     expect(document.body.classList.contains('body--dark')).toBe(dark);
   });
 
@@ -143,11 +149,35 @@ describe('vault key change dialog', () => {
     expect(api.cmdPlanVaultKeyChange).toHaveBeenCalledWith('old-test', 'new-test', 'new-test', 1024, local);
   });
 
+  it.each([false, true])('keeps salt-only recovery guidance visible and local-copy details in help, dark=%s', async dark => {
+    vi.spyOn(vaultKeyChange, 'getLocalEncryptedConfig').mockResolvedValue({vaultVerifier: null, oss: null, ai: null});
+    await mount(dark);
+    document.querySelector<HTMLElement>('.q-toggle')!.click(); await nextTick();
+    const password = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+    expect(document.querySelectorAll('input[type="password"]').length).toBe(1);
+    password.value = 'same-password'; password.dispatchEvent(new Event('input', {bubbles: true}));
+    document.querySelector<HTMLElement>('.q-checkbox')!.click(); await nextTick();
+    [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '统计数据并估算')!.click();
+    await vi.advanceTimersByTimeAsync(0); await nextTick();
+    expect(api.cmdPlanVaultKeyChange).toHaveBeenCalledWith('same-password', 'same-password', 'same-password', null, expect.anything());
+    expect(document.querySelector('.notice')?.textContent).toContain('本次只更换盐，续改时仍输入原主密码');
+    expect(document.body.textContent).toContain('仅更改本地数据，云端旧副本与其他备份不会更新');
+    expect(document.body.textContent).toContain('不能取消或回滚');
+    expect(document.body.textContent).not.toContain('新旧密钥的副本不能直接混用');
+    document.querySelector<HTMLElement>('[aria-label="改密估算说明"]')!.click();
+    await vi.advanceTimersByTimeAsync(400); await nextTick();
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('新旧密钥的副本不能直接混用');
+    expect(document.querySelector('[data-testid="key-change-version-history"]')).toBeNull();
+  });
+
   it.each([false, true])('does not offer the testing cost in production and explains the security tradeoff in dark=%s', async dark => {
     vi.stubEnv('DEV', false);
     await mount(dark);
-    expect(document.body.textContent).toContain('暴力破解主密码的耗时');
-    expect(document.body.textContent).toContain('不能替代强主密码');
+    expect(document.body.textContent).toContain('通常越难暴力破解，解锁也更慢');
+    document.querySelector<HTMLElement>('[aria-label="改密与续改说明"]')!.click();
+    await vi.advanceTimersByTimeAsync(400); await nextTick();
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('暴力破解主密码的耗时');
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('不能替代强主密码');
     document.querySelector<HTMLElement>('.q-select')!.click();
     await vi.advanceTimersByTimeAsync(500); await nextTick();
     const popup = document.querySelector('.key-change-memory-popup')!;
@@ -221,10 +251,13 @@ describe('vault key change dialog', () => {
     channel.onmessage({...progress, completedFiles: 1, completedBytes: 100}); await nextTick();
     expect(section()?.textContent).toContain('预计还需约 45 秒');
     expect(section()?.textContent).toMatch(/预计完成 \d{2}:\d{2}/);
-    expect(section()?.textContent).toContain('仅供参考');
     const estimate = section()?.textContent;
     channel.onmessage({...progress, completedFiles: 99, completedBytes: 100}); await nextTick();
     expect(section()?.textContent).toBe(estimate);
+    expect(document.body.textContent).not.toContain('仅供参考');
+    document.querySelector<HTMLElement>('[aria-label="预计完成时间说明"]')!.click();
+    await vi.advanceTimersByTimeAsync(400); await nextTick();
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('仅供参考');
   });
 
   it('estimates a large first file without falsely advancing checkpoint progress or declaring final success', async () => {

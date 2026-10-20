@@ -2,14 +2,22 @@
   <q-dialog :model-value="modelValue" persistent no-refocus @update:model-value="value => emit('update:modelValue', value)">
     <q-card class="key-change-dialog">
       <q-card-section class="key-change-header">
-        <div class="text-h6">{{ resumeMode ? '继续改密' : '更改密码与盐' }}</div>
+        <div class="row items-center no-wrap">
+          <div class="text-h6">{{ resumeMode ? '继续改密' : '更改密码与盐' }}</div>
+          <q-space />
+          <DetailsHelpButton title="改密与续改说明" in-dialog>
+            <p>每次都会生成新的随机盐。只换盐时密码保持不变，也需要重加密全部已加密数据；未加密附件保持原样。</p>
+            <p>{{ VAULT_KDF_COST_HINT }}</p>
+            <p>中断后请输入新主密码继续处理；只更换盐时仍输入原密码。突然退出、断网或重启后，可以在解锁页面继续改密。请勿清理应用数据或改密记录。</p>
+          </DetailsHelpButton>
+        </div>
         <div class="text-caption desc-text">迁移期间暂停日记、附件及 AI 操作；中断后可续改，开始替换后不能取消或回滚。</div>
       </q-card-section>
       <q-separator />
       <q-card-section class="key-change-content">
         <template v-if="!plan && !busy">
           <template v-if="resumeMode">
-            <div class="notice">发现未完成的改密。请输入新主密码继续处理；只更换盐时仍输入原密码。请勿清理应用数据或改密记录。</div>
+            <div class="notice">发现未完成的改密，请输入续改主密码。请勿清理应用数据或改密记录。</div>
             <q-input v-model="resumePassword" label="续改主密码（只换盐时输入原密码）" type="password" outlined autofocus @keyup.enter="resumeChange" />
           </template>
           <template v-else>
@@ -20,14 +28,25 @@
               <q-input v-model="confirmPassword" label="再次输入新主密码" type="password" outlined />
             </template>
             <q-select v-model="memoryCost" :options="memoryOptions" emit-value map-options outlined label="派生内存成本" :dark="$q.dark.isActive" :options-dark="$q.dark.isActive" popup-content-class="key-change-memory-popup" />
-            <div class="text-caption desc-text">{{ VAULT_KDF_COST_HINT }}</div>
+            <div class="text-caption desc-text">内存成本越高，通常越难暴力破解，解锁也更慢。</div>
             <div v-if="developmentEdition && memoryCost === KIB_PER_MIB" class="text-caption desc-text">{{ DEV_VAULT_KDF_COST_HINT }}</div>
-            <div class="notice">每次都会生成新的随机盐。只换盐时密码保持不变，也需要重加密全部已加密数据；未加密附件保持原样。</div>
           </template>
           <q-checkbox v-model="devicesClosed" label="我确保已退出其他设备上的此应用，且不会在改密期间打开它们" color="negative" class="device-acknowledgement" />
         </template>
 
         <template v-if="plan && !busy">
+          <div class="row items-center no-wrap">
+            <div class="text-subtitle2">改密估算</div>
+            <q-space />
+            <DetailsHelpButton title="改密估算说明" in-dialog>
+              <p>耗时基于本机实测，不包含磁盘读写、校验及网络等待；实际耗时可能明显更长。</p>
+              <template v-if="plan.remote">
+                <p>云端改密还会产生读取、写入请求和流量。正常流程约传输重加密数据量的 4 倍；这里按备份校验值缺失时的 5 倍保守估算。备份与替换由云端复制，不经过本机传输。这不是最终占用空间或严格上限，不含改密检查点、请求开销及中断恢复的额外校验。</p>
+                <p data-testid="key-change-version-history">本应用不会永久清理云端历史版本。启用版本控制时，旧密文、临时文件及恢复记录的历史可能继续占用空间，以上空间估算不包含它们；暂停版本控制时按 OSS 自身规则保留历史。旧密码仍能读取改密前的历史数据，持有新密钥及恢复记录历史也可能追溯旧密钥。</p>
+              </template>
+              <p v-else>本次只更改本地数据，不会修改已断开云同步的旧云端副本或其他备份；新旧密钥的副本不能直接混用。</p>
+            </DetailsHelpButton>
+          </div>
           <div class="plan-grid">
             <span>完整数据量</span><strong>{{ plan.totalFiles }} 个对象 · {{ formatBytes(plan.totalBytes) }}</strong>
             <span>需要重加密</span><strong>{{ plan.encryptedFiles }} 个对象 · {{ formatBytes(plan.encryptedBytes) }}</strong>
@@ -36,19 +55,21 @@
             <span>{{ plan.remote ? '临时云端空间上限' : '额外本地空间上限' }}</span><strong>{{ formatBytes(plan.temporaryBytes) }}</strong>
             <template v-if="plan.remote"><span>累计传输量估算</span><strong>{{ formatBytes(plan.transferBytes) }}</strong></template>
           </div>
-          <div v-if="plan.remote" class="text-caption desc-text">正常流程约传输重加密数据量的 4 倍；这里按备份校验值缺失时的 5 倍保守估算。备份与替换由云端复制，不经过本机传输。这不是最终占用空间或严格上限，不含改密检查点、请求开销及中断恢复的额外校验。</div>
-          <div v-if="plan.remote" class="notice" data-testid="key-change-version-history">本应用不会永久清理云端历史版本。启用版本控制时，旧密文、临时文件及恢复记录的历史可能继续占用空间，以上空间估算不包含它们；暂停版本控制时按 OSS 自身规则保留历史。旧密码仍能读取改密前的历史数据，持有新密钥及恢复记录历史也可能追溯旧密钥。</div>
-          <div class="notice">耗时基于本机实测，不包含磁盘读写、校验及网络等待；云端改密还会产生读取、写入请求和流量。实际耗时可能明显更长。请备份重要数据并保持供电。{{ changePassword ? '中断续改时需要新主密码，请务必记住。' : '本次只更换盐，续改时仍输入原主密码。' }}</div>
-          <div v-if="!plan.remote" class="notice">本次只更改本地数据，不会修改已断开云同步的旧云端副本或其他备份；新旧密钥的副本不能直接混用。</div>
-          <div class="text-caption desc-text">新盐：{{ plan.newBootstrap.kdf.salt }}</div>
+          <div class="notice">请备份重要数据并保持供电。{{ changePassword ? '中断续改时需要新主密码，请务必记住。' : '本次只更换盐，续改时仍输入原主密码。' }}</div>
+          <div v-if="!plan.remote" class="text-caption desc-text">仅更改本地数据，云端旧副本与其他备份不会更新。</div>
+          <div class="text-caption desc-text current-file">新盐：{{ plan.newBootstrap.kdf.salt }}</div>
         </template>
 
         <div v-if="busy" class="progress-section">
           <div class="row items-center q-gutter-sm"><q-spinner color="primary" size="24px" /><span>{{ preparing ? '正在统计并进行派生、加密测试…' : keyChangeProgressLabel(progress?.phase ?? '') }}</span></div>
           <div class="text-caption desc-text" data-testid="key-change-lock-paused">应用自动关闭已暂停，任务结束后重新计时 1 小时。</div>
-          <div v-if="!preparing" class="text-caption desc-text" data-testid="key-change-time-estimate">
+          <div v-if="!preparing" class="text-caption desc-text row items-center no-wrap" data-testid="key-change-time-estimate">
             <div>{{ timeEstimateLabel }}</div>
-            <div v-if="!pauseRequested">按本次运行的数据量与各步骤进度动态估算；网络、磁盘和请求等待会影响结果，仅供参考。</div>
+            <q-space />
+            <DetailsHelpButton v-if="!pauseRequested" title="预计完成时间说明" in-dialog>
+              <p>按本次运行的数据量与各步骤进度动态估算；网络、磁盘和请求等待会影响结果，仅供参考。</p>
+              <p>各步骤分别计数；云端服务端复制只显示开始与完成。</p>
+            </DetailsHelpButton>
           </div>
           <template v-if="progress">
             <div class="text-caption desc-text">已完成并保存检查点：{{ progress.completedFiles }} / {{ progress.totalFiles }} 个对象 · {{ formatBytes(progress.completedBytes) }} / {{ formatBytes(progress.totalBytes) }}</div>
@@ -61,7 +82,6 @@
               </div>
               <q-linear-progress :value="keyChangeFileProgressValue(progress.fileProgress)" color="primary" rounded size="6px" />
               <div class="text-caption desc-text">{{ formatBytes(progress.fileProgress.completedBytes) }} / {{ formatBytes(progress.fileProgress.totalBytes) }}<template v-if="progress.fileProgress.completedBytes >= progress.fileProgress.totalBytes && progress.fileProgress.completedPoints < progress.fileProgress.totalPoints"> · 等待本步骤确认</template></div>
-              <div class="text-caption desc-text">各步骤分别计数；云端服务端复制只显示开始与完成。</div>
             </div>
           </template>
           <div class="notice">请勿清理应用数据或改密记录。突然退出、断网或重启后，可以在解锁页面继续改密。</div>
@@ -94,6 +114,7 @@ import {useTimeoutStore} from '../stores/timeout';
 import {KeyChangeTimeEstimator, keyChangeEstimatedCompletion} from '../utils/keyChangeTimeEstimate';
 import {DEV_VAULT_KDF_COST_HINT, KIB_PER_MIB, newVaultMemoryOptions, VAULT_KDF_COST_HINT} from '../utils/vaultKdfSetup';
 import {useDevelopmentEdition} from '../composables/useDevelopmentEdition';
+import DetailsHelpButton from './DetailsHelpButton.vue';
 
 const props = defineProps<{modelValue: boolean; resume?: boolean; initialPassword?: string}>();
 const emit = defineEmits<{(e: 'update:modelValue', value: boolean): void; (e: 'completed'): void}>();
