@@ -12,16 +12,17 @@
     </q-item-section>
   </q-item>
 
-  <q-dialog v-model="showDialog" no-refocus>
-    <q-card class="diagnostic-dialog">
+  <q-dialog v-model="showDialog" no-refocus :maximized="isMaximized">
+    <q-card class="diagnostic-dialog" :class="{'is-maximized': isMaximized}">
       <q-card-section class="diagnostic-heading">
-        <div>
+        <div class="diagnostic-heading-text">
           <div class="text-h6 title-text">诊断信息</div>
           <div class="text-caption desc-text">
             {{ tab === 'keyChange' ? '最近一次改密的匿名性能报告，可复制后提供诊断' : fileName ? `${fileName} · 最新日志位于底部` : '当前应用的运行日志与耗时统计' }}
           </div>
         </div>
         <q-space/>
+        <DialogMaximizeButton v-if="!autoMaximized" :maximized="isMaximized" @toggle="toggleMaximized"/>
         <q-btn icon="close" flat round dense v-close-popup aria-label="关闭诊断信息弹窗"/>
       </q-card-section>
       <q-separator/>
@@ -31,7 +32,7 @@
       </q-tabs>
       <q-separator/>
 
-      <template v-if="tab === 'keyChange' && report && !loading && !reportError">
+      <div v-if="tab === 'keyChange' && report && !loading && !reportError" class="diagnostic-report-content">
         <q-card-section class="report-summary">
           <div class="report-status">{{ keyChangeReportOutcome(report.outcome) }} · {{ report.completedFiles }} / {{ report.encryptedFiles }} 个对象</div>
           <div class="report-grid">
@@ -44,8 +45,8 @@
           <div v-if="report.incompleteHistory" class="text-caption report-warning">曾中断或缺少早期统计，此报告只包含已保留的部分。</div>
         </q-card-section>
         <q-separator/>
-        <JsonTreeViewer :source="reportSource"/>
-      </template>
+        <JsonTreeViewer :source="reportSource" expand-to-content/>
+      </div>
       <div v-else-if="tab === 'keyChange'" class="diagnostic-content">
         <div class="diagnostic-state">
           <template v-if="loading"><q-spinner color="primary" size="28px"/><span>正在读取改密统计…</span></template>
@@ -99,9 +100,12 @@ import {loadAboutInfo} from '../../utils/aboutInfo';
 import {formatBytes} from '../../utils/format';
 import {keyChangeReportSource, keyChangeReportOutcome, reportDuration} from '../../utils/vaultKeyChangeReport';
 import JsonTreeViewer from '../../components/JsonTreeViewer.vue';
+import DialogMaximizeButton from '../../components/DialogMaximizeButton.vue';
+import {useDialogMaximized} from '../../composables/useDialogMaximized';
 
 const $q = useQuasar();
 const showDialog = ref(false);
+const {autoMaximized, isMaximized, toggleMaximized} = useDialogMaximized(showDialog);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const fileName = ref('');
@@ -165,19 +169,34 @@ async function copyAll() {
   display: flex;
   flex-direction: column;
   width: min(960px, 94vw);
+  max-width: calc(100vw - 48px);
   height: min(760px, 88vh);
+  overflow: hidden;
   color: var(--pad-text-color-100);
   background: var(--pad-bg-color-200);
   border-radius: var(--pad-radius-xl);
+}
+
+.diagnostic-dialog.is-maximized {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
 }
 
 .diagnostic-heading {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: nowrap;
 }
 
-.diagnostic-heading, .diagnostic-tabs, .report-summary { flex-shrink: 0; }
+.diagnostic-heading-text { min-width: 0; overflow-wrap: anywhere; }
+.diagnostic-heading :deep(.q-btn) { flex-shrink: 0; }
+.diagnostic-heading, .diagnostic-tabs,
+.diagnostic-dialog > .q-card__actions,
+.diagnostic-dialog > .q-separator { flex-shrink: 0; }
 .diagnostic-tabs { color: var(--pad-text-color-200); background: var(--pad-bg-color-200); }
 .report-summary { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; }
 .report-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font-size: 13px; }
@@ -195,7 +214,8 @@ async function copyAll() {
   color: var(--pad-text-color-400);
 }
 
-.diagnostic-content {
+.diagnostic-content,
+.diagnostic-report-content {
   flex: 1;
   min-height: 0;
   padding: 0;
@@ -230,11 +250,6 @@ async function copyAll() {
 }
 
 @media (max-width: 600px) {
-  .diagnostic-dialog {
-    width: calc(100vw - 24px);
-    height: min(82vh, 720px);
-  }
-
   .diagnostic-log {
     padding: 12px;
     font-size: 11px;

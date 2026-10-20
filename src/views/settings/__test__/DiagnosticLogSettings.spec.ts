@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {createApp, nextTick, type App} from 'vue';
-import {Quasar, Dark, Notify} from 'quasar';
+import {Quasar, Dark, Notify, Screen} from 'quasar';
 import Component from '../DiagnosticLogSettings.vue';
 import {reportFixture} from '../../../utils/__test__/fixtures/vaultKeyChangeReport';
 import type {KeyChangeReport} from '../../../bindings';
@@ -13,9 +13,11 @@ vi.mock('../../../utils/aboutInfo', () => ({loadAboutInfo: mocks.about}));
 vi.mock('../../../utils/clipboard', () => ({copyTextToClipboard: mocks.copy}));
 
 let app: App | undefined;
-async function mount(dark = false) {
+const initiallySmall = Screen.lt.sm;
+async function mount(dark = false, mobile = false) {
   const host = document.createElement('div'); document.body.append(host);
-  app = createApp(Component); app.use(Quasar, {plugins: {Notify}}); app.mount(host);
+  app = createApp(Component); app.use(Quasar, {plugins: {Notify}});
+  Screen.lt.sm = mobile; app.mount(host);
   Dark.set(dark);
   host.querySelector<HTMLElement>('.q-item')!.click();
   await vi.advanceTimersByTimeAsync(500); await nextTick();
@@ -36,7 +38,7 @@ describe('diagnostic performance report', () => {
     mocks.about.mockReset().mockResolvedValue({appVersion: '0.8.11', gitCommit: '12345678'});
   });
   afterEach(() => {
-    app?.unmount(); app = undefined; Dark.set(false); document.body.innerHTML = ''; vi.useRealTimers();
+    app?.unmount(); app = undefined; Dark.set(false); Screen.lt.sm = initiallySmall; document.body.innerHTML = ''; vi.useRealTimers();
   });
 
   it.each([false, true])('shows a separately scrollable report and copies complete JSON (dark=%s)', async dark => {
@@ -45,6 +47,7 @@ describe('diagnostic performance report', () => {
     expect(document.body.textContent).toContain('2 分 0 秒');
     expect(document.querySelector('.json-tree-viewer')).not.toBeNull();
     expect(document.querySelector('.diagnostic-content')).toBeNull();
+    expect(document.querySelector('.diagnostic-report-content .is-content-height')).not.toBeNull();
     expect(document.querySelector('.vjs-tree')?.classList.contains('dark')).toBe(dark);
     button('复制改密报告').click(); await vi.advanceTimersByTimeAsync(0);
     const copied = JSON.parse(mocks.copy.mock.calls[0][0]);
@@ -85,5 +88,32 @@ describe('diagnostic performance report', () => {
     button('刷新').click(); await vi.advanceTimersByTimeAsync(0); await nextTick();
     expect(document.body.textContent).toContain('改密已完成');
     expect(document.body.textContent).not.toContain('此报告只包含已保留的部分');
+  });
+
+  it.each([false, true])('keeps report and log content when toggling fullscreen (dark=%s)', async dark => {
+    await mount(dark);
+    const tree = document.querySelector('.json-tree-viewer');
+    document.querySelector<HTMLButtonElement>('[aria-label="全屏查看"]')!.click(); await nextTick();
+    expect(document.querySelector('.diagnostic-dialog.is-maximized')).not.toBeNull();
+    expect(document.querySelector('.json-tree-viewer')).toBe(tree);
+    await selectTab('运行日志');
+    expect(document.body.textContent).toContain('example runtime log');
+    document.querySelector<HTMLButtonElement>('[aria-label="退出全屏"]')!.click(); await nextTick();
+    expect(document.querySelector('.diagnostic-dialog.is-maximized')).toBeNull();
+    expect(mocks.getReport).toHaveBeenCalledTimes(1);
+    expect(mocks.loadLog).toHaveBeenCalledTimes(1);
+    document.querySelector<HTMLButtonElement>('[aria-label="全屏查看"]')!.click(); await nextTick();
+    document.querySelector<HTMLButtonElement>('[aria-label="关闭诊断信息弹窗"]')!.click();
+    await vi.advanceTimersByTimeAsync(500);
+    document.querySelector<HTMLElement>('.q-item')!.click();
+    await vi.advanceTimersByTimeAsync(500); await nextTick();
+    expect(document.querySelector('.diagnostic-dialog.is-maximized')).toBeNull();
+  });
+
+  it('uses fullscreen automatically on small screens', async () => {
+    await mount(true, true);
+    expect(document.querySelector('.diagnostic-dialog.is-maximized')).not.toBeNull();
+    expect(document.querySelector('.q-dialog__inner--maximized')).not.toBeNull();
+    expect(document.querySelector('[aria-label="退出全屏"]')).toBeNull();
   });
 });

@@ -332,6 +332,7 @@ async function openMarkdownLink(event: MouseEvent) {
   display: flex;
   flex-direction: column;
   width: min(1000px, 94vw);
+  max-width: calc(100vw - 48px);
   height: min(820px, 90vh);
   overflow: hidden;
   color: var(--pad-text-color-100);

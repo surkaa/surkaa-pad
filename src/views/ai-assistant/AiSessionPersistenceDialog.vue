@@ -1,16 +1,18 @@
 <template>
   <q-dialog
     no-refocus
+    :maximized="isMaximized"
     :model-value="modelValue"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <q-card class="session-persistence-card">
-      <q-card-section class="row items-center q-pb-sm">
-        <div>
+    <q-card class="session-persistence-card" :class="{'is-maximized': isMaximized}">
+      <q-card-section class="session-persistence-heading row items-center no-wrap q-pb-sm">
+        <div class="dialog-heading-text">
           <div class="text-h6">会话持久化详情</div>
           <div class="dialog-subtitle">显示解密后的原始会话数据，不包含模型上下文重建结果。</div>
         </div>
         <q-space/>
+        <DialogMaximizeButton v-if="!autoMaximized" :maximized="isMaximized" @toggle="toggleMaximized"/>
         <q-btn
           icon="close"
           flat
@@ -93,6 +95,8 @@
 import {computed} from 'vue';
 import type {AiSessionMessage, AiSessionMeta} from '../../bindings';
 import JsonTreeViewer from '../../components/JsonTreeViewer.vue';
+import DialogMaximizeButton from '../../components/DialogMaximizeButton.vue';
+import {useDialogMaximized} from '../../composables/useDialogMaximized';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -111,6 +115,7 @@ const emit = defineEmits<{
 }>();
 
 const hasMoreMessages = computed(() => props.messages.length < props.totalMessageCount);
+const {autoMaximized, isMaximized, toggleMaximized} = useDialogMaximized(() => props.modelValue);
 </script>
 
 <style scoped lang="scss">
@@ -118,9 +123,33 @@ const hasMoreMessages = computed(() => props.messages.length < props.totalMessag
   display: flex;
   flex-direction: column;
   width: min(960px, 94vw);
+  max-width: calc(100vw - 48px);
   height: min(800px, 90vh);
+  overflow: hidden;
   color: var(--pad-text-color-100);
   background: var(--pad-bg-color-200);
+}
+
+.session-persistence-card.is-maximized {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+}
+
+.session-persistence-heading,
+.session-persistence-card > .q-separator {
+  flex-shrink: 0;
+}
+
+.dialog-heading-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.session-persistence-heading :deep(.q-btn) {
+  flex-shrink: 0;
 }
 
 .dialog-subtitle,
@@ -205,11 +234,6 @@ const hasMoreMessages = computed(() => props.messages.length < props.totalMessag
 }
 
 @media (max-width: 600px) {
-  .session-persistence-card {
-    width: 96vw;
-    height: 92vh;
-  }
-
   .session-persistence-content {
     padding: 10px;
   }

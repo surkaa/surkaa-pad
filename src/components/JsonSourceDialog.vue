@@ -2,13 +2,15 @@
   <q-dialog
     no-refocus
     :persistent="persistent"
+    :maximized="isMaximized"
     :model-value="modelValue"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <q-card class="json-source-card">
-      <q-card-section class="row items-center q-pb-sm">
-        <div class="text-h6">{{ title }}</div>
+    <q-card class="json-source-card" :class="{'is-maximized': isMaximized}">
+      <q-card-section class="json-source-heading row items-center no-wrap q-pb-sm">
+        <div class="json-source-title text-h6">{{ title }}</div>
         <q-space/>
+        <DialogMaximizeButton v-if="!autoMaximized" :maximized="isMaximized" @toggle="toggleMaximized"/>
         <q-btn icon="close" flat round dense v-close-popup :aria-label="`关闭${title}弹窗`"/>
       </q-card-section>
       <q-separator/>
@@ -47,6 +49,8 @@ import {copyTextToClipboard} from '../utils/clipboard';
 import {formatError} from '../utils/formatError';
 import {formatJsonSource} from '../utils/jsonSource';
 import JsonTreeViewer from './JsonTreeViewer.vue';
+import DialogMaximizeButton from './DialogMaximizeButton.vue';
+import {useDialogMaximized} from '../composables/useDialogMaximized';
 
 const props = withDefaults(defineProps<{
   modelValue: boolean;
@@ -71,6 +75,7 @@ const props = withDefaults(defineProps<{
 });
 const emit = defineEmits<{(event: 'update:modelValue', value: boolean): void}>();
 const $q = useQuasar();
+const {autoMaximized, isMaximized, toggleMaximized} = useDialogMaximized(() => props.modelValue);
 const viewerOpenRevision = ref(0);
 const rawSourceText = computed(() => (
   props.source === undefined ? '' : formatJsonSource(props.source)
@@ -97,9 +102,34 @@ async function copySource() {
   display: flex;
   flex-direction: column;
   width: min(960px, 94vw);
+  max-width: calc(100vw - 48px);
   height: min(760px, 88vh);
+  overflow: hidden;
   background: var(--pad-bg-color-200);
   color: var(--pad-text-color-100);
+}
+
+.json-source-card.is-maximized {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+}
+
+.json-source-heading,
+.json-source-card > .q-card__actions,
+.json-source-card > .q-separator {
+  flex-shrink: 0;
+}
+
+.json-source-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.json-source-heading :deep(.q-btn) {
+  flex-shrink: 0;
 }
 
 .json-source-content {
@@ -111,12 +141,5 @@ async function copySource() {
 
 .json-source-loading-text {
   color: var(--pad-text-color-300);
-}
-
-@media (max-width: 600px) {
-  .json-source-card {
-    width: 96vw;
-    height: 90vh;
-  }
 }
 </style>
