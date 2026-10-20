@@ -9,8 +9,9 @@ use std::time::Duration;
 
 const PAGE_LINES: usize = 10;
 const READ_CHUNK_BYTES: u64 = 64 * 1024;
-const MAX_LINE_BYTES: usize = 1024 * 1024;
+const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PAGE_BYTES: usize = 4 * 1024 * 1024;
+const LINE_TOO_LARGE: &str = "JSONL 单行超过 4 MiB 安全上限，请下载后查看";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -153,9 +154,7 @@ where
         first_chunk = false;
         for part in chunk[usize::from(check_boundary)..].split_inclusive(|byte| *byte == b'\n') {
             if line.len().saturating_add(part.len()) > MAX_LINE_BYTES + 2 {
-                return Err(ServerError::BadRequest(
-                    "JSONL 单行超过 1 MiB 安全上限，请下载后查看",
-                ));
+                return Err(ServerError::BadRequest(LINE_TOO_LARGE));
             }
             line.extend_from_slice(part);
             cursor.offset += part.len() as u64;
@@ -163,9 +162,7 @@ where
                 let bytes = line.strip_suffix(b"\n").unwrap_or(&line);
                 let bytes = bytes.strip_suffix(b"\r").unwrap_or(bytes);
                 if bytes.len() > MAX_LINE_BYTES {
-                    return Err(ServerError::BadRequest(
-                        "JSONL 单行超过 1 MiB 安全上限，请下载后查看",
-                    ));
+                    return Err(ServerError::BadRequest(LINE_TOO_LARGE));
                 }
                 // 极端长行时允许一页少于十行；未返回的行留给下一页，不丢弃或截断 JSON。
                 if page_bytes + bytes.len() > MAX_PAGE_BYTES && !lines.is_empty() {
@@ -196,7 +193,8 @@ where
                     .ok_or(ServerError::BadRequest("JSONL 行号超出有效范围"))?;
                 line.clear();
                 line_start = cursor.offset;
-                if lines.len() == PAGE_LINES {
+                // 满页即返回，尤其是单个 4 MiB 行：不能再下载下一整行才发现预算不足。
+                if lines.len() == PAGE_LINES || page_bytes >= MAX_PAGE_BYTES {
                     return finish_page(lines, cursor);
                 }
             }

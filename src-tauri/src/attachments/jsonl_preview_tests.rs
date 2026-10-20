@@ -159,7 +159,7 @@ async fn rejects_oversized_lines_without_scanning_the_remaining_file() {
     let error = page(&data, cursor(data.len()), &requests)
         .await
         .unwrap_err();
-    assert!(matches!(error, ServerError::BadRequest(message) if message.contains("1 MiB")));
+    assert!(matches!(error, ServerError::BadRequest(message) if message.contains("4 MiB")));
     assert!(requests.lock().unwrap().last().unwrap().1 < data.len() as u64 - 1);
 }
 
@@ -168,25 +168,78 @@ async fn page_byte_budget_never_truncates_or_drops_large_json_records() {
     let line = format!("\"{}\"\n", "a".repeat(MAX_LINE_BYTES - 2));
     let text = line.repeat(6);
     let requests = Mutex::new(Vec::new());
-    let first = page(text.as_bytes(), cursor(text.len()), &requests)
-        .await
+    let mut next = cursor(text.len());
+    for index in 1..=6 {
+        requests.lock().unwrap().clear();
+        let result = page(text.as_bytes(), next, &requests).await.unwrap();
+        assert_eq!(result.lines.len(), 1);
+        assert_eq!(result.lines[0].line_number, index);
+        assert_eq!(
+            result.lines[0].text.as_bytes(),
+            &line.as_bytes()[..MAX_LINE_BYTES]
+        );
+        // 预算正好满时，只允许当前 Range 的少量预读，不能再扫描下一整条大记录。
+        assert!(
+            requests.lock().unwrap().last().unwrap().1
+                < index * line.len() as u64 + READ_CHUNK_BYTES
+        );
+        if index == 6 {
+            assert!(result.next_cursor.is_none());
+            break;
+        }
+        next = parse_cursor(
+            Some(&format!("cursor={}", result.next_cursor.unwrap())),
+            "diary",
+            &attachment(),
+            text.len() as u64,
+        )
         .unwrap();
-    assert_eq!(first.lines.len(), MAX_PAGE_BYTES / MAX_LINE_BYTES);
-    assert!(first
-        .lines
-        .iter()
-        .all(|line| line.text.len() == MAX_LINE_BYTES));
-    let next = parse_cursor(
-        Some(&format!("cursor={}", first.next_cursor.unwrap())),
-        "diary",
-        &attachment(),
-        text.len() as u64,
-    )
-    .unwrap();
-    let second = page(text.as_bytes(), next, &requests).await.unwrap();
-    assert_eq!(second.lines[0].line_number, 5);
-    assert_eq!(second.lines.len(), 2);
-    assert!(second.next_cursor.is_none());
+    }
+}
+
+#[tokio::test]
+async fn accepts_exact_four_mib_lines_and_rejects_one_extra_byte_for_all_line_endings() {
+    assert_eq!(MAX_LINE_BYTES, 4 * 1024 * 1024);
+    for ending in ["", "\n", "\r\n"] {
+        let text = format!("\"{}\"{ending}", "a".repeat(MAX_LINE_BYTES - 2));
+        let result = page(text.as_bytes(), cursor(text.len()), &Mutex::new(Vec::new()))
+            .await
+            .unwrap();
+        assert_eq!(result.lines.len(), 1);
+        assert_eq!(result.lines[0].text.len(), MAX_LINE_BYTES);
+        assert!(result.lines[0].error.is_none());
+        assert!(result.next_cursor.is_none());
+        let oversized = format!("\"{}\"{ending}", "a".repeat(MAX_LINE_BYTES - 1));
+        assert!(matches!(
+            page(oversized.as_bytes(), cursor(oversized.len()), &Mutex::new(Vec::new())).await,
+            Err(ServerError::BadRequest(message)) if message.contains("4 MiB")
+        ));
+    }
+}
+
+#[tokio::test]
+async fn retains_a_four_mib_line_after_a_smaller_record_without_losing_following_records() {
+    let large = format!("\"{}\"", "a".repeat(MAX_LINE_BYTES - 2));
+    let text = format!("{{}}\n{large}\ntrue");
+    let requests = Mutex::new(Vec::new());
+    let mut next = cursor(text.len());
+    for expected in ["{}", large.as_str(), "true"] {
+        let result = page(text.as_bytes(), next, &requests).await.unwrap();
+        assert_eq!(result.lines.len(), 1);
+        assert_eq!(result.lines[0].text, expected);
+        let Some(encoded) = result.next_cursor else {
+            assert_eq!(expected, "true");
+            return;
+        };
+        next = parse_cursor(
+            Some(&format!("cursor={encoded}")),
+            "diary",
+            &attachment(),
+            text.len() as u64,
+        )
+        .unwrap();
+    }
+    panic!("最后一条记录之后仍然产生了下一页游标");
 }
 
 #[tokio::test]

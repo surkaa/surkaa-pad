@@ -12,6 +12,7 @@ export interface JsonlPage {
 }
 
 export const JSONL_ROW_MIN_HEIGHT = 104;
+export const MAX_JSONL_LINE_BYTES = 4 * 1024 * 1024;
 
 // 后端每页原文最多 4 MiB；JSON 转义最多放大六倍，仍对响应设置硬上限。
 const MAX_PAGE_RESPONSE_BYTES = 32 * 1024 * 1024;
@@ -44,7 +45,7 @@ export async function fetchJsonlPage(
   for (const line of page.lines) {
     if (!line || !Number.isSafeInteger(line.lineNumber) || line.lineNumber < 1
       || (previous !== 0 && line.lineNumber !== previous + 1)
-      || typeof line.text !== 'string' || line.text.length > 1024 * 1024
+      || typeof line.text !== 'string' || line.text.length > MAX_JSONL_LINE_BYTES
       || (line.error !== null && typeof line.error !== 'string')) throw invalidPage();
     previous = line.lineNumber;
   }

@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {fetchJsonlPage, parseJsonlLine, type JsonlLine} from '../jsonlPreview';
+import {fetchJsonlPage, MAX_JSONL_LINE_BYTES, parseJsonlLine, type JsonlLine} from '../jsonlPreview';
 
 const line = (text = '{}', lineNumber = 1): JsonlLine => ({lineNumber, text, error: null});
 afterEach(() => vi.unstubAllGlobals());
@@ -33,17 +33,26 @@ describe('JSONL page loading', () => {
       {lines: [line('{}', 0)], nextCursor: null}, {lines: [line('{}', 1), line('{}', 3)], nextCursor: null},
       {lines: [line('{}', Number.MAX_SAFE_INTEGER + 1)], nextCursor: null},
       {lines: [{lineNumber: 1, text: '{}'}], nextCursor: null},
-      {lines: [line('a'.repeat(1024 * 1024 + 1))], nextCursor: null}]) {
+      {lines: [line('a'.repeat(MAX_JSONL_LINE_BYTES + 1))], nextCursor: null}]) {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(value))));
       await expect(fetchJsonlPage('http://127.0.0.1/file', 'current')).rejects.toThrow('分页响应无效');
     }
   });
 
   it('shows the backend line-limit error and bounds oversized response bodies', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('JSONL 单行超过 1 MiB 安全上限', {status: 400})));
-    await expect(fetchJsonlPage('http://127.0.0.1/file', null)).rejects.toThrow('单行超过 1 MiB');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('JSONL 单行超过 4 MiB 安全上限', {status: 400})));
+    await expect(fetchJsonlPage('http://127.0.0.1/file', null)).rejects.toThrow('单行超过 4 MiB');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', {headers: {'content-length': String(32 * 1024 * 1024 + 1)}})));
     await expect(fetchJsonlPage('http://127.0.0.1/file', null)).rejects.toThrow('超过');
+  });
+
+  it.each([1024 * 1024 + 1, 4 * 1024 * 1024])('accepts a complete %s-byte JSON line without truncation', async size => {
+    const text = `"${'a'.repeat(size - 2)}"`;
+    const page = {lines: [line(text)], nextCursor: 'next'};
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(page))));
+    const result = await fetchJsonlPage('http://127.0.0.1/file', null);
+    expect(result.lines[0].text).toBe(text);
+    expect(result.nextCursor).toBe('next');
   });
 });
 
