@@ -254,6 +254,7 @@ function runToolbarShortcut(action: EditorToolbarAction) {
     tiptapEditorRef.value?.editor,
     action,
     () => tiptapEditorRef.value?.openSummaryDialog(),
+    () => tiptapEditorRef.value?.openTableDialog(),
   );
 }
 
@@ -284,6 +285,7 @@ useDiaryEditorShortcuts({
     bulletList: () => runToolbarShortcut('bulletList'),
     taskList: () => runToolbarShortcut('taskList'),
     summary: () => runToolbarShortcut('summary'),
+    table: () => runToolbarShortcut('table'),
     insertPhoto: () => void mediaAction.insertPhoto(),
     insertAudio: () => void mediaAction.insertAudio(),
     audioRecording: mediaAction.audioRecording,
@@ -475,6 +477,7 @@ onActivated(async () => {
         :toolbar-order="toolbarOrder"
         v-click-outside="() => showToolbarPanel = false"
         @editSummary="tiptapEditorRef?.openSummaryDialog"
+        @insertTable="tiptapEditorRef?.openTableDialog"
         @additionalAction="additionalAction"
         @insertPhoto="mediaAction.insertPhoto"
         @takePhoto="mediaAction.takePhoto"

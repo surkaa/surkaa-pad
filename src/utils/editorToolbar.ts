@@ -13,6 +13,7 @@ export const EDITOR_FORMATTING_ACTIONS = [
   'bulletList',
   'taskList',
   'summary',
+  'table',
 ] as const;
 
 export type EditorFormattingAction = typeof EDITOR_FORMATTING_ACTIONS[number];
@@ -37,6 +38,7 @@ export const EDITOR_TOOLBAR_LABELS: Record<EditorToolbarAction, string> = {
   bulletList: '普通列表',
   taskList: '待办列表',
   summary: '折叠内容',
+  table: '表格',
   undo: '撤销',
   redo: '重做',
 };
@@ -53,6 +55,7 @@ export const EDITOR_TOOLBAR_ICONS: Record<EditorToolbarAction, string> = {
   bulletList: 'format_list_bulleted',
   taskList: 'checklist',
   summary: 'unfold_more',
+  table: 'table_chart',
   undo: 'undo',
   redo: 'redo',
 };
@@ -87,6 +90,11 @@ export function normalizeEditorToolbarOrder(value: unknown): EditorToolbarAction
   if (!result.includes('bulletList')) {
     const taskListIndex = result.indexOf('taskList');
     if (taskListIndex >= 0) result.splice(taskListIndex, 0, 'bulletList');
+  }
+
+  if (!result.includes('table')) {
+    const summaryIndex = result.indexOf('summary');
+    if (summaryIndex >= 0) result.splice(summaryIndex + 1, 0, 'table');
   }
 
   for (const action of EDITOR_TOOLBAR_ACTIONS) {
@@ -129,11 +137,17 @@ export function runEditorToolbarAction(
   editor: Editor | null | undefined,
   action: EditorToolbarAction,
   openSummary: () => void,
+  openTable?: () => void,
 ): boolean {
-  if (!editor) return false;
+  if (!editor || editor.isEditable === false) return false;
   if (action === 'bulletList') return toggleEditorList(editor, 'bulletList');
   if (action === 'summary') {
     openSummary();
+    return true;
+  }
+  if (action === 'table') {
+    if (!openTable || editor.isActive('table')) return false;
+    openTable();
     return true;
   }
   if (action === 'undo') return editor.chain().undo().run();

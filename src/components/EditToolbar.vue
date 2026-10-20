@@ -33,7 +33,7 @@ const {
 }>();
 
 const emit = defineEmits([
-  'additionalAction', 'editSummary',
+  'additionalAction', 'editSummary', 'insertTable',
   'insertPhoto', 'takePhoto',
   'insertAudio', 'audioRecording',
   'insertVideo', 'takeVideo',
@@ -60,13 +60,14 @@ function isToolbarActionActive(action: EditorToolbarAction): boolean {
     case 'bulletList': return editor.isActive('bulletList');
     case 'taskList': return editor.isActive('taskList');
     case 'summary': return editor.isActive('summaryNode');
+    case 'table': return editor.isActive('table');
     case 'undo':
     case 'redo': return false;
   }
 }
 
 function runToolbarAction(action: EditorToolbarAction) {
-  runEditorToolbarAction(editor, action, () => emit('editSummary'));
+  runEditorToolbarAction(editor, action, () => emit('editSummary'), () => emit('insertTable'));
 }
 
 function toolbarActionText(action: EditorToolbarAction): string {
@@ -82,6 +83,7 @@ function toolbarActionText(action: EditorToolbarAction): string {
     bulletList: '',
     taskList: '',
     summary: '',
+    table: '',
     undo: '',
     redo: '',
   }[action];
@@ -91,6 +93,7 @@ function toolbarActionUsesIcon(action: EditorToolbarAction): boolean {
   return action === 'bulletList'
     || action === 'taskList'
     || action === 'summary'
+    || action === 'table'
     || action === 'undo'
     || action === 'redo';
 }
@@ -125,6 +128,8 @@ function toolbarActionTitle(action: EditorToolbarAction) {
               :class="{ 'is-active': isToolbarActionActive(action) }"
               :title="toolbarActionTitle(action)"
               :aria-label="EDITOR_TOOLBAR_LABELS[action]"
+              :disabled="!editor.isEditable || (action === 'table' && editor.isActive('table'))"
+              @mousedown.prevent
               @click.stop="runToolbarAction(action)"
             >
               <q-icon
@@ -163,15 +168,6 @@ function toolbarActionTitle(action: EditorToolbarAction) {
             <q-btn flat icon="format_indent_decrease" label="升级" class="panel-item-btn"
                    :disable="!editor || (!editor.isActive('listItem') && !editor.isActive('taskItem'))"
                    title="提升列表层级（Shift+Tab）" @click="changeEditorListLevel(editor, false)"/>
-            <q-btn flat icon="table_chart" label="表格" class="panel-item-btn"
-                   :disable="!editor || editor.isActive('table')"
-                   @click="editor?.chain().focus().insertTable({rows: 3, cols: 3, withHeaderRow: true}).run()"/>
-            <template v-if="editor?.isActive('table')">
-              <q-btn flat icon="playlist_add" label="添加行" class="panel-item-btn"
-                     @click="editor.chain().focus().addRowAfter().run()"/>
-              <q-btn flat icon="view_column" label="添加列" class="panel-item-btn"
-                     @click="editor.chain().focus().addColumnAfter().run()"/>
-            </template>
           </div>
           <div>
             <q-btn flat stack color="grey-8" class="panel-item-btn"

@@ -41,6 +41,7 @@ export const DEFAULT_WINDOWS_EDITOR_SHORTCUTS: EditorShortcutConfig = {
   bulletList: 'Ctrl+Shift+Digit8',
   taskList: 'Ctrl+KeyT',
   summary: 'Ctrl+Alt+KeyS',
+  table: '',
   insertPhoto: 'Ctrl+Alt+KeyP',
   insertAudio: 'Ctrl+Alt+KeyA',
   audioRecording: 'Ctrl+Alt+KeyR',

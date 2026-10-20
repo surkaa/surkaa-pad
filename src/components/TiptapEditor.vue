@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, nextTick } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import {useQuasar} from 'quasar'
 import StarterKit from '@tiptap/starter-kit'
@@ -73,6 +73,17 @@ import {attachmentPreviewKind} from '../utils/attachmentPreview'
 import {insertImageAndMoveCursorAfter} from './editor/imageInsertion'
 import {useConfigStore} from '../stores/config'
 import {editorFontSizeCssVariables} from '../utils/editorFontSizes'
+import TableInsertDialog from './editor/TableInsertDialog.vue'
+import TableCellMenu, {type TableMenuItem} from './editor/TableCellMenu.vue'
+import {
+  TABLE_ACTIONS, canRunTableAction, runTableAction, tableTargetFromElement, validTableSize,
+  type TableTarget,
+} from './editor/tableCommands'
+import {installTableLongPress} from './editor/tableLongPress'
+import type {Node as ProseMirrorNode} from '@tiptap/pm/model'
+import type {Selection} from '@tiptap/pm/state'
+import {closeHistory} from '@tiptap/pm/history'
+import {copyTextToClipboard} from '../utils/clipboard'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -130,6 +141,75 @@ const summaryTargets = ref<SummaryTarget[]>([])
 const showBlockOrderDialog = ref(false)
 const blockOrderBlocks = ref<DiaryBlockDescriptor[]>([])
 const blockOrderSnapshot = ref<string[]>([])
+const showTableDialog = ref(false)
+let tableInsertion: {document: ProseMirrorNode; selection: Selection} | null = null
+const tableTarget = shallowRef<TableTarget | null>(null)
+const tableMenuAnchor = shallowRef<HTMLElement | null>(null)
+const showTableMenu = ref(false)
+const tableMenuItems = computed<TableMenuItem[]>(() => {
+  const current = editor.value
+  const target = tableTarget.value
+  return [
+    {action: 'copy', label: '复制单元格内容', enabled: Boolean(current && target && target.document === current.state.doc)},
+    ...TABLE_ACTIONS.map(([action, label]) => ({
+      action, label, enabled: Boolean(current && target && canRunTableAction(current, target, action)),
+    })),
+  ]
+})
+
+function openTableDialog() {
+  const current = editor.value
+  if (!current?.isEditable || current.isActive('table')) return
+  tableInsertion = {document: current.state.doc, selection: current.state.selection}
+  showTableDialog.value = true
+}
+
+function insertTable(rows: number, columns: number) {
+  const current = editor.value
+  const snapshot = tableInsertion
+  if (!current?.isEditable || !snapshot || !validTableSize(rows, columns)) return
+  if (snapshot.document !== current.state.doc) {
+    showTableDialog.value = false
+    $q.notify({type: 'warning', message: '日记内容已经发生变化，请重新插入表格'})
+    return
+  }
+  // 恢复打开弹窗前的选区，不把插入表格和之前的文字输入合成一次撤销。
+  current.chain().command(({tr}) => {
+    closeHistory(tr).setSelection(snapshot.selection)
+    return true
+  }).insertTable({rows, cols: columns, withHeaderRow: true}).run()
+  showTableDialog.value = false
+  tableInsertion = null
+}
+
+function openTableMenu(target: TableTarget, cell: HTMLElement) {
+  const current = editor.value
+  if (!current || target.document !== current.state.doc) return
+  if (isMobileEditorPlatform(currentPlatform)) current.commands.blur()
+  // blur 也会提交事务，可能触发自动补尾段落；以事务完成后的真实单元格重新取位置。
+  const refreshed = tableTargetFromElement(current, cell)
+  if (!refreshed) return
+  tableTarget.value = refreshed
+  tableMenuAnchor.value = cell
+  showTableMenu.value = true
+}
+
+async function selectTableAction(action: TableMenuItem['action']) {
+  const current = editor.value
+  const target = tableTarget.value
+  if (!current || !target) return
+  if (target.document !== current.state.doc) {
+    $q.notify({type: 'warning', message: '日记内容已经发生变化，请重新打开表格菜单'})
+    return
+  }
+  if (action === 'copy') {
+    const cell = current.state.doc.nodeAt(target.cellPosition)
+    try { await copyTextToClipboard(cell?.textBetween(0, cell.content.size, '\n') ?? '') }
+    catch { $q.notify({type: 'negative', message: '复制失败，请重试'}) }
+  } else {
+    runTableAction(current, target, action)
+  }
+}
 
 function openSummaryDialog(position: number | null = null, attrs?: SummaryAttributes) {
   summaryDialogMode.value = 'edit'
@@ -248,7 +328,7 @@ const {
   insertImageIntoAlbum,
 } = albumActions
 
-const { handleContextMenu } = useAttachmentContextMenu({
+const { handleContextMenu: handleAttachmentContextMenu } = useAttachmentContextMenu({
   editor,
   editorElement,
   currentPlatform,
@@ -265,6 +345,19 @@ const { handleContextMenu } = useAttachmentContextMenu({
   previewAttachment: attachmentId => emit('previewAttachment', attachmentId),
   showImage: url => emit('showImage', url),
 })
+
+function handleContextMenu(event: MouseEvent) {
+  const current = editor.value
+  const target = current ? tableTargetFromElement(current, event.target) : null
+  if (target && current?.isEditable) {
+    event.preventDefault()
+    if (!isMobileEditorPlatform(currentPlatform)) {
+      openTableMenu(target, (event.target as Element).closest<HTMLElement>('td, th')!)
+    }
+    return
+  }
+  void handleAttachmentContextMenu(event)
+}
 
 watch(() => props.modelValue, (newVal) => {
   if (!editor.value || newVal === undefined) return
@@ -348,11 +441,20 @@ function handleWrapperDragStart(e: DragEvent) {
 // --- Lifecycle ---
 
 let disposeImageLoading: (() => void) | null = null
+let disposeTableLongPress: (() => void) | null = null
 
 onMounted(async () => {
   await nextTick()
   if (editorElement.value) {
     disposeImageLoading = setupEditorImageLoading(editorElement.value)
+    if (isMobileEditorPlatform(currentPlatform)) {
+      disposeTableLongPress = installTableLongPress(editorElement.value, target => {
+        const current = editor.value
+        const cell = target instanceof Element ? target.closest<HTMLElement>('td, th') : null
+        const table = current?.isEditable ? tableTargetFromElement(current, target) : null
+        return cell && table ? {cell, table} : null
+      }, ({cell, table}) => openTableMenu(table, cell))
+    }
   }
   if (storageY.value > 0 && editorElement.value) {
     editorElement.value.scrollTop = storageY.value
@@ -361,6 +463,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   disposeImageLoading?.()
+  disposeTableLongPress?.()
   editor.value?.destroy()
 })
 
@@ -535,6 +638,7 @@ defineExpose({
     .insertLocation(location).run(),
   insertAttachments,
   openSummaryDialog: openSelectedSummaryDialog,
+  openTableDialog,
   openBlockOrderDialog,
   updateSrc(attachmentId: string, newUrl: string) {
     if (!editor.value) return false
@@ -571,6 +675,9 @@ defineExpose({
     @contextmenu="handleContextMenu"
   >
     <EditorContent :editor="editor" />
+    <TableInsertDialog v-model="showTableDialog" @insert="insertTable"/>
+    <TableCellMenu v-model="showTableMenu" :mobile="isMobileEditorPlatform(currentPlatform)"
+                   :anchor="tableMenuAnchor" :items="tableMenuItems" @select="selectTableAction"/>
     <SummaryEditorDialog
       v-model="showSummaryDialog"
       v-model:summary-text="summaryText"

@@ -111,6 +111,7 @@ mod tests {
                     EditorToolbarAction::BulletList,
                     EditorToolbarAction::TaskList,
                     EditorToolbarAction::Summary,
+                    EditorToolbarAction::Table,
                     EditorToolbarAction::Undo,
                     EditorToolbarAction::Redo,
                 ],

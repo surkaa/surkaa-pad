@@ -27,6 +27,7 @@ describe('editor toolbar order', () => {
       'heading4',
       'heading5',
       'summary',
+      'table',
       'undo',
       'redo',
     ]);
@@ -56,6 +57,7 @@ describe('editor toolbar order', () => {
       'heading1',
       'underline',
       'summary',
+      'table',
       'strike',
       'undo',
     ]);
@@ -81,7 +83,7 @@ describe('editor toolbar order', () => {
     expect(moveEditorToolbarAction(DEFAULT_EDITOR_TOOLBAR_ORDER, 'redo', 1))
       .toEqual(DEFAULT_EDITOR_TOOLBAR_ORDER);
     expect(moveEditorToolbarAction(DEFAULT_EDITOR_TOOLBAR_ORDER, 'undo', -1).slice(-4))
-      .toEqual(['taskList', 'undo', 'summary', 'redo']);
+      .toEqual(['summary', 'undo', 'table', 'redo']);
   });
 
   it('reorders an action at a stable insertion index', () => {
@@ -143,5 +145,24 @@ describe('editor toolbar order', () => {
 
     expect(runEditorToolbarAction(editor, 'undo', openSummary)).toBe(true);
     expect(chain.undo).toHaveBeenCalledOnce();
+  });
+
+  it('migrates the table button after summary and preserves later custom order', () => {
+    const old = [...DEFAULT_EDITOR_TOOLBAR_ORDER].reverse().filter(action => action !== 'table');
+    const migrated = normalizeEditorToolbarOrder(old);
+    expect(migrated.indexOf('table')).toBe(migrated.indexOf('summary') + 1);
+    expect(migrated.filter(action => action !== 'table')).toEqual(old);
+    const reordered = reorderEditorToolbarAction(migrated, 'table', 0);
+    expect(normalizeEditorToolbarOrder(reordered)).toEqual(reordered);
+  });
+
+  it('opens table insertion instead of inserting a fixed size table', () => {
+    const editor = {isEditable: true, isActive: vi.fn(() => false)} as unknown as Editor;
+    const open = vi.fn();
+    expect(runEditorToolbarAction(editor, 'table', vi.fn(), open)).toBe(true);
+    expect(open).toHaveBeenCalledOnce();
+    vi.mocked(editor.isActive).mockReturnValue(true);
+    expect(runEditorToolbarAction(editor, 'table', vi.fn(), open)).toBe(false);
+    expect(open).toHaveBeenCalledOnce();
   });
 });

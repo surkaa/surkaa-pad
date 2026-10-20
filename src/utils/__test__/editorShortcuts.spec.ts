@@ -56,6 +56,7 @@ describe('editor shortcuts', () => {
       heading5: 'Ctrl+Digit5',
       bulletList: 'Ctrl+Shift+Digit8',
       summary: 'Ctrl+Alt+KeyS',
+      table: '',
       taskList: 'Ctrl+KeyT',
     })
     expect(findEditorShortcutAction(
