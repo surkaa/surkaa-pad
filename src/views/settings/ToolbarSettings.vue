@@ -38,8 +38,8 @@
               class="toolbar-order-item"
               :class="{
                 'is-dragging': draggedAction === action,
-                'drop-before': dropIndicator?.action === action && dropIndicator.position === 'before',
-                'drop-after': dropIndicator?.action === action && dropIndicator.position === 'after',
+                'drop-before': dropIndicator?.key === action && dropIndicator.position === 'before',
+                'drop-after': dropIndicator?.key === action && dropIndicator.position === 'after',
               }"
             >
               <q-item-section avatar>
@@ -96,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onBeforeUnmount, ref, watch, type ComponentPublicInstance} from 'vue';
+import {computed, ref, type ComponentPublicInstance} from 'vue';
 import {useConfigStore} from '../../stores/config';
 import {
   DEFAULT_EDITOR_TOOLBAR_ORDER,
@@ -108,28 +108,24 @@ import {
 } from '../../utils/editorToolbar';
 import CloudSyncHint from './CloudSyncHint.vue';
 import EditorFontSizeSettings from './EditorFontSizeSettings.vue';
+import {useListDragSort} from '../../composables/useListDragSort';
 
 const configStore = useConfigStore();
 const showDialog = ref(false);
 const toolbarOrder = configStore.useTauriConfig('editor_toolbar_order');
 const toolbarListRef = ref<ComponentPublicInstance | null>(null);
-const draggedAction = ref<EditorToolbarAction | null>(null);
-const dragInsertionIndex = ref<number | null>(null);
-let dragPointerId: number | null = null;
+const {draggedKey: draggedAction, dropIndicator, startDrag} = useListDragSort({
+  keys: () => toolbarOrder.value,
+  list: toolbarListElement,
+  visible: () => showDialog.value,
+  itemAttribute: 'data-toolbar-action',
+  onDrop: (action, index) => {
+    toolbarOrder.value = reorderEditorToolbarAction(toolbarOrder.value, action, index);
+  },
+});
 const orderSummary = computed(() => toolbarOrder.value
   .map(action => EDITOR_TOOLBAR_LABELS[action])
   .join(' · '));
-const dropIndicator = computed<{
-  action: EditorToolbarAction;
-  position: 'before' | 'after';
-} | null>(() => {
-  if (!draggedAction.value || dragInsertionIndex.value === null) return null;
-  const remaining = toolbarOrder.value.filter(action => action !== draggedAction.value);
-  const nextAction = remaining[dragInsertionIndex.value];
-  if (nextAction) return {action: nextAction, position: 'before'};
-  const previousAction = remaining[remaining.length - 1];
-  return previousAction ? {action: previousAction, position: 'after'} : null;
-});
 
 function move(action: EditorToolbarAction, direction: -1 | 1) {
   toolbarOrder.value = moveEditorToolbarAction(toolbarOrder.value, action, direction);
@@ -145,75 +141,6 @@ function toolbarListElement(): HTMLElement | null {
     : null;
 }
 
-function startDrag(event: PointerEvent, action: EditorToolbarAction) {
-  if (dragPointerId !== null) return;
-  event.preventDefault();
-  dragPointerId = event.pointerId;
-  draggedAction.value = action;
-  dragInsertionIndex.value = toolbarOrder.value.indexOf(action);
-  document.body.classList.add('toolbar-order-dragging');
-  document.addEventListener('pointermove', handleDragMove, {passive: false});
-  document.addEventListener('pointerup', finishDrag);
-  document.addEventListener('pointercancel', finishDrag);
-}
-
-function handleDragMove(event: PointerEvent) {
-  if (event.pointerId !== dragPointerId || !draggedAction.value) return;
-  event.preventDefault();
-
-  const list = toolbarListElement();
-  if (list) {
-    const bounds = list.getBoundingClientRect();
-    const edgeSize = 48;
-    if (event.clientY < bounds.top + edgeSize) list.scrollTop -= 12;
-    else if (event.clientY > bounds.bottom - edgeSize) list.scrollTop += 12;
-  }
-
-  if (!list) return;
-  const remaining = toolbarOrder.value.filter(action => action !== draggedAction.value);
-  const rows = Array.from(
-    list.querySelectorAll<HTMLElement>('[data-toolbar-action]'),
-  ).filter(row => row.dataset.toolbarAction !== draggedAction.value);
-  let insertionIndex = remaining.length;
-  for (const row of rows) {
-    const action = row.dataset.toolbarAction as EditorToolbarAction | undefined;
-    const actionIndex = action ? remaining.indexOf(action) : -1;
-    if (actionIndex < 0) continue;
-    const bounds = row.getBoundingClientRect();
-    if (event.clientY < bounds.top + bounds.height / 2) {
-      insertionIndex = actionIndex;
-      break;
-    }
-  }
-  dragInsertionIndex.value = insertionIndex;
-}
-
-function finishDrag(event: PointerEvent) {
-  if (event.pointerId !== dragPointerId) return;
-  completeDrag(event.type === 'pointerup');
-}
-
-function completeDrag(commit: boolean) {
-  if (commit && draggedAction.value && dragInsertionIndex.value !== null) {
-    toolbarOrder.value = reorderEditorToolbarAction(
-      toolbarOrder.value,
-      draggedAction.value,
-      dragInsertionIndex.value,
-    );
-  }
-  dragPointerId = null;
-  draggedAction.value = null;
-  dragInsertionIndex.value = null;
-  document.body.classList.remove('toolbar-order-dragging');
-  document.removeEventListener('pointermove', handleDragMove);
-  document.removeEventListener('pointerup', finishDrag);
-  document.removeEventListener('pointercancel', finishDrag);
-}
-
-watch(showDialog, open => {
-  if (!open) completeDrag(false);
-});
-onBeforeUnmount(() => completeDrag(false));
 </script>
 
 <style scoped lang="scss" src="./settingsSection.scss"></style>
@@ -302,12 +229,6 @@ onBeforeUnmount(() => completeDrag(false));
   &:active {
     cursor: grabbing;
   }
-}
-
-:global(body.toolbar-order-dragging) {
-  cursor: grabbing;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
