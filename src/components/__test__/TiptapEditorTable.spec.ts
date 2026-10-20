@@ -69,6 +69,7 @@ describe.each([false, true])('editor table integration (dark=%s)', dark => {
     expect(update).toHaveBeenCalled();
     expect(JSON.stringify(update.mock.lastCall![0])).toContain('| --- | --- |');
     expect(editor.state.doc.textContent).toBe('前面后面');
+    expect(editor.state.doc.textContent).not.toContain('表头');
     editor.commands.undo(); expect(editor.getJSON()).toEqual(before);
     expect(document.querySelector('.table-insert-dialog')).toBeNull();
   });
