@@ -7,6 +7,10 @@ use crate::attachments::chunked_upload::ChunkedUploadState;
 use crate::attachments::AttachmentServerHandle;
 use crate::caches::{AttachmentCacheManager, DiaryMemoryCache, LocalObjectStore};
 use crate::cryptos::Crypto;
+use crate::diaries::{
+    draft::DiaryDraftRepository,
+    edit_lease::{DiaryEditManager, DiaryWritePermit},
+};
 use crate::diaries::{DiaryStore, LocalStore, RemoteStore};
 use crate::local_storage::LocalStorageManager;
 use crate::object::OssClient;
@@ -41,6 +45,9 @@ pub struct AppState {
     synced_settings_repository: SyncedSettingsRepository,
     vault_bootstrap_repository: VaultBootstrapRepository,
     key_change_manager: Arc<crate::vault_key_change::KeyChangeManager>,
+    diary_edits: DiaryEditManager,
+    diary_drafts: DiaryDraftRepository,
+    diary_write_scope: Option<Arc<std::collections::HashMap<String, DiaryWritePermit>>>,
 }
 
 impl AppState {
@@ -51,12 +58,18 @@ impl AppState {
         local_storage: LocalStorageManager,
     ) -> Self {
         let crypto = Crypto::new();
+        let draft_root = app_config
+            .private_data_directory()
+            .unwrap_or_else(|| path.clone())
+            .join("diary-drafts");
+        let diary_drafts = DiaryDraftRepository::new(draft_root, crypto.clone());
         let diary_cache = DiaryMemoryCache::new();
         let local_object_store = LocalObjectStore::new(path);
         let attachment_cache =
             AttachmentCacheManager::new(local_object_store.clone(), app_config.clone());
         let task_pool = TaskPool::new();
         let oss_client = OssClient::new();
+        let diary_edits = DiaryEditManager::new(oss_client.clone());
         let remote_enabled = Arc::new(AtomicBool::new(false));
         let app_object_store: SharedAppObjectStore = Arc::new(SwitchableAppObjectStore::new(
             local_object_store.clone(),
@@ -87,6 +100,9 @@ impl AppState {
             synced_settings_repository,
             vault_bootstrap_repository,
             key_change_manager: Arc::new(crate::vault_key_change::KeyChangeManager::default()),
+            diary_edits,
+            diary_drafts,
+            diary_write_scope: None,
         }
     }
 
@@ -208,6 +224,7 @@ impl AppState {
         let previous = self.remote_enabled.swap(enabled, Ordering::Relaxed);
         if previous != enabled {
             self.ai_session_repository.invalidate_reconciliation();
+            self.diary_edits.invalidate_all();
         }
     }
 
@@ -278,12 +295,47 @@ impl AppState {
 
     /// 根据当前存储模式构造 DiaryStore
     pub fn diary_store(&self) -> Box<dyn DiaryStore> {
+        self.build_diary_store(true)
+    }
+
+    pub(crate) fn diary_edits(&self) -> DiaryEditManager {
+        self.diary_edits.clone()
+    }
+    pub(crate) fn diary_drafts(&self) -> DiaryDraftRepository {
+        self.diary_drafts.clone()
+    }
+
+    /// 在后台任务入队之前固定写入资格，排队/长传输不能借用稍后重新申请的会话。
+    pub(crate) fn scoped_diary_writes(&self) -> Self {
+        let mut scoped = self.clone();
+        if scoped.diary_write_scope.is_none() {
+            scoped.diary_write_scope = Some(Arc::new(self.diary_edits.capture_all()));
+        }
+        scoped
+    }
+
+    /// 仅供创建新 ID 和只读加载，不得用于已存在日记的写命令。
+    pub(crate) fn unoccupied_diary_store(&self) -> Box<dyn DiaryStore> {
+        self.build_diary_store(false)
+    }
+
+    fn build_diary_store(&self, guarded: bool) -> Box<dyn DiaryStore> {
         if self.remote_enabled.load(Ordering::Relaxed) {
-            Box::new(RemoteStore::with_attachment_cache(
+            let store = RemoteStore::with_attachment_cache(
                 self.local_object_store.clone(),
                 self.oss_client.clone(),
                 self.attachment_cache.clone(),
-            ))
+            );
+            Box::new(if guarded {
+                store.with_edit_permits(
+                    self.diary_write_scope
+                        .as_ref()
+                        .map(|scope| scope.as_ref().clone())
+                        .unwrap_or_else(|| self.diary_edits.capture_all()),
+                )
+            } else {
+                store
+            })
         } else {
             Box::new(LocalStore::new(self.local_object_store.clone()))
         }
@@ -311,6 +363,11 @@ impl AppState {
         attachment_server: AttachmentServerHandle,
     ) -> Self {
         let app_config = AppConfigStore::in_memory(AppConfig::default());
+        let diary_drafts = DiaryDraftRepository::new(
+            local_object_store.root().join("diary-drafts"),
+            crypto.clone(),
+        );
+        let diary_edits = DiaryEditManager::new(oss_client.clone());
         let local_storage =
             LocalStorageManager::new(app_config.clone(), local_object_store.root().to_path_buf());
         let attachment_cache =
@@ -345,6 +402,9 @@ impl AppState {
             synced_settings_repository,
             vault_bootstrap_repository,
             key_change_manager: Arc::new(crate::vault_key_change::KeyChangeManager::default()),
+            diary_edits,
+            diary_drafts,
+            diary_write_scope: None,
         }
     }
 }

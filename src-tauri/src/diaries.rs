@@ -10,6 +10,9 @@ pub mod diary_store;
 pub mod diary_sync;
 mod diary_types;
 mod diary_version;
+pub(crate) mod draft;
+pub mod edit_command;
+pub(crate) mod edit_lease;
 
 #[cfg(test)]
 mod diary_tests;

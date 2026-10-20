@@ -8,6 +8,9 @@ pub enum DiaryError {
     #[error("Diary ID is empty")]
     EmptyId,
 
+    #[error("{0}")]
+    EditUnavailable(String),
+
     #[error("Attachment not found: {0}")]
     AttachmentNotFound(String),
 
@@ -30,11 +33,17 @@ pub enum DiaryError {
 
     #[error("Crypto error: {0}")]
     Crypto(#[from] crate::cryptos::CryptoError),
+
+    #[error("本机日记草稿读写失败: {0}")]
+    DraftIo(#[from] std::io::Error),
 }
 
 impl From<DiaryError> for crate::error::AppError {
     fn from(e: DiaryError) -> Self {
         match e {
+            DiaryError::EditUnavailable(message) => crate::error::AppError {
+                error_type: "diary_edit_unavailable".into(), message,
+            },
             DiaryError::UnsupportedVersion { found, supported } if found > supported => {
                 crate::error::AppError {
                     error_type: "diary_version_too_new".into(),

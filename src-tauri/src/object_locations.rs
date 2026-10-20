@@ -94,6 +94,17 @@ impl ObjectLocations {
         format!("{DIARIES_DIRECTORY}/{diary_id}/{MANIFEST_FILENAME}")
     }
 
+    /// 短期占用不是业务数据，不进入 StoredObject、LOS 或云同步清单。
+    pub fn diary_edit_lease(diary_id: &str) -> String {
+        format!("{DIARIES_DIRECTORY}/{diary_id}/edit-lock.json")
+    }
+
+    pub fn diary_edit_lease_id(key: &str) -> Option<&str> {
+        let rest = key.strip_prefix(Self::diaries_prefix())?;
+        let id = rest.strip_suffix("/edit-lock.json")?;
+        valid_diary_id(id)
+    }
+
     pub fn diary_attachments_prefix(diary_id: &str) -> String {
         format!("{DIARIES_DIRECTORY}/{diary_id}/{ATTACHMENTS_DIRECTORY}/")
     }
@@ -346,6 +357,17 @@ fn valid_leaf(value: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edit_leases_are_transient_control_objects_not_business_objects() {
+        let key = ObjectLocations::diary_edit_lease("123");
+        assert_eq!(key, "diaries/123/edit-lock.json");
+        assert_eq!(ObjectLocations::diary_edit_lease_id(&key), Some("123"));
+        assert_eq!(ObjectLocations::parse(&key), None);
+        for key in ["diaries/../edit-lock.json", "diaries/1/2/edit-lock.json", "1/edit-lock.json", "diaries/a/edit-lock.json"] {
+            assert!(ObjectLocations::diary_edit_lease_id(key).is_none());
+        }
+    }
 
     #[test]
     fn centralizes_current_diary_object_locations() {

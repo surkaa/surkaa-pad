@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use crate::app_config::{AppConfig, AppConfigStore};
 use crate::caches::{AttachmentCacheManager, CacheError, LocalObjectStore};
 use crate::diaries::attachment_upload::{LocalAttachmentUpload, RemoteAttachmentUpload};
+use crate::diaries::edit_lease::{DiaryWritePermit, GuardedAttachmentUpload, SessionData};
 use crate::diaries::{AttachmentUploadSession, DiaryError};
 use crate::object::{NextToken, ObjectError, OssClient};
 use crate::object_locations::{ObjectLocations, StoredObject};
@@ -167,7 +168,11 @@ fn diary_object_keys(keys: impl IntoIterator<Item = String>, id: &str) -> (Vec<S
     let manifest_key = ObjectLocations::diary_manifest(id);
     let mut attachment_keys: Vec<String> = keys
         .into_iter()
-        .filter(|key| key.starts_with(&prefix) && key != &manifest_key)
+        .filter(|key| {
+            key.starts_with(&prefix)
+                && key != &manifest_key
+                && ObjectLocations::diary_edit_lease_id(key).is_none()
+        })
         .collect();
     attachment_keys.sort();
     (attachment_keys, manifest_key)
@@ -195,6 +200,10 @@ async fn delete_local_diary_files(los: &LocalObjectStore, id: &str) -> Result<()
 /// 日记存储抽象，隔离本地与远程的 I/O 差异
 #[async_trait]
 pub trait DiaryStore: Send + Sync {
+    /// 列表、AI 和只读打开不能隐式写回云端。云端迁移只在后续显式保存时发布。
+    fn persist_read_migrations(&self) -> bool {
+        true
+    }
     /// 上传/保存加密的 manifest 数据，返回 etag
     async fn upload_manifest(&self, id: &str, data: &[u8]) -> Result<String, DiaryError>;
     /// 下载/读取加密的 manifest 数据，返回 (数据, etag)
@@ -473,6 +482,7 @@ pub struct RemoteStore {
     los: LocalObjectStore,
     client: OssClient,
     attachment_cache: AttachmentCacheManager,
+    edit_permits: Option<std::collections::HashMap<String, DiaryWritePermit>>,
 }
 
 impl RemoteStore {
@@ -494,6 +504,36 @@ impl RemoteStore {
             los,
             client,
             attachment_cache,
+            edit_permits: None,
+        }
+    }
+
+    pub(crate) fn with_edit_permits(
+        mut self,
+        permits: std::collections::HashMap<String, DiaryWritePermit>,
+    ) -> Self {
+        self.edit_permits = Some(permits);
+        self
+    }
+
+    fn permit(&self, id: &str) -> Result<Option<&DiaryWritePermit>, DiaryError> {
+        self.edit_permits
+            .as_ref()
+            .map(|permits| {
+                permits.get(id).ok_or_else(|| {
+                    DiaryError::EditUnavailable("当前日记为只读，请先申请编辑".into())
+                })
+            })
+            .transpose()
+    }
+
+    async fn check_write(
+        &self,
+        id: &str,
+    ) -> Result<Option<tokio::sync::OwnedMutexGuard<SessionData>>, DiaryError> {
+        match self.permit(id)? {
+            Some(permit) => Ok(Some(permit.check().await?)),
+            None => Ok(None),
         }
     }
 
@@ -515,9 +555,25 @@ impl RemoteStore {
 
 #[async_trait]
 impl DiaryStore for RemoteStore {
+    fn persist_read_migrations(&self) -> bool {
+        false
+    }
+
     async fn upload_manifest(&self, id: &str, data: &[u8]) -> Result<String, DiaryError> {
+        let mut edit = self.check_write(id).await?;
         let key = ObjectLocations::diary_manifest(id);
-        let etag = self.client.upload_bytes(&key, data).await?;
+        let etag = match self.client.upload_bytes(&key, data).await {
+            Ok(etag) => etag,
+            Err(error) => {
+                if let Some(permit) = self.permit(id)? {
+                    permit.invalidate();
+                }
+                return Err(error.into());
+            }
+        };
+        if let Some(edit) = &mut edit {
+            edit.baseline = etag.clone();
+        }
         let _ = self.los.save_bytes(&key, data).await;
         Ok(etag)
     }
@@ -533,10 +589,18 @@ impl DiaryStore for RemoteStore {
             }
         }
         // 缓存未命中，从 OSS 下载
-        let data = self.client.download_bytes(&key).await?;
-        let metadata = self.client.get_metadata(&key).await?;
-        let etag = metadata.etag.unwrap_or_default();
-        let _ = self.los.save_bytes(&key, &data).await;
+        let (data, etag, _) = self.client.download_snapshot(&key).await?;
+        let _ = self
+            .los
+            .save_stream_with_etag(
+                &key,
+                &etag,
+                Box::pin(futures_util::stream::once({
+                    let data = data.clone();
+                    async move { Ok(bytes::Bytes::from(data)) }
+                })),
+            )
+            .await;
         Ok((data, etag))
     }
 
@@ -560,11 +624,13 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn delete_diary_all(&self, id: &str) -> Result<(), DiaryError> {
+        drop(self.check_write(id).await?);
         let prefix = ObjectLocations::diary_prefix(id);
         let keys = self.client.list_all_keys(&prefix).await?;
         let (attachment_keys, manifest_key) = diary_object_keys(keys, id);
 
         self.client.delete_keys(attachment_keys).await?;
+        drop(self.check_write(id).await?);
         self.client.delete(&manifest_key).await?;
 
         // 远端是权威来源；远端完整删除后再清理本地副本。缓存清理失败也要
@@ -615,8 +681,9 @@ impl DiaryStore for RemoteStore {
         size: u64,
         mimetype: &str,
     ) -> Result<Box<dyn AttachmentUploadSession>, DiaryError> {
+        drop(self.check_write(id).await?);
         let key = ObjectLocations::diary_attachment(id, filename);
-        Ok(Box::new(
+        let session: Box<dyn AttachmentUploadSession> = Box::new(
             RemoteAttachmentUpload::begin(
                 self.los.clone(),
                 self.attachment_cache.clone(),
@@ -626,7 +693,14 @@ impl DiaryStore for RemoteStore {
                 mimetype.to_string(),
             )
             .await?,
-        ))
+        );
+        match self.permit(id)? {
+            Some(permit) => Ok(Box::new(GuardedAttachmentUpload {
+                inner: session,
+                permit: permit.clone(),
+            })),
+            None => Ok(session),
+        }
     }
 
     async fn download_attachment(
@@ -767,6 +841,7 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn delete_attachment(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+        drop(self.check_write(id).await?);
         let key = ObjectLocations::diary_attachment(id, filename);
         self.client.delete(&key).await?;
         let _ = self.los.delete(&key).await;
@@ -775,6 +850,7 @@ impl DiaryStore for RemoteStore {
     }
 
     async fn create_attachment_backup(&self, id: &str, filename: &str) -> Result<(), DiaryError> {
+        drop(self.check_write(id).await?);
         let key = ObjectLocations::diary_attachment(id, filename);
         let backup_key = ObjectLocations::diary_attachment_backup(id, filename);
         let metadata = self.client.get_metadata(&key).await?;
@@ -806,6 +882,7 @@ impl DiaryStore for RemoteStore {
         filename: &str,
         mimetype: &str,
     ) -> Result<(), DiaryError> {
+        drop(self.check_write(id).await?);
         let key = ObjectLocations::diary_attachment(id, filename);
         let backup_key = ObjectLocations::diary_attachment_backup(id, filename);
         let size = self

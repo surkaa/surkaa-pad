@@ -29,8 +29,21 @@ pub async fn cmd_save_diary(
     content: DiaryContent,
 ) -> Result<(DiarySummary, DiaryContent), AppError> {
     let _storage_guard = state.lock_storage_operation().await?;
-    let store = state.diary_store();
-    Ok(save_diary(&state.diary_cache(), &state.crypto(), &*store, content).await?)
+    let store = state.unoccupied_diary_store();
+    let result = save_diary(&state.diary_cache(), &state.crypto(), &*store, content).await?;
+    if state.is_remote_enabled() {
+        let id = &result.0.id;
+        let baseline = state
+            .diary_cache()
+            .get(id)
+            .ok_or(crate::diaries::DiaryError::EmptyId)?
+            .1;
+        // 创建成功不能因占用确认失败而被报告为失败并重复创建；下一次写入仍必须通过占用检查。
+        if let Err(error) = state.diary_edits().acquire(id, false, baseline).await {
+            tauri_plugin_log::log::warn!("新日记已创建，但申请编辑占用失败：{error}");
+        }
+    }
+    Ok(result)
 }
 
 /// 删除日记及其所有附件
@@ -40,8 +53,17 @@ pub async fn cmd_save_diary(
 /// * `Result<(), AppError>` - 成功时已删除日记及其全部附件
 #[tauri::command]
 #[specta::specta]
-pub async fn cmd_delete_diary(state: State<'_, AppState>, id: &str) -> Result<(), AppError> {
+pub async fn cmd_delete_diary(
+    state: State<'_, AppState>,
+    id: &str,
+    session_id: Option<String>,
+) -> Result<(), AppError> {
     let _storage_guard = state.lock_storage_operation().await?;
+    if state.is_remote_enabled() {
+        state
+            .diary_edits()
+            .require_session(id, session_id.as_deref())?;
+    }
     let store = state.diary_store();
     Ok(delete_diary(&state.diary_cache(), &*store, id).await?)
 }
@@ -58,17 +80,43 @@ pub async fn cmd_update_diary_content_only(
     state: State<'_, AppState>,
     id: &str,
     new_content: DiaryContent,
+    session_id: Option<String>,
+    draft_revision: Option<String>,
 ) -> Result<DiarySummary, AppError> {
     let _storage_guard = state.lock_storage_operation().await?;
+    if state.is_remote_enabled() {
+        state
+            .diary_edits()
+            .require_session(id, session_id.as_deref())?;
+        if draft_revision.as_deref().is_none_or(str::is_empty) {
+            return Err(crate::diaries::DiaryError::EditUnavailable(
+                "必须先保存本机加密草稿".into(),
+            )
+            .into());
+        }
+        if state.diary_drafts().read(id).await?.is_none() {
+            return Err(crate::diaries::DiaryError::EditUnavailable(
+                "本机草稿尚未落盘，已阻止云端保存".into(),
+            )
+            .into());
+        }
+    }
     let store = state.diary_store();
-    Ok(update_diary_content_only(
+    let summary = update_diary_content_only(
         &state.diary_cache(),
         &state.crypto(),
         &*store,
         id,
         new_content,
     )
-    .await?)
+    .await?;
+    if let Some(revision) = draft_revision {
+        // 回执只清除对应版本，不能删除保存期间产生的新草稿。
+        if let Err(error) = state.diary_drafts().clear_if_revision(id, &revision).await {
+            tauri_plugin_log::log::warn!("日记已保存，清理本机草稿失败：{error}");
+        }
+    }
+    Ok(summary)
 }
 
 /// 分页列出日记 ID

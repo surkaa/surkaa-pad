@@ -718,6 +718,37 @@ impl OssClient {
         Ok(data)
     }
 
+    /// 正文与 ETag 必须来自同一次 GET，不能在下载后另做 HEAD 拼出错误的版本基线。
+    /// 用于有界的 manifest 和小型控制文件，不用于大附件。
+    pub async fn download_snapshot(
+        &self,
+        key: &str,
+    ) -> Result<(Vec<u8>, String, i64), ObjectError> {
+        let bucket = self.inner()?;
+        let response = bucket
+            .get_object(self.physical_key(key))
+            .await
+            .map_err(|e| ObjectError::OperationFailed(e.to_string()))?;
+        if !(200..300).contains(&response.status_code()) {
+            return Err(ObjectError::OperationFailed(format!(
+                "GET 返回 HTTP {}",
+                response.status_code()
+            )));
+        }
+        let headers = response.headers();
+        let etag = headers
+            .get("etag")
+            .map(|v| v.trim_matches('"').to_string())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| ObjectError::OperationFailed("GET 缺少 ETag".into()))?;
+        let server_time = headers
+            .get("date")
+            .and_then(|date| chrono::DateTime::parse_from_rfc2822(date).ok())
+            .map(|date| date.timestamp_millis())
+            .ok_or_else(|| ObjectError::OperationFailed("GET 缺少有效的服务端时间".into()))?;
+        Ok((response.to_vec(), etag, server_time))
+    }
+
     #[cfg(test)]
     pub async fn direct_url(&self, key: &str) -> Result<String, ObjectError> {
         let bucket = self.inner()?;

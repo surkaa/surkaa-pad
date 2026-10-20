@@ -56,7 +56,7 @@ pub fn cmd_add_attachment(
     let (mimetype, file) = file_mimetype(file)?;
     let stream = file_to_stream(file);
     let task_pool = state.task_pool();
-    let state = state.inner().clone();
+    let state = state.scoped_diary_writes();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         add_attachment_cancelable(
             &state,
@@ -125,7 +125,7 @@ pub fn cmd_add_shared_attachment(
 
     let stream = file_to_stream(file);
     let task_pool = state.task_pool();
-    let state = state.inner().clone();
+    let state = state.scoped_diary_writes();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         add_attachment_cancelable(
             &state,
@@ -201,7 +201,7 @@ pub fn cmd_add_attachment_memory(
     };
     let stream = create_mock_stream(data, len);
     let task_pool = state.task_pool();
-    let state = state.inner().clone();
+    let state = state.scoped_diary_writes();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         add_attachment_cancelable(
             &state,
@@ -278,7 +278,7 @@ pub async fn cmd_add_image_attachment_from_camera(
         let len = binary_data.len();
         let stream = create_mock_stream(binary_data, len);
         let task_pool = state.task_pool();
-        let state = state.inner().clone();
+        let state = state.scoped_diary_writes();
         Ok(task_pool.spawn_cancelable(move |cancellation| async move {
             add_attachment_cancelable(
                 &state,
@@ -321,7 +321,7 @@ pub fn cmd_toggle_attachment_encryption(
     attachment_id: String,
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
-    let state = state.inner().clone();
+    let state = state.scoped_diary_writes();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         let _storage_guard = match state.lock_storage_operation().await {
             Ok(guard) => guard,
@@ -359,7 +359,7 @@ pub fn cmd_rotate_image_attachment(
     rotation: i32,
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
-    let state = state.inner().clone();
+    let state = state.scoped_diary_writes();
     Ok(task_pool.spawn_cancelable(move |cancellation| async move {
         let _storage_guard = match state.lock_storage_operation().await {
             Ok(guard) => guard,
@@ -396,7 +396,7 @@ pub fn cmd_caching_attachment(
     attachment_id: String,
 ) -> Result<String, AppError> {
     let task_pool = state.task_pool();
-    let state = state.inner().clone();
+    let state = state.scoped_diary_writes();
     Ok(task_pool.spawn(async move {
         let _storage_guard = match state.lock_storage_operation().await {
             Ok(guard) => guard,
@@ -464,7 +464,7 @@ pub async fn cmd_save_decrypt_attachment(
         })?;
 
     let task_pool = state.task_pool();
-    let state = state.inner().clone();
+    let state = state.scoped_diary_writes();
     Ok(task_pool.spawn(async move {
         let _storage_guard = match state.lock_storage_operation().await {
             Ok(guard) => guard,

@@ -234,6 +234,13 @@ impl AppConfigStore {
         self.lock_config().clone()
     }
 
+    /// 私有本机数据与配置同目录，不随 LOS 切换或附件 LRU 淘汰，也不上传。
+    pub(crate) fn private_data_directory(&self) -> Option<PathBuf> {
+        self.path
+            .as_ref()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+    }
+
     /// 文件锁只保护本机改密执行者；崩溃时 OS 自动释放，云端占位仍保留供续改。
     /// 锁文件固定且不删除，避免删除/重建使并发进程锁住不同文件。
     pub(crate) fn lock_key_change_process(&self) -> Result<Option<fs::File>, AppConfigError> {

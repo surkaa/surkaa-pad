@@ -532,6 +532,46 @@ async cmdSaveDiary(content: DiaryContent) : Promise<Result<[DiarySummary, DiaryC
     else return { status: "error", error: e  as any };
 }
 },
+async cmdOpenDiaryEdit(id: string, takeover: boolean) : Promise<Result<DiaryEditView, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_open_diary_edit", { id, takeover }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdRenewDiaryEdit(id: string, sessionId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_renew_diary_edit", { id, sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdReleaseDiaryEdit(id: string, sessionId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_release_diary_edit", { id, sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdSaveDiaryDraft(id: string, content: DiaryContent) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_save_diary_draft", { id, content }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdDiscardDiaryDraft(id: string, revision: string) : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_discard_diary_draft", { id, revision }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * 更新日记的内容
  * # Arguments
@@ -540,9 +580,9 @@ async cmdSaveDiary(content: DiaryContent) : Promise<Result<[DiarySummary, DiaryC
  * # Returns
  * * `Result<DiarySummary, AppError>` - 成功时返回更新后的日记摘要
  */
-async cmdUpdateDiaryContentOnly(id: string, newContent: DiaryContent) : Promise<Result<DiarySummary, AppError>> {
+async cmdUpdateDiaryContentOnly(id: string, newContent: DiaryContent, sessionId: string | null, draftRevision: string | null) : Promise<Result<DiarySummary, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_update_diary_content_only", { id, newContent }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_update_diary_content_only", { id, newContent, sessionId, draftRevision }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -555,9 +595,9 @@ async cmdUpdateDiaryContentOnly(id: string, newContent: DiaryContent) : Promise<
  * # Returns
  * * `Result<(), AppError>` - 成功时已删除日记及其全部附件
  */
-async cmdDeleteDiary(id: string) : Promise<Result<null, AppError>> {
+async cmdDeleteDiary(id: string, sessionId: string | null) : Promise<Result<null, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("cmd_delete_diary", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("cmd_delete_diary", { id, sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1270,6 +1310,9 @@ export type DiaryContentNode = { type: "markdown"; text: string } | { type: "sum
  * 仅在进入日记编辑页后加载的完整详情。
  */
 export type DiaryDetail = { summary: DiarySummary; manifestSize: number; content: DiaryContent; attachments: AttachmentMeta[]; attachmentUrls: Partial<{ [key in string]: string }> }
+export type DiaryDraft = { version: number; diaryId: string; revision: string; savedAt: number; content: DiaryContent }
+export type DiaryEditAccess = { sessionId: string | null; readOnly: boolean; canTakeOver: boolean; reason: string | null }
+export type DiaryEditView = { detail: DiaryDetail; access: DiaryEditAccess; draft: DiaryDraft | null }
 export type DiaryListShortcutSettings = { createDiary: string; aiAssistant: string; search: string; settings: string }
 export type DiaryLocation = { coordinateSystem: CoordinateSystem; latitude: number; longitude: number; horizontalAccuracyMeters: number | null; capturedAt: number; placeName: string | null; altitudeMeters: number | null; verticalAccuracyMeters: number | null }
 export type DiaryManifest = { id: string; algorithm: EncryptionAlgorithm; content: DiaryContent; created: number; updated: number; attachments: AttachmentMeta[]; version: number }

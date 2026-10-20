@@ -79,6 +79,7 @@ pub(super) async fn inventory(
                 return Err(error("存在未完成的附件事务，请先恢复附件操作"))
             }
             Some(StoredObject::VaultBootstrap) => None,
+            None if ObjectLocations::diary_edit_lease_id(&entry.key).is_some() => None,
             None if entry.key.ends_with('/') && entry.size == 0 => None,
             None => {
                 return Err(error(format!(

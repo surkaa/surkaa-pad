@@ -124,6 +124,12 @@ pub(super) async fn plan_change(
     let _process_guard = state.lock_key_change_process().map_err(error)?;
     state.ensure_storage_available()?;
     let old_password = Zeroizing::new(old_password);
+    if state.diary_drafts().has_pending().await.map_err(error)? {
+        return Err(error(
+            "存在未处理的本机日记草稿，请先打开相应日记恢复或放弃草稿，再更改密码与盐",
+        ));
+    }
+    state.diary_edits().invalidate_all();
     let new_password = Zeroizing::new(new_password);
     let confirm_password = Zeroizing::new(confirm_password);
     if new_password.is_empty() || *new_password != *confirm_password {
@@ -321,6 +327,12 @@ pub(super) async fn start_change(
     let _process_guard = state.lock_key_change_process().map_err(error)?;
     state.ensure_storage_available()?;
     let manager = state.key_change_manager();
+    if state.diary_drafts().has_pending().await.map_err(error)? {
+        return Err(error(
+            "改密计划生成后出现了本机日记草稿，请先处理草稿，再重新统计改密",
+        ));
+    }
+    state.diary_edits().invalidate_all();
     let mut prepared = manager
         .prepared
         .lock()

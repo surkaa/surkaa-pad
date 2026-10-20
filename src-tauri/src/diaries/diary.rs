@@ -109,6 +109,10 @@ pub(crate) async fn get_diary_locked(
     };
     if let Some(new_bytes) = migrate_manifest_bytes(&migration_context, &manifest_bytes).await? {
         let manifest = deserialize_current_manifest(id, &new_bytes)?;
+        if !store.persist_read_migrations() {
+            cache.insert(id, manifest.clone(), etag);
+            return Ok(manifest);
+        }
         let re_encrypted = crypto.encrypt(&new_bytes)?;
         let new_etag = store.upload_manifest(id, &re_encrypted).await?;
         cache.insert(id, manifest.clone(), new_etag);

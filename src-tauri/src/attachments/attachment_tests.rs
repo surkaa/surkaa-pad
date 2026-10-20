@@ -31,6 +31,21 @@ mod tests {
         state
     }
 
+    async fn acquire_edit(state: &AppState, diary_id: &str) {
+        let baseline = state
+            .unoccupied_diary_store()
+            .get_manifest_etag(diary_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let access = state
+            .diary_edits()
+            .acquire(diary_id, false, baseline)
+            .await
+            .unwrap();
+        assert!(!access.read_only, "附件写入测试必须先获得编辑占用");
+    }
+
     #[tokio::test]
     async fn standard_upload_rolls_back_when_diary_is_deleted_before_manifest_update() {
         let crypto = Crypto::from_env();
@@ -289,6 +304,7 @@ mod tests {
         let state = make_remote_state(&crypto, &client, &los);
 
         // 2. 核心测试: 并发添加附件
+        acquire_edit(&state, &diary_id).await;
         for i in 0..concurrency_level {
             let state = state.clone();
             let id_clone = diary_id.clone();
@@ -417,6 +433,7 @@ mod tests {
             .await
             .expect("初始化日记失败");
         let diary_id = summary.id;
+        acquire_edit(&state, &diary_id).await;
 
         // 上传一个明文附件
         let raw_data = b"hello encryption world".to_vec();
@@ -495,6 +512,7 @@ mod tests {
             .await
             .expect("初始化日记失败");
         let diary_id = summary.id;
+        acquire_edit(&state, &diary_id).await;
 
         // 创建一个简单的 2x1 红色 RGBA 像素图片字节数据 (作为模拟)
         // 实际测试建议使用一个真实的 small jpeg 字节，或者用 image 库生成
@@ -605,6 +623,7 @@ mod tests {
             .await
             .unwrap();
         let diary_id = summary.id;
+        acquire_edit(&state, &diary_id).await;
 
         let raw_data = b"cache payload test".to_vec();
         let size = raw_data.len() as u64;
@@ -720,6 +739,7 @@ mod tests {
             .await
             .expect("初始化日记失败");
         let diary_id = summary.id;
+        acquire_edit(&state, &diary_id).await;
         let raw_data = b"cache payload test".to_vec();
         let size = raw_data.len() as u64;
         let stream = create_mock_stream(raw_data.clone(), size as usize);

@@ -80,6 +80,10 @@ use crate::diaries::diary_command::{
     cmd_inspect_diary_versions, cmd_page_diary_ids, cmd_save_diary, cmd_search_diaries,
     cmd_update_diary_content_only,
 };
+use crate::diaries::edit_command::{
+    cmd_discard_diary_draft, cmd_open_diary_edit, cmd_release_diary_edit, cmd_renew_diary_edit,
+    cmd_save_diary_draft,
+};
 use crate::local_storage::migration::{
     cmd_get_local_storage_info, cmd_get_local_storage_migration_status, cmd_migrate_local_storage,
     cmd_open_local_storage, cmd_plan_local_storage_migration,
@@ -190,6 +194,11 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_migrate_local_storage,
             // 日记基本操作
             cmd_save_diary,
+            cmd_open_diary_edit,
+            cmd_renew_diary_edit,
+            cmd_release_diary_edit,
+            cmd_save_diary_draft,
+            cmd_discard_diary_draft,
             cmd_update_diary_content_only,
             cmd_delete_diary,
             // 日记列表操作
