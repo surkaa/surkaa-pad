@@ -1,6 +1,6 @@
 import type {Editor} from '@tiptap/vue-3';
 import type {Node} from '@tiptap/pm/model';
-import {TextSelection, type Command, type Transaction} from '@tiptap/pm/state';
+import {EditorState, TextSelection, type Command, type Transaction} from '@tiptap/pm/state';
 import {closeHistory} from '@tiptap/pm/history';
 import {
   addColumnAfter, addColumnBefore, addRowAfter, addRowBefore,
@@ -103,9 +103,13 @@ export function runTableAction(editor: Editor, target: TableTarget, action: Tabl
   if (!canRunTableAction(editor, target, action)) return false;
   const {table, map, row, column} = tableContext(editor, target)!;
   // 不依赖打开菜单前的光标位置，也不调用 focus()，避免移动端弹出软键盘。
-  const state = editor.state.apply(editor.state.tr.setSelection(
-    TextSelection.near(editor.state.doc.resolve(target.cellPosition + 2)),
-  ));
+  // 只给命令提供目标选区，不能 apply 一个临时事务：apply 会运行 trailingNode 等
+  // appendTransaction 插件，改变临时文档，导致最终事务与真实编辑器文档不匹配。
+  const state = EditorState.create({
+    doc: editor.state.doc,
+    selection: TextSelection.near(editor.state.doc.resolve(target.cellPosition + 2)),
+    storedMarks: editor.state.storedMarks,
+  });
   let command: Command;
   switch (action) {
     case 'rowBefore': command = addRowBefore; break;

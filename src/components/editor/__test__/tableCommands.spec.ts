@@ -102,4 +102,17 @@ describe('table commands', () => {
     editor.commands.undo(); expect(editor.getJSON()).toEqual(intermediate);
     editor.commands.undo(); expect(editor.getJSON()).toEqual(before);
   });
+
+  it('does not run appendTransaction plugins against a temporary selection state', () => {
+    createTable();
+    // 首次打开一篇仅有表格的旧日记时，trailingNode 尚未补齐尾部段落。
+    editor.commands.setContent('<table><tr><th>A</th></tr><tr><td>B</td></tr></table>');
+    // setContent 本身会触发插件；使用新 Editor 覆盖初始内容以还原首次打开的场景。
+    editor.destroy();
+    editor = new Editor({element: document.createElement('div'),
+      extensions: [StarterKit, ...createDiaryTableExtensions()],
+      content: '<table><tr><th>A</th></tr><tr><td>B</td></tr></table>'});
+    expect(() => runTableAction(editor, target(1, 0), 'clearColumn')).not.toThrow();
+    expect(contents()).toEqual([[''], ['']]);
+  });
 });
