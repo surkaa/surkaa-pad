@@ -104,3 +104,16 @@ export function formatKiB(kibibytes?: number): string {
     const bytes = kibibytes * 1024; // 将KiB转换为Bytes
     return formatBytes(bytes); // 使用formatBytes函数格式化
 }
+
+/** Token 容量使用 1024 进制简写：1K = 1024，1M = 1048576。
+ * 编辑框启用 exact 时，不能无损简写的值保留完整整数，避免保存时改变容量。
+ */
+export function formatTokenCount(tokens: number, {exact = false}: {exact?: boolean} = {}): string {
+    const units = ['', 'K', 'M', 'G'];
+    let index = 0;
+    while (tokens >= 1024 ** (index + 1) && index < units.length - 1) index++;
+    const factor = 1024 ** index;
+    const value = Number((tokens / factor).toFixed(2));
+    if (exact && value * factor !== tokens) return String(tokens);
+    return `${value}${units[index]}`;
+}

@@ -39,6 +39,10 @@ async function enterKey(value: string) {
   const input = document.querySelector<HTMLInputElement>('.web-search-key input')!;
   input.value = value; input.dispatchEvent(new Event('input', {bubbles: true})); await settle();
 }
+async function enterContext(value: string) {
+  const input = document.querySelector<HTMLInputElement>('.context-window-input input')!;
+  input.value = value; input.dispatchEvent(new Event('input', {bubbles: true})); await settle();
+}
 beforeEach(() => {
   vi.useFakeTimers(); loadConfig.mockReset().mockResolvedValue(savedConfig());
   saveConfig.mockReset().mockImplementation(async config => config);
@@ -47,7 +51,7 @@ beforeEach(() => {
   detectContext.mockReset().mockResolvedValue({tokens: 32768, source: 'ollamaLoadedModel'});
 });
 afterEach(() => {
-  app?.unmount(); app = undefined; Dark.set(false); document.body.innerHTML = ''; vi.useRealTimers();
+  app?.unmount(); app = undefined; Dark.set(false); document.body.innerHTML = ''; vi.useRealTimers(); vi.restoreAllMocks();
 });
 
 describe('AI web search settings', () => {
@@ -87,10 +91,72 @@ describe('AI web search settings', () => {
     expect(listModels).toHaveBeenCalledExactlyOnceWith('http://localhost:11434/v1', 'model-secret');
     button('获取上下文').click(); await settle();
     expect(detectContext).toHaveBeenCalledExactlyOnceWith('http://localhost:11434/v1', 'model-secret', 'qwen');
-    expect(rows[1].querySelector<HTMLInputElement>('input')!.value).toBe('32768');
+    expect(rows[1].querySelector<HTMLInputElement>('input')!.value).toBe('32K');
     document.querySelector<HTMLElement>('[aria-label="AI 服务与上下文说明"]')!.click(); await settle();
     expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('70%');
     expect(saveConfig).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('shows models-endpoint detection as 1M and saves exact tokens, dark=%s', async dark => {
+    detectContext.mockResolvedValue({tokens: 1048576, source: 'modelsEndpoint'});
+    await open(dark);
+    const notify = vi.spyOn(app!.config.globalProperties.$q, 'notify');
+    button('获取上下文').click(); await settle();
+    expect(document.querySelector<HTMLInputElement>('.context-window-input input')!.value).toBe('1M');
+    expect(notify).toHaveBeenCalledWith({type: 'positive', message: '已从模型列表接口检测到 1M Token'});
+    button('保存').click(); await settle();
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+      profiles: [expect.objectContaining({contextWindowTokens: 1048576})],
+    }));
+  });
+
+  it.each([131072, 1048577, 10000000])('does not change stored capacity %s by opening and saving', async capacity => {
+    const config = savedConfig(); config.profiles[0].contextWindowTokens = capacity;
+    loadConfig.mockResolvedValue(config);
+    await open(); button('保存').click(); await settle();
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+      profiles: [expect.objectContaining({contextWindowTokens: capacity})],
+    }));
+  });
+
+  it.each([['128K', 131072], ['1.5m', 1572864], ['1048576', 1048576], ['', null]])('accepts manual context %s and saves %s', async (text, tokens) => {
+    await open(); await enterContext(text); button('保存').click(); await settle();
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+      profiles: [expect.objectContaining({contextWindowTokens: tokens})],
+    }));
+    expect(detectContext).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('shows invalid shorthand and prevents saving until it is corrected, dark=%s', async dark => {
+    await open(dark); await enterContext('10M');
+    expect(document.querySelector('.context-window-input')?.classList.contains('q-field--error')).toBe(true);
+    expect((button('保存') as HTMLButtonElement).disabled).toBe(true);
+    expect(saveConfig).not.toHaveBeenCalled();
+    await enterContext('1M');
+    expect(document.querySelector('.context-window-input')?.classList.contains('q-field--error')).toBe(false);
+    expect((button('保存') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('keeps manual shorthand with its own profile when switching environments', async () => {
+    await open(); await enterContext('1M');
+    document.querySelector<HTMLElement>('[aria-label="新增 AI 环境"]')!.click(); await settle();
+    expect(document.querySelector<HTMLInputElement>('.context-window-input input')!.value).toBe('');
+    document.querySelector<HTMLElement>('.profile-select')!.click(); await settle();
+    [...document.querySelectorAll<HTMLElement>('.settings-select-popup .q-item')].find(item => item.textContent?.includes('本地 Ollama'))!.click();
+    await settle();
+    expect(document.querySelector<HTMLInputElement>('.context-window-input input')!.value).toBe('1M');
+    button('保存').click(); await settle();
+    expect(saveConfig.mock.calls[0][0].profiles[0].contextWindowTokens).toBe(1048576);
+  });
+
+  it('does not overwrite another environments context after a slow detection finishes', async () => {
+    let finish!: (value: {tokens: number; source: string}) => void;
+    detectContext.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await open(); button('获取上下文').click(); await nextTick();
+    document.querySelector<HTMLElement>('[aria-label="新增 AI 环境"]')!.click(); await settle();
+    await enterContext('128K');
+    finish({tokens: 1048576, source: 'modelsEndpoint'}); await settle();
+    expect(document.querySelector<HTMLInputElement>('.context-window-input input')!.value).toBe('128K');
   });
 
   it('closes help with Escape without closing the AI configuration dialog or saving a draft', async () => {

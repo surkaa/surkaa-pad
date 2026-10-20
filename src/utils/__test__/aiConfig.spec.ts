@@ -9,6 +9,7 @@ import {
   normalizeAiServiceConfig,
   normalizeAiServiceConfigSet,
   normalizeAiWebSearchConfig,
+  parseAiContextWindowInput,
   saveAiServiceConfig,
   saveAiServiceConfigSet,
   type AiConfigCipher,
@@ -35,6 +36,17 @@ function dependencies() {
 }
 
 describe('AI service config', () => {
+  it.each([
+    ['', null], ['  ', null], [null, null], ['1048576', 1048576], ['1M', 1048576],
+    [' 128k ', 131072], ['1.5 M', 1572864], ['.5K', 512], ['256', 256], ['10000000', 10000000],
+  ])('parses the context input %s into %s tokens', (input, tokens) => {
+    expect(parseAiContextWindowInput(input)).toBe(tokens);
+  });
+
+  it.each(['0', '255', '-1', '1.5', '10M', '10000001', '1.23K', 'NaN', 'Infinity', '1e6', '1MB', '1Mbad'])('rejects an invalid context input %s', input => {
+    expect(() => parseAiContextWindowInput(input)).toThrow();
+  });
+
   it('normalizes whitespace and optional API keys', () => {
     expect(normalizeAiServiceConfig({
       baseUrl: ' http://localhost:11434/v1 ',

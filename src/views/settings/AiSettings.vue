@@ -26,7 +26,8 @@
             <p>支持提供模型列表和 Chat Completions 的 OpenAI 兼容接口。</p>
             <p>问题以及 Agent 按需读取的日记文本会发送到此服务，请确认你信任服务提供方。</p>
             <p>上下文上限可选；服务返回用量达到约 70% 时自动整理较早对话，留空则不启用自动压缩。</p>
-            <p>获取上下文目前支持 Ollama；其他服务未检测到上限时，可按模型文档手动填写。</p>
+            <p>优先读取模型列表接口的 context_window 字段（如 DeepSeek），未提供时再尝试 Ollama 原生接口。未检测到上限时，可按模型文档手动填写。</p>
+            <p>支持 K / M 简写：1K = 1024 Token，1M = 1048576 Token。保存时使用完整整数，不会改变实际上下文容量。</p>
           </DetailsHelpButton>
         </q-card-section>
 
@@ -119,7 +120,7 @@
               popup-content-class="settings-select-popup"
               class="model-select"
               :disable="modelOptions.length === 0"
-              @update:model-value="draft.contextWindowTokens = null"
+              @update:model-value="setContextWindowTokens(null)"
             />
             <q-btn
               outline
@@ -134,10 +135,13 @@
 
           <div class="ai-field-action-row">
             <q-input
-              v-model.number="draft.contextWindowTokens"
-              type="number"
+              v-model="contextWindowInput"
               label="上下文上限（Token）"
               hint="可选；留空不自动压缩"
+              placeholder="128K / 1M"
+              class="context-window-input"
+              :error="!!contextWindowInputError"
+              :error-message="contextWindowInputError"
               outlined
               dense
               clearable
@@ -226,7 +230,7 @@
               label="保存"
               color="primary"
               :loading="saving"
-              :disable="!draft.model"
+              :disable="!draft.model || !!contextWindowInputError"
               @click="saveConfig"
             />
           </div>
@@ -251,11 +255,13 @@ import {
   normalizeAiServiceConfigSet,
   normalizeAiServiceProfile,
   normalizeAiWebSearchConfig,
+  parseAiContextWindowInput,
   saveAiServiceConfigSet,
   type AiServiceConfigSet,
   type AiServiceProfile,
 } from '../../utils/aiConfig';
 import {formatError} from '../../utils/formatError';
+import {formatTokenCount} from '../../utils/format';
 
 const $q = useQuasar();
 const showDialog = ref(false);
@@ -265,6 +271,11 @@ const testingWebSearch = ref(false);
 const webSearchDraft = reactive(normalizeAiWebSearchConfig(undefined));
 const loadingModels = ref(false);
 const detectingContextWindow = ref(false);
+const contextWindowInput = ref<string | null>('');
+const contextWindowInputError = computed(() => {
+  try { parseAiContextWindowInput(contextWindowInput.value); return ''; }
+  catch (error) { return formatError(error); }
+});
 const saving = ref(false);
 const savedSet = ref<AiServiceConfigSet | null>(null);
 const profiles = ref<AiServiceProfile[]>([]);
@@ -332,6 +343,19 @@ function copyProfile(profile: AiServiceProfile): AiServiceProfile {
 function loadDraft(profile: AiServiceProfile) {
   Object.assign(draft, copyProfile(profile));
   models.value = draft.models.map(model => ({...model}));
+  setContextWindowTokens(profile.contextWindowTokens);
+}
+
+function setContextWindowTokens(tokens: number | null) {
+  draft.contextWindowTokens = tokens;
+  contextWindowInput.value = tokens === null ? '' : formatTokenCount(tokens, {exact: true});
+}
+
+function normalizeDraft(): AiServiceProfile {
+  return normalizeAiServiceProfile({
+    ...draft,
+    contextWindowTokens: parseAiContextWindowInput(contextWindowInput.value),
+  }, draft.id, draft.name);
 }
 
 function commitDraft() {
@@ -339,7 +363,7 @@ function commitDraft() {
   const index = profiles.value.findIndex(profile => profile.id === selectedProfileId.value);
   if (index === -1) return;
   try {
-    profiles.value[index] = normalizeAiServiceProfile(draft, draft.id, draft.name);
+    profiles.value[index] = normalizeDraft();
   } catch {
     // 保存时再展示配置错误；切换环境不应破坏当前已保存的草稿。
   }
@@ -388,6 +412,7 @@ function resetDiscoveredModels() {
   models.value = [];
   draft.models = [];
   draft.model = '';
+  setContextWindowTokens(null);
 }
 
 async function loadModels() {
@@ -413,6 +438,7 @@ async function loadModels() {
     }
     if (!result.some(model => model.id === draft.model)) {
       draft.model = result[0].id;
+      setContextWindowTokens(null);
     }
     $q.notify({type: 'positive', message: `已获取 ${result.length} 个模型`});
   } catch (error) {
@@ -430,24 +456,28 @@ async function detectContextWindow() {
     return;
   }
   detectingContextWindow.value = true;
+  const connection = {profileId: selectedProfileId.value, baseUrl: draft.baseUrl, apiKey: draft.apiKey, model: draft.model};
   try {
     const detected = await api.cmdDetectAiContextWindow(
-      draft.baseUrl,
-      draft.apiKey.trim() || null,
-      draft.model,
+      connection.baseUrl,
+      connection.apiKey.trim() || null,
+      connection.model,
     );
+    if (connection.profileId !== selectedProfileId.value || connection.baseUrl !== draft.baseUrl
+      || connection.apiKey !== draft.apiKey || connection.model !== draft.model) return;
     if (!detected) {
       $q.notify({
         type: 'info',
-        message: '未检测到上下文上限；非 Ollama 服务请按模型文档手动填写',
+        message: '服务未提供上下文上限，请按模型文档手动填写',
       });
       return;
     }
-    draft.contextWindowTokens = detected.tokens;
-    const source = detected.source === 'ollamaLoadedModel' ? '已加载模型' : '模型元数据';
+    setContextWindowTokens(detected.tokens);
+    const source = detected.source === 'modelsEndpoint' ? '模型列表接口'
+      : detected.source === 'ollamaLoadedModel' ? 'Ollama 已加载模型' : 'Ollama 模型元数据';
     $q.notify({
       type: 'positive',
-      message: `已从 Ollama ${source}检测到 ${detected.tokens.toLocaleString('zh-CN')} Token`,
+      message: `已从${source}检测到 ${formatTokenCount(detected.tokens)} Token`,
     });
   } catch (error) {
     $q.notify({type: 'negative', message: `检测上下文上限失败: ${formatError(error)}`});
@@ -460,7 +490,7 @@ async function saveConfig() {
   saving.value = true;
   try {
     // 先单独校验当前草稿，避免多个环境中某个输入错误时被静默丢弃。
-    normalizeAiServiceProfile(draft, draft.id, draft.name);
+    normalizeDraft();
     commitDraft();
     const normalizedSet = normalizeAiServiceConfigSet({
       version: CURRENT_AI_CONFIG_VERSION,

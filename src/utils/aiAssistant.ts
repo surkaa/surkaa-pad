@@ -8,6 +8,7 @@ import type {
 } from '../bindings';
 import api from './api';
 import {normalizeAiWebSearchConfig, type AiServiceConfig} from './aiConfig';
+import {formatTokenCount} from './format';
 
 export type AiExchangeState = 'running' | 'canceling' | 'completed' | 'failed' | 'cancelled';
 export type AiProcessStepState = 'running' | 'completed' | 'failed' | 'cancelled';
@@ -361,7 +362,7 @@ export function nextAiProcessExpanded(
 
 export function formatAiResponseMeta(response: AiAgentResponse): string {
   if (response.contextTokens === null) return '';
-  return `上下文已使用 ${response.contextTokens.toLocaleString('zh-CN')} Token`;
+  return `上下文已使用 ${formatTokenCount(response.contextTokens)} Token`;
 }
 
 export function formatAiProcessSummary(steps: AiProcessStep[]): string {

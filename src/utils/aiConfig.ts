@@ -51,6 +51,23 @@ export interface AiConfigCipher {
 
 export type AiModelLister = typeof api.cmdListAiModels;
 
+function validateContextWindowTokens(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 256 || value > 10_000_000) {
+    throw new Error('AI 上下文上限必须是 256 到 10,000,000 之间的整数');
+  }
+  return value;
+}
+
+/** 只在界面输入边界接受简写，配置、请求与持久化仍使用完整整数。 */
+export function parseAiContextWindowInput(value: string | null): number | null {
+  const input = value?.trim() ?? '';
+  if (!input) return null;
+  const match = /^(\d+(?:\.\d+)?|\.\d+)\s*([km])?$/i.exec(input);
+  if (!match) throw new Error('请输入 Token 数，或使用 K / M 简写，例如 128K、1M');
+  const factor = match[2]?.toUpperCase() === 'M' ? 1024 ** 2 : match[2] ? 1024 : 1;
+  return validateContextWindowTokens(Number(match[1]) * factor);
+}
+
 export function normalizeAiWebSearchConfig(value: unknown): AiWebSearchConfig {
   if (value === undefined) return {enabled: false, apiKey: ''};
   if (!value || typeof value !== 'object') throw new Error('联网搜索配置格式无效');
@@ -80,14 +97,7 @@ export function normalizeAiServiceConfig(value: unknown): AiServiceConfig {
 
   if (!baseUrl) throw new Error('AI 服务地址不能为空');
   if (!model) throw new Error('AI 模型不能为空');
-  if (contextWindowTokens !== null && (
-    typeof contextWindowTokens !== 'number'
-    || !Number.isSafeInteger(contextWindowTokens)
-    || contextWindowTokens < 256
-    || contextWindowTokens > 10_000_000
-  )) {
-    throw new Error('AI 上下文上限必须是 256 到 10,000,000 之间的整数');
-  }
+  if (contextWindowTokens !== null) validateContextWindowTokens(contextWindowTokens);
 
   let url: URL;
   try {

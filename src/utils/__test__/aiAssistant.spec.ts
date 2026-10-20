@@ -494,7 +494,10 @@ describe('formatAiResponseMeta', () => {
       modelRounds: 3,
       usage: {promptTokens: 20, completionTokens: 8, totalTokens: 28},
       contextTokens: 12_345,
-    })).toBe('上下文已使用 12,345 Token');
+    })).toBe('上下文已使用 12.06K Token');
+    expect(formatAiResponseMeta({
+      answer: '', modelRounds: 1, usage: null, contextTokens: 1048576,
+    })).toBe('上下文已使用 1M Token');
     expect(formatAiResponseMeta({
       answer: '回答',
       modelRounds: 1,
