@@ -25,7 +25,31 @@ pub(crate) async fn open_edit_view(
     let guard = lock_diary_operation(id).await;
     let store = state.diary_store();
     let cache = state.diary_cache();
-    let manifest = get_diary_locked(&cache, &state.crypto(), &*store, id, &guard).await?;
+    let draft = state.diary_drafts().read(id).await?;
+    let manifest = match get_diary_locked(&cache, &state.crypto(), &*store, id, &guard).await {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            let Some(draft) = draft else {
+                return Err(error.into());
+            };
+            // 云端已删除/暂时不可读时仍能打开、复制本机草稿，不虚构一个云端日记。
+            let manifest = super::DiaryManifest {
+                id: id.into(),
+                algorithm: crate::cryptos::crypto_types::EncryptionAlgorithm::Gcm,
+                version: super::diary_types::CURRENT_VERSION,
+                created: draft.saved_at,
+                updated: draft.saved_at,
+                content: draft.content.clone(),
+                attachments: vec![],
+            };
+            return Ok(DiaryEditView {
+                detail: DiaryDetail { summary: DiarySummary::from_manifest(&manifest), manifest_size: 0,
+                    content: manifest.content, attachments: vec![], attachment_urls: Default::default() },
+                access: DiaryEditAccess::read_only(format!("无法读取云端日记：{error}。当前显示本机草稿，可复制 Markdown 后另建日记。附件信息暂不可用。"), false),
+                draft: Some(draft),
+            });
+        }
+    };
     let baseline = cache
         .get(id)
         .ok_or_else(|| DiaryError::EditUnavailable("日记读取基线丢失".into()))?
@@ -55,7 +79,7 @@ pub(crate) async fn open_edit_view(
     Ok(DiaryEditView {
         detail,
         access,
-        draft: state.diary_drafts().read(id).await?,
+        draft,
     })
 }
 
@@ -114,6 +138,13 @@ pub async fn cmd_discard_diary_draft(
 ) -> Result<bool, AppError> {
     let _storage_guard = state.lock_storage_operation().await?;
     Ok(state.diary_drafts().clear_if_revision(id, revision).await?)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn cmd_list_diary_draft_ids(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
+    let _storage_guard = state.lock_storage_operation().await?;
+    Ok(state.diary_drafts().list_ids().await?)
 }
 
 #[cfg(test)]

@@ -50,6 +50,8 @@ export function useDiaryCore() {
     let active = false;
     let wasDeactivated = false;
     let releasedToken: string | null = null;
+    let closingSession: Promise<void> | null = null;
+    let activationEpoch = 0;
 
     function stopCloudSaving(error: unknown) {
         access.value = {...access.value, readOnly: true, reason: `已停止编辑；未保存内容保留为本机加密草稿。${formatError(error)}`};
@@ -250,11 +252,13 @@ export function useDiaryCore() {
         $q.dialog({title: '放弃本机草稿', message: '只删除这份本机草稿，不修改云端日记。此操作无法撤销。',
             cancel: {flat: true, label: '取消'}, ok: {label: '放弃草稿', color: 'negative'},
         }).onOk(async () => {
-            await draftQueue.flush();
-            if (await api.cmdDiscardDiaryDraft(draft.diaryId, draft.revision)) {
-                localDraft.value = null;
-                hasUnresolvedDraft.value = false;
-            }
+            try {
+                await draftQueue.flush();
+                if (await api.cmdDiscardDiaryDraft(draft.diaryId, draft.revision)) {
+                    localDraft.value = null;
+                    hasUnresolvedDraft.value = false;
+                }
+            } catch (error) { $q.notify({type: 'negative', message: `放弃草稿失败：${formatError(error)}`}); }
         });
     }
 
@@ -274,11 +278,10 @@ export function useDiaryCore() {
         try { await renewEdit(); } finally { checkingEdit.value = false; }
     };
 
-    async function releaseEdit() {
-        const token = access.value.sessionId;
+    async function releaseEdit(id: string, token: string | null) {
         if (!token || releasedToken === token) return;
         releasedToken = token;
-        try { await api.cmdReleaseDiaryEdit(openedId, token); }
+        try { await api.cmdReleaseDiaryEdit(id, token); }
         catch (error) { console.warn('释放日记编辑占用失败，将等待占用过期', error); }
     }
 
@@ -286,19 +289,24 @@ export function useDiaryCore() {
     // 关闭窗口的处理逻辑
     const handleWindowClose = async (event: CloseRequestedEvent) => {
         event.preventDefault();
+        const id = openedId;
+        const token = access.value.sessionId;
         if (await flushPendingSave()) {
-            await releaseEdit();
+            await releaseEdit(id, token);
             await appWindow.destroy();
         }
     };
     async function activate() {
         if (active) return;
         active = true;
+        const epoch = ++activationEpoch;
+        await closingSession;
         if (wasDeactivated && openedId) await loadDiaryInfo();
+        if (!active || epoch !== activationEpoch) return;
         // 防止重复注册
         if (!unlisten) {
             const listener = await appWindow.onCloseRequested(handleWindowClose);
-            if (active) unlisten = listener; else listener();
+            if (active && epoch === activationEpoch) unlisten = listener; else listener();
         }
         if (active) {
             if (!heartbeat) heartbeat = setInterval(() => void renewEdit(), 30_000);
@@ -310,6 +318,7 @@ export function useDiaryCore() {
 
     function cleanupListeners() {
         active = false;
+        activationEpoch += 1;
         wasDeactivated = true;
         if (heartbeat) clearInterval(heartbeat);
         heartbeat = null;
@@ -318,13 +327,22 @@ export function useDiaryCore() {
         saveTimeout = null;
     }
 
+    function closeSession() {
+        if (closingSession) return closingSession;
+        const id = openedId;
+        const token = access.value.sessionId;
+        closingSession = flushPendingSave().then(saved => saved ? releaseEdit(id, token) : undefined)
+            .finally(() => { closingSession = null; });
+        return closingSession;
+    }
+
     onUnmounted(() => {
         cleanupListeners();
         if (unlisten) {
             unlisten();
             unlisten = null;
         }
-        void flushPendingSave().then(saved => saved ? releaseEdit() : undefined);
+        void closeSession();
     });
 
     // 组件卸载时，如果还有没保存的，强制保存一次
@@ -336,7 +354,7 @@ export function useDiaryCore() {
             unlisten = null;
         }
 
-        if (await flushPendingSave()) await releaseEdit();
+        await closeSession();
     });
 
     return {

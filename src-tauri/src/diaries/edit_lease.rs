@@ -195,9 +195,10 @@ impl DiaryEditManager {
         }
         let (record, now) = self.storage.read(id).await?;
         if let Some(record) = record {
-            let owns_record = self.sessions.get(id).is_some_and(|session| {
-                session.valid.load(Ordering::SeqCst) && session.token == record.token
-            });
+            let owns_record = record.expires_at > now
+                && self.sessions.get(id).is_some_and(|session| {
+                    session.valid.load(Ordering::SeqCst) && session.token == record.token
+                });
             if record.expires_at > now && !owns_record {
                 return Ok(DiaryEditAccess::read_only(
                     "其他编辑会话正在占用此日记，可只读查看",

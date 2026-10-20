@@ -134,5 +134,14 @@ async fn real_oss_read_only_and_editing_paths_preserve_data_and_drafts() {
             .content,
         DiaryContent::from("unsaved local")
     );
+    client.delete(&key).await.unwrap();
+    let recovery = open_edit_view(&state, id, false).await.unwrap();
+    assert!(recovery.access.read_only);
+    assert_eq!(recovery.detail.content, DiaryContent::from("unsaved local"));
+    assert_eq!(
+        state.diary_drafts().list_ids().await.unwrap(),
+        vec![id.clone()]
+    );
+    assert!(recovery.draft.is_some());
     guard.cleanup().await;
 }

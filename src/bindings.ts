@@ -572,6 +572,14 @@ async cmdDiscardDiaryDraft(id: string, revision: string) : Promise<Result<boolea
     else return { status: "error", error: e  as any };
 }
 },
+async cmdListDiaryDraftIds() : Promise<Result<string[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_list_diary_draft_ids") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * 更新日记的内容
  * # Arguments

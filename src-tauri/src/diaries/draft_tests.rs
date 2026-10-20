@@ -32,8 +32,10 @@ async fn encrypted_draft_survives_restart_and_stale_receipt_cannot_delete_newer_
         content("new text")
     );
     assert!(restarted.has_pending().await.unwrap());
+    assert_eq!(restarted.list_ids().await.unwrap(), vec!["123"]);
     assert!(restarted.clear_if_revision("123", &second).await.unwrap());
     assert!(!restarted.has_pending().await.unwrap());
+    assert!(restarted.list_ids().await.unwrap().is_empty());
 }
 
 #[tokio::test]

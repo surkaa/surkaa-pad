@@ -688,6 +688,24 @@ async fn preflight_rejects_orphan_missing_corrupt_unknown_and_pending_attachment
 }
 
 #[tokio::test]
+async fn transient_edit_lease_is_not_reencrypted_or_treated_as_unknown_data() {
+    let (old, _) = crypto("old");
+    let store = MemoryStore::default();
+    fixture(&store, &old, 127).await;
+    let key = ObjectLocations::diary_edit_lease("123");
+    let record = br#"{"version":1,"expiresAt":0}"#.to_vec();
+    store
+        .0
+        .lock()
+        .unwrap()
+        .objects
+        .insert(key.clone(), record.clone());
+    let (_, items) = inventory(&store, &old).await.unwrap();
+    assert!(items.iter().all(|item| item.source.key != key));
+    assert_eq!(store.0.lock().unwrap().objects.get(&key), Some(&record));
+}
+
+#[tokio::test]
 async fn changed_source_and_corrupted_staging_are_never_overwritten() {
     let (old, ob) = crypto("old");
     let (new, nb) = crypto("new");

@@ -43,6 +43,7 @@ const nextToken = ref<string | null>(null);
 const isFirstLoadFinished = ref(false);
 const isLoading = ref(false);
 const isOpeningDiary = ref(false);
+const localDraftIds = ref<string[]>([]);
 const loadedDiaryListRevision = ref(diaryListRevision.value);
 interface InfiniteScrollHandle {
   reset: () => void;
@@ -249,6 +250,8 @@ defineOptions({name: 'DiaryList'});
 
 onActivated(async () => {
   isActivating.value = true;
+  try { localDraftIds.value = await api.cmdListDiaryDraftIds(); }
+  catch (error) { $q.notify({type: 'negative', message: `读取本机草稿列表失败：${formatError(error)}`}); }
   if (loadedDiaryListRevision.value !== diaryListRevision.value) {
     loadedDiaryListRevision.value = diaryListRevision.value;
     diaryListLoadGeneration += 1;
@@ -289,6 +292,14 @@ onDeactivated(() => {
             <template #action>
               <q-btn flat label="取消" @click="androidShareStore.cancelTargetSelection()"/>
             </template>
+          </q-banner>
+          <q-banner v-if="localDraftIds.length && !selectingTarget" rounded class="share-target-banner q-mb-md">
+            <template #avatar><q-icon name="save"/></template>
+            本机有未处理的加密草稿，点击打开后可恢复或复制。
+            <div class="q-mt-sm">
+              <q-btn v-for="id in localDraftIds" :key="id" flat color="primary" :label="`草稿 ${id}`"
+                     :disable="isOpeningDiary" @click="handleDiaryClick(id)"/>
+            </div>
           </q-banner>
           <q-infinite-scroll
               ref="infiniteScrollRef"

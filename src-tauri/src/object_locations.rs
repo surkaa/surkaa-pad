@@ -364,7 +364,12 @@ mod tests {
         assert_eq!(key, "diaries/123/edit-lock.json");
         assert_eq!(ObjectLocations::diary_edit_lease_id(&key), Some("123"));
         assert_eq!(ObjectLocations::parse(&key), None);
-        for key in ["diaries/../edit-lock.json", "diaries/1/2/edit-lock.json", "1/edit-lock.json", "diaries/a/edit-lock.json"] {
+        for key in [
+            "diaries/../edit-lock.json",
+            "diaries/1/2/edit-lock.json",
+            "1/edit-lock.json",
+            "diaries/a/edit-lock.json",
+        ] {
             assert!(ObjectLocations::diary_edit_lease_id(key).is_none());
         }
     }

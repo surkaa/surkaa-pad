@@ -97,6 +97,14 @@ async fn normal_release_allows_reopen_without_takeover() {
 }
 
 #[tokio::test]
+async fn expired_own_session_also_requires_manual_takeover() {
+    let (storage, a, _, _) = setup().await;
+    storage.now.store(LEASE_MILLIS, Ordering::SeqCst);
+    let access = a.acquire("123", false, "base".into()).await.unwrap();
+    assert!(access.read_only && access.can_take_over);
+}
+
+#[tokio::test]
 async fn renewal_extends_server_deadline_without_changing_baseline() {
     let (storage, a, _, token) = setup().await;
     storage.now.store(30_000, Ordering::SeqCst);

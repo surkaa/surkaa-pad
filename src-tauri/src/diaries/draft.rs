@@ -112,18 +112,31 @@ impl DiaryDraftRepository {
     }
     /// 改密前不能遗留依赖旧密钥的本机草稿；损坏/未知文件也不能静默忽略。
     pub async fn has_pending(&self) -> Result<bool, DiaryError> {
+        Ok(!self.list_ids().await?.is_empty())
+    }
+
+    pub async fn list_ids(&self) -> Result<Vec<String>, DiaryError> {
         let _guard = self.gate.lock().await;
         let mut entries = match tokio::fs::read_dir(&self.root).await {
             Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
             Err(error) => return Err(error.into()),
         };
+        let mut ids = vec![];
         while let Some(entry) = entries.next_entry().await? {
             if entry.path().extension().is_some_and(|ext| ext == "enc") {
-                return Ok(true);
+                let id = entry
+                    .path()
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or_default()
+                    .to_string();
+                self.path(&id)?;
+                ids.push(id);
             }
         }
-        Ok(false)
+        ids.sort();
+        Ok(ids)
     }
 }
 

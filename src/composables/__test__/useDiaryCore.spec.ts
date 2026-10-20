@@ -93,6 +93,39 @@ describe('日记编辑占用与草稿保护', () => {
     expect(core.diaryContent.value).toEqual(content('must not disappear'));
   });
 
+  it('旧云端回执不能清除保存期间产生的新草稿', async () => {
+    await mount();
+    let finish!: () => void;
+    const wait = new Promise<void>(resolve => { finish = resolve; });
+    mocks.update.mockImplementationOnce(async () => { await wait; return view().detail.summary; });
+    mocks.draft.mockResolvedValueOnce('revision-one').mockResolvedValueOnce('revision-two');
+    core.updateContent(content('first'));
+    await settle();
+    const saving = core.flushPendingSave();
+    await settle();
+    core.updateContent(content('second'));
+    await settle();
+    expect(core.localDraft.value?.revision).toBe('revision-two');
+    mocks.update.mockRejectedValueOnce(new Error('network failed for newer content'));
+    finish(); await saving;
+    expect(core.localDraft.value?.revision).toBe('revision-two');
+    expect(core.localDraft.value?.content).toEqual(content('second'));
+    expect(core.isReadOnly.value).toBe(true);
+  });
+
+  it('接管必须由用户确认后发起，并重新加载云端与草稿', async () => {
+    await mount(view(true));
+    const takingOver = core.requestEditing();
+    await settle();
+    expect(mocks.open).toHaveBeenCalledTimes(1);
+    mocks.open.mockResolvedValueOnce(view(false, true));
+    mocks.confirm?.(); await takingOver;
+    expect(mocks.open).toHaveBeenLastCalledWith('123', true);
+    expect(core.hasUnresolvedDraft.value).toBe(true);
+    expect(core.diaryContent.value).toEqual(content('original'));
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
   it('云端保存失败转只读、保留草稿，后续 flush 不反复覆盖云端', async () => {
     mocks.update.mockRejectedValue(new Error('lease lost'));
     await mount();
