@@ -2,12 +2,17 @@
   <section class="jsonl-preview">
     <q-resize-observer @resize="refreshRows"/>
     <div class="jsonl-toolbar">JSONL · 已读取 {{ lines.length }} 行<span>每次最多加载 10 行，点击行号展开</span></div>
-    <div ref="scrollTarget" class="jsonl-scroll scroll" @scroll.passive="onScroll">
-      <q-virtual-scroll v-if="lines.length" ref="virtualList" :items="lines" :scroll-target="scrollTarget || undefined"
-        :virtual-scroll-item-size="104" :virtual-scroll-slice-size="15" v-slot="{item}: {item: JsonlLine}">
-        <JsonlPreviewRow :key="item.lineNumber" :line="item" @resize="refreshRows"/>
-      </q-virtual-scroll>
-      <div v-else-if="finished" class="jsonl-empty">文件为空</div>
+    <div ref="scrollTarget" class="jsonl-scroll scroll" :style="{'--jsonl-row-min-height': `${JSONL_ROW_MIN_HEIGHT}px`}">
+      <q-infinite-scroll v-if="scrollTarget" ref="infiniteScroll" :scroll-target="scrollTarget" :offset="LOAD_OFFSET"
+                         :disable="!viewportHeight || !lines.length || finished || Boolean(error)" @load="onLoad">
+        <!-- 重测切片时保留已加载行的最小总高度，避免暂时缩短的占位触发假触底。 -->
+        <q-virtual-scroll v-if="lines.length" ref="virtualList" :items="lines" :scroll-target="scrollTarget"
+          :style="{minHeight: `${lines.length * JSONL_ROW_MIN_HEIGHT}px`}"
+          :virtual-scroll-item-size="JSONL_ROW_MIN_HEIGHT" :virtual-scroll-slice-size="15" v-slot="{item}: {item: JsonlLine}">
+          <JsonlPreviewRow :key="item.lineNumber" :line="item" @resize="refreshRows"/>
+        </q-virtual-scroll>
+      </q-infinite-scroll>
+      <div v-if="finished && !lines.length" class="jsonl-empty">文件为空</div>
     </div>
     <div class="jsonl-status" role="status">
       <template v-if="loading"><q-spinner color="primary" size="20px"/>正在读取后续行…</template>
@@ -19,15 +24,18 @@
 </template>
 
 <script setup lang="ts">
-import {nextTick, ref, watch} from 'vue';
-import type {QVirtualScroll} from 'quasar';
+import {nextTick, ref} from 'vue';
+import type {QInfiniteScroll, QVirtualScroll} from 'quasar';
 import {useJsonlPreview} from '../composables/useJsonlPreview';
-import type {JsonlLine} from '../utils/jsonlPreview';
+import {JSONL_ROW_MIN_HEIGHT, type JsonlLine} from '../utils/jsonlPreview';
 import JsonlPreviewRow from './JsonlPreviewRow.vue';
 
 const props = defineProps<{url: string}>();
+const LOAD_OFFSET = 120;
 const scrollTarget = ref<HTMLElement>();
 const virtualList = ref<QVirtualScroll>();
+const infiniteScroll = ref<QInfiniteScroll>();
+const viewportHeight = ref(0);
 const {lines, loading, finished, error, loadMore} = useJsonlPreview(() => props.url);
 let refreshQueued = false;
 
@@ -36,27 +44,24 @@ async function refreshRows() {
   refreshQueued = true;
   await nextTick();
   refreshQueued = false;
-  // JSON 树展开、内部节点切换和全屏变化后重新测量，避免虚拟列表沿用旧高度。
+  viewportHeight.value = scrollTarget.value?.clientHeight ?? 0;
+  // 尺寸变化只重测虚拟列表，不直接发请求。加载统一交给 InfiniteScroll 调度。
   virtualList.value?.refresh();
-  fillViewport();
+  infiniteScroll.value?.poll();
 }
 
-function onScroll() {
+async function onLoad(_index: number, done: (stop?: boolean) => void) {
   const element = scrollTarget.value;
-  if (!element || error.value || element.clientHeight <= 0) return;
-  if (element.scrollHeight - element.scrollTop - element.clientHeight < 120) void loadMore();
-}
-watch(loading, async busy => {
-  if (busy || error.value || finished.value) return;
-  await nextTick();
-  fillViewport();
-});
-
-function fillViewport() {
-  if (loading.value || error.value || finished.value) return;
-  const element = scrollTarget.value;
-  // 全屏或超大窗口下十行可能不足一屏；继续补一页，避免无滚动空间时无法触发加载。
-  if (element && element.clientHeight > 0 && element.scrollHeight <= element.clientHeight) void loadMore();
+  // InfiniteScroll 恢复时可能早于虚拟列表 DOM 更新，不能用上一帧的短高度判断触底。
+  const minimumHeight = lines.value.length * JSONL_ROW_MIN_HEIGHT;
+  if (!element || element.clientHeight <= 0
+    || element.scrollTop + element.clientHeight + LOAD_OFFSET < Math.max(element.scrollHeight, minimumHeight)) {
+    done(false); return;
+  }
+  // 与 DiaryList 一样使用单次加载 / done 握手，避免重复滚动事件并发请求。
+  if (loading.value) { done(false); return; }
+  await loadMore();
+  done(finished.value || Boolean(error.value));
 }
 </script>
 

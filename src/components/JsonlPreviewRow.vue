@@ -1,6 +1,6 @@
 <template>
   <article class="jsonl-row" :data-line="line.lineNumber">
-    <q-resize-observer @resize="emit('resize')"/>
+    <q-resize-observer @resize="onResize"/>
     <div class="jsonl-row-header">
       <q-btn flat dense no-caps color="primary" :icon="expanded ? 'expand_less' : 'chevron_right'"
         :label="`第 ${line.lineNumber} 行`" :aria-expanded="expanded" @click="expanded = !expanded"/>
@@ -28,6 +28,12 @@ const $q = useQuasar();
 const expanded = ref(false);
 const parsed = computed(() => parseJsonlLine(props.line));
 const previewText = computed(() => props.line.text.length > 1000 ? `${props.line.text.slice(0, 1000)}…` : props.line.text || '（空行）');
+let measured = false;
+function onResize() {
+  // 新切片挂载时 VirtualScroll 自己会测量，不再用首次 Resize 通知反过来刷新整张列表。
+  if (measured) emit('resize');
+  measured = true;
+}
 
 async function copyLine() {
   try {
@@ -40,7 +46,7 @@ async function copyLine() {
 <style scoped lang="scss">
 .jsonl-row {
   position: relative;
-  min-height: 104px;
+  min-height: var(--jsonl-row-min-height, 104px);
   border-bottom: 1px solid var(--pad-border-color-100);
   background: var(--pad-bg-color-100);
 }

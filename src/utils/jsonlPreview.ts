@@ -11,6 +11,8 @@ export interface JsonlPage {
   nextCursor: string | null;
 }
 
+export const JSONL_ROW_MIN_HEIGHT = 104;
+
 // 后端每页原文最多 4 MiB；JSON 转义最多放大六倍，仍对响应设置硬上限。
 const MAX_PAGE_RESPONSE_BYTES = 32 * 1024 * 1024;
 
