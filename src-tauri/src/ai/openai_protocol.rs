@@ -21,6 +21,15 @@ where
 }
 
 impl ModelListResponse {
+    pub(super) fn context_window(&self, model_id: &str) -> Option<u64> {
+        self.data
+            .iter()
+            .find(|model| model.id == model_id)?
+            .context_window
+            .as_u64()
+            .filter(|tokens| *tokens > 0)
+    }
+
     pub(super) fn into_models(self) -> Result<Vec<AiModel>, AiError> {
         if self.data.iter().any(|model| model.id.trim().is_empty()) {
             return Err(AiError::InvalidResponse("模型列表中存在空的模型 ID".into()));
@@ -41,6 +50,9 @@ struct ModelObject {
     id: String,
     #[serde(default)]
     owned_by: Option<String>,
+    // DeepSeek 等兼容服务会在 /models 中附带上下文长度；未知或无效值不影响模型枚举。
+    #[serde(default)]
+    context_window: Value,
 }
 
 #[derive(Serialize)]

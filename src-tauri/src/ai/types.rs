@@ -23,6 +23,8 @@ pub struct AiContextWindow {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum AiContextWindowSource {
+    // 来自 OpenAI 兼容 /models 接口的 context_window，而非最大输出长度。
+    ModelsEndpoint,
     // 来自 Ollama 当前已加载模型，代表实际分配的上下文长度。
     OllamaLoadedModel,
     // 来自 Ollama 模型元数据，模型尚未加载时的理论或配置值。

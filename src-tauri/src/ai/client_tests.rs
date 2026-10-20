@@ -124,10 +124,13 @@ async fn rejects_oversized_model_list_before_reading_the_body() {
 
 #[tokio::test]
 async fn detects_the_actual_context_length_of_a_loaded_ollama_model() {
-    let (base_url, requests) = spawn_response_sequence(vec![MockResponse::json(
-        200,
-        r#"{"models":[{"name":"qwen3:8b","model":"qwen3:8b:latest","context_length":32768}]}"#,
-    )])
+    let (base_url, requests) = spawn_response_sequence(vec![
+        MockResponse::json(200, r#"{"data":[{"id":"qwen3:8b"}]}"#),
+        MockResponse::json(
+            200,
+            r#"{"models":[{"name":"qwen3:8b","model":"qwen3:8b:latest","context_length":32768}]}"#,
+        ),
+    ])
     .await;
     let client =
         OpenAiCompatibleClient::new(AiProviderConfig::new(&base_url, None).unwrap()).unwrap();
@@ -141,12 +144,15 @@ async fn detects_the_actual_context_length_of_a_loaded_ollama_model() {
             source: AiContextWindowSource::OllamaLoadedModel,
         })
     );
-    assert!(requests.await.unwrap()[0].starts_with("GET /api/ps HTTP/1.1\r\n"));
+    let requests = requests.await.unwrap();
+    assert!(requests[0].starts_with("GET /v1/models HTTP/1.1\r\n"));
+    assert!(requests[1].starts_with("GET /api/ps HTTP/1.1\r\n"));
 }
 
 #[tokio::test]
 async fn falls_back_to_ollama_model_metadata_when_the_model_is_not_loaded() {
     let (base_url, requests) = spawn_response_sequence(vec![
+        MockResponse::json(404, r#"{"error":{"message":"not found"}}"#),
         MockResponse::json(200, r#"{"models":[]}"#),
         MockResponse::json(
             200,
@@ -167,10 +173,10 @@ async fn falls_back_to_ollama_model_metadata_when_the_model_is_not_loaded() {
         })
     );
     let requests = requests.await.unwrap();
-    assert!(requests[0].starts_with("GET /api/ps HTTP/1.1\r\n"));
-    assert!(requests[1].starts_with("POST /api/show HTTP/1.1\r\n"));
+    assert!(requests[1].starts_with("GET /api/ps HTTP/1.1\r\n"));
+    assert!(requests[2].starts_with("POST /api/show HTTP/1.1\r\n"));
     assert_eq!(
-        captured_json_body(requests[1].clone()),
+        captured_json_body(requests[2].clone()),
         json!({"model":"qwen3:8b"})
     );
 }
@@ -178,6 +184,10 @@ async fn falls_back_to_ollama_model_metadata_when_the_model_is_not_loaded() {
 #[tokio::test]
 async fn treats_a_non_ollama_service_as_an_undetectable_context_window() {
     let (base_url, requests) = spawn_response_sequence(vec![
+        MockResponse::json(
+            200,
+            r#"{"data":[{"id":"model","max_output_tokens":393216}]}"#,
+        ),
         MockResponse::json(404, r#"{"error":{"message":"not found"}}"#),
         MockResponse::json(404, r#"{"error":{"message":"not found"}}"#),
     ])
@@ -186,7 +196,130 @@ async fn treats_a_non_ollama_service_as_an_undetectable_context_window() {
         OpenAiCompatibleClient::new(AiProviderConfig::new(&base_url, None).unwrap()).unwrap();
 
     assert_eq!(client.detect_context_window("model").await.unwrap(), None);
-    assert_eq!(requests.await.unwrap().len(), 2);
+    assert_eq!(requests.await.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn detects_deepseek_context_from_models_without_probing_ollama() {
+    for root_endpoint in [true, false] {
+        let (base_url, requests) = spawn_response_sequence(vec![MockResponse::json(
+            200,
+            r#"{"object":"list","data":[{"id":"deepseek-flash","object":"model","owned_by":"deepseek","name":"DeepSeek-V4.1-Flash","context_window":65536,"max_output_tokens":8192,"input_modalities":["text","image"],"effort":{"supported_levels":["low","high","max"],"default_level":"high"}},{"id":"deepseek-v4-pro","object":"model","owned_by":"deepseek","name":"DeepSeek-V4-Pro","context_window":1048576,"max_output_tokens":393216,"api_capabilities":{"anthropic_messages":{"system_prompt_update":"leading-only"}}}]}"#,
+        )])
+        .await;
+        let url = if root_endpoint {
+            base_url.trim_end_matches("/v1")
+        } else {
+            &base_url
+        };
+        let client = OpenAiCompatibleClient::new(
+            AiProviderConfig::new(url, Some("test-context-key".into())).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            client
+                .detect_context_window(" deepseek-v4-pro ")
+                .await
+                .unwrap(),
+            Some(AiContextWindow {
+                tokens: 1_048_576,
+                source: AiContextWindowSource::ModelsEndpoint,
+            })
+        );
+        let requests = requests.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        let path = if root_endpoint {
+            "/models"
+        } else {
+            "/v1/models"
+        };
+        assert!(requests[0].starts_with(&format!("GET {path} HTTP/1.1\r\n")));
+        assert!(requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer test-context-key\r\n"));
+    }
+}
+
+#[tokio::test]
+async fn ignores_invalid_or_other_model_context_values_and_falls_back() {
+    for context in [
+        Value::Null,
+        json!(0),
+        json!(-1),
+        json!(1.5),
+        json!("1048576"),
+        json!({}),
+        json!(true),
+    ] {
+        let body = json!({"data": [
+            {"id":"another-model", "context_window":1048576},
+            {"id":"model", "context_window":context, "max_output_tokens":65536}
+        ]})
+        .to_string();
+        let (base_url, requests) = spawn_response_sequence(vec![
+            MockResponse::json(200, &body),
+            MockResponse::json(
+                200,
+                r#"{"models":[{"name":"model","context_length":32768}]}"#,
+            ),
+        ])
+        .await;
+        let client =
+            OpenAiCompatibleClient::new(AiProviderConfig::new(&base_url, None).unwrap()).unwrap();
+        assert_eq!(
+            client.detect_context_window("model").await.unwrap(),
+            Some(AiContextWindow {
+                tokens: 32768,
+                source: AiContextWindowSource::OllamaLoadedModel,
+            })
+        );
+        assert_eq!(requests.await.unwrap().len(), 2);
+    }
+}
+
+#[tokio::test]
+async fn does_not_use_another_models_context_or_output_limit() {
+    let (base_url, requests) = spawn_response_sequence(vec![
+        MockResponse::json(
+            200,
+            r#"{"data":[{"id":"other","context_window":1048576,"max_output_tokens":393216}]}"#,
+        ),
+        MockResponse::json(404, "{}"),
+        MockResponse::json(405, "{}"),
+    ])
+    .await;
+    let client =
+        OpenAiCompatibleClient::new(AiProviderConfig::new(&base_url, None).unwrap()).unwrap();
+    assert_eq!(
+        client.detect_context_window("missing-model").await.unwrap(),
+        None
+    );
+    assert_eq!(requests.await.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn context_detection_preserves_authentication_errors_and_response_limits() {
+    let (base_url, _) = spawn_json_response(401, r#"{"error":{"message":"API Key 无效"}}"#).await;
+    let client = OpenAiCompatibleClient::new(
+        AiProviderConfig::new(&base_url, Some("test-secret".into())).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        client.detect_context_window("model").await.unwrap_err(),
+        AiError::HttpStatus {
+            status: 401,
+            message: "API Key 无效".into(),
+        }
+    );
+    let (base_url, _) = spawn_response(200, "{}", Some(MAX_MODELS_RESPONSE_BYTES + 1)).await;
+    let client =
+        OpenAiCompatibleClient::new(AiProviderConfig::new(&base_url, None).unwrap()).unwrap();
+    assert_eq!(
+        client.detect_context_window("model").await.unwrap_err(),
+        AiError::ResponseTooLarge {
+            limit_bytes: MAX_MODELS_RESPONSE_BYTES
+        }
+    );
 }
 
 #[tokio::test]
@@ -548,15 +681,15 @@ async fn accepts_json_object_tool_arguments_from_compatible_services() {
 
 struct MockResponse {
     status: u16,
-    body: &'static str,
+    body: String,
     content_type: &'static str,
 }
 
 impl MockResponse {
-    fn json(status: u16, body: &'static str) -> Self {
+    fn json(status: u16, body: impl Into<String>) -> Self {
         Self {
             status,
-            body,
+            body: body.into(),
             content_type: "application/json",
         }
     }
@@ -564,7 +697,7 @@ impl MockResponse {
     fn sse(body: &'static str) -> Self {
         Self {
             status: 200,
-            body,
+            body: body.into(),
             content_type: "text/event-stream",
         }
     }
@@ -583,7 +716,7 @@ async fn spawn_response_sequence(
             let (mut socket, _) = listener.accept().await.unwrap();
             requests.push(String::from_utf8(read_request(&mut socket).await).unwrap());
             let response_text =
-                format_response(response.status, response.body, None, response.content_type);
+                format_response(response.status, &response.body, None, response.content_type);
             socket.write_all(response_text.as_bytes()).await.unwrap();
         }
         let _ = request_sender.send(requests);

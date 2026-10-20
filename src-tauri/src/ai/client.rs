@@ -66,8 +66,8 @@ impl OpenAiCompatibleClient {
             .insert(model.to_owned());
     }
 
-    /// 尝试从 Ollama 原生接口读取模型上下文长度。非 Ollama 服务通常返回 `None`，
-    /// 不应阻断仍然兼容 OpenAI Chat Completions 的第三方服务。
+    /// 优先读取兼容 /models 接口的 context_window，再尝试 Ollama 原生接口。
+    /// 没有提供上下文元数据的兼容服务返回 `None`，不影响正常聊天。
     pub async fn detect_context_window(
         &self,
         model: &str,
@@ -77,8 +77,26 @@ impl OpenAiCompatibleClient {
             return Err(AiError::InvalidRequest("模型 ID 不能为空".into()));
         }
 
+        let request = self.authorize(self.http.get(self.config.models_url()));
+        if let Some(body) = send_optional_context_request(
+            request,
+            CONTEXT_WINDOW_REQUEST_TIMEOUT,
+            MAX_MODELS_RESPONSE_BYTES,
+        )
+        .await?
+        {
+            let response: ModelListResponse = serde_json::from_slice(&body)
+                .map_err(|error| AiError::InvalidResponse(error.to_string()))?;
+            if let Some(tokens) = response.context_window(model) {
+                return Ok(Some(AiContextWindow {
+                    tokens,
+                    source: AiContextWindowSource::ModelsEndpoint,
+                }));
+            }
+        }
+
         let request = self.authorize(self.http.get(self.config.ollama_api_url("ps")));
-        if let Some(body) = send_optional_ollama_request(
+        if let Some(body) = send_optional_context_request(
             request,
             CONTEXT_WINDOW_REQUEST_TIMEOUT,
             MAX_MODELS_RESPONSE_BYTES,
@@ -105,7 +123,7 @@ impl OpenAiCompatibleClient {
                 .post(self.config.ollama_api_url("show"))
                 .json(&OllamaShowRequest { model }),
         );
-        let Some(body) = send_optional_ollama_request(
+        let Some(body) = send_optional_context_request(
             request,
             CONTEXT_WINDOW_REQUEST_TIMEOUT,
             MAX_MODELS_RESPONSE_BYTES,
@@ -359,7 +377,7 @@ async fn send_request(
     Ok(body)
 }
 
-async fn send_optional_ollama_request(
+async fn send_optional_context_request(
     request: RequestBuilder,
     timeout: Duration,
     response_limit: usize,
@@ -370,7 +388,7 @@ async fn send_optional_ollama_request(
         .await
         .map_err(|error| AiError::RequestFailed(error.to_string()))?;
     let status = response.status();
-    if status.as_u16() == 404 {
+    if matches!(status.as_u16(), 404 | 405) {
         return Ok(None);
     }
     let body = read_limited_body(response, response_limit).await?;
