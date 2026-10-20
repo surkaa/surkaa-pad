@@ -50,6 +50,33 @@ afterEach(() => {
 });
 
 describe.each([false, true])('editor table integration (dark=%s)', dark => {
+  it.each(['windows', 'android'])('readonly keeps copy/preview/download but no editing actions (%s)', async platform => {
+    currentPlatform.value = platform; Dark.set(dark);
+    const {editor, update, openTableDialog} = await mount('正文', {
+      readOnly: true,
+      modelValue: {nodes: [{type: 'file', attachmentId: 'file-1'}, {type: 'summary', summary: '外显', content: '内部文字'}]},
+      attachments: [{id: 'file-1', filename: 'test.txt', mimetype: 'text/plain', size: 4,
+        encrypted: false, nonce: [], algorithm: 'AES-256-CTR'}],
+    });
+    expect(editor.isEditable).toBe(false);
+    expect(host.querySelector('.is-read-only')).not.toBeNull();
+    openTableDialog(); await settle();
+    expect(document.querySelector('.table-insert-dialog')).toBeNull();
+    host.querySelector('.editor-summary-edit')!.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+    await settle();
+    expect(document.querySelector('.summary-editor-dialog')).toBeNull();
+    host.querySelector('.editor-file-attachment .file-name')!
+      .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}));
+    await settle();
+    if (platform === 'windows') {
+      expect(nativeItems().map(entry => 'text' in entry ? entry.text : null)).toEqual(['预览', '保存到本地']);
+    } else {
+      expect(Array.from(document.querySelectorAll('.q-bottom-sheet__item'), element => element.textContent?.trim()))
+        .toEqual(['预览', '保存到本地']);
+    }
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('inserts the chosen size at the original cursor and emits saved Markdown', async () => {
     Dark.set(dark);
     const {editor, openTableDialog, update} = await mount();

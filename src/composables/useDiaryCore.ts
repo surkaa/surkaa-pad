@@ -1,4 +1,4 @@
-import {computed, nextTick, onActivated, onDeactivated, onUnmounted, ref, watch} from 'vue';
+import {computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {useRouter} from 'vue-router';
 import {useDataStore} from "../stores/data.ts";
@@ -11,7 +11,7 @@ import {
     isNewerDiaryVersionError,
     NEWER_DIARY_VERSION_MESSAGE
 } from "../utils/formatError.ts";
-import type {DiaryContent} from "../bindings.ts";
+import type {DiaryContent, DiaryDraft, DiaryEditAccess} from "../bindings.ts";
 import {runDiaryDeletion} from "../utils/diaryDeletion.ts";
 import {findUnusedAttachments} from '../utils/diaryAttachments';
 import {LatestTaskQueue} from '../utils/latestTaskQueue';
@@ -38,6 +38,22 @@ export function useDiaryCore() {
     const isInitialLoaded = ref(false);
 
     const isNew = computed(() => currentId.value.trim() === "");
+    // 不在延迟任务中读取全局 currentId，避免切换日记后把旧正文写进新日记。
+    let openedId = currentId.value;
+    const access = ref<DiaryEditAccess>({sessionId: null, readOnly: false, canTakeOver: false, reason: null});
+    const checkingEdit = ref(false);
+    const localDraft = ref<DiaryDraft | null>(null);
+    const hasUnresolvedDraft = ref(false);
+    const isReadOnly = computed(() => access.value.readOnly || checkingEdit.value || hasUnresolvedDraft.value);
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let renewing = false;
+    let active = false;
+    let wasDeactivated = false;
+    let releasedToken: string | null = null;
+
+    function stopCloudSaving(error: unknown) {
+        access.value = {...access.value, readOnly: true, reason: `已停止编辑；未保存内容保留为本机加密草稿。${formatError(error)}`};
+    }
 
     let saveTimeout: ReturnType<typeof setTimeout> | null = null;
     const AUTO_SAVE_DELAY = 1000;
@@ -51,10 +67,16 @@ export function useDiaryCore() {
         return findUnusedAttachments(diaryContent.value, currentDiaryAttachments.value);
     });
 
-    async function loadDiaryInfo(): Promise<boolean> {
+    async function loadDiaryInfo(takeover = false): Promise<boolean> {
+        isInitialLoaded.value = false;
+        openedId = currentId.value;
         try {
-            const detail = await api.cmdGetDiaryDetail(currentId.value);
-            diarySummaries.value[currentId.value] = detail.summary;
+            const view = await api.cmdOpenDiaryEdit(openedId, takeover);
+            const {detail} = view;
+            access.value = view.access;
+            localDraft.value = view.draft;
+            hasUnresolvedDraft.value = view.draft !== null;
+            diarySummaries.value[openedId] = detail.summary;
             diaryManifestSize.value = detail.manifestSize;
             diaryContent.value = detail.content;
             currentDiaryAttachments.value = detail.attachments;
@@ -75,51 +97,77 @@ export function useDiaryCore() {
         }
     }
 
-    async function persistDiary(content: DiaryContent) {
-        if (isNew.value) {
-            const [summary] = await api.cmdSaveDiary(content);
+    interface PendingSave {id: string; content: DiaryContent; sessionId: string | null; revision: string | null}
+
+    const saveQueue = new LatestTaskQueue<PendingSave>(async payload => {
+        // 旧任务不得借用重新申请后的会话资格；其草稿仍然保留。
+        if (access.value.readOnly || payload.id !== openedId || payload.sessionId !== access.value.sessionId) return;
+        try {
+            diarySummaries.value[payload.id] = await api.cmdUpdateDiaryContentOnly(
+                payload.id, payload.content, payload.sessionId, payload.revision,
+            );
+            if (localDraft.value?.revision === payload.revision) localDraft.value = null;
+        } catch (error) {
+            stopCloudSaving(error);
+            $q.notify({type: 'warning', message: access.value.reason!});
+            // 不重试云端覆盖，允许在草稿已落盘后离开。
+        }
+    });
+
+    const draftQueue = new LatestTaskQueue<PendingSave>(async payload => {
+        if (!payload.id && !openedId) {
+            const [summary] = await api.cmdSaveDiary(payload.content);
+            openedId = summary.id;
             currentId.value = summary.id;
             dataStore.insertNewDiary(summary);
+            try {
+                const view = await api.cmdOpenDiaryEdit(openedId, false);
+                access.value = view.access;
+            } catch (error) { stopCloudSaving(error); }
             $q.notify({type: 'positive', message: '日记已自动创建'});
             return;
         }
+        if (!payload.id) payload = {...payload, id: openedId, sessionId: access.value.sessionId};
+        const revision = await api.cmdSaveDiaryDraft(payload.id, payload.content);
+        localDraft.value = {version: 1, diaryId: payload.id, content: payload.content, revision, savedAt: Date.now()};
+        saveQueue.request({...payload, revision});
+        scheduleSave();
+    });
 
-        // 已存在的日记，执行更新
-        diarySummaries.value[currentId.value] = await api.cmdUpdateDiaryContentOnly(
-            currentId.value,
-            content
-        );
+    function pendingSave(): PendingSave {
+        return {id: openedId, content: cloneContent(diaryContent.value), sessionId: access.value.sessionId, revision: null};
     }
 
     async function ensureDiaryCreated(): Promise<boolean> {
+        if (isReadOnly.value) return false;
         if (!isNew.value) return true;
         try {
-            await persistDiary(cloneContent(diaryContent.value));
-            return true;
+            draftQueue.request(pendingSave());
+            await draftQueue.flush();
+            return !isReadOnly.value;
         } catch (error) {
             $q.notify({type: 'negative', message: `创建日记失败: ${formatError(error)}`});
             return false;
         }
     }
 
-    const saveQueue = new LatestTaskQueue<DiaryContent>(persistDiary);
-
     async function flushPendingSave(): Promise<boolean> {
         if (saveTimeout) {
             clearTimeout(saveTimeout);
             saveTimeout = null;
         }
-        if (!saveQueue.hasWork()) return true;
         try {
+            await draftQueue.flush();
             await saveQueue.flush();
             return true;
         } catch (e) {
-            $q.notify({type: 'negative', message: `保存日记失败: ${formatError(e)}`});
+            $q.notify({type: 'negative', message: `保存本机草稿失败，请不要关闭页面：${formatError(e)}`});
             return false;
         }
     }
 
     function scheduleSave() {
+        if (!active) return;
         if (saveTimeout) clearTimeout(saveTimeout);
         saveTimeout = setTimeout(() => {
             saveTimeout = null;
@@ -128,7 +176,9 @@ export function useDiaryCore() {
     }
 
     function deleteDiary() {
-        if (!currentId.value) return;
+        if (!currentId.value || isReadOnly.value) return;
+        const id = openedId;
+        const sessionId = access.value.sessionId;
         $q.dialog({
             title: '确认删除',
             message: '确定要删除这篇日记吗？此操作无法撤销。',
@@ -137,10 +187,10 @@ export function useDiaryCore() {
         }).onOk(async () => {
             if (!(await flushPendingSave())) return;
             await runDiaryDeletion(
-                () => api.cmdDeleteDiary(currentId.value),
+                () => api.cmdDeleteDiary(id, sessionId),
                 () => {
                     $q.notify({type: 'positive', message: '日记已删除'});
-                    dataStore.deleteSummary(currentId.value);
+                    dataStore.deleteSummary(id);
                     isDelBack.value = true;
                     router.back();
                 },
@@ -152,6 +202,7 @@ export function useDiaryCore() {
     }
 
     function updateContent(newContent: DiaryContent) {
+        if (isReadOnly.value) return;
         if (JSON.stringify(diaryContent.value) === JSON.stringify(newContent)) return;
         diaryContent.value = newContent;
     }
@@ -159,42 +210,133 @@ export function useDiaryCore() {
     // 监听日记内容的变化
     watch(diaryContent, (newValue, oldValue) => {
         // 如果还没加载完，或者值根本没变，则不触发保存
-        if (!isInitialLoaded.value || newValue === oldValue) return;
-        saveQueue.request(cloneContent(newValue));
-        scheduleSave();
+        if (!isInitialLoaded.value || access.value.readOnly || newValue === oldValue) return;
+        draftQueue.request(pendingSave());
+        // 草稿立即排队落盘，云端保存仍做 1 秒合并，且必须在草稿落盘之后。
+        void draftQueue.flush().catch(error => {
+            $q.notify({type: 'negative', message: `本机草稿保存失败，请不要关闭页面：${formatError(error)}`});
+        });
     });
+
+    async function requestEditing() {
+        if (checkingEdit.value || !(await flushPendingSave())) return;
+        const takeover = access.value.canTakeOver;
+        if (takeover) {
+            const confirmed = await new Promise<boolean>(resolve => $q.dialog({
+                title: '接管编辑', message: '上次占用已过期。请确认其他设备已停止编辑；接管后将重新加载云端日记，本机草稿仍保留。',
+                cancel: {flat: true, label: '取消'}, ok: {label: '接管编辑', color: 'primary'},
+            }).onOk(() => resolve(true)).onCancel(() => resolve(false)));
+            if (!confirmed) return;
+        }
+        checkingEdit.value = true;
+        try { await loadDiaryInfo(takeover); } finally { checkingEdit.value = false; }
+    }
+
+    function restoreDraft() {
+        if (!localDraft.value || access.value.readOnly || checkingEdit.value) return;
+        const draft = localDraft.value;
+        $q.dialog({title: '恢复本机草稿', message: '将本机草稿恢复到编辑器并自动保存到云端，是否继续？',
+            cancel: {flat: true, label: '取消'}, ok: {label: '恢复', color: 'primary'},
+        }).onOk(() => {
+            if (access.value.readOnly || checkingEdit.value || localDraft.value?.revision !== draft.revision) return;
+            hasUnresolvedDraft.value = false;
+            diaryContent.value = cloneContent(draft.content);
+        });
+    }
+
+    function discardDraft() {
+        const draft = localDraft.value;
+        if (!draft) return;
+        $q.dialog({title: '放弃本机草稿', message: '只删除这份本机草稿，不修改云端日记。此操作无法撤销。',
+            cancel: {flat: true, label: '取消'}, ok: {label: '放弃草稿', color: 'negative'},
+        }).onOk(async () => {
+            await draftQueue.flush();
+            if (await api.cmdDiscardDiaryDraft(draft.diaryId, draft.revision)) {
+                localDraft.value = null;
+                hasUnresolvedDraft.value = false;
+            }
+        });
+    }
+
+    async function renewEdit() {
+        const id = openedId;
+        const token = access.value.sessionId;
+        if (!token || access.value.readOnly || renewing || document.visibilityState === 'hidden') return;
+        renewing = true;
+        try { await api.cmdRenewDiaryEdit(id, token); }
+        catch (error) {
+            if (openedId === id && access.value.sessionId === token) stopCloudSaving(error);
+        } finally { renewing = false; }
+    }
+    const onVisibilityChange = async () => {
+        if (document.visibilityState === 'hidden' || access.value.readOnly) return;
+        checkingEdit.value = true;
+        try { await renewEdit(); } finally { checkingEdit.value = false; }
+    };
+
+    async function releaseEdit() {
+        const token = access.value.sessionId;
+        if (!token || releasedToken === token) return;
+        releasedToken = token;
+        try { await api.cmdReleaseDiaryEdit(openedId, token); }
+        catch (error) { console.warn('释放日记编辑占用失败，将等待占用过期', error); }
+    }
 
     let unlisten: UnlistenFn | null = null;
     // 关闭窗口的处理逻辑
     const handleWindowClose = async (event: CloseRequestedEvent) => {
         event.preventDefault();
         if (await flushPendingSave()) {
+            await releaseEdit();
             await appWindow.destroy();
         }
     };
-    onActivated(async () => {
+    async function activate() {
+        if (active) return;
+        active = true;
+        if (wasDeactivated && openedId) await loadDiaryInfo();
         // 防止重复注册
         if (!unlisten) {
-            unlisten = await appWindow.onCloseRequested(handleWindowClose);
+            const listener = await appWindow.onCloseRequested(handleWindowClose);
+            if (active) unlisten = listener; else listener();
         }
-    });
+        if (active) {
+            if (!heartbeat) heartbeat = setInterval(() => void renewEdit(), 30_000);
+            document.addEventListener('visibilitychange', onVisibilityChange);
+        }
+    }
+    onMounted(activate);
+    onActivated(activate);
+
+    function cleanupListeners() {
+        active = false;
+        wasDeactivated = true;
+        if (heartbeat) clearInterval(heartbeat);
+        heartbeat = null;
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = null;
+    }
 
     onUnmounted(() => {
+        cleanupListeners();
         if (unlisten) {
             unlisten();
             unlisten = null;
         }
+        void flushPendingSave().then(saved => saved ? releaseEdit() : undefined);
     });
 
     // 组件卸载时，如果还有没保存的，强制保存一次
     onDeactivated(async () => {
+        cleanupListeners();
         // 卸载窗口关闭监听器，防止后台堆积
         if (unlisten) {
             unlisten();
             unlisten = null;
         }
 
-        await flushPendingSave();
+        if (await flushPendingSave()) await releaseEdit();
     });
 
     return {
@@ -208,6 +350,7 @@ export function useDiaryCore() {
         isNew,
         unusedAttachments,
         isDelBack,
+        isReadOnly, access, checkingEdit, localDraft, hasUnresolvedDraft, requestEditing, restoreDraft, discardDraft,
         loadDiaryInfo,
         deleteDiary,
         updateContent,

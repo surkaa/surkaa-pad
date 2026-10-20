@@ -80,6 +80,12 @@ export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) 
       },
     )
 
+    if (options.editor.value?.isEditable === false) {
+      // 只读时保留预览与下载，不提供重命名、旋转、加密切换等写操作。
+      await showMenu([buttons.filter(button => button.label !== `转成${attachment.encrypted ? '普通' : '加密'}附件`)])
+      return
+    }
+
     if (found.type === 'image') {
       addImageActions(buttons, found)
     }

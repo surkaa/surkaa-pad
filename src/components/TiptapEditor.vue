@@ -91,6 +91,7 @@ const props = defineProps<{
   attachments: AttachmentMeta[]
   attachmentMap: Record<string, string>
   searchTerms?: string[]
+  readOnly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -208,6 +209,7 @@ async function selectTableAction(target: TableTarget, action: TableAction | 'cop
 }
 
 function openSummaryDialog(position: number | null = null, attrs?: SummaryAttributes) {
+  if (props.readOnly) return
   summaryDialogMode.value = 'edit'
   summarySourceSelection.value = null
   summaryTargets.value = []
@@ -224,6 +226,7 @@ function resetSummaryDialogState() {
 }
 
 const editor = useEditor({
+  editable: !props.readOnly,
   content: diaryContentToHtml(props.modelValue, props.attachmentMap, attachmentFilenames.value),
   extensions: [
     StarterKit.configure({
@@ -256,7 +259,7 @@ const editor = useEditor({
     AudioNode.extend({group: 'diaryBlock'}).configure({
       getAttachment: getAttachmentMeta,
       onAudioInfoGenerated: (attachmentId, durationMs, waveform) => {
-        emit('audioInfoGenerated', attachmentId, durationMs, waveform)
+        if (!props.readOnly) emit('audioInfoGenerated', attachmentId, durationMs, waveform)
       },
     }),
     FileNode.extend({group: 'diaryBlock'}),
@@ -288,6 +291,7 @@ const editor = useEditor({
       return DecorationSet.create(state.doc, decorations)
     },
     handlePaste: (view, event) => {
+      if (props.readOnly) return false
       const files = event.clipboardData?.files
       if (files && files.length > 0) {
         event.preventDefault()
@@ -298,6 +302,7 @@ const editor = useEditor({
     },
   },
   onUpdate({ editor: ed }) {
+    if (props.readOnly) return
     const html = ed.getHTML()
     emit('update:modelValue', htmlToDiaryContent(html))
   },
@@ -365,6 +370,16 @@ watch(() => props.modelValue, (newVal) => {
   }
 })
 
+watch(() => props.readOnly, value => {
+  editor.value?.setEditable(!value)
+  if (value) {
+    showSummaryDialog.value = false
+    showBlockOrderDialog.value = false
+    showTableDialog.value = false
+    editor.value?.commands.blur()
+  }
+})
+
 watch(() => props.searchTerms, () => {
   if (editor.value) editor.value.view.dispatch(editor.value.state.tr)
 }, { deep: true })
@@ -412,6 +427,7 @@ function handleWrapperClick(e: MouseEvent) {
   if (
     editorElement.value
     && proseMirror
+    && editor.value?.isEditable
     && shouldFocusEditorEnd(e.target, editorElement.value, proseMirror, e.clientY)
   ) {
     editor.value?.chain().focus('end').run()
@@ -664,6 +680,7 @@ defineExpose({
   <div
     ref="editorElement"
     class="tiptap-wrapper"
+    :class="{'is-read-only': readOnly}"
     :style="editorFontSizeStyle"
     @pointerdown.capture="handleWrapperPointerDown"
     @dragstart.capture="handleWrapperDragStart"
@@ -718,6 +735,9 @@ defineExpose({
 
 <style scoped lang="scss">
 .tiptap-wrapper {
+  &.is-read-only :deep(.editor-summary-edit) {
+    display: none;
+  }
   width: 100%;
   box-sizing: border-box;
   flex: 1;

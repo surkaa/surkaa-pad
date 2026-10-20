@@ -16,6 +16,7 @@ interface UseDiaryLeaveGuardOptions {
   cancelAllUploads: () => Promise<boolean>;
   insertExistingAttachmentsAtEnd: (attachments: AttachmentMeta[]) => Promise<boolean>;
   flushPendingSave: () => Promise<boolean>;
+  isReadOnly?: Readonly<Ref<boolean>>;
 }
 
 export function useDiaryLeaveGuard(options: UseDiaryLeaveGuardOptions) {
@@ -75,7 +76,7 @@ export function useDiaryLeaveGuard(options: UseDiaryLeaveGuardOptions) {
     const blocker = getDiaryLeaveBlocker({
       isDeletingDiary: options.isDeletingDiary.value,
       hasActiveUploads: options.hasActiveUploads.value,
-      unusedAttachmentCount: options.unusedAttachments.value.length,
+      unusedAttachmentCount: options.isReadOnly?.value ? 0 : options.unusedAttachments.value.length,
     });
 
     if (blocker === 'active-uploads') {

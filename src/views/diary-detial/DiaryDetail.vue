@@ -41,6 +41,7 @@ import {copyTextToClipboard} from '../../utils/clipboard';
 import {diaryContentToMarkdown} from '../../utils/diaryMarkdown';
 import type {AttachmentMeta} from '../../bindings';
 import AttachmentPreviewDialog from '../../components/AttachmentPreviewDialog.vue';
+import DetailsHelpButton from '../../components/DetailsHelpButton.vue';
 
 const $q = useQuasar();
 const configStore = useConfigStore();
@@ -67,7 +68,8 @@ const diaryLoadFailed = ref(false);
 
 const {
   diaryId, diary, attachments, diaryManifestSize, diaryContent, attachmentMap, isNew, isInitialLoaded, unusedAttachments, isDelBack,
-  loadDiaryInfo, deleteDiary, ensureDiaryCreated, flushPendingSave
+  loadDiaryInfo, deleteDiary, ensureDiaryCreated, flushPendingSave,
+  isReadOnly, access, checkingEdit, localDraft, hasUnresolvedDraft, requestEditing, restoreDraft, discardDraft,
 } = useDiaryCore();
 const showAttachmentPreview = ref(false);
 const previewAttachment = ref<AttachmentMeta | null>(null);
@@ -126,7 +128,7 @@ async function acknowledgeImportedShare(batchId: string) {
 async function runPendingShareImport() {
   const request = importRequest.value;
   const batch = importingBatch.value;
-  if (!request || !batch || !isInitialLoaded.value || shareImportRunning.value) return;
+  if (!request || !batch || !isInitialLoaded.value || shareImportRunning.value || isReadOnly.value) return;
 
   if (request.phase === 'acknowledging') {
     shareImportRunning.value = true;
@@ -263,6 +265,7 @@ useDiaryEditorShortcuts({
   showToolbarPanel,
   isInteractionBlocked: () => Boolean(
     !isInitialLoaded.value
+    || isReadOnly.value
     || showMenu.value
     || showDetailDialog.value
     || showSourceDialog.value
@@ -373,6 +376,7 @@ const {
   appendUnusedAttachments,
   deleteUnusedAttachments,
 } = useDiaryLeaveGuard({
+  isReadOnly,
   diaryId,
   unusedAttachments,
   isDeletingDiary: isDelBack,
@@ -446,10 +450,33 @@ onActivated(async () => {
       <q-btn unelevated color="primary" label="重新加载" @click="loadCurrentDiary"/>
     </div>
 
+    <q-banner v-if="isInitialLoaded && access.readOnly" class="diary-edit-banner" role="status">
+      <template #avatar><q-icon name="lock_outline" color="primary"/></template>
+      {{ access.reason || '当前日记为只读' }}
+      <template #action>
+        <DetailsHelpButton title="日记编辑占用">
+          编辑设备每 30 秒续期，占用 2 分钟后过期。其他设备可只读查看，过期后可手动接管。
+          这是轻量占用，不是严格的分布式锁；请避免多台设备同时申请编辑，旧版客户端不受此保护。
+        </DetailsHelpButton>
+        <q-btn flat color="primary" :label="access.canTakeOver ? '接管编辑' : '检查并申请编辑'"
+               :loading="checkingEdit" :disable="mediaAction.hasActiveUploads.value" @click="requestEditing"/>
+      </template>
+    </q-banner>
+
+    <q-banner v-if="isInitialLoaded && localDraft && (hasUnresolvedDraft || access.readOnly)" class="diary-edit-banner" role="status">
+      <template #avatar><q-icon name="save" color="primary"/></template>
+      发现本机未保存草稿。请先恢复或放弃草稿，再继续编辑；不会自动覆盖云端内容。
+      <template #action>
+        <q-btn flat color="negative" label="放弃草稿" @click="discardDraft"/>
+        <q-btn flat color="primary" label="恢复草稿" :disable="access.readOnly || checkingEdit" @click="restoreDraft"/>
+      </template>
+    </q-banner>
+
     <TiptapEditor
         ref="tiptapEditorRef"
         v-if="isInitialLoaded"
         v-model="diaryContent"
+        :read-only="isReadOnly"
         :diarySummary="diary"
         :attachments="attachments"
         :attachmentMap="attachmentMap"
@@ -469,7 +496,7 @@ onActivated(async () => {
     />
 
     <EditToolbar
-        v-if="isInitialLoaded"
+        v-if="isInitialLoaded && !isReadOnly"
         :view="showToolbar || showToolbarPanel"
         :panelOpen="showToolbarPanel"
         :editor="tiptapEditorRef?.editor ?? null"
@@ -520,10 +547,10 @@ onActivated(async () => {
           <q-item clickable v-ripple @click="copyDiaryMarkdown">
             <q-item-section>复制 Markdown</q-item-section>
           </q-item>
-          <q-item clickable v-ripple @click="showBlockOrder">
+          <q-item :disable="isReadOnly" clickable v-ripple @click="showBlockOrder">
             <q-item-section>调整内容顺序</q-item-section>
           </q-item>
-          <q-item clickable v-ripple @click="() => {deleteDiary(); showMenu = false}">
+          <q-item :disable="isReadOnly" clickable v-ripple @click="() => {deleteDiary(); showMenu = false}">
             <q-item-section>删除</q-item-section>
           </q-item>
           <q-item :disable="diary == undefined" clickable v-ripple
@@ -606,6 +633,16 @@ onActivated(async () => {
   .action-sheet-card {
     width: 100%;
     overflow: hidden;
+  }
+
+  .diary-edit-banner {
+    flex-shrink: 0;
+    margin: 8px 16px 0;
+    border: 1px solid var(--pad-border-color-200);
+    border-radius: var(--pad-radius-md);
+    background: var(--pad-bg-color-200);
+    color: var(--pad-text-color-200);
+    overflow-wrap: anywhere;
   }
 
   .diary-load-state {
