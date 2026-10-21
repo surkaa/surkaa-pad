@@ -19,6 +19,8 @@ function gitCommitHash() {
 export default defineConfig(async ({mode}) => {
     const env = loadEnv(mode, process.cwd());
     const host = env.VITE_TAURI_DEV_HOST;
+    // 端口优先级：进程环境变量 > .env 文件 > 默认 5173
+    const port = Number(process.env.VITE_PORT ?? env.VITE_PORT ?? 5173);
     const hmr = host ? {
         protocol: "ws",
         host,
@@ -35,7 +37,7 @@ export default defineConfig(async ({mode}) => {
         ],
         clearScreen: false,
         server: {
-            port: 5173,
+            port,
             strictPort: true,
             host: host || false,
             hmr,
