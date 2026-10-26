@@ -56,13 +56,21 @@ describe('editor shortcuts', () => {
       heading5: 'Ctrl+Digit5',
       bulletList: 'Ctrl+Shift+Digit8',
       summary: 'Ctrl+Alt+KeyS',
-      table: '',
+      table: 'Ctrl+Shift+KeyT',
       taskList: 'Ctrl+KeyT',
     })
     expect(findEditorShortcutAction(
       keyEvent({ctrlKey: true, code: 'Digit2'}),
       DEFAULT_WINDOWS_EDITOR_SHORTCUTS,
     )).toBe('heading2')
+    expect(findEditorShortcutAction(
+      keyEvent({ctrlKey: true, shiftKey: true, code: 'KeyT'}),
+      DEFAULT_WINDOWS_EDITOR_SHORTCUTS,
+    )).toBe('table')
+    expect(findEditorShortcutAction(
+      keyEvent({ctrlKey: true, code: 'KeyT'}),
+      DEFAULT_WINDOWS_EDITOR_SHORTCUTS,
+    )).toBe('taskList')
   })
 
   it('fills new toolbar shortcuts into an existing attachment-only config', () => {
@@ -127,5 +135,14 @@ describe('editor shortcuts', () => {
       'insertAudio',
       '',
     )).toBeNull()
+  })
+
+  it('preserves an explicit table assignment or clearing, and never steals an older custom shortcut', () => {
+    expect(normalizeEditorShortcutConfig({}).table).toBe('Ctrl+Shift+KeyT')
+    expect(normalizeEditorShortcutConfig({table: ''}).table).toBe('')
+    expect(normalizeEditorShortcutConfig({table: 'Ctrl+Alt+KeyT'}).table).toBe('Ctrl+Alt+KeyT')
+    const old = normalizeEditorShortcutConfig({insertPhoto: 'Ctrl+Shift+KeyT'})
+    expect(old.table).toBe('')
+    expect(old.insertPhoto).toBe('Ctrl+Shift+KeyT')
   })
 })

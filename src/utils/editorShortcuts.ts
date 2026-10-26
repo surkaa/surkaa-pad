@@ -41,7 +41,7 @@ export const DEFAULT_WINDOWS_EDITOR_SHORTCUTS: EditorShortcutConfig = {
   bulletList: 'Ctrl+Shift+Digit8',
   taskList: 'Ctrl+KeyT',
   summary: 'Ctrl+Alt+KeyS',
-  table: '',
+  table: 'Ctrl+Shift+KeyT',
   insertPhoto: 'Ctrl+Alt+KeyP',
   insertAudio: 'Ctrl+Alt+KeyA',
   audioRecording: 'Ctrl+Alt+KeyR',
@@ -130,12 +130,17 @@ export function normalizeEditorShortcutConfig(value: unknown): EditorShortcutCon
   const source = value && typeof value === 'object'
     ? value as Partial<Record<EditorShortcutAction, unknown>>
     : {}
-  return Object.fromEntries(EDITOR_SHORTCUT_ACTIONS.map(action => [
+  const normalized = Object.fromEntries(EDITOR_SHORTCUT_ACTIONS.map(action => [
     action,
     typeof source[action] === 'string'
       ? source[action]
       : DEFAULT_WINDOWS_EDITOR_SHORTCUTS[action],
   ])) as EditorShortcutConfig
+  // 新增默认组合不能抢占旧配置中其他操作的自定义快捷键；显式清空也仍然保留。
+  if (typeof source.table !== 'string' && EDITOR_SHORTCUT_ACTIONS.some(action =>
+    action !== 'table' && normalized[action] === normalized.table,
+  )) normalized.table = ''
+  return normalized
 }
 
 export function formatEditorShortcut(shortcut: string): string {

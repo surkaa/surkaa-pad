@@ -106,7 +106,7 @@ impl Default for EditorShortcutSettings {
             bullet_list: "Ctrl+Shift+Digit8".into(),
             task_list: "Ctrl+KeyT".into(),
             summary: "Ctrl+Alt+KeyS".into(),
-            table: String::new(),
+            table: "Ctrl+Shift+KeyT".into(),
             insert_photo: "Ctrl+Alt+KeyP".into(),
             insert_audio: "Ctrl+Alt+KeyA".into(),
             audio_recording: "Ctrl+Alt+KeyR".into(),
@@ -353,7 +353,15 @@ fn migrate_v4_to_v5(value: &mut Value) -> Result<(), SyncedSettingsError> {
         .position(|action| action.as_str() == Some("summary"))
         .ok_or_else(|| SyncedSettingsError::InvalidData("编辑器工具栏顺序缺少 summary".into()))?;
     toolbar_order.insert(summary_index + 1, Value::String("table".into()));
-    // 新表格快捷键默认为空，不占用用户已有组合；其余按钮的相对顺序保持不变。
+    // 旧文档仍保持迁移当时的未设置状态，避免后来新增的默认值抢占旧自定义组合。
+    if let Some(shortcuts) = value
+        .pointer_mut("/windows/editorShortcuts")
+        .and_then(Value::as_object_mut)
+    {
+        shortcuts
+            .entry("table")
+            .or_insert_with(|| Value::String(String::new()));
+    }
     value["version"] = Value::from(5);
     Ok(())
 }
@@ -361,6 +369,18 @@ fn migrate_v4_to_v5(value: &mut Value) -> Result<(), SyncedSettingsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn table_shortcut_defaults_to_ctrl_shift_t_and_preserves_explicit_choices() {
+        let defaults = EditorShortcutSettings::default();
+        assert_eq!(defaults.table, "Ctrl+Shift+KeyT");
+        assert_eq!(defaults.task_list, "Ctrl+KeyT");
+        for value in ["", "Ctrl+Alt+KeyT"] {
+            let config: EditorShortcutSettings =
+                serde_json::from_value(serde_json::json!({"table": value})).unwrap();
+            assert_eq!(config.table, value);
+        }
+    }
 
     pub(super) fn sample_settings() -> SyncedSettingsData {
         SyncedSettingsData {
