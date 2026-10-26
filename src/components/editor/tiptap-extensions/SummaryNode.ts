@@ -1,6 +1,15 @@
 import {Node as TiptapNode, mergeAttributes} from '@tiptap/vue-3';
 import type {Node as ProseMirrorNode} from '@tiptap/pm/model';
 import type {NodeView} from '@tiptap/pm/view';
+import {openUrl} from '@tauri-apps/plugin-opener';
+import {renderSummaryMarkdown} from '../markdownParser';
+
+function createContentElement(source: string) {
+  const content = document.createElement('div');
+  content.className = 'editor-summary-content';
+  content.innerHTML = renderSummaryMarkdown(source);
+  return content;
+}
 
 export interface SummaryAttributes {
   summary: string;
@@ -48,7 +57,7 @@ function createSummaryNodeView(
     dom.dataset.summary = node.attrs.summary;
     dom.dataset.content = node.attrs.content;
     summaryText.textContent = node.attrs.summary;
-    content.textContent = node.attrs.content;
+    content.innerHTML = renderSummaryMarkdown(node.attrs.content);
   };
   sync(initialNode);
 
@@ -64,6 +73,15 @@ function createSummaryNodeView(
     }
   };
   editButton.addEventListener('click', handleEdit);
+  const handleLink = (event: MouseEvent) => {
+    const anchor = event.target instanceof Element ? event.target.closest('a') : null;
+    if (!anchor) return;
+    event.preventDefault();
+    if (['http:', 'https:'].includes(new URL(anchor.href).protocol)) {
+      void openUrl(anchor.href).catch(error => console.error('打开折叠内容链接失败:', error));
+    }
+  };
+  content.addEventListener('click', handleLink);
 
   const disableDraggingForContentSelection = () => {
     dom.draggable = false;
@@ -132,6 +150,7 @@ function createSummaryNodeView(
     destroy() {
       toggleAnimation?.cancel();
       editButton.removeEventListener('click', handleEdit);
+      content.removeEventListener('click', handleLink);
       content.removeEventListener('pointerdown', disableDraggingForContentSelection);
       content.removeEventListener('mousedown', disableDraggingForContentSelection);
       summary.removeEventListener('pointerdown', enableDraggingFromSummary);
@@ -189,7 +208,7 @@ export const SummaryNode = TiptapNode.create<SummaryNodeOptions>({
         contenteditable: 'false',
       }),
       ['summary', node.attrs.summary],
-      ['div', {class: 'editor-summary-content'}, node.attrs.content],
+      createContentElement(node.attrs.content),
     ];
   },
 

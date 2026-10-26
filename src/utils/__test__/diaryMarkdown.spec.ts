@@ -31,11 +31,11 @@ describe('diary Markdown clipboard content', () => {
     expect(result).not.toMatch(/localhost|127\.0\.0\.1|token=/);
   });
 
-  it('escapes plain Summary text without dropping the folded content', () => {
+  it('escapes the Summary title while preserving its Markdown body verbatim', () => {
     expect(diaryContentToMarkdown({nodes: [
-      {type: 'summary', summary: '<标题>&', content: '第一行\n<script>内容</script>'},
+      {type: 'summary', summary: '<标题>&', content: '## 内容\n\n**加粗**\n\n```html\n<div>代码</div>\n```'},
     ]})).toBe('<details>\n<summary>&lt;标题&gt;&amp;</summary>\n\n'
-      + '<div>第一行<br>\n&lt;script&gt;内容&lt;/script&gt;</div>\n\n</details>');
+      + '## 内容\n\n**加粗**\n\n```html\n<div>代码</div>\n```\n\n</details>');
   });
 
   it('includes location coordinates and optional accuracy', () => {

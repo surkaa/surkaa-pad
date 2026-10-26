@@ -863,6 +863,10 @@ defineExpose({
     background: var(--pad-bg-color-200);
 
     > summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      list-style: none;
       min-height: 24px;
       padding: 10px 44px 10px 12px;
       color: var(--pad-text-color-200);
@@ -870,7 +874,21 @@ defineExpose({
       line-height: 1.45;
       cursor: pointer;
       user-select: none;
+
+      &::-webkit-details-marker { display: none; }
+      &::before {
+        content: '';
+        flex-shrink: 0;
+        width: 0;
+        height: 0;
+        border-top: 5px solid transparent;
+        border-bottom: 5px solid transparent;
+        border-left: 6px solid currentColor;
+        transition: transform 180ms ease;
+      }
+      > span { min-width: 0; overflow-wrap: anywhere; }
     }
+    &[open] > summary::before { transform: rotate(90deg); }
 
     .editor-summary-content {
       box-sizing: border-box;
@@ -882,8 +900,21 @@ defineExpose({
       line-height: 1.55;
       user-select: text;
       -webkit-user-select: text;
-      white-space: pre-wrap;
+      white-space: normal;
       overflow-wrap: anywhere;
+
+      > :first-child { margin-top: 0; }
+      > :last-child { margin-bottom: 0; }
+      pre { overflow-x: auto; white-space: pre; padding: 10px; background: var(--pad-bg-color-100); }
+      blockquote { margin-inline: 0; padding-left: 12px; border-left: 3px solid var(--pad-border-color-300); }
+      a { color: var(--pad-primary-dark); text-decoration: underline; }
+      table { border-collapse: collapse; width: 100%; }
+      td, th { border: 1px solid var(--pad-border-color-200); padding: 6px 8px; }
+      li[data-type="taskItem"] {
+        list-style: none;
+        &::before { content: '☐ '; }
+        &[data-checked="true"]::before { content: '☑ '; }
+      }
     }
 
     .editor-summary-edit {
@@ -908,6 +939,10 @@ defineExpose({
         background: color-mix(in srgb, var(--pad-primary-color) 14%, transparent);
       }
     }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .editor-summary > summary::before { transition: none; }
   }
 
   .editor-location {

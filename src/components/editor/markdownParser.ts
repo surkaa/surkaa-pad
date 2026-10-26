@@ -52,6 +52,36 @@ function createMarkdownParser(html: boolean) {
 
 const markdown = createMarkdownParser(true);
 const clipboardMarkdown = createMarkdownParser(false);
+const summaryMarkdown = createMarkdownParser(false);
+// 折叠正文不经过 Tiptap 列表模型，可以直接显示混合普通项与待办项的 Markdown 列表。
+summaryMarkdown.core.ruler.after('diary_task_lists', 'summary_mixed_tasks', state => {
+  for (let index = 0; index < state.tokens.length; index++) {
+    const item = state.tokens[index];
+    const paragraph = state.tokens[index + 1];
+    const inline = state.tokens[index + 2];
+    if (item.type !== 'list_item_open' || paragraph?.type !== 'paragraph_open' || inline?.type !== 'inline') continue;
+    const match = inline.content.match(/^\[([ xX])\](?:[ \t]+|$)/);
+    if (!match) continue;
+    item.attrSet('data-type', 'taskItem');
+    item.attrSet('data-checked', String(match[1].toLowerCase() === 'x'));
+    inline.content = inline.content.slice(match[0].length);
+    inline.children = state.md.parseInline(inline.content, state.env)[0].children;
+  }
+});
+summaryMarkdown.validateLink = value => {
+  try { return ['http:', 'https:'].includes(new URL(value).protocol); }
+  catch { return false; }
+};
+summaryMarkdown.renderer.rules.link_open = (tokens, index, options, _env, renderer) => {
+  tokens[index].attrSet('target', '_blank');
+  tokens[index].attrSet('rel', 'noopener noreferrer');
+  return renderer.renderToken(tokens, index, options);
+};
+
+/** 折叠正文只解释 Markdown，不执行 HTML，也不自动加载远程图片或嵌套折叠节点。 */
+export function renderSummaryMarkdown(source: string): string {
+  return summaryMarkdown.render(source).trim();
+}
 
 export function renderEditorMarkdown(source: string): string {
   return markdown.render(source).replace(/>\n+(?=<)/g, '>').trim() || '<p></p>';

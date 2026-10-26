@@ -3,7 +3,7 @@
  * Markdown 只负责文本节点；附件节点始终直接转换，不经过文本标记。
  */
 import type {DiaryContent, DiaryContentNode, DiaryLocation} from '../../bindings'
-import {renderEditorMarkdown} from './markdownParser'
+import {renderEditorMarkdown, renderSummaryMarkdown} from './markdownParser'
 
 const INLINE_TAGS: Record<string, [string, string]> = {
   STRONG: ['**', '**'],
@@ -155,7 +155,7 @@ function renderImage(
 function renderSummary(summary: string, content: string): string {
   return `<details class="editor-summary" data-summary="${escapeAttr(summary)}" data-content="${escapeAttr(content)}">`
     + `<summary>${escapeHtml(summary)}</summary>`
-    + `<div class="editor-summary-content">${escapeHtml(content)}</div>`
+    + `<div class="editor-summary-content">${renderSummaryMarkdown(content)}</div>`
     + '</details>'
 }
 

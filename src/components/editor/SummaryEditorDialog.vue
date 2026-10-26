@@ -87,7 +87,7 @@ function targetCaption(target: SummaryTarget): string {
           <div class="text-h6 summary-dialog-title">
             {{ canDelete ? '编辑折叠内容' : '添加折叠内容' }}
           </div>
-          <div class="text-caption summary-dialog-description">外显文字始终可见，内部文字可展开查看</div>
+          <div class="text-caption summary-dialog-description">外显文字始终可见；内部支持 Markdown，不支持嵌套折叠</div>
         </q-card-section>
         <q-card-section class="q-pt-none q-gutter-y-md summary-fields">
           <q-input
@@ -104,7 +104,7 @@ function targetCaption(target: SummaryTarget): string {
             outlined
             type="textarea"
             autogrow
-            label="内部文字"
+            label="内部 Markdown"
           />
         </q-card-section>
         <q-card-actions align="right" class="summary-dialog-actions">
