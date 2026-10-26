@@ -96,7 +96,8 @@ describe.each([false, true])('独立更新日志页面（深色=%s）', dark => 
     expect(host.querySelectorAll('.entry-latest')).toHaveLength(1);
     expect(host.querySelector('.changelog-groups')).toBeNull();
     expect(host.querySelector('.changelog-summary')?.textContent).toContain(`正式版 · ${data.stable.length} 个版本`);
-    expect(host.textContent).not.toMatch(/预览版|Windows Dev|Android Dev/);
+    // 更新描述可以提到已移除的预览版功能；只检查版本入口，记录归属由上面的完整列表断言保证。
+    expect(host.querySelector('.changelog-toolbar')?.textContent).not.toMatch(/预览版|Windows Dev|Android Dev/);
     expect(about.load).not.toHaveBeenCalled(); // 仅需要应用版本标识，不读取完整的关于信息。
     expect(document.body.classList.contains('body--dark')).toBe(dark);
   });
@@ -120,7 +121,7 @@ describe.each([false, true])('独立更新日志页面（深色=%s）', dark => 
       .toEqual(data[group].map(record => record.description));
     expect(host.querySelector('.changelog-groups')).toBeNull();
     expect(host.querySelector('.changelog-group')).toBeNull();
-    expect(host.textContent).not.toContain('预览版');
+    expect(host.querySelector('.changelog-toolbar')?.textContent).not.toContain('预览版');
     for (const otherLabel of ['正式版', 'Windows Dev', 'Android Dev'].filter(value => value !== label)) {
       expect(host.querySelector('.changelog-summary')?.textContent).not.toContain(otherLabel);
     }
