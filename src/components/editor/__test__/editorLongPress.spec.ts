@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {installTableLongPress} from '../tableLongPress';
+import {installEditorLongPress} from '../editorLongPress';
 
 let element: HTMLElement;
 let cell: HTMLElement;
@@ -18,11 +18,11 @@ beforeEach(() => {
   element.innerHTML = '<table><tr><td>单元格</td></tr></table>';
   document.body.append(element); cell = element.querySelector('td')!;
   open = vi.fn();
-  dispose = installTableLongPress(element, target => target === cell ? cell : null, open);
+  dispose = installEditorLongPress(element, target => target === cell ? cell : null, open);
 });
 afterEach(() => { dispose(); document.body.innerHTML = ''; vi.useRealTimers(); });
 
-describe('mobile table long press', () => {
+describe('mobile editor long press', () => {
   it('opens once and suppresses the followup click and native menu', () => {
     const click = vi.fn(); element.addEventListener('click', click);
     expect(pointer('pointerdown').defaultPrevented).toBe(false);
@@ -64,5 +64,32 @@ describe('mobile table long press', () => {
     cell.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}));
     expect(open).toHaveBeenCalledExactlyOnceWith(cell);
     vi.advanceTimersByTime(600); expect(open).toHaveBeenCalledOnce();
+  });
+
+  it('suppresses release clicks even after holding for several seconds', () => {
+    const click = vi.fn(); element.addEventListener('click', click);
+    pointer('pointerdown'); vi.advanceTimersByTime(5000);
+    expect(open).toHaveBeenCalledOnce();
+    cell.click(); expect(click).not.toHaveBeenCalled();
+    pointer('pointerup');
+    pointer('pointerdown'); pointer('pointerup'); cell.click();
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  it('times the suppression window from release, not from menu opening', () => {
+    const click = vi.fn(); element.addEventListener('click', click);
+    pointer('pointerdown'); vi.advanceTimersByTime(5000); pointer('pointerup');
+    vi.advanceTimersByTime(100); cell.click();
+    expect(click).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1001); cell.click();
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  it('does not swallow a later tap on a different control in the same container', () => {
+    const other = document.createElement('button'); element.append(other);
+    const click = vi.fn(); other.addEventListener('click', click);
+    pointer('pointerdown'); vi.advanceTimersByTime(500); pointer('pointerup');
+    pointer('pointerdown', {}, other); pointer('pointerup', {}, other); other.click();
+    expect(click).toHaveBeenCalledOnce();
   });
 });

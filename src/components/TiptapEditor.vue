@@ -79,7 +79,7 @@ import {
   TABLE_ACTION_GROUPS, canRunTableAction, runTableAction, tableTargetFromElement, validTableSize,
   type TableAction, type TableTarget,
 } from './editor/tableCommands'
-import {installTableLongPress} from './editor/tableLongPress'
+import {installEditorLongPress} from './editor/editorLongPress'
 import type {Node as ProseMirrorNode} from '@tiptap/pm/model'
 import type {Selection} from '@tiptap/pm/state'
 import {closeHistory} from '@tiptap/pm/history'
@@ -460,7 +460,7 @@ onMounted(async () => {
   if (editorElement.value) {
     disposeImageLoading = setupEditorImageLoading(editorElement.value)
     if (isMobileEditorPlatform(currentPlatform)) {
-      disposeTableLongPress = installTableLongPress(editorElement.value, target => {
+      disposeTableLongPress = installEditorLongPress(editorElement.value, target => {
         const current = editor.value
         const cell = target instanceof Element ? target.closest<HTMLElement>('td, th') : null
         const table = current?.isEditable ? tableTargetFromElement(current, target) : null
