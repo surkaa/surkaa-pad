@@ -69,11 +69,14 @@ describe.each([false, true])('editor table integration (dark=%s)', dark => {
       .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}));
     await settle();
     if (platform === 'windows') {
-      expect(nativeItems().map(entry => 'text' in entry ? entry.text : null)).toEqual(['预览', '保存到本地']);
+      expect(nativeItems().map(entry => 'text' in entry ? entry.text : null)).toEqual(['预览', '保存到本地', '批量下载附件']);
     } else {
       expect(Array.from(document.querySelectorAll('.q-bottom-sheet__item'), element => element.textContent?.trim()))
-        .toEqual(['预览', '保存到本地']);
+        .toEqual(['预览', '保存到本地', '批量下载附件']);
     }
+    await selectAction('批量下载附件', platform);
+    expect(document.querySelector('.attachment-batch-dialog')).not.toBeNull();
+    expect(document.querySelector('.attachment-batch-dialog [role="checkbox"]')?.getAttribute('aria-checked')).toBe('true');
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -158,7 +161,7 @@ describe.each([false, true])('editor table integration (dark=%s)', dark => {
     host.querySelector('.editor-file-attachment .file-name')!
       .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true}));
     await settle();
-    const labels = ['预览', '转成加密附件', '保存到本地', '重命名附件'];
+    const labels = ['预览', '转成加密附件', '保存到本地', '批量下载附件', '重命名附件'];
     if (platform === 'windows') {
       expect(nativeItems().map(entry => 'text' in entry ? entry.text : null)).toEqual(labels);
     } else {

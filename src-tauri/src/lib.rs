@@ -67,6 +67,7 @@ use crate::attachments::attachment_command::{
     cmd_toggle_attachment_encryption, cmd_update_attachment_audio_info,
     cmd_update_attachment_filename,
 };
+use crate::attachments::batch_export::cmd_save_decrypt_attachments;
 use crate::attachments::chunked_upload_command::{
     cmd_abort_chunked_upload, cmd_finish_chunked_upload, cmd_start_chunked_upload, cmd_upload_chunk,
 };
@@ -221,6 +222,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_rotate_image_attachment,
             cmd_caching_attachment,
             cmd_save_decrypt_attachment,
+            cmd_save_decrypt_attachments,
             cmd_open_html_attachment,
             cmd_update_attachment_filename,
             cmd_update_attachment_audio_info,
@@ -287,6 +289,7 @@ pub fn run() {
         .plugin(tauri_plugin_native_camera::init())
         .plugin(tauri_plugin_geolocation::init())
         .plugin(location::init_android_plugin())
+        .plugin(attachments::batch_export::android::init())
         .plugin(android_share::init_android_plugin());
 
     app_builder

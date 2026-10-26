@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createTask: vi.fn(), createChannel: vi.fn(), register: vi.fn(),
   save: vi.fn(async () => 'save-token'), toggle: vi.fn(async () => 'toggle-token'),
   rotate: vi.fn(async () => 'rotate-token'),
+  saveBatch: vi.fn(), cancelUnstarted: vi.fn(), fail: vi.fn(),
 }));
 vi.mock('quasar', () => ({useQuasar: () => ({notify: vi.fn()})}));
 vi.mock('@tauri-apps/plugin-os', () => ({platform: () => 'windows'}));
@@ -19,22 +20,52 @@ vi.mock('pinia', () => ({storeToRefs: () => ({
 vi.mock('../../stores/config', () => ({useConfigStore: () => ({useTauriConfig: () => ref(false)})}));
 vi.mock('../../utils/api', () => ({default: {
   cmdSaveDecryptAttachment: mocks.save,
+  cmdSaveDecryptAttachments: mocks.saveBatch,
   cmdToggleAttachmentEncryption: mocks.toggle,
   cmdRotateImageAttachment: mocks.rotate,
 }}));
 vi.mock('../useAttachmentUploader', () => ({useAttachmentUploader: () => ({
   uploadTasks: ref([]), showUploadDialog: ref(false), hasActiveUploads: ref(false),
   allUploadsSettled: ref(true), createTask: mocks.createTask, createUploadChannel: mocks.createChannel,
-  failTask: vi.fn(), registerCancelableTask: mocks.register, resetUploadTasks: () => true,
+  failTask: mocks.fail, cancelUnstartedTask: mocks.cancelUnstarted,
+  registerCancelableTask: mocks.register, resetUploadTasks: () => true,
 })}));
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.createTask.mockReturnValue('task');
   mocks.createChannel.mockReturnValue({});
+  mocks.saveBatch.mockReset().mockResolvedValue('batch-token');
 });
 
 describe('attachment operation transfer direction', () => {
+  it('batch download deduplicates IDs, uses one picker/command and download progress', async () => {
+    const action = useMediaAction(ref('diary'), ref(undefined), ref(false), ref(undefined));
+    await action.saveDecryptAttachments(['first', 'second', 'first']);
+    expect(mocks.createTask).toHaveBeenCalledExactlyOnceWith('批量下载 2 个附件', false, 'download');
+    expect(mocks.saveBatch).toHaveBeenCalledExactlyOnceWith({}, 'diary', ['first', 'second']);
+    expect(mocks.register).toHaveBeenCalledWith('task', 'batch-token');
+    expect(action.showUploadDialog.value).toBe(true);
+  });
+
+  it('closing the native folder picker is cancellation, not an error or a never-ending task', async () => {
+    mocks.saveBatch.mockResolvedValueOnce(null);
+    const action = useMediaAction(ref('diary'), ref(undefined), ref(false), ref(undefined));
+    await action.saveDecryptAttachments(['first']);
+    expect(mocks.cancelUnstarted).toHaveBeenCalledExactlyOnceWith('task');
+    expect(mocks.fail).not.toHaveBeenCalled(); expect(mocks.register).not.toHaveBeenCalled();
+    expect(action.showUploadDialog.value).toBe(false);
+  });
+
+  it('does not start empty batches and reports command failures', async () => {
+    const action = useMediaAction(ref('diary'), ref(undefined), ref(false), ref(undefined));
+    await action.saveDecryptAttachments([]); expect(mocks.saveBatch).not.toHaveBeenCalled();
+    mocks.saveBatch.mockRejectedValueOnce(new Error('无法读取目录'));
+    await action.saveDecryptAttachments(['first']);
+    expect(mocks.fail).toHaveBeenCalledWith('task', expect.objectContaining({message: '无法读取目录'}));
+    expect(action.showUploadDialog.value).toBe(true);
+  });
+
   it('uses download progress when saving a decrypted attachment to a local file', async () => {
     const action = useMediaAction(ref('diary'), ref(undefined), ref(false), ref(undefined));
     await action.saveDecryptAttachment('attachment');

@@ -65,6 +65,7 @@ export function useMediaAction(
         createTask,
         createUploadChannel,
         failTask,
+        cancelUnstartedTask,
         registerCancelableTask,
         resetUploadTasks,
         cancelUploadTask,
@@ -440,6 +441,29 @@ export function useMediaAction(
             }
         },
         // 保存解密附件
+        saveDecryptAttachments: async (attachmentIds: string[]) => {
+            const ids = [...new Set(attachmentIds)];
+            if (!diaryId.value || !ids.length) return;
+            if (!resetUploadTasks()) {
+                showUploadDialog.value = true;
+                $q.notify({type: 'warning', message: '请先等待当前文件处理完成或取消任务'});
+                return;
+            }
+            const key = createTask(`批量下载 ${ids.length} 个附件`, false, 'download');
+            const event = createUploadChannel(key);
+            try {
+                const token = await api.cmdSaveDecryptAttachments(event, diaryId.value, ids);
+                if (token === null) {
+                    cancelUnstartedTask(key);
+                    return;
+                }
+                registerCancelableTask(key, token);
+                showUploadDialog.value = true;
+            } catch (error) {
+                failTask(key, error);
+                showUploadDialog.value = true;
+            }
+        },
         saveDecryptAttachment: async (attachmentId: string) => await performAttachmentOperation(
             attachmentId,
             '保存解密附件',

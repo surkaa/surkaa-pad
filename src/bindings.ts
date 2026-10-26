@@ -880,6 +880,17 @@ async cmdSaveDecryptAttachment(event: TAURI_CHANNEL<AttachmentProcessEvent>, id:
 }
 },
 /**
+ * 选择一次目录，逐个流式导出解密后的原文件；整个批次可取消，已完成文件保留。
+ */
+async cmdSaveDecryptAttachments(event: TAURI_CHANNEL<AttachmentProcessEvent>, id: string, attachmentIds: string[]) : Promise<Result<string | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_save_decrypt_attachments", { event, id, attachmentIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 使用附件专属的本地 HTTP URL 将 HTML 交给系统浏览器打开。
  * 前端只能提供日记和附件 ID，后端会再次校验附件类型。
  * # Arguments

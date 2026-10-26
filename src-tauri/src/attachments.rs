@@ -5,6 +5,7 @@ mod attachment_error;
 mod attachment_open;
 mod attachment_server;
 mod attachment_types;
+pub(crate) mod batch_export;
 pub mod chunked_upload;
 pub mod chunked_upload_command;
 mod embedded_media;

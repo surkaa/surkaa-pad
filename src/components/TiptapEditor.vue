@@ -36,6 +36,7 @@ import {
 import type {SummaryAttributes} from './editor/tiptap-extensions/SummaryNode'
 import AlbumImageInsertDialog from './AlbumImageInsertDialog.vue'
 import SummaryEditorDialog from './editor/SummaryEditorDialog.vue'
+import AttachmentBatchDownloadDialog from './editor/AttachmentBatchDownloadDialog.vue'
 import DiaryBlockOrderDialog from './editor/DiaryBlockOrderDialog.vue'
 import {
   attachmentInsertionsToEditorContent,
@@ -102,6 +103,7 @@ const emit = defineEmits<{
   (e: 'rotateAttachment', attachmentId: string, rotation: number): void
   (e: 'renameAttachment', attachmentId: string, filename: string, cb: (newFilename: string) => void): void
   (e: 'saveDecryptAttachment', attachmentId: string): void
+  (e: 'saveDecryptAttachments', attachmentIds: string[]): void
   (e: 'openHtmlAttachment', attachmentId: string): void
   (e: 'previewAttachment', attachmentId: string): void
   (e: 'openLocation', location: DiaryLocation): void
@@ -110,6 +112,8 @@ const emit = defineEmits<{
 }>()
 
 const editorElement = ref<HTMLDivElement>()
+const showBatchDownloadDialog = ref(false)
+const batchDownloadInitialId = ref('')
 const currentPlatform = platform()
 const $q = useQuasar()
 const {showMenu: showEditorMenu} = useEditorContextMenu(currentPlatform)
@@ -342,6 +346,10 @@ const { handleContextMenu: handleAttachmentContextMenu } = useAttachmentContextM
     emit('renameAttachment', attachmentId, filename, callback)
   },
   saveDecrypted: attachmentId => emit('saveDecryptAttachment', attachmentId),
+  startBatchDownload: attachmentId => {
+    batchDownloadInitialId.value = attachmentId
+    showBatchDownloadDialog.value = true
+  },
   openHtml: attachmentId => emit('openHtmlAttachment', attachmentId),
   previewAttachment: attachmentId => emit('previewAttachment', attachmentId),
   showImage: url => emit('showImage', url),
@@ -688,6 +696,9 @@ defineExpose({
     @contextmenu="handleContextMenu"
   >
     <EditorContent :editor="editor" />
+    <AttachmentBatchDownloadDialog v-model="showBatchDownloadDialog" :attachments="attachments"
+                                   :initial-attachment-id="batchDownloadInitialId"
+                                   @download="attachmentIds => emit('saveDecryptAttachments', attachmentIds)"/>
     <TableInsertDialog v-model="showTableDialog" @insert="insertTable"/>
     <SummaryEditorDialog
       v-model="showSummaryDialog"

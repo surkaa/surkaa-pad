@@ -34,6 +34,7 @@ interface AttachmentContextMenuOptions {
     callback: (newFilename: string) => void,
   ) => void
   saveDecrypted: (attachmentId: string) => void
+  startBatchDownload: (attachmentId: string) => void
   openHtml: (attachmentId: string) => void
   previewAttachment: (attachmentId: string) => void
   showImage: (url: string) => void
@@ -77,6 +78,10 @@ export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) 
       {
         label: '保存到本地',
         action: () => options.saveDecrypted(found.attachmentId),
+      },
+      {
+        label: '批量下载附件',
+        action: () => options.startBatchDownload(found.attachmentId),
       },
     )
 

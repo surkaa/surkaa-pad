@@ -137,6 +137,14 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     }
   }
 
+  /** 系统文件夹选择器被关闭时，不将正常取消标记为下载失败。 */
+  function cancelUnstartedTask(key: string) {
+    const task = uploadTaskMap.value[key];
+    if (!task || isUploadTaskTerminal(task)) return;
+    task.status = 'canceled';
+    settleTask(key);
+  }
+
   function createUploadChannel(
     key: string,
     onSuccess?: AttachmentProcessSuccess,
@@ -466,6 +474,7 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
     createTask,
     createUploadChannel,
     failTask,
+    cancelUnstartedTask,
     registerCancelableTask,
     resetUploadTasks,
     cancelUploadTask,

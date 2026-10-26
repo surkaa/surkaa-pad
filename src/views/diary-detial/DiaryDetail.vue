@@ -488,6 +488,7 @@ onActivated(async () => {
         @rotateAttachment="mediaAction.rotateAttachment"
         @renameAttachment="renameAttachment"
         @saveDecryptAttachment="mediaAction.saveDecryptAttachment"
+        @saveDecryptAttachments="mediaAction.saveDecryptAttachments"
         @openHtmlAttachment="mediaAction.openHtmlAttachment"
         @previewAttachment="openAttachmentPreview"
         @audioInfoGenerated="mediaAction.saveAttachmentAudioInfo"
