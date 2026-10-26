@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "tsc": "vue-tsc --noEmit",
     "tauri": "tauri",
-    "tauri:msi:dev": "cross-env VITE_PORT=25173 tauri dev --config ./src-tauri/tauri.dev.json",
+    "tauri:msi:dev": "node scripts/tauri-msi-dev.mjs",
     "tauri:msi:build": "tauri build",
     "tauri:android:dev": "cross-env VITE_PORT=15173 tauri android dev --host 127.0.0.1 --config ./src-tauri/tauri.android-dev.json",
     "tauri:android:build": "tauri android build --target aarch64 --apk"

@@ -144,6 +144,11 @@ pnpm tauri:msi:dev
 pnpm tauri:android:dev
 ```
 
+Windows 的 `pnpm tauri:msi:dev` 会自动将本次开发构建输出到
+`%LOCALAPPDATA%\SurKaaPadBuild`，避免工作区的 Low 完整性标签使开发 exe 无法写入用户数据目录。
+无需在每个终端手工设置环境变量；显式设置的 `CARGO_TARGET_DIR` 仍会保留。
+该行为仅用于桌面开发命令，不改变正式打包、Android 构建或日记数据位置，也不会修改系统权限。
+
 ### 构建
 
 ```bash
