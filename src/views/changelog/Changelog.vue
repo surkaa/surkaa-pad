@@ -1,54 +1,56 @@
 <script setup lang="ts">
-import {computed, nextTick, ref} from 'vue';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
 import changelog from '../../data/changelog.json';
 import DetailsHelpButton from '../../components/DetailsHelpButton.vue';
-import {formatChangelogTimestamp} from '../../utils/changelog';
+import {CHANGELOG_GROUP_LABELS, formatChangelogTimestamp, loadChangelogGroup, type ChangelogGroup} from '../../utils/changelog';
+import {formatError} from '../../utils/formatError';
 
-type ChangelogGroup = keyof typeof changelog;
-const groups: {value: ChangelogGroup; label: string}[] = [
-  {value: 'stable', label: '正式版'},
-  {value: 'preview', label: '预览版'},
-  {value: 'windowsDev', label: 'Windows Dev'},
-  {value: 'androidDev', label: 'Android Dev'},
-];
-const selectedGroup = ref<ChangelogGroup>('stable');
-const records = computed(() => changelog[selectedGroup.value]);
-const groupLabel = computed(() => groups.find(group => group.value === selectedGroup.value)!.label);
-const scrollContainer = ref<HTMLElement | null>(null);
+const selectedGroup = ref<ChangelogGroup | null>(null);
+const records = computed(() => selectedGroup.value ? changelog[selectedGroup.value] : []);
+const groupLabel = computed(() => selectedGroup.value ? CHANGELOG_GROUP_LABELS[selectedGroup.value] : '');
+const loading = ref(true);
+const error = ref('');
+let active = true;
+onBeforeUnmount(() => { active = false; });
+onMounted(refresh);
 
-async function selectGroup(group: ChangelogGroup) {
-  if (selectedGroup.value === group) return;
-  selectedGroup.value = group;
-  await nextTick();
-  if (scrollContainer.value) scrollContainer.value.scrollTop = 0;
+async function refresh() {
+  loading.value = true;
+  error.value = '';
+  try {
+    const group = await loadChangelogGroup();
+    if (active) selectedGroup.value = group;
+  } catch (cause) {
+    if (active) error.value = formatError(cause);
+  } finally {
+    if (active) loading.value = false;
+  }
 }
 </script>
 
 <template>
   <main class="changelog-page">
     <div class="changelog-toolbar">
-      <div class="changelog-groups" role="group" aria-label="更新日志版本类型">
-        <q-btn v-for="group in groups" :key="group.value" flat no-caps
-               class="changelog-group" :class="{'is-selected': selectedGroup === group.value}"
-               :aria-label="group.label" :aria-pressed="selectedGroup === group.value"
-               @click="selectGroup(group.value)">
-          <span>{{ group.label }}</span>
-          <span class="group-count">{{ changelog[group.value].length }}</span>
-        </q-btn>
-      </div>
       <div class="changelog-summary">
-        <span aria-live="polite">{{ groupLabel }} · {{ records.length }} 个版本</span>
+        <span aria-live="polite">{{ selectedGroup ? `${groupLabel} · ${records.length} 个版本` : '当前版本更新记录' }}</span>
         <DetailsHelpButton title="更新日志说明">
-          <p>记录随应用提供，离线也能查看；正式版、预览版和开发版的版本号分别管理。</p>
+          <p>记录随应用提供，离线也能查看；正式版仅展示正式版记录，开发版仅展示当前平台的开发记录。</p>
           <p>历史时间来自仓库版本号变更提交，按当前设备的本地时间显示，不等同于安装包发布日期。</p>
-          <p>开发版可能长期沿用同一版本号，共享功能可查看正式版记录。</p>
+          <p>开发版可能长期沿用同一版本号，不代表每次开发构建都有独立记录。</p>
         </DetailsHelpButton>
       </div>
     </div>
 
-    <section ref="scrollContainer" class="changelog-scroll" tabindex="0" :aria-label="`${groupLabel}更新日志`">
+    <section class="changelog-scroll" tabindex="0" :aria-label="`${groupLabel}更新日志`" :aria-busy="loading">
       <div class="changelog-content">
-        <ol class="changelog-list">
+        <div v-if="loading" class="changelog-state" role="status">
+          <q-spinner size="24px" color="primary"/><span>正在读取应用版本…</span>
+        </div>
+        <div v-else-if="error" class="changelog-state" role="alert">
+          <p>读取更新日志失败：{{ error }}</p>
+          <q-btn flat color="primary" label="重试" @click="refresh"/>
+        </div>
+        <ol v-else class="changelog-list">
           <li v-for="(record, index) in records" :key="`${selectedGroup}:${record.version}`">
             <article class="changelog-entry" :data-version="record.version">
               <header class="entry-header">
@@ -91,35 +93,6 @@ async function selectGroup(group: ChangelogGroup) {
   padding: 20px 24px 0;
 }
 
-.changelog-groups {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.changelog-group {
-  min-height: 42px;
-  border: 1px solid var(--pad-border-color-100);
-  border-radius: var(--pad-radius-md);
-  background: var(--pad-bg-color-200);
-  color: var(--pad-text-color-200);
-
-  .group-count {
-    margin-left: 6px;
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    color: var(--pad-text-color-400);
-  }
-
-  &.is-selected {
-    border-color: var(--pad-primary-color);
-    background: var(--pad-primary-color);
-    color: var(--pad-on-primary-color);
-
-    .group-count { color: inherit; }
-  }
-}
-
 .changelog-summary {
   min-height: 40px;
   display: flex;
@@ -143,6 +116,19 @@ async function selectGroup(group: ChangelogGroup) {
 
 .changelog-content { padding: 4px 24px 24px; }
 .changelog-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.changelog-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 0;
+  text-align: center;
+  color: var(--pad-text-color-300);
+  overflow-wrap: anywhere;
+
+  p { margin: 0; }
+  &[role="alert"] { color: var(--pad-danger-color); }
+}
 
 .changelog-entry {
   padding: 18px 20px;
@@ -194,7 +180,6 @@ async function selectGroup(group: ChangelogGroup) {
 @media (max-width: 600px) {
   .changelog-toolbar { padding: 12px 12px 0; }
   .changelog-content { padding: 4px 12px 20px; }
-  .changelog-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .changelog-entry { padding: 14px; }
 }
 </style>

@@ -18,8 +18,8 @@ try { fullHistory = git('rev-parse', '--is-shallow-repository').trim() === 'fals
 catch { /* 源码压缩包中仍运行格式检查，不依赖 Git。 */ }
 
 describe('应用更新记录', () => {
-  it('只按正式、预览、Windows Dev 和 Android Dev 分组，且各组非空', () => {
-    expect(Object.keys(changelog).sort()).toEqual(['androidDev', 'preview', 'stable', 'windowsDev']);
+  it('只按正式、Windows Dev 和 Android Dev 分组，且各组非空', () => {
+    expect(Object.keys(changelog).sort()).toEqual(['androidDev', 'stable', 'windowsDev']);
     for (const records of Object.values(changelog)) {
       expect(Array.isArray(records)).toBe(true);
       expect(records.length).toBeGreaterThan(0);
@@ -39,12 +39,12 @@ describe('应用更新记录', () => {
     expect(record.description).not.toMatch(/[\r\n<>]/);
   });
 
-  it('每个版本序列去重，并按版本号倒序；预发布版本单列', () => {
-    for (const [group, records] of Object.entries(changelog)) {
+  it('每个版本序列去重，并按版本号倒序；不再保留预发布版本', () => {
+    for (const records of Object.values(changelog)) {
       const versions = records.map(record => record.version);
       expect(new Set(versions).size).toBe(versions.length);
       expect(versions).toEqual([...versions].sort((a, b) => b.localeCompare(a, 'en', {numeric: true})));
-      for (const version of versions) expect(version.includes('-')).toBe(group === 'preview');
+      for (const version of versions) expect(version.includes('-')).toBe(false);
     }
   });
 
@@ -69,7 +69,9 @@ describe('应用更新记录', () => {
         if (line.startsWith('diff --git ')) path = line.split(' b/')[1];
         const match = line.match(/^\+\s*"version":\s*"([^"]+)"/);
         if (!match) continue;
-        const group = match[1].includes('-') ? 'preview' : configGroups[path];
+        // 已按产品要求移除预览版，只审计保留的正式/平台开发版历史。
+        if (match[1].includes('-')) continue;
+        const group = configGroups[path];
         const key = `${group}:${match[1]}`;
         if (!history.has(key)) history.set(key, Number(seconds) * 1000);
       }

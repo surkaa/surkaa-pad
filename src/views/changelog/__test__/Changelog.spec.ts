@@ -13,6 +13,9 @@ vi.mock('../../diary-list/DiaryList.vue', () => ({default: {render: () => null}}
 // 只替换设置页里的其他模块，实际使用关于/更新日志两个同级入口及主路由配置。
 vi.mock('../../settings/Settings.vue', async () => ({default: (await import('../../settings/AboutSettings.vue')).default}));
 const about = vi.hoisted(() => ({load: vi.fn()}));
+const environment = vi.hoisted(() => ({getIdentifier: vi.fn(), getName: vi.fn(), platform: vi.fn()}));
+vi.mock('@tauri-apps/api/app', () => ({getIdentifier: environment.getIdentifier, getName: environment.getName}));
+vi.mock('@tauri-apps/plugin-os', () => ({platform: environment.platform}));
 vi.mock('../../../utils/aboutInfo', () => ({
   loadAboutInfo: about.load,
   formatAboutSummary: (info: {appVersion: string}) => `版本 ${info.appVersion}`,
@@ -32,7 +35,6 @@ async function mount(path = '/changelog', dark = false) {
   host = document.createElement('div'); document.body.append(host);
   Dark.set(dark); app.mount(host); await settle();
 }
-function groupButton(label: string) { return host.querySelector<HTMLButtonElement>(`.changelog-group[aria-label="${label}"]`)!; }
 function versions() { return Array.from(host.querySelectorAll('.changelog-entry'), node => node.getAttribute('data-version')); }
 function nextNavigation() {
   return new Promise<void>(resolve => {
@@ -41,6 +43,10 @@ function nextNavigation() {
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks();
+  vi.stubEnv('DEV', false);
+  environment.getIdentifier.mockReset().mockResolvedValue('cn.surkaa.pad');
+  environment.getName.mockReset().mockResolvedValue('SurKaa Pad');
+  environment.platform.mockReset().mockReturnValue('windows');
   about.load.mockResolvedValue({
     appName: 'SurKaa Pad', appVersion: '0.8.16', gitCommit: '12345678', identifier: 'cn.surkaa.pad',
     tauriVersion: '2', platform: 'Windows', architecture: 'x86_64', osVersion: '11',
@@ -48,7 +54,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   app?.unmount(); app = undefined; router?.options.history.destroy(); if (pinia) disposePinia(pinia);
-  document.body.innerHTML = ''; Dark.set(false); vi.useRealTimers(); vi.restoreAllMocks();
+  document.body.innerHTML = ''; Dark.set(false); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs();
 });
 afterAll(() => appRouter.options.history.destroy());
 
@@ -76,7 +82,7 @@ describe.each([false, true])('独立更新日志页面（深色=%s）', dark => 
     expect(host.querySelector('[aria-label="更新日志"]')).not.toBeNull();
   });
 
-  it('默认显示全部正式版，包括0.4.10之前的版本，按JSON顺序展示纯文本及本地日期', async () => {
+  it('正式包只显示全部正式版，包括早期版本，按JSON顺序展示纯文本及本地日期', async () => {
     await mount('/changelog', dark);
     expect(versions()).toEqual(data.stable.map(record => record.version));
     expect(host.querySelector('[data-version="0.4.9"]')).not.toBeNull();
@@ -88,32 +94,60 @@ describe.each([false, true])('独立更新日志页面（深色=%s）', dark => 
     expect(first.querySelector('time')?.getAttribute('datetime')).toBe(new Date(data.stable[0].updatedAt).toISOString());
     expect(first.querySelector('.entry-latest')?.textContent).toBe('最新记录');
     expect(host.querySelectorAll('.entry-latest')).toHaveLength(1);
-    expect(groupButton('正式版').getAttribute('aria-pressed')).toBe('true');
-    expect(about.load).not.toHaveBeenCalled(); // 查看本地日志不依赖 Tauri 信息接口。
+    expect(host.querySelector('.changelog-groups')).toBeNull();
+    expect(host.querySelector('.changelog-summary')?.textContent).toContain(`正式版 · ${data.stable.length} 个版本`);
+    expect(host.textContent).not.toMatch(/预览版|Windows Dev|Android Dev/);
+    expect(about.load).not.toHaveBeenCalled(); // 仅需要应用版本标识，不读取完整的关于信息。
     expect(document.body.classList.contains('body--dark')).toBe(dark);
   });
 
-  it('四个版本序列独立切换，不把正式版与开发版的同名版本混在一起', async () => {
+  it.each([
+    ['windows', false, 'cn.surkaa.pad', 'SurKaa Pad', 'stable', '正式版'],
+    ['android', false, 'cn.surkaa.pad', 'SurKaa Pad', 'stable', '正式版'],
+    ['windows', false, 'cn.surkaa.pad.dev', 'SurKaa Pad (Dev)', 'windowsDev', 'Windows Dev'],
+    ['android', false, 'cn.surkaa.pad', 'SurKaa Pad (Dev)', 'androidDev', 'Android Dev'],
+    ['windows', true, 'cn.surkaa.pad', 'SurKaa Pad', 'windowsDev', 'Windows Dev'],
+    ['android', true, 'cn.surkaa.pad', 'SurKaa Pad', 'androidDev', 'Android Dev'],
+  ] as const)('%s 开发运行=%s 的包仅显示自身版本记录', async (currentPlatform, frontendDev, identifier, name, group, label) => {
+    vi.stubEnv('DEV', frontendDev);
+    environment.getIdentifier.mockResolvedValue(identifier);
+    environment.getName.mockResolvedValue(name);
+    environment.platform.mockReturnValue(currentPlatform);
     await mount('/changelog', dark);
-    for (const [group, label] of [['preview', '预览版'], ['windowsDev', 'Windows Dev'], ['androidDev', 'Android Dev'], ['stable', '正式版']] as const) {
-      groupButton(label).click(); await settle();
-      expect(versions()).toEqual(data[group].map(record => record.version));
-      expect(groupButton(label).getAttribute('aria-pressed')).toBe('true');
-      expect(host.querySelector('.changelog-summary')?.textContent).toContain(`${label} · ${data[group].length} 个版本`);
-      expect(Array.from(host.querySelectorAll('.entry-description'), node => node.textContent))
-        .toEqual(data[group].map(record => record.description));
+    expect(versions()).toEqual(data[group].map(record => record.version));
+    expect(host.querySelector('.changelog-summary')?.textContent).toContain(`${label} · ${data[group].length} 个版本`);
+    expect(Array.from(host.querySelectorAll('.entry-description'), node => node.textContent))
+      .toEqual(data[group].map(record => record.description));
+    expect(host.querySelector('.changelog-groups')).toBeNull();
+    expect(host.querySelector('.changelog-group')).toBeNull();
+    expect(host.textContent).not.toContain('预览版');
+    for (const otherLabel of ['正式版', 'Windows Dev', 'Android Dev'].filter(value => value !== label)) {
+      expect(host.querySelector('.changelog-summary')?.textContent).not.toContain(otherLabel);
     }
   });
 
-  it('切换分组后从顶部查看；重复点击当前分组不打断阅读位置', async () => {
+  it('识别完成之前不闪现其他版本的记录', async () => {
+    let resolveIdentifier!: (identifier: string) => void;
+    environment.getIdentifier.mockReturnValueOnce(new Promise<string>(resolve => { resolveIdentifier = resolve; }));
     await mount('/changelog', dark);
-    const scroll = host.querySelector<HTMLElement>('.changelog-scroll')!;
-    scroll.scrollTop = 480;
-    groupButton('正式版').click(); await settle();
-    expect(scroll.scrollTop).toBe(480);
-    groupButton('Windows Dev').click(); await settle();
-    expect(scroll.scrollTop).toBe(0);
-    expect(host.querySelector('[data-version="0.8.16"]')).toBeNull();
+    expect(versions()).toHaveLength(0);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain('正在读取应用版本');
+    expect(host.querySelector('.changelog-scroll')?.getAttribute('aria-busy')).toBe('true');
+    resolveIdentifier('cn.surkaa.pad.dev'); await settle();
+    expect(versions()).toEqual(data.windowsDev.map(record => record.version));
+    expect(host.querySelector('.changelog-scroll')?.getAttribute('aria-busy')).toBe('false');
+  });
+
+  it('识别失败时提示重试，不误显示正式版或其他平台日志', async () => {
+    environment.getName.mockRejectedValueOnce(new Error('版本读取失败'));
+    await mount('/changelog', dark);
+    expect(versions()).toHaveLength(0);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('版本读取失败');
+    environment.getName.mockResolvedValue('SurKaa Pad (Dev)');
+    environment.platform.mockReturnValue('android');
+    host.querySelector<HTMLButtonElement>('[role="alert"] button')!.click(); await settle();
+    expect(versions()).toEqual(data.androidDev.map(record => record.version));
+    expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 
   it('长说明通过感叹号按需打开二级弹窗，不放在关于弹窗中', async () => {
