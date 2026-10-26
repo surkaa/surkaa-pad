@@ -20,6 +20,7 @@ import {useDiaryListShortcuts} from '../../composables/useDiaryListShortcuts';
 import {formatEditorShortcut} from '../../utils/editorShortcuts';
 import {platform} from '@tauri-apps/plugin-os';
 import {useAndroidShareStore} from '../../stores/androidShare';
+import {usePinnedDiaryCompaction} from '../../composables/usePinnedDiaryCompaction';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -55,6 +56,8 @@ const diaryListRenderRevision = ref(0);
 let diaryListLoadGeneration = 0;
 
 const scrollContainer = ref<HTMLElement | null>(null);
+const pinnedNaturalLayout = ref<HTMLElement | null>(null);
+const compactPinnedDiaries = usePinnedDiaryCompaction(scrollContainer, pinnedNaturalLayout);
 const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
 
 // 激活状态
@@ -111,7 +114,7 @@ useDiaryListShortcuts(diaryListShortcuts, {
   settings: openSettings,
 });
 
-const sortedDiaryIds = computed(() => {
+const groupedDiaryIds = computed(() => {
   const pinned: string[] = [];
   const unpinned: string[] = [];
 
@@ -124,8 +127,8 @@ const sortedDiaryIds = computed(() => {
     }
   });
 
-  // 返回拼接后的数组：置顶在前，未置顶在后
-  return [...pinned, ...unpinned];
+  // 分组渲染：置顶在前，未置顶在后。
+  return {pinned, unpinned};
 });
 
 watch(pinnedDiaryIds, (newPinnedIds) => {
@@ -137,7 +140,7 @@ watch(pinnedDiaryIds, (newPinnedIds) => {
         // 初始化占位，供骨架屏使用
         diarySummaries.value[id] = null;
       }
-      // 加入底层列表，sortedDiaryIds 会自动将它提到最前面
+      // 加入底层列表，groupedDiaryIds 会自动将它提到最前面
       diaryIds.value.push(id);
     }
   });
@@ -308,14 +311,25 @@ onDeactivated(() => {
               @load="onLoad"
               :offset="250"
           >
-            <DiarySummaryCard
-                v-for="id in sortedDiaryIds"
-                :key="`${diaryListRenderRevision}:${id}`"
-                :diary="diarySummaries[id]"
-                :pinned="pinnedDiaryIds.includes(id)"
-                @click="handleDiaryClick(id)"
-                @visible="handleCardVisible(id)"
-            />
+            <div class="diary-cards">
+              <!-- 始终按正常卡片测量，包括间距；不参与可见性加载、点击及无障碍阅读。 -->
+              <div v-if="groupedDiaryIds.pinned.length" class="pinned-measurement-clip" aria-hidden="true" inert>
+                <div ref="pinnedNaturalLayout" class="pinned-natural-layout">
+                  <DiarySummaryCard v-for="id in groupedDiaryIds.pinned" :key="id"
+                                    :diary="diarySummaries[id]" pinned :observe-visibility="false"/>
+                </div>
+              </div>
+              <div v-if="groupedDiaryIds.pinned.length" class="pinned-diaries">
+                <DiarySummaryCard v-for="id in groupedDiaryIds.pinned"
+                                  :key="`${diaryListRenderRevision}:${id}`"
+                                  :diary="diarySummaries[id]" pinned :compact="compactPinnedDiaries"
+                                  @click="handleDiaryClick(id)" @visible="handleCardVisible(id)"/>
+              </div>
+              <DiarySummaryCard v-for="id in groupedDiaryIds.unpinned"
+                                :key="`${diaryListRenderRevision}:${id}`"
+                                :diary="diarySummaries[id]"
+                                @click="handleDiaryClick(id)" @visible="handleCardVisible(id)"/>
+            </div>
 
             <template v-slot:loading>
               <div class="row justify-center q-my-md">
@@ -399,11 +413,33 @@ onDeactivated(() => {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
+    // 紧缩导致滚动条消失时，保持测量宽度稳定，避免临界点来回切换。
+    scrollbar-gutter: stable;
     padding: 24px 24px 100px 24px;
   }
 
   .diary-list-refresh {
     min-height: 100%;
+  }
+
+  .diary-cards {
+    position: relative;
+  }
+
+  .pinned-diaries,
+  .pinned-natural-layout {
+    display: flow-root;
+  }
+
+  .pinned-measurement-clip {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    // 裁剪测量布局的溢出，避免它把滚动内容撑回未紧缩时的高度。
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
   }
 
   .diary-opening-overlay {

@@ -5,10 +5,13 @@ import type {DiaryAttachmentCounts, DiarySummary} from "../bindings.ts";
 import {attachmentEncryptionFillPercentage} from "../utils/attachmentEncryptionFill.ts";
 import {formatAttachmentTotalSize} from "../utils/format.ts";
 
-const {diary} = defineProps<{
+const {diary, pinned, compact = false, observeVisibility = true} = defineProps<{
   diary: DiarySummary | null;
   pinned?: boolean;
+  compact?: boolean;
+  observeVisibility?: boolean;
 }>();
+const isCompact = computed(() => Boolean(pinned && compact));
 
 const emit = defineEmits<{
   (e: 'visible'): void;
@@ -18,6 +21,8 @@ const cardRef = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
 
 onMounted(() => {
+  // 隐藏的正常高度测量卡片不能触发摘要加载或占用真实卡片的观察器。
+  if (!observeVisibility) return;
   // 建立视口交叉观察器
   observer = new IntersectionObserver(
       ([entry]) => {
@@ -69,10 +74,11 @@ function attachmentIconStyle(type: keyof DiaryAttachmentCounts): Record<string, 
 </script>
 
 <template>
-  <div class="diary-card" ref="cardRef" :class="{ 'skeleton-mode': !diary, 'diary-card--pinned': pinned }">
-    <div v-if="!pinned" class="card-header">
+  <div class="diary-card" ref="cardRef" :class="{ 'skeleton-mode': !diary, 'diary-card--pinned': isCompact }">
+    <div v-if="!isCompact" class="card-header">
       <div class="date-group">
         <div class="date-primary">
+          <span v-if="pinned && diary" class="pinned-icon q-mr-sm" title="已置顶">📌</span>
           <svg viewBox="0 0 24 24" width="14" height="14" v-if="diary">
             <path
                 d="M20 3h-1V1h-2v2H7V1H5v2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 18H4V8h16v13z"/>
@@ -95,15 +101,15 @@ function attachmentIconStyle(type: keyof DiaryAttachmentCounts): Record<string, 
 
     <div class="card-content">
       <p class="preview-content" v-if="diary">
-        <span v-if="pinned" class="pinned-icon" title="已置顶">📌</span>
+        <span v-if="isCompact" class="pinned-icon" title="已置顶">📌</span>
         <span class="preview-title" :title="diary.title || '（无内容预览）'">{{ diary.title || '（无内容预览）' }}</span>
       </p>
       <div v-else class="skeleton-bar w-full h-20"></div>
     </div>
 
-    <div v-if="!pinned || !diary || hasAttachmentOverview" class="card-footer">
+    <div v-if="!isCompact || !diary || hasAttachmentOverview" class="card-footer">
       <div class="meta-info">
-        <span class="meta-item diary-id" v-if="!pinned && diary">
+        <span class="meta-item diary-id" v-if="!isCompact && diary">
           <span class="meta-icon">🆔</span>
           <span class="meta-text">{{ diary.id }}</span>
         </span>
@@ -133,12 +139,12 @@ function attachmentIconStyle(type: keyof DiaryAttachmentCounts): Record<string, 
             <q-icon name="description" class="encrypted-fill"/>
           </span><span>×{{ attachmentCounts.file }}</span>
         </span>
-        <span v-if="pinned && attachmentTotalSizeText" class="meta-item attachment-total-size" title="所有附件总大小">
+        <span v-if="isCompact && attachmentTotalSizeText" class="meta-item attachment-total-size" title="所有附件总大小">
           <span aria-hidden="true">📎</span>
           <span>{{ attachmentTotalSizeText }}</span>
         </span>
       </div>
-      <span v-if="!pinned" class="open-indicator">
+      <span v-if="!isCompact" class="open-indicator">
         <svg class="arrow-icon" viewBox="0 0 24 24" width="16" height="16">
           <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
         </svg>

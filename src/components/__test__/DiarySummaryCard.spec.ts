@@ -18,11 +18,11 @@ const summary: DiarySummary = {
   attachmentTotalSize: 8 * 1024 ** 2,
 };
 
-async function mount(diary: DiarySummary | null = summary, pinned = true) {
+async function mount(diary: DiarySummary | null = summary, pinned = true, compact = true, observeVisibility = true) {
   host = document.createElement('div'); document.body.append(host);
   const visible = vi.fn();
   const click = vi.fn();
-  const props = reactive({diary, pinned, onVisible: visible, onClick: click});
+  const props = reactive({diary, pinned, compact, observeVisibility, onVisible: visible, onClick: click});
   // 使用响应式 props 覆盖骨架加载完成及取消置顶时的真实组件切换。
   app = createApp({render: () => h(Component, props)});
   app.use(Quasar);
@@ -47,6 +47,30 @@ afterEach(() => {
 });
 
 describe.each([false, true])('日记摘要卡片（深色=%s）', dark => {
+  it('未超过阈值的置顶卡片保持完整信息，统一切换时才紧缩', async () => {
+    Dark.set(dark);
+    const {props} = await mount(summary, true, false);
+    expect(host.querySelector('.diary-card--pinned')).toBeNull();
+    expect(host.querySelector('.pinned-icon')).not.toBeNull();
+    expect(host.querySelector('.card-header')).not.toBeNull();
+    expect(host.querySelector('.diary-id')?.textContent).toContain(summary.id);
+    props.compact = true;
+    await nextTick();
+    expect(host.querySelector('.diary-card--pinned')).not.toBeNull();
+    expect(host.querySelector('.card-header')).toBeNull();
+    props.compact = false;
+    await nextTick();
+    expect(host.querySelector('.card-header')).not.toBeNull();
+  });
+
+  it('高度测量卡片不会注册可见性观察器或请求摘要', async () => {
+    Dark.set(dark);
+    const {visible} = await mount(null, true, false, false);
+    expect(observe).not.toHaveBeenCalled();
+    expect(visible).not.toHaveBeenCalled();
+    expect(host.querySelector('.card-header')).not.toBeNull();
+  });
+
   it('置顶卡片只保留标题、附件类型统计和总大小', async () => {
     Dark.set(dark); await mount();
     expect(host.querySelector('.diary-card--pinned')).not.toBeNull();
