@@ -1,7 +1,7 @@
 import {Extension} from '@tiptap/vue-3';
 import {changeEditorListLevel} from '../../utils/editorLists';
 
-export {changeEditorListLevel, toggleEditorList} from '../../utils/editorLists';
+export {canChangeEditorListLevel, changeEditorListLevel, toggleEditorList} from '../../utils/editorLists';
 export type {EditorListType} from '../../utils/editorLists';
 
 export const ListIndentation = Extension.create({

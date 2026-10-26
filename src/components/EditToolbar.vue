@@ -1,6 +1,7 @@
 <script setup lang="ts">
 
-import {computed} from 'vue';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
+import {useQuasar} from 'quasar';
 import type { Editor } from '@tiptap/vue-3'
 import { platform } from "@tauri-apps/plugin-os";
 import {
@@ -16,7 +17,9 @@ import {
   runEditorToolbarAction,
   type EditorToolbarAction,
 } from '../utils/editorToolbar';
-import {changeEditorListLevel, toggleEditorList} from './editor/listEditing';
+import {canChangeEditorListLevel, changeEditorListLevel, toggleEditorList} from './editor/listEditing';
+import {installEditorLongPress} from './editor/editorLongPress';
+import {useEditorContextMenu} from '../composables/useEditorContextMenu';
 
 const {
   view,
@@ -44,7 +47,68 @@ const emit = defineEmits([
 const currentPlatform = platform();
 const isAndroid = currentPlatform === 'android';
 const isWindows = currentPlatform === 'windows';
+const isMobile = isAndroid || currentPlatform === 'ios';
+const $q = useQuasar();
+const {showMenu} = useEditorContextMenu(currentPlatform);
+const toolbarScroll = ref<HTMLElement | null>(null);
+let disposeLongPress: (() => void) | undefined;
 const orderedToolbarActions = computed(() => normalizeEditorToolbarOrder(toolbarOrder));
+
+onMounted(() => {
+  if (isMobile && toolbarScroll.value) {
+    disposeLongPress = installEditorLongPress(toolbarScroll.value, target => {
+      const button = target instanceof Element ? target.closest<HTMLButtonElement>('[data-list-menu]') : null;
+      return button && !button.disabled ? button : null;
+    }, () => openListMenu());
+  }
+});
+onBeforeUnmount(() => disposeLongPress?.());
+
+function openListMenu() {
+  const current = editor;
+  if (!view || !current?.isEditable || current.isDestroyed) return;
+  if (isMobile) {
+    // 在底部菜单保存回焦目标前收起编辑焦点；选中具体操作后才执行编辑。
+    current.commands.blur();
+    current.view.dom.blur();
+  }
+  const {doc, selection} = current.state;
+  const run = (action: () => void) => () => {
+    if (!view || editor !== current || current.isDestroyed || !current.isEditable) return;
+    if (current.state.doc !== doc) {
+      $q.notify({type: 'warning', message: '日记内容已经发生变化，请重新打开列表菜单'});
+      return;
+    }
+    current.view.dispatch(current.state.tr.setSelection(selection));
+    action();
+  };
+  const canToggle = !current.isActive('table');
+  void showMenu([
+    [
+      {label: '普通列表', enabled: canToggle, action: run(() => { toggleEditorList(current, 'bulletList'); })},
+      {label: '编号列表', enabled: canToggle, action: run(() => { toggleEditorList(current, 'orderedList'); })},
+    ],
+    [
+      {label: '升级', enabled: canChangeEditorListLevel(current, false), action: run(() => { changeEditorListLevel(current, false); })},
+      {label: '降级', enabled: canChangeEditorListLevel(current, true), action: run(() => { changeEditorListLevel(current, true); })},
+    ],
+  ]);
+}
+
+function toolbarContextMenu(event: MouseEvent, action: EditorToolbarAction) {
+  if (action !== 'bulletList') return;
+  event.preventDefault();
+  event.stopPropagation();
+  // 移动端由长按手势处理，避免 WebView 的 contextmenu 再打开一次。
+  if (!isMobile) openListMenu();
+}
+
+function toolbarMenuKey(event: KeyboardEvent, action: EditorToolbarAction) {
+  if (action !== 'bulletList' || (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10'))) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openListMenu();
+}
 
 function isToolbarActionActive(action: EditorToolbarAction): boolean {
   if (!editor) return false;
@@ -109,7 +173,8 @@ function toolbarActionTitle(action: EditorToolbarAction) {
   if (!EDITOR_FORMATTING_ACTIONS.includes(action as (typeof EDITOR_FORMATTING_ACTIONS)[number])) {
     return label;
   }
-  return attachmentActionTitle(label, action as EditorShortcutAction);
+  const title = attachmentActionTitle(label, action as EditorShortcutAction);
+  return action === 'bulletList' ? `${title} · ${isMobile ? '长按' : '右键'}打开列表操作` : title;
 }
 
 </script>
@@ -119,7 +184,7 @@ function toolbarActionTitle(action: EditorToolbarAction) {
     <div v-show="view" class="edit-toolbar">
 
       <div class="toolbar-header">
-        <div class="toolbar-scroll">
+        <div ref="toolbarScroll" class="toolbar-scroll">
           <template v-if="editor">
             <button
               v-for="action in orderedToolbarActions"
@@ -128,8 +193,12 @@ function toolbarActionTitle(action: EditorToolbarAction) {
               :class="{ 'is-active': isToolbarActionActive(action) }"
               :title="toolbarActionTitle(action)"
               :aria-label="EDITOR_TOOLBAR_LABELS[action]"
+              :aria-haspopup="action === 'bulletList' ? 'menu' : undefined"
+              :data-list-menu="action === 'bulletList' ? '' : undefined"
               :disabled="!editor.isEditable || (action === 'table' && editor.isActive('table'))"
               @mousedown.prevent
+              @contextmenu="toolbarContextMenu($event, action)"
+              @keydown="toolbarMenuKey($event, action)"
               @click.stop="runToolbarAction(action)"
             >
               <q-icon
@@ -157,18 +226,6 @@ function toolbarActionTitle(action: EditorToolbarAction) {
 
       <transition name="panel-expand">
         <div v-show="panelOpen" class="more-panel">
-          <div class="list-actions" @mousedown.prevent>
-            <q-btn flat icon="format_list_bulleted" label="普通列表" class="panel-item-btn"
-                   :disable="!editor" @click="toggleEditorList(editor, 'bulletList')"/>
-            <q-btn flat icon="format_list_numbered" label="编号列表" class="panel-item-btn"
-                   :disable="!editor" @click="toggleEditorList(editor, 'orderedList')"/>
-            <q-btn flat icon="format_indent_increase" label="降级" class="panel-item-btn"
-                   :disable="!editor || (!editor.isActive('listItem') && !editor.isActive('taskItem'))"
-                   title="降级为子列表（Tab）" @click="changeEditorListLevel(editor, true)"/>
-            <q-btn flat icon="format_indent_decrease" label="升级" class="panel-item-btn"
-                   :disable="!editor || (!editor.isActive('listItem') && !editor.isActive('taskItem'))"
-                   title="提升列表层级（Shift+Tab）" @click="changeEditorListLevel(editor, false)"/>
-          </div>
           <div>
             <q-btn flat stack color="grey-8" class="panel-item-btn"
                    :title="attachmentActionTitle('照片', 'insertPhoto')" @click="emit('insertPhoto')">
@@ -281,6 +338,12 @@ function toolbarActionTitle(action: EditorToolbarAction) {
       color: var(--pad-on-primary-color);
     }
 
+    &[data-list-menu] {
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
     &:disabled {
       opacity: 0.4;
       cursor: not-allowed;
@@ -311,16 +374,6 @@ function toolbarActionTitle(action: EditorToolbarAction) {
     width: 100%;
     background-color: var(--pad-bg-color-200);
     overflow: hidden;
-
-    .list-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      padding-bottom: 12px;
-      margin-bottom: 12px;
-      border-bottom: 1px solid var(--pad-border-color-100);
-      color: var(--pad-text-color);
-    }
 
     .panel-item-btn {
       color: var(--pad-text-color);

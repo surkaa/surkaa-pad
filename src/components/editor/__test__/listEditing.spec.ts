@@ -4,7 +4,7 @@ import {Editor} from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import {ListIndentation, changeEditorListLevel, toggleEditorList} from '../listEditing';
+import {ListIndentation, canChangeEditorListLevel, changeEditorListLevel, toggleEditorList} from '../listEditing';
 import {htmlToDiaryContent, htmlToMarkdown, markdownToHtml, diaryContentToHtml} from '../markdownConverter';
 
 let editor: Editor | undefined;
@@ -89,6 +89,22 @@ describe('multi-level editor lists', () => {
     expect(changeEditorListLevel(current, true)).toBe(false);
     expect(pressTab(current)).toBe(false);
     expect(toggleEditorList(null, 'bulletList')).toBe(false);
+  });
+
+  it('checks available list levels without changing the document or selection', () => {
+    const current = createEditor(markdownToHtml('- 第一项\n- 第二项'));
+    selectText(current, '第一项');
+    expect(canChangeEditorListLevel(current, true)).toBe(false);
+    expect(canChangeEditorListLevel(current, false)).toBe(true);
+    selectText(current, '第二项');
+    const before = current.state;
+    expect(canChangeEditorListLevel(current, true)).toBe(true);
+    expect(canChangeEditorListLevel(current, false)).toBe(true);
+    expect(current.state.doc).toBe(before.doc);
+    expect(current.state.selection.eq(before.selection)).toBe(true);
+    current.setEditable(false);
+    expect(canChangeEditorListLevel(current, false)).toBe(false);
+    expect(canChangeEditorListLevel(null, true)).toBe(false);
   });
 
   it('refuses to wrap non-text blocks into a Markdown list', () => {

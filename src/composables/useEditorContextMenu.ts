@@ -10,7 +10,7 @@ export interface EditorMenuAction {
 }
 export type EditorMenuGroup = readonly EditorMenuAction[];
 
-/** 附件和表格共用平台菜单；组间分隔，不替换系统原生菜单的样式。 */
+/** 附件、表格和列表共用平台菜单；组间分隔，不替换系统原生菜单的样式。 */
 export function useEditorContextMenu(currentPlatform: string) {
   const $q = useQuasar();
   let disposed = false;
