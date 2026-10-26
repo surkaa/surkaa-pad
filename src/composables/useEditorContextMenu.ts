@@ -18,10 +18,10 @@ export function useEditorContextMenu(currentPlatform: string) {
   let nativeMenu: Menu | undefined;
   let sheet: ReturnType<typeof $q.bottomSheet> | undefined;
 
-  function run(action: EditorMenuAction) {
-    if (disposed || action.enabled === false) return;
+  function run(action: EditorMenuAction, currentRequest: number) {
+    if (disposed || currentRequest !== request || action.enabled === false) return;
     void Promise.resolve().then(() => {
-      if (!disposed && action.enabled !== false) return action.action();
+      if (!disposed && currentRequest === request && action.enabled !== false) return action.action();
     }).catch(error => {
       console.error('上下文菜单操作失败:', error);
       $q.notify({type: 'negative', message: '操作失败，请重试'});
@@ -33,6 +33,13 @@ export function useEditorContextMenu(currentPlatform: string) {
     nativeMenu = undefined;
     try { await previous?.close(); }
     catch (error) { console.error('释放上下文菜单失败:', error); }
+  }
+
+  /** KeepAlive 页面离开或操作被禁用时也需要取消尚未显示的菜单。 */
+  function closeMenu() {
+    request += 1;
+    sheet?.hide();
+    void closeNativeMenu();
   }
 
   async function showMenu(groups: readonly EditorMenuGroup[]) {
@@ -68,7 +75,7 @@ export function useEditorContextMenu(currentPlatform: string) {
       }).onDismiss(() => {
         if (sheet === currentSheet) sheet = undefined;
         // 等菜单完全关闭后操作，避免和软键盘、后续弹窗争抢焦点。
-        if (selected) run(selected);
+        if (selected) run(selected, currentRequest);
       });
       sheet = currentSheet;
       return;
@@ -81,7 +88,7 @@ export function useEditorContextMenu(currentPlatform: string) {
       for (const group of visibleGroups) {
         if (items.length) items.push({item: 'Separator'});
         for (const action of group) {
-          items.push({text: action.label, enabled: action.enabled !== false, action: () => run(action)});
+          items.push({text: action.label, enabled: action.enabled !== false, action: () => run(action, currentRequest)});
         }
       }
       // Tauri 的原生菜单不支持逐项文字颜色；删除项保留明确文案和独立分组。
@@ -96,8 +103,7 @@ export function useEditorContextMenu(currentPlatform: string) {
 
   onScopeDispose(() => {
     disposed = true;
-    sheet?.hide();
-    void closeNativeMenu();
+    closeMenu();
   });
-  return {showMenu};
+  return {showMenu, closeMenu};
 }

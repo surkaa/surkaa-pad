@@ -21,10 +21,12 @@ import {formatEditorShortcut} from '../../utils/editorShortcuts';
 import {platform} from '@tauri-apps/plugin-os';
 import {useAndroidShareStore} from '../../stores/androidShare';
 import {usePinnedDiaryCompaction} from '../../composables/usePinnedDiaryCompaction';
+import {useDiaryListContextMenu} from '../../composables/useDiaryListContextMenu';
 
 const $q = useQuasar();
 const router = useRouter();
-const isWindows = platform() === 'windows';
+const currentPlatform = platform();
+const isWindows = currentPlatform === 'windows';
 const androidShareStore = useAndroidShareStore();
 const {selectingTarget} = storeToRefs(androidShareStore);
 const timeoutStore = useTimeoutStore();
@@ -62,6 +64,13 @@ const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
 
 // 激活状态
 const isActivating = ref(true);
+const diaryCards = ref<HTMLElement | null>(null);
+useDiaryListContextMenu(diaryCards, {
+  currentPlatform,
+  pinnedDiaryIds,
+  enabled: () => isActivating.value && !isOpeningDiary.value,
+  isAvailable: id => diaryIds.value.includes(id) && !!diarySummaries.value[id],
+});
 
 function openSearch() {
   if (isOpeningDiary.value) return;
@@ -311,7 +320,7 @@ onDeactivated(() => {
               @load="onLoad"
               :offset="250"
           >
-            <div class="diary-cards">
+            <div ref="diaryCards" class="diary-cards">
               <!-- 始终按正常卡片测量，包括间距；不参与可见性加载、点击及无障碍阅读。 -->
               <div v-if="groupedDiaryIds.pinned.length" class="pinned-measurement-clip" aria-hidden="true" inert>
                 <div ref="pinnedNaturalLayout" class="pinned-natural-layout">
@@ -322,11 +331,13 @@ onDeactivated(() => {
               <div v-if="groupedDiaryIds.pinned.length" class="pinned-diaries">
                 <DiarySummaryCard v-for="id in groupedDiaryIds.pinned"
                                   :key="`${diaryListRenderRevision}:${id}`"
+                                  :data-diary-id="id"
                                   :diary="diarySummaries[id]" pinned :compact="compactPinnedDiaries"
                                   @click="handleDiaryClick(id)" @visible="handleCardVisible(id)"/>
               </div>
               <DiarySummaryCard v-for="id in groupedDiaryIds.unpinned"
                                 :key="`${diaryListRenderRevision}:${id}`"
+                                :data-diary-id="id"
                                 :diary="diarySummaries[id]"
                                 @click="handleDiaryClick(id)" @visible="handleCardVisible(id)"/>
             </div>
@@ -424,6 +435,12 @@ onDeactivated(() => {
 
   .diary-cards {
     position: relative;
+
+    :deep([data-diary-id]) {
+      -webkit-touch-callout: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
   }
 
   .pinned-diaries,

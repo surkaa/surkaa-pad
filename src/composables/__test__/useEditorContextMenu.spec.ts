@@ -9,11 +9,12 @@ const native = vi.hoisted(() => ({create: vi.fn()}));
 vi.mock('@tauri-apps/api/menu', () => ({Menu: {new: native.create}}));
 let app: App | undefined;
 let showMenu: ReturnType<typeof useEditorContextMenu>['showMenu'];
+let closeMenu: ReturnType<typeof useEditorContextMenu>['closeMenu'];
 async function settle() { await nextTick(); await vi.advanceTimersByTimeAsync(400); await nextTick(); }
 async function mount(platform: string, dark = false) {
   const host = document.createElement('div'); document.body.append(host);
   app = createApp(defineComponent({setup() {
-    ({showMenu} = useEditorContextMenu(platform)); return () => h('div');
+    ({showMenu, closeMenu} = useEditorContextMenu(platform)); return () => h('div');
   }}));
   app.use(Quasar, {plugins: {BottomSheet, Notify}}); Dark.set(dark); app.mount(host); await settle();
 }
@@ -117,5 +118,31 @@ describe('shared editor context menu', () => {
     (items()[0] as MenuItemOptions).action!('');
     app!.unmount(); app = undefined; await settle();
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it('closes a native menu, invalidates queued actions, and can reopen after KeepAlive activation', async () => {
+    await mount('windows');
+    const run = vi.fn();
+    await showMenu([[{label: '操作', action: run}]]);
+    const menu = await native.create.mock.results[0].value;
+    (items()[0] as MenuItemOptions).action!('');
+    closeMenu(); await settle();
+    expect(menu.close).toHaveBeenCalledOnce();
+    expect(run).not.toHaveBeenCalled();
+    await showMenu([[{label: '操作', action: run}]]);
+    (items()[0] as MenuItemOptions).action!(''); await settle();
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it('cancels native creation that completes after closing', async () => {
+    await mount('windows');
+    let finish!: (menu: object) => void;
+    native.create.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const showing = showMenu([[{label: '操作', action: vi.fn()}]]);
+    await settle(); closeMenu();
+    const menu = {popup: vi.fn(), close: vi.fn().mockResolvedValue(undefined)};
+    finish(menu); await showing;
+    expect(menu.popup).not.toHaveBeenCalled();
+    expect(menu.close).toHaveBeenCalledOnce();
   });
 });
