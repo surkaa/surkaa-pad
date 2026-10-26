@@ -69,6 +69,7 @@ const routes: RouteRecordRaw[] = [
                 meta: {
                     title: '设置',
                     depth: 2,
+                    keepAlive: true,
                     hideFooter: true
                 }
             },
@@ -98,6 +99,11 @@ router.beforeEach((to, from) => {
     // 如果目标页面配置了需要缓存，先将它加入白名单
     if (to.name && to.meta.keepAlive) {
         addCache(to.name as string);
+    }
+
+    // 仅为往返更新日志保留设置页；离开此流程时销毁表单和临时状态。
+    if (to.name !== 'Settings' && to.name !== 'Changelog') {
+        removeCache('Settings');
     }
 
     // 核心逻辑：如果是“后退”操作 (向浅层级跳转)

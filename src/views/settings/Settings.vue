@@ -1,6 +1,6 @@
 <template>
   <div id="settings-page">
-    <div class="settings-content">
+    <div ref="scrollContainer" class="settings-content">
       <div class="settings-content-inner">
         <section class="settings-group">
         <div class="group-title">外观界面</div>
@@ -240,7 +240,8 @@
 </template>
 
 <script setup lang="ts">
-import {ref} from 'vue';
+import {nextTick, onActivated, ref} from 'vue';
+import {onBeforeRouteLeave} from 'vue-router';
 import {platform} from "@tauri-apps/plugin-os";
 import {confirm} from '@tauri-apps/plugin-dialog';
 import {useQuasar} from "quasar";
@@ -270,6 +271,17 @@ import {
 
 const $q = useQuasar();
 const configStore = useConfigStore();
+const scrollContainer = ref<HTMLElement | null>(null);
+let savedScrollTop = 0;
+
+// 在离页、容器仍可见时记录，避免 KeepAlive 隐藏节点时的归零覆盖阅读位置。
+onBeforeRouteLeave(() => {
+  savedScrollTop = scrollContainer.value?.scrollTop ?? 0;
+});
+onActivated(async () => {
+  await nextTick();
+  if (scrollContainer.value) scrollContainer.value.scrollTop = savedScrollTop;
+});
 
 const showPasswordVerify = ref(false);
 const verifyPassword = ref('');
