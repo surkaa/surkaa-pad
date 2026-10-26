@@ -71,6 +71,16 @@ const routes: RouteRecordRaw[] = [
                     depth: 2,
                     hideFooter: true
                 }
+            },
+            {
+                name: 'Changelog',
+                path: 'changelog',
+                component: () => import('../views/changelog/Changelog.vue'),
+                meta: {
+                    title: '更新日志',
+                    depth: 3,
+                    hideFooter: true
+                }
             }
         ]
     }

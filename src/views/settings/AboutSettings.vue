@@ -1,7 +1,7 @@
 <template>
   <section class="settings-group">
     <div class="group-title">关于</div>
-    <q-list bordered class="pad-card">
+    <q-list bordered separator class="pad-card">
       <q-item clickable v-ripple class="settings-item" @click="showDialog = true">
         <q-item-section avatar class="settings-icon-section">
           <q-icon name="info"/>
@@ -11,6 +11,18 @@
           <q-item-label caption class="desc-text">
             {{ loading ? '正在读取版本信息…' : summary }}
           </q-item-label>
+        </q-item-section>
+        <q-item-section side>
+          <q-icon name="chevron_right" class="desc-text"/>
+        </q-item-section>
+      </q-item>
+      <q-item clickable v-ripple class="settings-item" :to="{name: 'Changelog'}" aria-label="更新日志">
+        <q-item-section avatar class="settings-icon-section">
+          <q-icon name="history"/>
+        </q-item-section>
+        <q-item-section>
+          <q-item-label class="label-text text-weight-medium">更新日志</q-item-label>
+          <q-item-label caption class="desc-text">查看各版本的功能更新与修复</q-item-label>
         </q-item-section>
         <q-item-section side>
           <q-icon name="chevron_right" class="desc-text"/>
