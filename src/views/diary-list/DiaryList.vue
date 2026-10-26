@@ -2,7 +2,7 @@
 import {computed, nextTick, onActivated, onDeactivated, ref, watch} from "vue";
 import DiarySummaryCard from "../../components/DiarySummaryCard.vue";
 import DiaryListEmpty from "./DiaryListEmpty.vue";
-import {useScroll} from "@vueuse/core";
+import {useResizeObserver, useScroll} from "@vueuse/core";
 import {useDataStore} from "../../stores/data.ts";
 import {storeToRefs} from "pinia";
 import {useTimeoutStore} from "../../stores/timeout.ts";
@@ -49,6 +49,8 @@ const isOpeningDiary = ref(false);
 const localDraftIds = ref<string[]>([]);
 const loadedDiaryListRevision = ref(diaryListRevision.value);
 interface InfiniteScrollHandle {
+  trigger: () => void;
+  poll: () => void;
   reset: () => void;
   resume: () => void;
   stop: () => void;
@@ -65,6 +67,13 @@ const {y} = useScroll(scrollContainer, {behavior: 'smooth'})
 // 激活状态
 const isActivating = ref(true);
 const diaryCards = ref<HTMLElement | null>(null);
+// QInfiniteScroll 不监听内容高度。置顶紧缩、摘要加载或窗口变大后，
+// 即使用户没有滚动，也应重新检查剩余空间；poll 会保留末页/错误后的停止状态。
+useResizeObserver([scrollContainer, diaryCards], () => {
+  if (isActivating.value && (scrollContainer.value?.clientHeight ?? 0) > 0) {
+    infiniteScrollRef.value?.poll();
+  }
+});
 useDiaryListContextMenu(diaryCards, {
   currentPlatform,
   pinnedDiaryIds,
@@ -278,6 +287,13 @@ onActivated(async () => {
   await nextTick();
   if (scrollContainer.value) {
     scrollContainer.value.scrollTop = y.value;
+  }
+  if (!isFirstLoadFinished.value && !isLoading.value) {
+    // 首批 ID 不应依赖置顶区是否挡住触底位置；已有自动请求时不重复触发。
+    infiniteScrollRef.value?.trigger();
+  } else {
+    // 请求可能在 KeepAlive 隐藏期间完成，返回后按恢复的滚动位置继续检查。
+    infiniteScrollRef.value?.poll();
   }
 });
 
