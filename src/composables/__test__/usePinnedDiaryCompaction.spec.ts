@@ -68,6 +68,38 @@ describe('置顶日记统一紧缩阈值', () => {
     expect(compact.value).toBe(true);
   });
 
+  it.each([[0, 0], [0, 600], [900, 0]])('KeepAlive 隐藏尺寸 %s/%s 不能把紧缩卡片展开', (natural, viewport) => {
+    const {sizes, compact} = setup(900, 600);
+    expect(compact.value).toBe(true);
+    sizes.naturalHeight = natural; sizes.viewportHeight = viewport;
+    resize();
+    expect(compact.value).toBe(true);
+    sizes.naturalHeight = 900; sizes.viewportHeight = 600;
+    resize();
+    expect(compact.value).toBe(true);
+    sizes.viewportHeight = 2000;
+    resize();
+    expect(compact.value).toBe(false);
+  });
+
+  it('非紧缩卡片隐藏时保持原样，返回后仍按真实高度重算', () => {
+    const {sizes, compact} = setup(250, 600);
+    sizes.naturalHeight = 0; sizes.viewportHeight = 0;
+    resize();
+    expect(compact.value).toBe(false);
+    sizes.naturalHeight = 250; sizes.viewportHeight = 400;
+    resize();
+    expect(compact.value).toBe(true);
+  });
+
+  it('缓存期间取消所有置顶时仍清空紧缩状态', async () => {
+    const {natural, sizes, compact} = setup(900, 600);
+    sizes.viewportHeight = 0;
+    natural.value = null;
+    await nextTick();
+    expect(compact.value).toBe(false);
+  });
+
   it('置顶为空时复原，并在退出后清理观察器', async () => {
     const {natural, compact} = setup(400, 600);
     expect(compact.value).toBe(true);

@@ -14,10 +14,14 @@ export function usePinnedDiaryCompaction(
   let observer: ResizeObserver | null = null;
 
   function measure() {
-    compact.value = shouldCompactPinnedDiaries(
-      naturalLayout.value?.getBoundingClientRect().height ?? 0,
-      viewport.value?.clientHeight ?? 0,
-    );
+    const layout = naturalLayout.value;
+    if (!layout) { compact.value = false; return; }
+    const viewportHeight = viewport.value?.clientHeight ?? 0;
+    const naturalHeight = layout.getBoundingClientRect().height;
+    // KeepAlive 把列表移入离屏容器时，ResizeObserver 会得到零尺寸。
+    // 此时必须保留上一次布局，否则返回后再次紧缩会改变内容高度并触发滚动锚定。
+    if (viewportHeight <= 0 || naturalHeight <= 0) return;
+    compact.value = shouldCompactPinnedDiaries(naturalHeight, viewportHeight);
   }
 
   watch([viewport, naturalLayout], ([container, layout]) => {
