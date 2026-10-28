@@ -46,7 +46,7 @@ async fn real_oss_read_only_and_editing_paths_preserve_data_and_drafts() {
             .await
             .unwrap()
             .version,
-        7
+        crate::diaries::CURRENT_VERSION
     );
     assert_eq!(
         client.get_metadata(&key).await.unwrap().etag.unwrap(),

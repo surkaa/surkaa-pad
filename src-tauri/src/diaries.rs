@@ -13,6 +13,8 @@ mod diary_version;
 pub(crate) mod draft;
 pub mod edit_command;
 pub(crate) mod edit_lease;
+#[cfg(test)]
+mod summary_content_tests;
 
 #[cfg(test)]
 mod diary_tests;
@@ -20,6 +22,8 @@ mod diary_tests;
 pub use attachment_upload::AttachmentUploadSession;
 pub use diary::*;
 pub use diary_content::DiaryContent;
+#[cfg(test)]
+pub(crate) use diary_content::SummaryContentNode;
 pub(crate) use diary_content::{DiaryAttachmentCounts, DiaryContentNode};
 pub use diary_error::DiaryError;
 pub use diary_store::{DiaryStore, LocalStore, RemoteStore};

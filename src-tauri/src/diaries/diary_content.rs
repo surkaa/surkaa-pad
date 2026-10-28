@@ -117,13 +117,9 @@ fn validate_optional_accuracy(
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-pub enum DiaryContentNode {
+pub enum SummaryContentNode {
     Markdown {
         text: String,
-    },
-    Summary {
-        summary: String,
-        content: String,
     },
     Location {
         location: DiaryLocation,
@@ -153,6 +149,78 @@ pub enum DiaryContentNode {
         #[specta(rename = "displayMode")]
         display_mode: AlbumDisplayMode,
     },
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Type, PartialEq)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum DiaryContentNode {
+    Markdown {
+        text: String,
+    },
+    Summary {
+        summary: String,
+        content: Vec<SummaryContentNode>,
+    },
+    Location {
+        location: DiaryLocation,
+    },
+    Image {
+        #[specta(rename = "attachmentId")]
+        attachment_id: String,
+        size: ImageSize,
+    },
+    Video {
+        #[specta(rename = "attachmentId")]
+        attachment_id: String,
+    },
+    Audio {
+        #[specta(rename = "attachmentId")]
+        attachment_id: String,
+    },
+    File {
+        #[specta(rename = "attachmentId")]
+        attachment_id: String,
+    },
+    Album {
+        id: String,
+        #[specta(rename = "attachmentIds")]
+        attachment_ids: Vec<String>,
+        #[serde(rename = "displayMode")]
+        #[specta(rename = "displayMode")]
+        display_mode: AlbumDisplayMode,
+    },
+}
+
+impl From<SummaryContentNode> for DiaryContentNode {
+    fn from(node: SummaryContentNode) -> Self {
+        match node {
+            SummaryContentNode::Markdown { text } => Self::Markdown { text },
+            SummaryContentNode::Location { location } => Self::Location { location },
+            SummaryContentNode::Image {
+                attachment_id,
+                size,
+            } => Self::Image {
+                attachment_id,
+                size,
+            },
+            SummaryContentNode::Video { attachment_id } => Self::Video { attachment_id },
+            SummaryContentNode::Audio { attachment_id } => Self::Audio { attachment_id },
+            SummaryContentNode::File { attachment_id } => Self::File { attachment_id },
+            SummaryContentNode::Album {
+                id,
+                attachment_ids,
+                display_mode,
+            } => Self::Album {
+                id,
+                attachment_ids,
+                display_mode,
+            },
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, Type, PartialEq, Eq, Default)]
@@ -199,15 +267,31 @@ impl DiaryContent {
         Self { nodes }
     }
 
+    /// 展开一层折叠内容；保留空的标题节点，使搜索、附件统计和 AI 读取使用相同遍历规则。
+    pub(crate) fn expanded_nodes(&self) -> Vec<DiaryContentNode> {
+        let mut nodes = Vec::new();
+        for node in &self.nodes {
+            if let DiaryContentNode::Summary { summary, content } = node {
+                nodes.push(DiaryContentNode::Summary {
+                    summary: summary.clone(),
+                    content: vec![],
+                });
+                nodes.extend(content.iter().cloned().map(DiaryContentNode::from));
+            } else {
+                nodes.push(node.clone());
+            }
+        }
+        nodes
+    }
+
     pub fn searchable_text(&self) -> String {
         let mut text = String::new();
-        for node in &self.nodes {
+        for node in &self.expanded_nodes() {
             match node {
                 DiaryContentNode::Markdown { text: markdown } => text.push_str(markdown),
-                DiaryContentNode::Summary { summary, content } => {
+                DiaryContentNode::Summary { summary, .. } => {
                     text.push_str(summary);
                     text.push('\n');
-                    text.push_str(content);
                 }
                 DiaryContentNode::Location { location } => {
                     if let Some(place_name) = &location.place_name {
@@ -259,7 +343,7 @@ impl DiaryContent {
     ) -> DiaryAttachmentCounts {
         let mut counts = DiaryAttachmentCounts::default();
 
-        for node in &self.nodes {
+        for node in &self.expanded_nodes() {
             match node {
                 DiaryContentNode::Image { attachment_id, .. } => {
                     if include(attachment_id) {
@@ -316,9 +400,23 @@ impl DiaryContent {
                 attachment_ids.retain(|id| id != attachment_id);
                 !attachment_ids.is_empty()
             }
-            DiaryContentNode::Markdown { .. }
-            | DiaryContentNode::Summary { .. }
-            | DiaryContentNode::Location { .. } => true,
+            DiaryContentNode::Summary { content, .. } => {
+                content.retain_mut(|node| match node {
+                    SummaryContentNode::Image {
+                        attachment_id: id, ..
+                    }
+                    | SummaryContentNode::Video { attachment_id: id }
+                    | SummaryContentNode::Audio { attachment_id: id }
+                    | SummaryContentNode::File { attachment_id: id } => id != attachment_id,
+                    SummaryContentNode::Album { attachment_ids, .. } => {
+                        attachment_ids.retain(|id| id != attachment_id);
+                        !attachment_ids.is_empty()
+                    }
+                    _ => true,
+                });
+                true
+            }
+            DiaryContentNode::Markdown { .. } | DiaryContentNode::Location { .. } => true,
         });
     }
 }
@@ -388,6 +486,7 @@ fn parse_attachment_marker(marker: &str) -> Option<DiaryContentNode> {
 
 #[cfg(test)]
 mod tests {
+    use super::SummaryContentNode;
     use super::{
         AlbumDisplayMode, CoordinateSystem, DiaryAttachmentCounts, DiaryContent, DiaryContentNode,
         DiaryLocation, ImageSize,
@@ -579,7 +678,9 @@ mod tests {
         let content = DiaryContent {
             nodes: vec![DiaryContentNode::Summary {
                 summary: "外显标题".to_string(),
-                content: "折叠的内部文字".to_string(),
+                content: vec![SummaryContentNode::Markdown {
+                    text: "折叠的内部文字".into(),
+                }],
             }],
         };
 

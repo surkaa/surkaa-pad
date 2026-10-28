@@ -328,7 +328,9 @@ fn renders_attachment_placeholders_without_storage_details() {
                 },
                 DiaryContentNode::Summary {
                     summary: "展开说明".into(),
-                    content: "折叠正文".into(),
+                    content: vec![crate::diaries::SummaryContentNode::Markdown {
+                        text: "折叠正文".into(),
+                    }],
                 },
                 DiaryContentNode::Audio {
                     attachment_id: "audio-id".into(),
@@ -355,7 +357,7 @@ fn renders_attachment_placeholders_without_storage_details() {
 
     assert_eq!(
         value["content"],
-        "正文\n[折叠内容：展开说明]\n折叠正文\n\n[音频: 记录.m4a]\n"
+        "正文\n[折叠内容：展开说明]\n折叠正文\n[音频: 记录.m4a]\n"
     );
     let serialized = value.to_string();
     assert!(!serialized.contains("private-etag"));

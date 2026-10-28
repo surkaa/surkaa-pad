@@ -92,7 +92,7 @@ pub async fn search_diaries(
 }
 
 fn content_matches_attachment_filter(content: &DiaryContent, filter: AttachmentTypeFilter) -> bool {
-    content.nodes.iter().any(|node| match filter {
+    content.expanded_nodes().iter().any(|node| match filter {
         AttachmentTypeFilter::Image => matches!(
             node,
             DiaryContentNode::Image { .. } | DiaryContentNode::Album { .. }

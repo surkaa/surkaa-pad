@@ -28,6 +28,7 @@ struct MigrationRegistry {
 struct V4ToV5;
 struct V5ToV6;
 struct V6ToV7;
+struct V7ToV8;
 
 #[async_trait]
 impl DiaryMigration for V4ToV5 {
@@ -92,6 +93,38 @@ impl DiaryMigration for V6ToV7 {
     }
 }
 
+#[async_trait]
+impl DiaryMigration for V7ToV8 {
+    fn source_version(&self) -> u32 {
+        7
+    }
+    async fn migrate_json(
+        &self,
+        _context: &MigrationContext<'_>,
+        json: &mut Value,
+    ) -> Result<(), DiaryError> {
+        let nodes = json
+            .pointer_mut("/content/nodes")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| {
+                DiaryError::InvalidManifest("Manifest content nodes must be an array".into())
+            })?;
+        for node in nodes {
+            if node.get("type").and_then(Value::as_str) == Some("summary") {
+                let text = node
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        DiaryError::InvalidManifest("V7 summary content must be a string".into())
+                    })?
+                    .to_owned();
+                node["content"] = serde_json::json!([{"type": "markdown", "text": text}]);
+            }
+        }
+        Ok(())
+    }
+}
+
 impl MigrationRegistry {
     fn new(steps: Vec<Box<dyn DiaryMigration>>) -> Self {
         Self { steps }
@@ -134,7 +167,12 @@ impl MigrationRegistry {
 
 fn default_registry() -> MigrationRegistry {
     // V1–V3 的兼容步骤已移除，只保留当前仍需执行的连续迁移步骤。
-    MigrationRegistry::new(vec![Box::new(V4ToV5), Box::new(V5ToV6), Box::new(V6ToV7)])
+    MigrationRegistry::new(vec![
+        Box::new(V4ToV5),
+        Box::new(V5ToV6),
+        Box::new(V6ToV7),
+        Box::new(V7ToV8),
+    ])
 }
 
 /// 检查并按注册步骤迁移 Manifest；返回 Some 时由调用方最后提交新版 Manifest。
@@ -224,7 +262,10 @@ mod tests {
             .unwrap();
         let migrated: Value = serde_json::from_slice(&migrated).unwrap();
         assert_eq!(migrated["version"], CURRENT_VERSION);
-        assert_eq!(migrated["content"], v5["content"]);
+        assert_eq!(
+            migrated["content"]["nodes"][0]["content"],
+            serde_json::json!([{"type":"markdown","text":"内容"}])
+        );
 
         let v6 = serde_json::json!({
             "id": "test",

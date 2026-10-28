@@ -524,11 +524,11 @@ fn render_content(manifest: &DiaryManifest) -> String {
         .collect::<HashMap<_, _>>();
     let mut output = String::new();
 
-    for node in &manifest.content.nodes {
+    for node in &manifest.content.expanded_nodes() {
         match node {
             DiaryContentNode::Markdown { text } => output.push_str(text),
-            DiaryContentNode::Summary { summary, content } => {
-                output.push_str(&format!("\n[折叠内容：{summary}]\n{content}\n"));
+            DiaryContentNode::Summary { summary, .. } => {
+                output.push_str(&format!("\n[折叠内容：{summary}]\n"));
             }
             DiaryContentNode::Location { location } => {
                 let place = location.place_name.as_deref().unwrap_or("未命名地点");
