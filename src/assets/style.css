@@ -190,6 +190,13 @@ body .q-menu, body .q-select__dialog {
     color: var(--pad-text-color-100);
 }
 
+/* 一小时到期后的持续提醒，只提示一次，浅深色均跟随主题，不遮挡底部操作。 */
+body .pad-auto-close-warning {
+    background-color: var(--pad-bg-color-200);
+    color: var(--pad-danger-color);
+    border: 1px solid var(--pad-danger-color);
+}
+
 body {
     font-family: var(--pad-font-family), serif;
     line-height: 1.5;

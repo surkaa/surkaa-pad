@@ -407,7 +407,8 @@ onDeactivated(() => {
     </Teleport>
     <Teleport v-if="isActivating" defer to="#footer-content">
       <span>日记 {{ diaryIds.length }} · 含附件 {{ withAttachments }}</span>
-      <span>自动关闭 {{ timeoutStore.remainingStr }}</span>
+      <span class="auto-close-countdown"
+            :class="{'auto-close-countdown--urgent': timeoutStore.isExpiring}">自动关闭 {{ timeoutStore.remainingStr }}</span>
     </Teleport>
     <q-inner-loading
       :showing="isOpeningDiary"
@@ -419,6 +420,12 @@ onDeactivated(() => {
 </template>
 
 <style scoped lang="scss">
+.auto-close-countdown {
+  font-variant-numeric: tabular-nums;
+
+  &--urgent { color: var(--pad-danger-color); }
+}
+
 #diary-list {
   width: 100%;
   height: 100%;

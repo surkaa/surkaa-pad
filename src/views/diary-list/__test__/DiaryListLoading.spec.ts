@@ -7,8 +7,14 @@ import DiaryList from '../DiaryList.vue';
 import {useDataStore} from '../../../stores/data';
 import {useConfigStore} from '../../../stores/config';
 import api from '../../../utils/api';
+import {useTimeoutStore} from '../../../stores/timeout';
 
 const environment = vi.hoisted(() => ({platform: 'windows'}));
+const clock = ref(Date.now());
+vi.mock('@vueuse/core', async importOriginal => ({
+  ...await importOriginal<typeof import('@vueuse/core')>(), useTimestamp: () => clock,
+}));
+vi.mock('@tauri-apps/plugin-process', () => ({exit: vi.fn()}));
 vi.mock('@tauri-apps/plugin-os', () => ({platform: () => environment.platform}));
 vi.mock('vue-router', () => ({useRouter: () => ({push: vi.fn()}), useRoute: () => ({name: 'DiaryList'})}));
 vi.mock('../../../composables/useDiaryListContextMenu', () => ({useDiaryListContextMenu: () => {}}));
@@ -58,6 +64,7 @@ async function compact() {
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
+  clock.value = Date.now();
   environment.platform = 'windows'; Object.assign(sizes, {viewport: 600, naturalReady: false}); observers.clear();
   vi.mocked(api.cmdPageDiaryIds).mockReset().mockResolvedValue([ordinary, null]);
   vi.stubGlobal('IntersectionObserver', class {observe() {} disconnect() {}});
@@ -88,6 +95,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  if (pinia) useTimeoutStore(pinia).clearCloseTimers();
   app?.unmount(); app = undefined; if (pinia) disposePinia(pinia);
   Dark.set(false); document.body.innerHTML = '';
   vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks();
@@ -96,6 +104,34 @@ afterEach(() => {
 describe.each([['windows', false], ['windows', true], ['android', false], ['android', true]] as const)
 ('普通日记首次加载（%s，深色=%s）', (currentPlatform, dark) => {
   beforeEach(() => { environment.platform = currentPlatform; });
+  it('底部计时只在最后 10% 变红，到时重新显示红色一分钟，暂停恢复清除红色', async () => {
+    await mount([], dark);
+    const scheduled = vi.spyOn(globalThis, 'setTimeout');
+    const timeout = useTimeoutStore(pinia); timeout.setTimeoutForCloseApp(); await nextTick();
+    const started = Date.now();
+    const footer = () => document.querySelector<HTMLElement>('#footer-content .auto-close-countdown')!;
+    expect(footer().textContent).toContain('60:00');
+    expect(footer().classList.contains('auto-close-countdown--urgent')).toBe(false);
+    clock.value = started + 54 * 60_000 - 1; await nextTick();
+    expect(footer().classList.contains('auto-close-countdown--urgent')).toBe(false);
+    clock.value += 1; await nextTick();
+    expect(footer().textContent).toContain('06:00');
+    expect(footer().classList.contains('auto-close-countdown--urgent')).toBe(true);
+    // 直接触发到期回调，避免测试列表内其他 RAF 长时间运行。
+    vi.setSystemTime(started + 60 * 60_000);
+    const beginGrace = scheduled.mock.calls.find(([, delay]) => delay === 60 * 60_000)![0] as () => void;
+    beginGrace(); await nextTick();
+    expect(footer().textContent).toContain('01:00');
+    expect(footer().classList.contains('auto-close-countdown--urgent')).toBe(true);
+    expect(document.querySelector('.q-dialog')).toBeNull();
+    const resume = timeout.pauseAutoClose(); await nextTick();
+    expect(footer().textContent).toContain('已暂停');
+    expect(footer().classList.contains('auto-close-countdown--urgent')).toBe(false);
+    resume(); await nextTick();
+    expect(footer().textContent).toContain('60:00');
+    expect(footer().classList.contains('auto-close-countdown--urgent')).toBe(false);
+  });
+
   it('高置顶区尚未紧缩、也没有用户滚动时，仍获取首批普通日记', async () => {
     const data = await mount(pinned, dark);
     expect(api.cmdPageDiaryIds).toHaveBeenCalledExactlyOnceWith(null);
