@@ -1,232 +1,118 @@
-// copy from https://github.com/swnb/set-webm-duration/blob/main/src/index.ts
+// 仅修正 MediaRecorder 生成的流式 WebM；保留原始音轨与 Cluster 字节。
+const SEGMENT_ID = 0x18538067;
+const INFO_ID = 0x1549a966;
+const DURATION_ID = 0x4489;
+const TIMECODE_SCALE_ID = 0x2ad7b1;
 
-function decodeVINT(data: ArrayBuffer, isElementID = false) {
-    const dataView = new DataView(data);
+interface ElementRange {
+    id: number;
+    start: number;
+    dataStart: number;
+    end: number;
+    unknownSize: boolean;
+}
 
-    // 读取 V_INT width
-    let vWidth = dataView.getUint8(0);
-    // 记录长度
-    let length = 1;
-
-    if (vWidth === 0) {
-        return { value: 0, offset: 0 };
+function readVint(bytes: Uint8Array, offset: number, id = false) {
+    const first = bytes[offset];
+    if (!first) throw new Error('无效或截断的 WebM VINT');
+    let width = 1;
+    let marker = 0x80;
+    while (!(first & marker)) { width += 1; marker /= 2; }
+    if (width > (id ? 4 : 8) || offset + width > bytes.length) throw new Error('截断的 WebM VINT');
+    let value = id ? first : first - marker;
+    let unknown = !id && value === marker - 1;
+    // 不能使用位运算累积：Chrome 的 8 字节“未知长度”会溢出为错误的 Segment 长度。
+    for (let index = 1; index < width; index += 1) {
+        value = value * 256 + bytes[offset + index];
+        unknown = unknown && bytes[offset + index] === 0xff;
     }
+    if (!unknown && !Number.isSafeInteger(value)) throw new Error('WebM 元素长度过大');
+    return {value, width, unknown};
+}
 
-    while ((vWidth & 0b1000_0000) === 0b0000_0000) {
-        length += 1;
-        // 移掉前面的 0
-        vWidth <<= 1;
-    }
-
-    if (!isElementID) {
-        // element id 需要保留 marker
-        vWidth &= 0b0111_1111;
-    }
-
-    vWidth >>= length - 1;
-
-    const uint8Array = new Uint8Array(data);
-    let value = vWidth;
-    // 循环读取出所有的数据
-    for (let i = 0; i < length - 1; i++) {
-        value <<= 8;
-        value |= uint8Array[i + 1];
-    }
-
-    return {
-        value,
-        offset: length,
-    };
+function readElement(bytes: Uint8Array, start: number, limit = bytes.length): ElementRange {
+    const id = readVint(bytes, start, true);
+    const size = readVint(bytes, start + id.width);
+    const dataStart = start + id.width + size.width;
+    const end = size.unknown ? limit : dataStart + size.value;
+    if (dataStart > limit || end > limit) throw new Error('截断的 WebM 元素');
+    return {id: id.value, start, dataStart, end, unknownSize: size.unknown};
 }
 
 export function decodeEBMLElement(buffer: ArrayBuffer) {
-    // 计算读取的偏移量
-    let offset = 0;
-    const elementID = decodeVINT(buffer, true);
-    offset += elementID.offset;
-
-    const dataSize = decodeVINT(buffer.slice(offset));
-    offset += dataSize.offset;
-
-    if (dataSize.value === -1) {
-        const data = buffer.slice(offset);
-
-        return {
-            id: elementID.value,
-            idHex: `0x${elementID.value.toString(16)}`,
-            dataSize: -1,
-            offset,
-            data,
-        };
-    }
-
-    const data = buffer.slice(offset, offset + dataSize.value);
-
+    const bytes = new Uint8Array(buffer);
+    const element = readElement(bytes, 0);
     return {
-        id: elementID.value,
-        idHex: `0x${elementID.value.toString(16)}`,
-        dataSize: dataSize.value,
-        offset: dataSize.value + offset,
-        data,
+        id: element.id,
+        idHex: `0x${element.id.toString(16)}`,
+        dataSize: element.unknownSize ? -1 : element.end - element.dataStart,
+        offset: element.end,
+        data: buffer.slice(element.dataStart, element.end),
     };
 }
 
-function decodeInfoElement(buffer: ArrayBuffer) {
-    const infos = [] as ReturnType<typeof decodeEBMLElement>[];
-    while (buffer.byteLength > 0) {
-        const infoField = decodeEBMLElement(buffer);
-        buffer = buffer.slice(infoField.offset);
-        infos.push(infoField);
-    }
-    return infos;
-}
-
-function decodeSegment(buffer: ArrayBuffer) {
-    const segments = [];
-    while (buffer.byteLength > 0) {
-        const segmentField = decodeEBMLElement(buffer);
-        buffer = buffer.slice(segmentField.offset);
-        segments.push(segmentField);
-    }
-    return segments;
-}
-
-type EBMLElement = {
-    id: number;
-    dataSize?: number;
-    data: ArrayBuffer | EBMLElement[];
-};
-
-function encodeElementID(value: number) {
-    const rangeMap = [
-        {
-            start: 0x81,
-            end: 0xfe,
-        },
-        {
-            start: 0x407f,
-            end: 0x7ffe,
-        },
-        {
-            start: 0x203fff,
-            end: 0x3ffffe,
-        },
-        {
-            start: 0x101fffff,
-            end: 0x1ffffffe,
-        },
-    ];
-    for (let i = 0; i < rangeMap.length; i++) {
-        const v = rangeMap[i];
-        if (value >= v.start && value <= v.end) {
-            const buffer = new ArrayBuffer(i + 1);
-            const dataView = new DataView(buffer);
-            for (let j = 0; j < i + 1; j++) {
-                dataView.setUint8(j, (value >>> ((i - j) * 8)) & 0xff);
-            }
-
-            return buffer;
+function encodeSize(value: number): Uint8Array {
+    for (let width = 1; width <= 8; width += 1) {
+        if (value > 2 ** (width * 7) - 2) continue;
+        const result = new Uint8Array(width);
+        let remainder = value;
+        for (let index = width - 1; index >= 0; index -= 1) {
+            result[index] = remainder % 256;
+            remainder = Math.floor(remainder / 256);
         }
+        result[0] += 2 ** (8 - width);
+        return result;
     }
-    throw Error(`can't encode element id ${value}`);
+    throw new Error('WebM 元素长度过大');
 }
 
-function encodeDataSize(value: number) {
-    if (value < 0) {
-        const buffer = new ArrayBuffer(8);
-        const dataView = new DataView(buffer);
-        dataView.setUint32(0, 0x1ff_ffff);
-        dataView.setUint32(4, 0xffffffff);
-        return buffer;
-    } else {
-        for (let n = 1; n <= 8; n++) {
-            if (value <= 2 ** (7 * n) - 2) {
-                const buffer = new ArrayBuffer(n);
-                const dataView = new DataView(buffer);
+function concat(...parts: Uint8Array[]): Uint8Array {
+    const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+    let offset = 0;
+    for (const part of parts) { result.set(part, offset); offset += part.length; }
+    return result;
+}
 
-                for (let i = n - 1; i >= 0; i--) {
-                    dataView.setUint8(i, (value >> (n - i - 1)) & 0xff);
-                }
+export function setWebmDuration(buffer: ArrayBuffer, durationMs: number): ArrayBuffer {
+    if (!Number.isFinite(durationMs) || durationMs <= 0) throw new Error('无效的录音时长');
+    const bytes = new Uint8Array(buffer);
+    const header = readElement(bytes, 0);
+    if (header.id !== 0x1a45dfa3 || header.unknownSize) throw new Error('不是有效的 WebM 头');
+    const segment = readElement(bytes, header.end);
+    if (segment.id !== SEGMENT_ID) throw new Error('WebM 缺少 Segment');
 
-                dataView.setUint8(0, dataView.getUint8(0) | (0b1000_0000 >> (n - 1)));
+    let info: ElementRange | undefined;
+    for (let offset = segment.dataStart; offset < segment.end;) {
+        const child = readElement(bytes, offset, segment.end);
+        // 这里不调整已有索引的偏移；此类非流式文件交给调用方保留原文件。
+        if (child.id === 0x114d9b74) throw new Error('不修正含 SeekHead 的 WebM');
+        if (child.id === INFO_ID) { info = child; break; }
+        offset = child.end;
+    }
+    if (!info || info.unknownSize) throw new Error('WebM 缺少 Info');
 
-                return buffer;
-            }
+    let scaleNs = 1_000_000;
+    const fields: Uint8Array[] = [];
+    for (let offset = info.dataStart; offset < info.end;) {
+        const field = readElement(bytes, offset, info.end);
+        if (field.unknownSize) throw new Error('无效的 WebM Info');
+        if (field.id === TIMECODE_SCALE_ID) {
+            scaleNs = 0;
+            for (const byte of bytes.subarray(field.dataStart, field.end)) scaleNs = scaleNs * 256 + byte;
+            if (!Number.isSafeInteger(scaleNs) || scaleNs <= 0) throw new Error('无效的 WebM 时间单位');
         }
-        throw Error('value too big');
+        if (field.id !== DURATION_ID) fields.push(bytes.subarray(field.start, field.end));
+        offset = field.end;
     }
-}
-
-function concatArrayBuffer(...buffers: ArrayBuffer[]) {
-    const newBuffer = new ArrayBuffer(
-        buffers.reduce((acc, cur) => acc + cur.byteLength, 0)
-    );
-    const newBufferUint8Array = new Uint8Array(newBuffer);
-
-    let offset = 0;
-    for (let i = 0; i < buffers.length; i++) {
-        newBufferUint8Array.set(new Uint8Array(buffers[i]), offset);
-        offset += buffers[i].byteLength;
-    }
-    return newBuffer;
-}
-
-function encodeEBMLElementTree(element: EBMLElement) {
-    const rawID = encodeElementID(element.id);
-    let data: ArrayBuffer;
-    if (Array.isArray(element.data)) {
-        const buffers: ArrayBuffer[] = element.data.map(encodeEBMLElementTree);
-        data = concatArrayBuffer(...buffers);
-    } else {
-        data = element.data;
-    }
-
-    const dataSize = element.dataSize ?? data.byteLength;
-    const rawDataSize = encodeDataSize(dataSize);
-    return concatArrayBuffer(rawID, rawDataSize, data);
-}
-
-export function setWebmDuration(audioBuffer: ArrayBuffer, duration: number) {
-    const buffer = audioBuffer;
-
-    let offset = 0;
-    const header = decodeEBMLElement(buffer);
-    offset += header.offset;
-
-    const segment = decodeEBMLElement(buffer.slice(offset));
-    offset += segment.offset;
-
-    const segmentSubElements = decodeSegment(segment.data) as EBMLElement[];
-
-    // 找到 info element  的 index
-    const infoIndex = segmentSubElements.findIndex(v => v.id === 0x1549a966);
-    if (infoIndex === -1) {
-        throw Error("cant' find info element");
-    }
-
-    const infos = decodeInfoElement(
-        segmentSubElements[infoIndex].data as ArrayBuffer
-    ) as EBMLElement[];
-
-    // 写入 duration , 默认的是 8 字节的大小
-    const durationBuffer = new ArrayBuffer(8);
-    new DataView(durationBuffer).setFloat64(0, duration);
-
-    infos.push({
-        id: 0x4489,
-        data: durationBuffer,
-    });
-
-    // 编码
-    const rawInfos = concatArrayBuffer(...infos.map(encodeEBMLElementTree));
-    segmentSubElements[infoIndex].data = rawInfos;
-    segmentSubElements[infoIndex].dataSize = rawInfos.byteLength;
-
-    return concatArrayBuffer(
-        encodeEBMLElementTree(header),
-        encodeEBMLElementTree({
-            id: 0x1549a966,
-            data: segmentSubElements,
-        })
-    );
+    const duration = new Uint8Array(8);
+    new DataView(duration.buffer).setFloat64(0, durationMs * 1_000_000 / scaleNs);
+    const payload = concat(...fields, new Uint8Array([0x44, 0x89, 0x88]), duration);
+    const newInfo = concat(new Uint8Array([0x15, 0x49, 0xa9, 0x66]), encodeSize(payload.length), payload);
+    const segmentSize = segment.end - segment.dataStart + newInfo.length - (info.end - info.start);
+    const segmentHeader = segment.unknownSize
+        ? bytes.subarray(segment.start, segment.dataStart)
+        : concat(new Uint8Array([0x18, 0x53, 0x80, 0x67]), encodeSize(segmentSize));
+    return concat(bytes.subarray(0, segment.start), segmentHeader,
+        bytes.subarray(segment.dataStart, info.start), newInfo,
+        bytes.subarray(info.end, segment.end), bytes.subarray(segment.end)).buffer;
 }

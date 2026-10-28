@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import {setWebmDuration} from "../utils";
+import {setWebmDuration} from "../utils/setWebmDuration";
 import {computed, onUnmounted, ref} from "vue";
 import {useQuasar} from "quasar";
 import type {AudioWaveform} from '../bindings';
-import {generateAudioWaveform} from '../utils/audioWaveform';
+import {AUDIO_WAVEFORM_VERSION, generateAudioWaveform} from '../utils/audioWaveform';
 
 let mediaRecorder: MediaRecorder | null = null;
 let stream: MediaStream | null = null;
@@ -15,7 +15,11 @@ let analyser: AnalyserNode | null = null;
 let waveformFrame: number | null = null;
 const PERIODIC_FLUSH_MS = 100;
 const recording = ref(false);
+const starting = ref(false);
 const stopping = ref(false);
+const processingError = ref('');
+let pendingRecording: Blob | null = null;
+let recordedDurationMs = 0;
 const recordingDuration = ref(0); // 录音时长（秒）
 const waveformCanvas = ref<HTMLCanvasElement>();
 let startTime: number = 0; // 录音开始时间戳
@@ -60,10 +64,12 @@ function getSupportedMimeType() {
 }
 
 async function startRecording() {
-  if (recording.value) {
+  if (recording.value || starting.value || stopping.value || pendingRecording) {
     console.warn('录音已在进行中');
     return;
   }
+  starting.value = true;
+  processingError.value = '';
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioChunks = [];
@@ -79,7 +85,9 @@ async function startRecording() {
     startTime = Date.now();
     mediaRecorder.start();
     recording.value = true;
-    startWaveformPreview(stream);
+    // 实时音波只是预览，初始化失败不能让已开始的录音陷入半启动状态。
+    try { startWaveformPreview(stream); }
+    catch (error) { console.warn('实时录音音波不可用:', error); }
 
     // 更新录音时长
     flushInterval = setInterval(() => {
@@ -92,6 +100,11 @@ async function startRecording() {
     console.log("录音开始...");
   } catch (err) {
     stopInterval();
+    stream?.getTracks().forEach(track => track.stop());
+    stream = null;
+    mediaRecorder = null;
+    recording.value = false;
+    void stopWaveformPreview();
     if (err instanceof DOMException) {
       if (err.name === 'NotFoundError') {
         $q.notify('未找到麦克风设备');
@@ -107,54 +120,77 @@ async function startRecording() {
     }
     $q.notify(`无法访问麦克风: ${err}`);
     console.error('获取麦克风失败: ', err);
+  } finally {
+    starting.value = false;
   }
 }
 
 async function stopRecording() {
-  if (stopping.value) return;
-  recording.value = false;
-  if (!mediaRecorder) {
-    console.warn('没有正在进行的录音');
-    return;
-  }
-  if (mediaRecorder.state === 'inactive') {
-    console.warn('录音已经停止');
-    return;
-  }
+  if (starting.value || stopping.value || (!mediaRecorder && !pendingRecording)) return;
   stopping.value = true;
-  stopInterval();
-  const recorder = mediaRecorder;
-  const recordedMimeType = recorder.mimeType;
-  const recordedDurationMs = Date.now() - startTime;
-  const stopped = new Promise<void>(resolve => {
-    recorder.addEventListener('stop', () => resolve(), {once: true});
-  });
-  recorder.stop();
-  await stopped;
-  stream?.getTracks().forEach(track => track.stop());
-  stream = null;
-  await stopWaveformPreview();
-
-  console.log('录音已停止，处理音频数据...');
-  const audioBlob = new Blob(audioChunks, {type: recordedMimeType});
-  const newWebmBuffer = setWebmDuration(await audioBlob.arrayBuffer(), recordedDurationMs);
-  const data = new Uint8Array(newWebmBuffer);
-  let generatedInfo: {durationMs: number; waveform: AudioWaveform} | undefined;
+  processingError.value = '';
   try {
-    generatedInfo = await generateAudioWaveform(new Blob([newWebmBuffer], {type: recordedMimeType}));
+    if (!pendingRecording) {
+      const recorder = mediaRecorder!;
+      recordedDurationMs = Math.max(1, Date.now() - startTime);
+      if (recorder.state !== 'inactive') {
+        await new Promise<void>((resolve, reject) => {
+          const cleanup = () => {
+            recorder.removeEventListener('stop', onStop);
+            recorder.removeEventListener('error', onError);
+          };
+          const onStop = () => { cleanup(); resolve(); };
+          const onError = () => { cleanup(); reject(new Error('录音设备停止失败，请重试')); };
+          recorder.addEventListener('stop', onStop);
+          recorder.addEventListener('error', onError);
+          try { recorder.stop(); } catch (error) { cleanup(); reject(error); }
+        });
+      }
+      recording.value = false;
+      stopInterval();
+      stream?.getTracks().forEach(track => track.stop());
+      stream = null;
+      void stopWaveformPreview();
+      // 保留原始 Blob，必要步骤失败时仍可以重试，不能清空后静默丢失。
+      pendingRecording = new Blob(audioChunks, {type: recorder.mimeType});
+    }
+    if (!pendingRecording.size) throw new Error('未收到录音数据，请重试');
+    const recordedMimeType = pendingRecording.type;
+    let buffer = await pendingRecording.arrayBuffer();
+    if (recordedMimeType.split(';')[0].toLowerCase() === 'audio/webm') {
+      try { buffer = setWebmDuration(buffer, recordedDurationMs); }
+      catch (error) { console.warn('修正录音时长失败，将保留原始录音:', error); }
+    }
+    let generatedInfo: {durationMs: number; waveform: AudioWaveform} = {
+      durationMs: recordedDurationMs,
+      waveform: {version: AUDIO_WAVEFORM_VERSION, peaks: []},
+    };
+    let waveformTimeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      // 音波解码属于可选步骤；浏览器解码无响应也不能一直阻止录音保存。
+      generatedInfo = await Promise.race([
+        generateAudioWaveform(new Blob([buffer], {type: recordedMimeType})),
+        new Promise<never>((_, reject) => {
+          waveformTimeout = setTimeout(() => reject(new Error('音波生成超时')), 5_000);
+        }),
+      ]);
+    } catch (error) {
+      console.warn('生成录音音波失败，仍保存录音:', error);
+    } finally {
+      clearTimeout(waveformTimeout);
+    }
+    const data = new Uint8Array(buffer);
+    audioChunks = [];
+    mediaRecorder = null;
+    pendingRecording = null;
+    emit('recorded', recordedMimeType, data, generatedInfo);
+    emit('close');
   } catch (error) {
-    // 音波生成失败不应导致录音丢失，插入后仍可在渲染时再次尝试。
-    console.error('生成录音音波失败:', error);
+    processingError.value = `处理录音失败：${error instanceof Error ? error.message : String(error)}。请重试保存。`;
+    console.error('处理录音失败，保留录音数据:', error);
+  } finally {
+    stopping.value = false;
   }
-
-  // 重置音频数据
-  audioChunks = [];
-  mediaRecorder = null;
-  stopping.value = false;
-
-  emit('close');
-  emit('recorded', recordedMimeType, data, generatedInfo);
-  console.log("录音停止...");
 }
 
 function stopInterval() {
@@ -165,7 +201,8 @@ function stopInterval() {
 }
 
 function clickBtn() {
-  if (recording.value) {
+  if (starting.value || stopping.value) return;
+  if (recording.value || pendingRecording) {
     void stopRecording();
   } else {
     void startRecording();
@@ -173,7 +210,8 @@ function clickBtn() {
 }
 
 function closeDrawer() {
-  if (recording.value) {
+  if (starting.value || stopping.value) return;
+  if (recording.value || pendingRecording) {
     void stopRecording();
     return;
   }
@@ -259,7 +297,7 @@ onUnmounted(() => {
     <transition name="drawer">
       <div v-if="visible" class="drawer">
         <div class="drawer-header">
-          <button class="close-btn" @click="closeDrawer">
+          <button type="button" class="close-btn" aria-label="停止并关闭录音" :disabled="starting || stopping" @click="closeDrawer">
             <svg viewBox="0 0 24 24" width="20" height="20">
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
             </svg>
@@ -269,8 +307,8 @@ onUnmounted(() => {
 
         <div class="recording-container">
           <div class="duration-display" :class="{ 'recording': recording }">
-            <div class="duration-text">{{ recording ? formattedDuration : '00:00' }}</div>
-            <div class="duration-label">{{ recording ? '录音中...' : '准备录音' }}</div>
+            <div class="duration-text">{{ formattedDuration }}</div>
+            <div class="duration-label" role="status">{{ stopping ? '正在保存录音...' : starting ? '正在开启麦克风...' : recording ? '录音中...' : '准备录音' }}</div>
           </div>
 
           <div class="live-waveform" :class="{'recording': recording}">
@@ -278,11 +316,13 @@ onUnmounted(() => {
           </div>
 
           <div class="button-container">
-            <div
+            <button
+                type="button"
                 class="record-btn"
                 @click="clickBtn"
                 :class="{ 'recording': recording }"
-                aria-label="录音/停止录音"
+                :disabled="starting || stopping"
+                :aria-label="stopping ? '正在保存录音' : processingError ? '重试保存录音' : recording ? '停止录音' : '开始录音'"
             >
               <div class="btn-inner">
                 <div class="btn-icon">
@@ -292,17 +332,19 @@ onUnmounted(() => {
                   </svg>
                   <div v-else class="stop-icon"></div>
                 </div>
-                <div class="btn-text">{{ recording ? '停止录音' : '开始录音' }}</div>
+                <div class="btn-text">{{ stopping ? '保存中...' : processingError ? '重试保存' : recording ? '停止录音' : '开始录音' }}</div>
               </div>
 
               <!-- 录音时的脉动动画 -->
               <div v-if="recording" class="pulse-ring"></div>
               <div v-if="recording" class="pulse-ring delay-1"></div>
-            </div>
+            </button>
           </div>
 
           <div class="hint-text">
-            <p v-if="!recording">点击开始录音按钮开始录制音频</p>
+            <p v-if="processingError" class="recording-error" role="alert">{{ processingError }}</p>
+            <p v-else-if="stopping">正在处理并保存录音，请稍候</p>
+            <p v-else-if="!recording">点击开始录音按钮开始录制音频</p>
             <p v-else>点击停止录音按钮或关闭窗口结束录音</p>
           </div>
         </div>
@@ -501,6 +543,9 @@ onUnmounted(() => {
           transition: all var(--pad-transition-base);
           box-shadow: var(--pad-shadow-md);
 
+          &:disabled { cursor: wait; opacity: 0.7; }
+          &:focus-visible { outline: 2px solid var(--pad-primary-color); outline-offset: 4px; }
+
           // 移动端触摸优化
           @media (max-width: 767px) {
             &:active {
@@ -599,6 +644,7 @@ onUnmounted(() => {
             border: 2px solid var(--pad-record-pulse);
             animation: pulse 1.5s infinite;
             z-index: 1;
+            pointer-events: none;
 
             &.delay-1 {
               animation-delay: 0.5s;
@@ -622,6 +668,7 @@ onUnmounted(() => {
         p {
           margin: 0;
         }
+        .recording-error { color: var(--pad-danger-color); }
       }
     }
   }
