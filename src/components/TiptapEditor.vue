@@ -131,6 +131,8 @@ const attachmentFilenames = computed<Record<string, string>>(() => Object.fromEn
 const showBlockOrderDialog = ref(false)
 const blockOrderBlocks = ref<DiaryBlockDescriptor[]>([])
 const blockOrderSnapshot = ref<string[]>([])
+let blockOrderContainerPosition: number | undefined
+let blockOrderDocument: ProseMirrorNode | undefined
 const showTableDialog = ref(false)
 let tableInsertion: {document: ProseMirrorNode; selection: Selection} | null = null
 
@@ -519,7 +521,10 @@ function openSelectedSummaryDialog() {
 function openBlockOrderDialog() {
   const currentEditor = editor.value
   if (!currentEditor) return
-  const document = currentEditor.getJSON() as EditorJsonNode
+  const summary = summaryRange(currentEditor.state)
+  blockOrderContainerPosition = summary ? summary.pos + summary.node.firstChild!.nodeSize + 1 : undefined
+  blockOrderDocument = currentEditor.state.doc
+  const document = (summary ? summary.node.lastChild!.toJSON() : currentEditor.getJSON()) as EditorJsonNode
   const blocks = describeDiaryBlocks(document, props.attachments)
   if (blocks.length < 2) {
     $q.notify({type: 'info', message: '当前内容不足两个块，无需调整顺序'})
@@ -541,15 +546,17 @@ function applyBlockOrder(order: number[]) {
     return
   }
 
-  const currentDocument = currentEditor.getJSON() as EditorJsonNode
+  const scope = blockOrderContainerPosition === undefined ? currentEditor.state.doc
+    : currentEditor.state.doc.nodeAt(blockOrderContainerPosition)
+  const currentDocument = (scope?.toJSON() ?? {type: 'doc'}) as EditorJsonNode
   const currentSnapshot = topLevelBlockIdentities(currentDocument)
-  if (!sameStrings(currentSnapshot, blockOrderSnapshot.value)) {
+  if (currentEditor.state.doc !== blockOrderDocument || !sameStrings(currentSnapshot, blockOrderSnapshot.value)) {
     showBlockOrderDialog.value = false
     $q.notify({type: 'warning', message: '日记内容已经发生变化，请重新打开排序'})
     return
   }
 
-  const transaction = createBlockOrderTransaction(currentEditor.state, order)
+  const transaction = createBlockOrderTransaction(currentEditor.state, order, blockOrderContainerPosition)
   showBlockOrderDialog.value = false
   if (transaction) currentEditor.view.dispatch(transaction)
 }

@@ -1,6 +1,7 @@
 import {Node as TiptapNode, mergeAttributes} from '@tiptap/vue-3';
 import {Fragment} from '@tiptap/pm/model';
 import {Selection, TextSelection, NodeSelection, type EditorState} from '@tiptap/pm/state';
+import {closeHistory} from '@tiptap/pm/history';
 
 export function summaryRange(state: EditorState) {
   const {selection} = state;
@@ -16,12 +17,12 @@ export function summaryRange(state: EditorState) {
 }
 
 const SummaryTitle = TiptapNode.create({
-  name: 'summaryTitle', content: 'text*', marks: '', defining: true,
+  name: 'summaryTitle', content: 'text*', marks: '', defining: true, selectable: false,
   parseHTML: () => [{tag: '[data-summary-title]'}],
   renderHTML: ({HTMLAttributes}) => ['div', mergeAttributes(HTMLAttributes, {'data-summary-title': '', class: 'editor-summary-title'}), 0],
 });
 const SummaryBody = TiptapNode.create({
-  name: 'summaryBody', content: '(block|diaryBlock)+', isolating: true, defining: true,
+  name: 'summaryBody', content: '(block|diaryBlock)+', isolating: true, defining: true, selectable: false,
   parseHTML: () => [{tag: '[data-summary-body]'}],
   renderHTML: ({HTMLAttributes}) => ['div', mergeAttributes(HTMLAttributes, {'data-summary-body': '', class: 'editor-summary-content'}), 0],
 });
@@ -49,6 +50,7 @@ export const SummaryNode = TiptapNode.create({
     return ({node, getPos, editor}) => {
       let current = node;
       let open = true;
+      let animation: Animation | null = null;
       const dom = document.createElement('section'); dom.className = 'editor-summary';
       const contentDOM = document.createElement('div'); contentDOM.className = 'editor-summary-nodes';
       const toggle = document.createElement('button');
@@ -72,7 +74,17 @@ export const SummaryNode = TiptapNode.create({
           && editor.state.selection.to < pos + current.nodeSize) {
           editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos + 2)));
         }
-        open = !open; sync();
+        animation?.cancel(); animation = null;
+        open = !open;
+        const body = contentDOM.querySelector<HTMLElement>('[data-summary-body]');
+        if (!body || typeof body.animate !== 'function' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+          sync(); return;
+        }
+        if (open) sync();
+        const expanded = {height: `${body.scrollHeight}px`, opacity: 1, overflow: 'hidden'};
+        const collapsed = {height: '0px', opacity: 0, overflow: 'hidden'};
+        animation = body.animate(open ? [collapsed, expanded] : [expanded, collapsed], {duration: 160, easing: 'ease-out'});
+        animation.onfinish = () => {animation = null; sync();};
       };
       const atSummary = () => {
         const pos = getPos();
@@ -90,7 +102,10 @@ export const SummaryNode = TiptapNode.create({
         ignoreMutation(mutation) {
           return mutation.type !== 'selection' && (mutation.target === dom || toggle.contains(mutation.target) || footer.contains(mutation.target));
         },
-        destroy() { toggle.onmousedown = null; toggle.onclick = null; exit.onclick = null; unwrap.onclick = null; },
+        destroy() {
+          animation?.cancel(); toggle.removeEventListener('mousedown', preventFocus);
+          footer.removeEventListener('mousedown', preventFocus); toggle.onclick = null; exit.onclick = null; unwrap.onclick = null;
+        },
       };
     };
   },
@@ -115,6 +130,7 @@ export const SummaryNode = TiptapNode.create({
         let nested = false; content.descendants(node => {if (node.type === this.type) nested = true;});
         if (nested) return false;
         if (dispatch) {
+          closeHistory(tr);
           tr.deleteSelection();
           const mapped = tr.mapping.map(position);
           const updated = tr.doc.nodeAt(mapped)!;
@@ -137,6 +153,7 @@ export const SummaryNode = TiptapNode.create({
         if (content.firstChild?.isInline) content = Fragment.from(state.schema.nodes.paragraph.create(null, content));
         if (!state.schema.nodes.summaryBody.validContent(content)) return false;
         if (dispatch) {
+          closeHistory(tr);
           const title = state.schema.nodes.summaryTitle.create();
           const body = state.schema.nodes.summaryBody.create(null, content);
           tr.replaceSelectionWith(this.type.create(null, [title, body]));
@@ -153,7 +170,8 @@ export const SummaryNode = TiptapNode.create({
         const target = summaryRange(state); if (!target) return false;
         if (dispatch) {
           const end = target.pos + target.node.nodeSize;
-          if (tr.doc.nodeAt(end)?.type.name !== 'paragraph') tr.insert(end, state.schema.nodes.paragraph.create());
+          const next = tr.doc.nodeAt(end);
+          if (next?.type.name !== 'paragraph' || next.content.size > 0) tr.insert(end, state.schema.nodes.paragraph.create());
           tr.setSelection(TextSelection.create(tr.doc, end + 1)).scrollIntoView();
         }
         return true;
@@ -161,6 +179,7 @@ export const SummaryNode = TiptapNode.create({
       unwrapSummary: () => ({state, tr, dispatch}) => {
         const target = summaryRange(state); if (!target) return false;
         if (dispatch) {
+          closeHistory(tr);
           const title = state.schema.nodes.paragraph.create(null, target.node.firstChild!.content);
           const nodes = [title]; target.node.lastChild!.forEach(node => nodes.push(node));
           tr.replaceWith(target.pos, target.pos + target.node.nodeSize, nodes);

@@ -30,6 +30,14 @@ fn rejects_nested_summary_and_tracks_inner_attachments() {
     assert_eq!(content.attachment_counts().file, 0);
 }
 
+#[test]
+fn blank_fold_title_falls_back_to_its_first_visible_text_heading() {
+    let content: DiaryContent = serde_json::from_value(serde_json::json!({"nodes":[{
+        "type":"summary", "summary":"", "content":[{"type":"markdown", "text":"## 内部标题\n\n正文"}]
+    }]})).unwrap();
+    assert_eq!(content.title(), "内部标题");
+}
+
 #[tokio::test]
 async fn v7_migration_preserves_markdown_and_does_not_repeat_on_v8() {
     use super::{

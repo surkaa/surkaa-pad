@@ -305,7 +305,7 @@ impl DiaryContent {
     }
 
     pub fn title(&self) -> String {
-        for node in &self.nodes {
+        for node in &self.expanded_nodes() {
             let (text, is_markdown) = match node {
                 DiaryContentNode::Markdown { text } => (text.as_str(), true),
                 DiaryContentNode::Summary { summary, .. } => (summary.as_str(), false),

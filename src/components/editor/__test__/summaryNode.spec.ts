@@ -7,6 +7,7 @@ import {DiaryDocument} from '../editorSchema';
 import {diaryContentToHtml, htmlToDiaryContent} from '../markdownConverter';
 import {FileNode} from '../tiptap-extensions/FileNode';
 import {createDiaryTableExtensions} from '../tableEditing';
+import {createBlockOrderTransaction} from '../blockOrder';
 import type {DiaryContent} from '../../../bindings';
 
 let editor: Editor;
@@ -29,6 +30,22 @@ function key(key: string) {
 }
 
 describe('inline editable Summary', () => {
+  it('reorders only the active fold body and leaves its title and external content unchanged', () => {
+    mount({nodes: [{type:'summary',summary:'标题',content:[
+      {type:'markdown',text:'第一段'}, {type:'file',attachmentId:'f'},
+    ]},{type:'markdown',text:'外部'}]});
+    const pos = position('summaryBody');
+    const target = editor.state.doc.nodeAt(pos)!;
+    const order = Array.from({length:target.childCount},(_, i) => i).reverse();
+    const transaction = createBlockOrderTransaction(editor.state,order,pos);
+    expect(transaction).not.toBeNull(); editor.view.dispatch(transaction!);
+    const saved = htmlToDiaryContent(editor.getHTML());
+    expect(saved.nodes[0]).toMatchObject({type:'summary',summary:'标题',content:[
+      {type:'file',attachmentId:'f'}, {type:'markdown',text:'第一段'},
+    ]});
+    expect(saved.nodes[1]).toMatchObject({type:'markdown',text:'外部'});
+  });
+
   it.each([false, true])('moves selected content to an existing fold before/after it and undoes atomically (%s)', before => {
     const fold = {type: 'summary' as const, summary: '目标', content: [{type: 'markdown' as const, text: '已有'}]};
     const text = {type: 'markdown' as const, text: '**移入**'};
@@ -114,7 +131,16 @@ describe('inline editable Summary', () => {
     const before = editor.getJSON();
     expect(editor.commands.insertSummary()).toBe(false);
     key('Backspace'); expect(editor.getJSON()).toEqual(before);
+    editor.commands.enterSummaryBody();
+    key('Backspace'); key('Backspace'); expect(editor.getJSON()).toEqual(before);
     expect(editor.schema.nodes.summaryBody.validContent(editor.state.doc.content)).toBe(false);
+  });
+
+  it('leaves a fresh paragraph before existing following text rather than prepending to it', () => {
+    mount({nodes:[{type:'summary',summary:'标题',content:[]},{type:'markdown',text:'原有后文'}]});
+    editor.commands.setTextSelection(position('summaryTitle') + 1);
+    editor.commands.exitSummary(); editor.commands.insertContent('新的正文');
+    expect(htmlToDiaryContent(editor.getHTML()).nodes[1]).toMatchObject({type:'markdown',text:'新的正文\n\n原有后文'});
   });
 
   it('the last empty paragraph Enter leaves the fold but ordinary paragraph Enter stays inside', () => {

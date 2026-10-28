@@ -78,16 +78,19 @@ export function isValidBlockOrder(order: readonly number[], blockCount: number):
 export function createBlockOrderTransaction(
   state: EditorState,
   order: readonly number[],
+  containerPosition?: number,
 ): Transaction | null {
+  const container = containerPosition === undefined ? state.doc : state.doc.nodeAt(containerPosition);
+  if (!container || (containerPosition !== undefined && container.type.name !== 'summaryBody')) return null;
   const nodes: ProseMirrorNode[] = [];
-  state.doc.forEach(node => nodes.push(node));
+  container.forEach(node => nodes.push(node));
   if (!isValidBlockOrder(order, nodes.length)) return null;
   if (order.every((sourceIndex, index) => sourceIndex === index)) return null;
 
   const reordered = order.map(sourceIndex => nodes[sourceIndex]);
   return state.tr.replaceWith(
-    0,
-    state.doc.content.size,
+    containerPosition === undefined ? 0 : containerPosition + 1,
+    containerPosition === undefined ? state.doc.content.size : containerPosition + container.nodeSize - 1,
     Fragment.fromArray(reordered),
   );
 }
