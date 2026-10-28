@@ -80,7 +80,7 @@ use crate::cryptos::crypto_command::{
 use crate::diaries::diary_command::{
     cmd_delete_diary, cmd_get_diary_detail, cmd_get_diary_manifest, cmd_get_diary_summary,
     cmd_inspect_diary_versions, cmd_page_diary_ids, cmd_save_diary, cmd_search_diaries,
-    cmd_update_diary_content_only,
+    cmd_update_diary_content_only, cmd_upgrade_diary_versions,
 };
 use crate::diaries::edit_command::{
     cmd_discard_diary_draft, cmd_list_diary_draft_ids, cmd_open_diary_edit, cmd_release_diary_edit,
@@ -211,6 +211,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_get_diary_manifest,
             cmd_search_diaries,
             cmd_inspect_diary_versions,
+            cmd_upgrade_diary_versions,
             // Android 位置名称解析（Windows 仅返回无结果）
             cmd_reverse_geocode,
             // 附件相关操作

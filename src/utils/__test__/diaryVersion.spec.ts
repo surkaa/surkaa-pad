@@ -18,6 +18,7 @@ function report(overrides: Partial<DiaryVersionReport> = {}): DiaryVersionReport
     newerDiaries: 0,
     failedDiaries: 0,
     failedDiaryIds: [],
+    upgrade: null,
     ...overrides,
   };
 }

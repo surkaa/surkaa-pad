@@ -10,7 +10,8 @@ use crate::diaries::diary_types::{
     AttachmentTypeFilter, DiaryDetail, DiarySummary, SearchDiariesEvent,
 };
 use crate::diaries::diary_version::{
-    inspect_diary_versions, DiaryVersionEvent, DiaryVersionRunResult, DiaryVersionStorageScope,
+    inspect_diary_versions, upgrade_diary_versions, DiaryVersionEvent, DiaryVersionRunResult,
+    DiaryVersionStorageScope,
 };
 use crate::diaries::{get_diary, DiaryContent, DiaryManifest};
 use crate::state::AppState;
@@ -250,10 +251,28 @@ pub fn cmd_inspect_diary_versions(
     state: State<'_, AppState>,
     event: Channel<DiaryVersionEvent>,
 ) -> Result<String, AppError> {
-    Ok(start_diary_version_task(state.inner().clone(), event))
+    Ok(start_diary_version_task(
+        state.inner().clone(),
+        event,
+        false,
+    ))
 }
 
-fn start_diary_version_task(state: AppState, event: Channel<DiaryVersionEvent>) -> String {
+/// 显式升级支持迁移的旧版日记，只写主文件，不下载或改动附件；云端逐篇申请编辑占用。
+#[tauri::command]
+#[specta::specta]
+pub fn cmd_upgrade_diary_versions(
+    state: State<'_, AppState>,
+    event: Channel<DiaryVersionEvent>,
+) -> Result<String, AppError> {
+    Ok(start_diary_version_task(state.inner().clone(), event, true))
+}
+
+fn start_diary_version_task(
+    state: AppState,
+    event: Channel<DiaryVersionEvent>,
+    upgrade: bool,
+) -> String {
     let task_pool = state.task_pool();
     task_pool.spawn_cancelable(move |cancellation| async move {
         let _storage_guard = match state.lock_storage_operation().await {
@@ -272,14 +291,18 @@ fn start_diary_version_task(state: AppState, event: Channel<DiaryVersionEvent>) 
         };
         let store = state.diary_store();
         let event: Arc<dyn MessageSender<DiaryVersionEvent>> = Arc::new(event);
-        let result = inspect_diary_versions(
-            &state.crypto(),
-            &*store,
-            scope,
-            event.clone(),
-            &cancellation,
-        )
-        .await;
+        let result = if upgrade {
+            upgrade_diary_versions(&state, scope, event.clone(), &cancellation).await
+        } else {
+            inspect_diary_versions(
+                &state.crypto(),
+                &*store,
+                scope,
+                event.clone(),
+                &cancellation,
+            )
+            .await
+        };
 
         let terminal = match result {
             Ok(DiaryVersionRunResult::Completed(report)) => DiaryVersionEvent::Completed { report },

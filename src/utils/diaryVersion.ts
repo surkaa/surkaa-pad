@@ -107,6 +107,10 @@ export function diaryVersionOutcomeText(outcome: DiaryVersionItemOutcome | null)
       return '高于当前版本';
     case 'failed':
       return '读取失败';
+    case 'upgraded':
+      return '已升级';
+    case 'skipped':
+      return '已跳过';
     default:
       return '';
   }

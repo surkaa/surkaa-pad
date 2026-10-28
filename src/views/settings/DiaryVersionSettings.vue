@@ -23,7 +23,7 @@
       </q-card-section>
 
       <q-card-section v-if="running" class="q-pt-none">
-        <div class="operation-heading">正在检查日记版本…</div>
+        <div class="operation-heading">{{ upgrading ? '正在统一升级日记…' : '正在检查日记版本…' }}</div>
         <div class="dialog-description q-mt-xs">{{ progressText }}</div>
         <div v-if="display.currentDiaryId" class="current-diary ellipsis q-mt-sm">
           {{ display.currentDiaryId }}
@@ -39,6 +39,20 @@
           class="q-mt-md"
         />
         <div v-else class="q-mt-md"><q-spinner color="primary" size="24px"/></div>
+      </q-card-section>
+
+      <q-card-section v-else-if="confirmingUpgrade" class="q-pt-none">
+        <div class="notice notice-warning">
+          <q-icon name="warning_amber"/>
+          <span>升级会写入当前存储中的旧版日记主文件，旧版应用可能无法再读取。建议先备份重要数据。</span>
+        </div>
+        <div class="dialog-description q-mt-sm">
+          不下载或修改附件；无法升级或被占用的日记会跳过。取消时保留已经完成的升级。
+          <DetailsHelpButton title="统一升级说明" in-dialog>
+            <p>逐篇复用现有的数据格式迁移，并先验证迁移结果再写入。云端升级会申请临时编辑占用，写入前检查原始版本标识，不会自动接管其他设备或异常过期的占用。</p>
+            <p>升级只调整数据格式，不更改日记的创建、修改时间。未完成部分可以再次运行；当前版本和更高版本不会被重写。</p>
+          </DetailsHelpButton>
+        </div>
       </q-card-section>
 
       <q-card-section v-else-if="display.phase === 'failed'" class="q-pt-none">
@@ -58,7 +72,7 @@
       <q-card-section v-else-if="auditReport" class="q-pt-none report-section">
         <div v-if="display.phase === 'cancelled'" class="notice notice-warning">
           <q-icon name="cancel"/>
-          <span>刚才的操作已取消，下面仍显示上一次完整检查的结果。</span>
+          <span>{{ auditReport.upgrade ? `升级已停止，已处理 ${auditReport.processedDiaries} / ${auditReport.totalDiaries} 篇；以下为部分结果，已完成的升级会保留。` : '刚才的操作已取消，下面仍显示上一次完整检查的结果。' }}</span>
         </div>
         <div class="report-meta">
           <span>{{ scopeText(auditReport.scope) }}</span>
@@ -89,9 +103,9 @@
           <q-icon name="check_circle"/>
           <span>全部日记均已使用当前数据格式。</span>
         </div>
-        <div v-else-if="auditReport.legacyDiaries > 0" class="notice notice-warning">
-          <q-icon name="warning_amber"/>
-          <span>发现 {{ auditReport.legacyDiaries }} 篇不受支持的旧版日记，请先排查数据来源。</span>
+        <div v-if="auditReport.upgrade" class="notice notice-neutral" role="status">
+          <q-icon name="upgrade"/>
+          <span>已升级 {{ auditReport.upgrade.upgraded }} 篇，跳过 {{ auditReport.upgrade.skipped }} 篇，失败 {{ auditReport.failedDiaries }} 篇。</span>
         </div>
         <div v-if="auditReport.newerDiaries > 0" class="notice notice-warning">
           <q-icon name="new_releases"/>
@@ -111,6 +125,14 @@
         >
           <div v-for="diaryId in auditReport.failedDiaryIds" :key="diaryId" class="failed-id">
             {{ diaryId }}
+          </div>
+        </q-expansion-item>
+        <q-expansion-item
+          v-if="auditReport.upgrade?.issues.length"
+          dense icon="info_outline" label="查看跳过或失败原因（最多 20 项）" class="failed-list"
+        >
+          <div v-for="issue in auditReport.upgrade.issues" :key="issue.diaryId" class="failed-id">
+            {{ issue.diaryId }}：{{ issue.message }}
           </div>
         </q-expansion-item>
       </q-card-section>
@@ -133,6 +155,10 @@
             @click="cancelOperation"
           />
         </template>
+        <template v-else-if="confirmingUpgrade">
+          <q-btn flat label="返回" class="secondary-action" @click="confirmingUpgrade = false"/>
+          <q-btn unelevated label="确认升级" color="primary" @click="runUpgrade"/>
+        </template>
         <template v-else>
           <q-btn
             v-if="auditReport"
@@ -141,6 +167,8 @@
             class="secondary-action"
             @click="runInspection"
           />
+          <q-btn v-if="auditReport && auditReport.legacyDiaries > 0" flat color="primary"
+                 label="统一升级" @click="confirmingUpgrade = true"/>
           <q-btn
             :flat="!auditReport"
             :unelevated="Boolean(auditReport)"
@@ -181,8 +209,11 @@ import {
   withDiaryVersionError,
 } from '../../utils/diaryVersion';
 import {formatError} from '../../utils/formatError';
+import DetailsHelpButton from '../../components/DetailsHelpButton.vue';
+import {useDataStore} from '../../stores/data';
 
 const $q = useQuasar();
+const dataStore = useDataStore();
 const props = defineProps<{
   remoteEnabled: boolean;
 }>();
@@ -191,6 +222,8 @@ const display = ref(initialDiaryVersionDisplay());
 const auditReport = ref<DiaryVersionReport>();
 const activeTaskToken = ref('');
 const cancelling = ref(false);
+const upgrading = ref(false);
+const confirmingUpgrade = ref(false);
 let operationRevision = 0;
 
 const running = computed(() => display.value.phase === 'running');
@@ -219,8 +252,14 @@ function scopeText(scope: DiaryVersionStorageScope): string {
   return scope === 'cloud' ? '云端存储' : '本地存储';
 }
 
-async function runInspection() {
+function runInspection() { return runOperation(false); }
+function runUpgrade() { return runOperation(true); }
+
+async function runOperation(upgrade: boolean) {
   if (running.value) return;
+  confirmingUpgrade.value = false;
+  upgrading.value = upgrade;
+  if (upgrade) auditReport.value = undefined;
   const revision = ++operationRevision;
   const terminal = {received: false};
   display.value = initialDiaryVersionDisplay(true);
@@ -231,6 +270,9 @@ async function runInspection() {
   event.onmessage = (message) => {
     if (revision !== operationRevision) return;
     display.value = reduceDiaryVersionEvent(display.value, message);
+    if (upgrade && message.event === 'progress' && message.data.outcome === 'upgraded') {
+      dataStore.invalidateDiaryList();
+    }
 
     if (message.event === 'completed') {
       terminal.received = true;
@@ -238,6 +280,7 @@ async function runInspection() {
       cancelling.value = false;
       auditReport.value = message.data.report;
     } else if (message.event === 'cancelled' || message.event === 'error') {
+      if (upgrade && message.event === 'cancelled') auditReport.value = message.data.report;
       terminal.received = true;
       activeTaskToken.value = '';
       cancelling.value = false;
@@ -245,7 +288,12 @@ async function runInspection() {
   };
 
   try {
-    const token = await api.cmdInspectDiaryVersions(event);
+    const token = upgrade ? await api.cmdUpgradeDiaryVersions(event) : await api.cmdInspectDiaryVersions(event);
+    if (revision !== operationRevision && !terminal.received) {
+      // 页面已卸载但命令刚返回令牌时，也要取消后台任务，不能继续静默升级。
+      void api.cmdCancelTask(token).catch(() => undefined);
+      return;
+    }
     if (revision === operationRevision && !terminal.received) {
       activeTaskToken.value = token;
     }
@@ -274,6 +322,7 @@ async function cancelOperation() {
 
 watch(() => props.remoteEnabled, () => {
   auditReport.value = undefined;
+  confirmingUpgrade.value = false;
   if (!running.value) {
     display.value = initialDiaryVersionDisplay();
   }

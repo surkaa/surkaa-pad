@@ -706,6 +706,17 @@ async cmdInspectDiaryVersions(event: TAURI_CHANNEL<DiaryVersionEvent>) : Promise
 }
 },
 /**
+ * 显式升级支持迁移的旧版日记，只写主文件，不下载或改动附件；云端逐篇申请编辑占用。
+ */
+async cmdUpgradeDiaryVersions(event: TAURI_CHANNEL<DiaryVersionEvent>) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_upgrade_diary_versions", { event }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 使用 Android 系统逆地理编码器尝试取得可编辑的地点名称。
  * 
  * Windows 不主动获取位置或解析地点名称，因此返回 `None`。
@@ -1371,9 +1382,15 @@ attachmentCounts: DiaryAttachmentCounts;
  * 正文节点中各类加密附件的数量
  */
 encryptedAttachmentCounts: DiaryAttachmentCounts }
+export type DiaryUpgradeIssue = { diaryId: string; message: string }
+export type DiaryUpgradeSummary = { upgraded: number; skipped: number; 
+/**
+ * 只保留最多 20 项，避免大批损坏数据使事件消息无限增长。
+ */
+issues: DiaryUpgradeIssue[] }
 export type DiaryVersionEvent = { event: "started"; data: { scope: DiaryVersionStorageScope; total: number } } | { event: "progress"; data: { processed: number; total: number; diaryId: string; outcome: DiaryVersionItemOutcome } } | { event: "completed"; data: { report: DiaryVersionReport } } | { event: "cancelled"; data: { report: DiaryVersionReport } } | { event: "error"; data: { message: string } }
-export type DiaryVersionItemOutcome = "current" | "legacy" | "newer" | "failed"
-export type DiaryVersionReport = { scope: DiaryVersionStorageScope; currentVersion: number; totalDiaries: number; processedDiaries: number; currentDiaries: number; legacyDiaries: number; newerDiaries: number; failedDiaries: number; failedDiaryIds: string[] }
+export type DiaryVersionItemOutcome = "current" | "legacy" | "newer" | "failed" | "upgraded" | "skipped"
+export type DiaryVersionReport = { scope: DiaryVersionStorageScope; currentVersion: number; totalDiaries: number; processedDiaries: number; currentDiaries: number; legacyDiaries: number; newerDiaries: number; failedDiaries: number; failedDiaryIds: string[]; upgrade: DiaryUpgradeSummary | null }
 export type DiaryVersionStorageScope = "local" | "cloud"
 export type DisableRemoteStoragePlan = { localStoragePath: string; remoteFiles: number; remoteBytes: number; skippedFiles: number; skippedBytes: number; downloadFiles: number; downloadBytes: number; availableBytes: number; hasSufficientSpace: boolean }
 export type EditorSettings = { toolbarOrder: EditorToolbarAction[] }

@@ -1,9 +1,13 @@
 use crate::cryptos::Crypto;
 use crate::diaries::diary::lock_diary_operation;
+use crate::diaries::diary_migration::{migrate_manifest_bytes, MigrationContext};
 use crate::diaries::diary_store::DiaryStore;
-use crate::diaries::diary_types::{inspect_manifest_json, DiaryManifest, CURRENT_VERSION};
+use crate::diaries::diary_types::{
+    deserialize_current_manifest, inspect_manifest_json, DiaryManifest, CURRENT_VERSION,
+};
 use crate::diaries::DiaryError;
 use crate::object::NextToken;
+use crate::state::AppState;
 use crate::utils::message_sender::MessageSender;
 use serde::Serialize;
 use specta::Type;
@@ -27,6 +31,24 @@ pub enum DiaryVersionItemOutcome {
     Legacy,
     Newer,
     Failed,
+    Upgraded,
+    Skipped,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DiaryUpgradeIssue {
+    pub diary_id: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DiaryUpgradeSummary {
+    pub upgraded: u32,
+    pub skipped: u32,
+    /// 只保留最多 20 项，避免大批损坏数据使事件消息无限增长。
+    pub issues: Vec<DiaryUpgradeIssue>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
@@ -41,6 +63,7 @@ pub struct DiaryVersionReport {
     pub newer_diaries: u32,
     pub failed_diaries: u32,
     pub failed_diary_ids: Vec<String>,
+    pub upgrade: Option<DiaryUpgradeSummary>,
 }
 
 impl DiaryVersionReport {
@@ -55,6 +78,7 @@ impl DiaryVersionReport {
             newer_diaries: 0,
             failed_diaries: 0,
             failed_diary_ids: Vec::new(),
+            upgrade: None,
         }
     }
 
@@ -164,6 +188,151 @@ pub(crate) async fn inspect_diary_versions(
     Ok(DiaryVersionRunResult::Completed(report))
 }
 
+pub(crate) async fn upgrade_diary_versions(
+    state: &AppState,
+    scope: DiaryVersionStorageScope,
+    event: Arc<dyn MessageSender<DiaryVersionEvent>>,
+    cancellation: &CancellationToken,
+) -> Result<DiaryVersionRunResult, DiaryError> {
+    let reader = state.unoccupied_diary_store();
+    let ids = collect_diary_ids(&*reader, cancellation).await?;
+    let mut report = DiaryVersionReport::new(scope, ids.len());
+    report.upgrade = Some(DiaryUpgradeSummary::default());
+    let _ = event.send(DiaryVersionEvent::Started {
+        scope,
+        total: report.total_diaries,
+    });
+    for id in ids {
+        if cancellation.is_cancelled() {
+            return Ok(DiaryVersionRunResult::Cancelled(report));
+        }
+        let outcome = match upgrade_diary_version(state, &*reader, &id).await {
+            Ok((version, outcome, issue)) => {
+                report.record_version(version);
+                let summary = report.upgrade.as_mut().expect("upgrade report");
+                if outcome == DiaryVersionItemOutcome::Upgraded {
+                    summary.upgraded += 1;
+                }
+                if outcome == DiaryVersionItemOutcome::Skipped {
+                    summary.skipped += 1;
+                }
+                if let Some(message) = issue {
+                    if summary.issues.len() < FAILED_DIARY_ID_LIMIT {
+                        summary.issues.push(DiaryUpgradeIssue {
+                            diary_id: id.clone(),
+                            message,
+                        });
+                    }
+                }
+                outcome
+            }
+            Err(error) => {
+                log::warn!("日记统一升级失败: diary={id}, error={error}");
+                report.record_failure(&id);
+                let summary = report.upgrade.as_mut().expect("upgrade report");
+                if summary.issues.len() < FAILED_DIARY_ID_LIMIT {
+                    summary.issues.push(DiaryUpgradeIssue {
+                        diary_id: id.clone(),
+                        message: error.to_string(),
+                    });
+                }
+                DiaryVersionItemOutcome::Failed
+            }
+        };
+        let _ = event.send(DiaryVersionEvent::Progress {
+            processed: report.processed_diaries,
+            total: report.total_diaries,
+            diary_id: id,
+            outcome,
+        });
+    }
+    if cancellation.is_cancelled() {
+        return Ok(DiaryVersionRunResult::Cancelled(report));
+    }
+    Ok(DiaryVersionRunResult::Completed(report))
+}
+
+async fn upgrade_diary_version(
+    state: &AppState,
+    reader: &dyn DiaryStore,
+    id: &str,
+) -> Result<(u32, DiaryVersionItemOutcome, Option<String>), DiaryError> {
+    let _guard = lock_diary_operation(id).await;
+    // 不使用可能已在内存中迁移的 DiaryCache，必须检查存储中的原始版本与 ETag。
+    let (encrypted, baseline) = reader.download_manifest(id).await?;
+    let crypto = state.crypto();
+    let raw = crypto.decrypt(&encrypted)?;
+    let (_, version) = inspect_manifest_json(id, &raw)?;
+    if version == CURRENT_VERSION {
+        deserialize_current_manifest(id, &raw)?;
+        return Ok((version, DiaryVersionItemOutcome::Current, None));
+    }
+    if version > CURRENT_VERSION {
+        return Ok((version, DiaryVersionItemOutcome::Newer, None));
+    }
+    let context = MigrationContext {
+        diary_id: id,
+        store: reader,
+    };
+    let migrated = match migrate_manifest_bytes(&context, &raw).await {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => {
+            return Err(DiaryError::InvalidManifest(
+                "旧版日记没有可执行的迁移步骤".into(),
+            ))
+        }
+        Err(DiaryError::UnsupportedVersion { .. }) => {
+            return Ok((
+                version,
+                DiaryVersionItemOutcome::Skipped,
+                Some(format!("V{version} 没有可用的升级链，未修改原文件")),
+            ))
+        }
+        Err(error) => return Err(error),
+    };
+    deserialize_current_manifest(id, &migrated)?;
+    let encrypted = crypto.encrypt(&migrated)?;
+    let edits = state.diary_edits();
+    let token = if state.is_remote_enabled() {
+        if edits
+            .capture(id)
+            .is_some_and(|permit| permit.check_local().is_ok())
+        {
+            return Ok((
+                version,
+                DiaryVersionItemOutcome::Skipped,
+                Some("本机正在编辑此日记，请退出编辑后重试".into()),
+            ));
+        }
+        // 不接管已过期或其他设备的占用；写入时仍由 RemoteStore 验证占用及原始 ETag。
+        let access = edits.acquire(id, false, baseline).await?;
+        if access.read_only {
+            return Ok((version, DiaryVersionItemOutcome::Skipped, access.reason));
+        }
+        Some(
+            access
+                .session_id
+                .ok_or_else(|| DiaryError::EditUnavailable("没有获得升级写入资格".into()))?,
+        )
+    } else {
+        None
+    };
+    let store = state.diary_store();
+    let result = store.upload_manifest(id, &encrypted).await;
+    // 已经提交的单篇日记不回滚；取消只在单篇事务之间生效。失败也必须释放本次申请的占用。
+    let release = if let Some(token) = token {
+        edits.release(id, &token).await
+    } else {
+        Ok(())
+    };
+    result?;
+    state.diary_cache().remove(id);
+    let issue = release
+        .err()
+        .map(|error| format!("升级已完成，但释放编辑占用失败：{error}"));
+    Ok((CURRENT_VERSION, DiaryVersionItemOutcome::Upgraded, issue))
+}
+
 async fn collect_diary_ids(
     store: &dyn DiaryStore,
     cancellation: &CancellationToken,
@@ -208,6 +377,10 @@ async fn inspect_diary_version(
 }
 
 #[cfg(test)]
+#[path = "diary_upgrade_tests.rs"]
+mod upgrade_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::caches::LocalObjectStore;
@@ -216,7 +389,7 @@ mod tests {
     use crate::diaries::{DiaryStore, LocalStore};
     use tokio::sync::mpsc::unbounded_channel;
 
-    fn make_crypto() -> Crypto {
+    pub(super) fn make_crypto() -> Crypto {
         let crypto = Crypto::new();
         crypto
             .derive_dek(
@@ -227,7 +400,7 @@ mod tests {
         crypto
     }
 
-    fn current_manifest(id: &str) -> DiaryManifest {
+    pub(super) fn current_manifest(id: &str) -> DiaryManifest {
         DiaryManifest {
             id: id.to_string(),
             algorithm: Gcm,
@@ -249,7 +422,7 @@ mod tests {
             .expect("upload fixture");
     }
 
-    fn sender() -> (
+    pub(super) fn sender() -> (
         Arc<dyn MessageSender<DiaryVersionEvent>>,
         tokio::sync::mpsc::UnboundedReceiver<DiaryVersionEvent>,
     ) {
