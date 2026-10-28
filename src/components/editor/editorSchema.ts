@@ -4,5 +4,9 @@ import {Node as TiptapNode} from '@tiptap/vue-3';
 export const DiaryDocument = TiptapNode.create({
   name: 'doc',
   topNode: true,
-  content: '(block|diaryBlock)+',
+  addOptions() { return {summary: false}; },
+  content() {
+    return this.options.summary
+      ? '(block|diaryBlock|summaryBlock)+' : '(block|diaryBlock)+';
+  },
 });

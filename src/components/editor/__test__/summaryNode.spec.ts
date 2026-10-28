@@ -1,141 +1,127 @@
 // @vitest-environment happy-dom
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it} from 'vitest';
 import {Editor} from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
-import {SummaryNode} from '../tiptap-extensions/SummaryNode';
-import {openUrl} from '@tauri-apps/plugin-opener';
+import {SummaryNode, summaryRange} from '../tiptap-extensions/SummaryNode';
+import {DiaryDocument} from '../editorSchema';
 import {diaryContentToHtml, htmlToDiaryContent} from '../markdownConverter';
-vi.mock('@tauri-apps/plugin-opener', () => ({openUrl: vi.fn().mockResolvedValue(undefined)}));
+import {FileNode} from '../tiptap-extensions/FileNode';
+import {createDiaryTableExtensions} from '../tableEditing';
+import type {DiaryContent} from '../../../bindings';
 
-describe('SummaryNode', () => {
-  it('renders Markdown blocks while persisting the exact original source across save/reopen', () => {
-    const markdown = '# 标题\n\n**加粗**与`代码`\n\n> 引用\n\n- 一\n  - 二\n\n- [x] 完成\n\n'
-      + '| A | B |\n| --- | --- |\n| 1 | 2 |\n\n```ts\nconst x = "<b>";\n```';
-    const original = {nodes: [{type: 'summary' as const, summary: '摘要 <标题>', content: markdown}]};
-    const element = document.createElement('div'); document.body.append(element);
-    const editor = new Editor({element, extensions: [StarterKit, SummaryNode], content: diaryContentToHtml(original, {})});
-    try {
-      expect(element.querySelector('.editor-summary-content h1')?.textContent).toBe('标题');
-      expect(element.querySelector('.editor-summary-content strong')?.textContent).toBe('加粗');
-      expect(element.querySelector('.editor-summary-content blockquote')).not.toBeNull();
-      expect(element.querySelectorAll('.editor-summary-content ul ul li')).toHaveLength(1);
-      expect(element.querySelector('.editor-summary-content li[data-checked="true"]')).not.toBeNull();
-      expect(element.querySelector('.editor-summary-content table td')?.textContent).toBe('1');
-      expect(element.querySelector('.editor-summary-content pre code')?.textContent).toBe('const x = "<b>";');
-      const before = editor.getJSON();
-      element.querySelector<HTMLElement>('summary')!.click();
-      expect(element.querySelector<HTMLDetailsElement>('details')?.open).toBe(true);
-      expect(editor.getJSON()).toEqual(before); // 展开状态不是日记内容编辑。
-      const html = editor.getHTML();
-      expect(htmlToDiaryContent(html)).toEqual(original);
-      editor.commands.setContent(html);
-      expect(htmlToDiaryContent(editor.getHTML())).toEqual(original);
-    } finally { editor.destroy(); element.remove(); }
+let editor: Editor;
+function mount(content: string | DiaryContent = '<p>正文</p>') {
+  const element = document.createElement('div'); document.body.append(element);
+  editor = new Editor({element, extensions: [
+    StarterKit.configure({document: false}), DiaryDocument.configure({summary: true}), SummaryNode,
+    FileNode.extend({group: 'diaryBlock'}), ...createDiaryTableExtensions(),
+  ], content: typeof content === 'string' ? content : diaryContentToHtml(content, {})});
+  return element;
+}
+afterEach(() => {editor?.destroy(); document.body.innerHTML = '';});
+function position(type: string) {
+  let found = -1; editor.state.doc.descendants((node, pos) => {if (found < 0 && node.type.name === type) found = pos;});
+  return found;
+}
+function key(key: string) {
+  const event = new KeyboardEvent('keydown', {key, bubbles: true, cancelable: true});
+  editor.view.dom.dispatchEvent(event); return event;
+}
+
+describe('inline editable Summary', () => {
+  it.each([false, true])('moves selected content to an existing fold before/after it and undoes atomically (%s)', before => {
+    const fold = {type: 'summary' as const, summary: '目标', content: [{type: 'markdown' as const, text: '已有'}]};
+    const text = {type: 'markdown' as const, text: '**移入**'};
+    mount({nodes: before ? [fold, text] : [text, fold]});
+    let range = {from: 0, to: 0};
+    editor.state.doc.descendants((node, pos) => {if (node.text === '移入') range = {from: pos, to: pos + 2};});
+    editor.commands.setTextSelection(range);
+    const snapshot = editor.getJSON();
+    expect(editor.commands.appendToSummary(position('summaryNode'))).toBe(true);
+    const saved = htmlToDiaryContent(editor.getHTML());
+    expect(JSON.stringify(saved)).toContain('**移入**');
+    expect(saved.nodes.filter(node => node.type === 'summary')).toHaveLength(1);
+    expect(editor.commands.undo()).toBe(true); expect(editor.getJSON()).toEqual(snapshot);
   });
 
-  it('does not execute HTML, create nested summaries, auto-load images or allow script links', () => {
-    const source = '<script>alert(1)</script>\n\n<details><summary>嵌套</summary>隐藏</details>\n\n'
-      + '![远程图片](https://example.com/private.png)\n\n[危险](javascript:alert(1))';
-    const element = document.createElement('div'); document.body.append(element);
-    const editor = new Editor({element, extensions: [StarterKit, SummaryNode], content: diaryContentToHtml({nodes: [
-      {type: 'summary', summary: '安全渲染', content: source},
-    ]}, {})});
-    try {
-      expect(element.querySelectorAll('details')).toHaveLength(1);
-      expect(element.querySelector('.editor-summary-content script')).toBeNull();
-      expect(element.querySelector('.editor-summary-content img')).toBeNull();
-      expect(element.querySelector('.editor-summary-content a')).toBeNull();
-      expect(element.querySelector('.editor-summary-content')?.textContent).toContain('<script>alert(1)</script>');
-      expect(htmlToDiaryContent(editor.getHTML()).nodes[0]).toEqual({type: 'summary', summary: '安全渲染', content: source});
-    } finally { editor.destroy(); element.remove(); }
+  it('keeps raw HTML inert while allowing the editor underline format', () => {
+    const el = mount({nodes: [{type: 'summary', summary: '标题', content: [{type: 'markdown',
+      text: '<script>alert(1)</script>\n\n<img src="https://example.com/leak" onerror="alert(1)">\n\n<u>下划线</u>',
+    }]}]});
+    expect(el.querySelector('script')).toBeNull(); expect(el.querySelector('img')).toBeNull();
+    expect(el.textContent).toContain('<script>'); expect(el.querySelector('u')?.textContent).toBe('下划线');
   });
 
-  it('opens safe links only after a user click and prevents navigation inside the application', async () => {
-    vi.mocked(openUrl).mockClear();
-    const element = document.createElement('div'); document.body.append(element);
-    const editor = new Editor({element, extensions: [StarterKit, SummaryNode], content: diaryContentToHtml({nodes: [
-      {type: 'summary', summary: '链接', content: '[访问](https://example.com/path)'},
-    ]}, {})});
-    try {
-      expect(openUrl).not.toHaveBeenCalled();
-      const anchor = element.querySelector<HTMLAnchorElement>('.editor-summary-content a')!;
-      expect(anchor.rel).toBe('noopener noreferrer');
-      const event = new MouseEvent('click', {bubbles: true, cancelable: true}); anchor.dispatchEvent(event);
-      expect(event.defaultPrevented).toBe(true);
-      expect(openUrl).toHaveBeenCalledExactlyOnceWith('https://example.com/path');
-    } finally { editor.destroy(); element.remove(); }
+  it('enters a writable paragraph before a first attachment and keeps attachment insertion inside the fold', () => {
+    mount({nodes:[{type:'summary', summary:'文件', content:[{type:'file',attachmentId:'a'}]}]});
+    editor.commands.setTextSelection(position('summaryTitle') + 1); key('Enter');
+    expect(editor.state.selection.$from.parent.type.name).toBe('paragraph');
+    expect(summaryRange(editor.state)).not.toBeNull();
+    editor.commands.insertFile({id:'b', filename:'b.txt'});
+    const saved = htmlToDiaryContent(editor.getHTML());
+    expect(saved.nodes[0]).toMatchObject({type:'summary', content: expect.arrayContaining([
+      {type:'file',attachmentId:'a'}, {type:'file',attachmentId:'b'},
+    ])});
   });
 
-  it('inserts a structured native details element', () => {
-    const element = document.createElement('div');
-    document.body.appendChild(element);
-    const editor = new Editor({
-      element,
-      extensions: [StarterKit, SummaryNode],
-      content: '<p></p>',
-    });
-
-    expect(editor.commands.insertSummary({
-      summary: '外显文字',
-      content: '第一行\n第二行',
-    })).toBe(true);
-    expect(editor.getJSON().content).toContainEqual(expect.objectContaining({
-      type: 'summaryNode',
-      attrs: {summary: '外显文字', content: '第一行\n第二行'},
-    }));
-    expect(element.querySelector('details.editor-summary > summary > span')?.textContent)
-      .toBe('外显文字');
-    expect(element.querySelector('.editor-summary-content p')?.innerHTML).toBe('第一行<br>第二行');
-    expect(element.querySelector<HTMLElement>('details')?.dataset.content).toBe('第一行\n第二行');
-    const details = element.querySelector('details.editor-summary') as HTMLDetailsElement;
-    const content = details.querySelector('.editor-summary-content') as HTMLElement;
-    content.dispatchEvent(new MouseEvent('pointerdown', {bubbles: true}));
-    expect(details.draggable).toBe(false);
-    (details.querySelector('summary') as HTMLElement)
-      .dispatchEvent(new MouseEvent('pointerdown', {bubbles: true}));
-    expect(details.draggable).toBe(true);
-
-    editor.destroy();
-    element.remove();
+  it('wraps a mixed selection without losing formatting, files or table cells and supports undo', () => {
+    mount('<p><strong>加粗</strong></p><div class="editor-file-attachment" data-id="file"></div>'
+      + '<table><tbody><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></tbody></table>');
+    editor.commands.selectAll(); const before = editor.getJSON();
+    expect(editor.commands.insertSummary()).toBe(true);
+    expect(position('summaryTitle')).toBeGreaterThanOrEqual(0);
+    expect(position('fileNode')).toBeGreaterThan(0); expect(position('table')).toBeGreaterThan(0);
+    expect(editor.getHTML()).toContain('<strong>加粗</strong>');
+    expect(editor.commands.undo()).toBe(true); expect(editor.getJSON()).toEqual(before);
   });
 
-  it('reports the current position and attributes from its edit button', () => {
-    const element = document.createElement('div');
-    document.body.appendChild(element);
-    const onEdit = vi.fn();
-    const editor = new Editor({
-      element,
-      extensions: [StarterKit, SummaryNode.configure({onEdit})],
-      content: '<details class="editor-summary" data-summary="摘要" data-content="正文"></details>',
-    });
-
-    (element.querySelector('.editor-summary-edit') as HTMLButtonElement).click();
-
-    expect(onEdit).toHaveBeenCalledOnce();
-    expect(onEdit.mock.calls[0][0]).toEqual(expect.any(Number));
-    expect(onEdit.mock.calls[0][1]).toEqual({summary: '摘要', content: '正文'});
-
-    editor.destroy();
-    element.remove();
+  it('edits title/body in the same editor and serializes structured children through save/reopen', () => {
+    mount();
+    editor.commands.selectAll(); editor.commands.insertSummary();
+    editor.commands.insertContent('新标题'); key('Enter'); editor.commands.insertContent('内部');
+    const saved = htmlToDiaryContent(editor.getHTML());
+    expect(saved.nodes[0]).toMatchObject({type: 'summary', summary: '新标题'});
+    expect(JSON.stringify(saved)).toContain('内部');
+    editor.commands.setContent(diaryContentToHtml(saved, {}));
+    expect(htmlToDiaryContent(editor.getHTML())).toEqual(saved);
+    expect(editor.view.dom.querySelector('.editor-summary-title')?.closest('[contenteditable="false"]')).toBeNull();
   });
 
-  it('toggles the native details state when motion animation is unavailable', () => {
-    const element = document.createElement('div');
-    document.body.appendChild(element);
-    const editor = new Editor({
-      element,
-      extensions: [StarterKit, SummaryNode],
-      content: '<details class="editor-summary" data-summary="摘要" data-content="正文"></details>',
-    });
-    const details = element.querySelector('details.editor-summary') as HTMLDetailsElement;
-    const summary = details.querySelector('summary') as HTMLElement;
+  it('exits at the last empty paragraph or by button and can unwrap without deleting children', () => {
+    const el = mount({nodes:[{type:'summary', summary:'标题', content:[{type:'markdown',text:'内部'}]}]});
+    editor.commands.setTextSelection(position('summaryBody') + 2);
+    editor.commands.exitSummary(); editor.commands.insertContent('外面');
+    expect(htmlToDiaryContent(editor.getHTML()).nodes[1]).toMatchObject({type:'markdown',text:'外面'});
+    editor.commands.setTextSelection(position('summaryTitle') + 1);
+    expect(editor.commands.unwrapSummary()).toBe(true);
+    expect(position('summaryNode')).toBe(-1);
+    expect(editor.getText()).toContain('内部'); expect(editor.getText()).toContain('标题');
+    expect(el.querySelector('.editor-summary-edit')).toBeNull();
+  });
 
-    summary.click();
-    expect(details.open).toBe(true);
-    summary.click();
-    expect(details.open).toBe(false);
+  it('keeps collapse state local and does not focus or save the document when toggled', () => {
+    const el = mount({nodes:[{type:'summary', summary:'标题', content:[{type:'markdown',text:'内容'}]}]});
+    const before = editor.getJSON(); const toggle = el.querySelector<HTMLButtonElement>('.editor-summary-toggle')!;
+    toggle.click(); expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(editor.getJSON()).toEqual(before); expect(editor.isFocused).toBe(false);
+    toggle.click(); expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(editor.getJSON()).toEqual(before);
+  });
 
-    editor.destroy();
-    element.remove();
+  it('rejects nested creation and protects Backspace at the start of the title', () => {
+    mount(); editor.commands.insertSummary();
+    expect(summaryRange(editor.state)).not.toBeNull();
+    const before = editor.getJSON();
+    expect(editor.commands.insertSummary()).toBe(false);
+    key('Backspace'); expect(editor.getJSON()).toEqual(before);
+    expect(editor.schema.nodes.summaryBody.validContent(editor.state.doc.content)).toBe(false);
+  });
+
+  it('the last empty paragraph Enter leaves the fold but ordinary paragraph Enter stays inside', () => {
+    mount('<p></p>'); editor.commands.insertSummary(); key('Enter');
+    expect(editor.state.selection.$from.parent.type.name).toBe('paragraph');
+    key('Enter'); expect(summaryRange(editor.state)).toBeNull();
+    editor.commands.insertContent('外面');
+    expect(htmlToDiaryContent(editor.getHTML()).nodes[1]).toMatchObject({type:'markdown',text:'外面'});
   });
 });

@@ -252,13 +252,13 @@ describe('structured diary content', () => {
   it('round-trips structured Summary content without mixing it into Markdown', () => {
     const content = {nodes: [
       {type: 'markdown' as const, text: 'before'},
-      {type: 'summary' as const, summary: '外显 <标题>', content: '内部第一行\n内部第二行'},
+      {type: 'summary' as const, summary: '外显 <标题>', content: [{type: 'markdown' as const, text: '内部第一行\n内部第二行'}]},
       {type: 'markdown' as const, text: 'after'},
     ]}
 
     const html = diaryContentToHtml(content, {})
-    expect(html).toContain('<details class="editor-summary"')
-    expect(html).toContain('data-summary="外显 &lt;标题&gt;"')
+    expect(html).toContain('<section class="editor-summary"')
+    expect(html).toContain('外显 &lt;标题&gt;')
     expect(htmlToDiaryContent(html)).toEqual(content)
   })
 

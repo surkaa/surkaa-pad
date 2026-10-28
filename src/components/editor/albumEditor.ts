@@ -25,6 +25,10 @@ export function createAlbumDocument(
   displayMode: 'horizontalList' | 'stackedCards',
   attachmentMap: Record<string, string>,
 ): EditorJsonNode {
+  const localImages = (document.content || []).filter(node => node.type === 'imageNode').map(node => node.attrs?.id);
+  if (!localImages.includes(anchorFilename)) return mapSummaryScopes(document, body =>
+    createAlbumDocument(body, selectedImages, anchorFilename, albumId, displayMode, attachmentMap));
+  if (!selectedImages.every(id => localImages.includes(id))) return document;
   const selected = new Set(selectedImages)
   const content = document.content || []
   const nextContent: EditorJsonNode[] = []
@@ -58,6 +62,7 @@ export function changeAlbumDisplayMode(
   albumId: string,
   displayMode: 'horizontalList' | 'stackedCards',
 ): EditorJsonNode {
+  document = mapSummaryScopes(document, body => changeAlbumDisplayMode(body, albumId, displayMode));
   const content = document.content || []
   return {
     ...document,
@@ -75,7 +80,7 @@ export function changeAlbumDisplayMode(
 }
 
 export function listAlbums(document: EditorJsonNode): AlbumSummary[] {
-  return (document.content || []).flatMap(node => {
+  return scopeNodes(document).flatMap(node => {
     if (node.type !== 'albumNode' || typeof node.attrs?.id !== 'string') return []
     const images = stringArray(node.attrs.images)
     if (images.length === 0) return []
@@ -98,7 +103,7 @@ export function addImageToAlbumDocument(
   insertionIndex: number,
   attachmentMap: Record<string, string>,
 ): EditorJsonNode {
-  const content = document.content || []
+  const content = scopeNodes(document)
   const source = content.find(node =>
     node.type === 'imageNode' && node.attrs?.id === filename,
   )
@@ -126,21 +131,11 @@ export function addImageToAlbumDocument(
   images.splice(insertionIndex, 0, filename)
   urls.splice(insertionIndex, 0, sourceUrl)
 
-  return {
-    ...document,
-    content: content
-      .filter(node => node !== source)
-      .map(node => node === target
-        ? {
-            ...node,
-            attrs: {
-              ...node.attrs,
-              images,
-              urls,
-            },
-          }
-        : node),
-  }
+  const update = (body: EditorJsonNode): EditorJsonNode => ({
+    ...body, content: (body.content || []).filter(node => node !== source).map(node => node === target
+      ? {...node, attrs: {...node.attrs, images, urls}} : node),
+  });
+  return update(mapSummaryScopes(document, update));
 }
 
 export function splitAlbumDocument(
@@ -153,7 +148,7 @@ export function splitAlbumDocument(
   const targetIndex = content.findIndex(node =>
     node.type === 'albumNode' && node.attrs?.id === albumId,
   )
-  if (targetIndex < 0) return document
+  if (targetIndex < 0) return mapSummaryScopes(document, body => splitAlbumDocument(body, albumId, selectedFilename, operation))
 
   const album = content[targetIndex]
   const images = stringArray(album.attrs?.images)
@@ -234,4 +229,23 @@ function createImageNode(filename: string, src: string): EditorJsonNode {
     type: 'imageNode',
     attrs: { id: filename, src },
   }
+}
+/** 日记顶层与折叠正文是独立的块作用域；不把内外图片误合并。 */
+function mapSummaryScopes(document: EditorJsonNode, operation: (body: EditorJsonNode) => EditorJsonNode): EditorJsonNode {
+  let changed = false;
+  const content = (document.content || []).map(node => {
+    if (node.type !== 'summaryNode') return node;
+    const children = (node.content || []).map(child => {
+      if (child.type !== 'summaryBody') return child;
+      const next = operation(child); if (next !== child) changed = true;
+      return next;
+    });
+    return children.some((child, i) => child !== node.content?.[i]) ? {...node, content: children} : node;
+  });
+  return changed ? {...document, content} : document;
+}
+
+function scopeNodes(document: EditorJsonNode): EditorJsonNode[] {
+  return (document.content || []).flatMap(node => node.type === 'summaryNode'
+    ? (node.content?.find(child => child.type === 'summaryBody')?.content || []) : [node]);
 }

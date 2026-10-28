@@ -33,9 +33,7 @@ import {
   SummaryNode,
   LocationNode,
 } from './editor/tiptap-extensions'
-import type {SummaryAttributes} from './editor/tiptap-extensions/SummaryNode'
 import AlbumImageInsertDialog from './AlbumImageInsertDialog.vue'
-import SummaryEditorDialog from './editor/SummaryEditorDialog.vue'
 import AttachmentBatchDownloadDialog from './editor/AttachmentBatchDownloadDialog.vue'
 import DiaryBlockOrderDialog from './editor/DiaryBlockOrderDialog.vue'
 import {
@@ -43,19 +41,11 @@ import {
   type AttachmentInsertion,
 } from '../utils/attachmentInsertion'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import {NodeSelection} from '@tiptap/pm/state'
 import { findSearchHighlightRanges } from '../utils/searchHighlight'
 import { useEditorAlbumActions } from '../composables/useEditorAlbumActions'
 import { useAttachmentContextMenu } from '../composables/useAttachmentContextMenu'
 import {useEditorContextMenu, type EditorMenuAction} from '../composables/useEditorContextMenu'
-import {
-  appendSelectionToSummary,
-  listSummaryTargets,
-  readPlainTextSelection,
-  replaceSelectionWithSummary,
-  type PlainTextSelection,
-  type SummaryTarget,
-} from './editor/summarySelection'
+
 import type {EditorJsonNode} from './editor/albumEditor'
 import {
   createBlockOrderTransaction,
@@ -85,6 +75,7 @@ import type {Node as ProseMirrorNode} from '@tiptap/pm/model'
 import type {Selection} from '@tiptap/pm/state'
 import {closeHistory} from '@tiptap/pm/history'
 import {copyTextToClipboard} from '../utils/clipboard'
+import {summaryRange} from './editor/tiptap-extensions/SummaryNode'
 
 const props = defineProps<{
   modelValue: DiaryContent
@@ -137,13 +128,6 @@ const attachmentFilenames = computed<Record<string, string>>(() => Object.fromEn
   props.attachments.map(attachment => [attachment.id, attachment.filename]),
 ))
 
-const showSummaryDialog = ref(false)
-const summaryText = ref('')
-const summaryContent = ref('')
-const summaryEditPosition = ref<number | null>(null)
-const summaryDialogMode = ref<'edit' | 'selection'>('edit')
-const summarySourceSelection = ref<PlainTextSelection | null>(null)
-const summaryTargets = ref<SummaryTarget[]>([])
 const showBlockOrderDialog = ref(false)
 const blockOrderBlocks = ref<DiaryBlockDescriptor[]>([])
 const blockOrderSnapshot = ref<string[]>([])
@@ -212,23 +196,6 @@ async function selectTableAction(target: TableTarget, action: TableAction | 'cop
   }
 }
 
-function openSummaryDialog(position: number | null = null, attrs?: SummaryAttributes) {
-  if (props.readOnly) return
-  summaryDialogMode.value = 'edit'
-  summarySourceSelection.value = null
-  summaryTargets.value = []
-  summaryEditPosition.value = position
-  summaryText.value = attrs?.summary ?? ''
-  summaryContent.value = attrs?.content ?? ''
-  showSummaryDialog.value = true
-}
-
-function resetSummaryDialogState() {
-  summarySourceSelection.value = null
-  summaryTargets.value = []
-  summaryEditPosition.value = null
-}
-
 const editor = useEditor({
   editable: !props.readOnly,
   content: diaryContentToHtml(props.modelValue, props.attachmentMap, attachmentFilenames.value),
@@ -237,7 +204,7 @@ const editor = useEditor({
       document: false,
       heading: { levels: [1, 2, 3, 4, 5] },
     }),
-    DiaryDocument,
+    DiaryDocument.configure({summary: true}),
     Placeholder.configure({
       placeholder: '开始记录...',
     }),
@@ -268,9 +235,7 @@ const editor = useEditor({
     }),
     FileNode.extend({group: 'diaryBlock'}),
     AlbumNode.extend({group: 'diaryBlock'}),
-    SummaryNode.extend({group: 'diaryBlock'}).configure({
-      onEdit: (position, attrs) => openSummaryDialog(position, attrs),
-    }),
+    SummaryNode,
     LocationNode.extend({group: 'diaryBlock'}).configure({
       onOpen: location => emit('openLocation', location),
     }),
@@ -296,10 +261,25 @@ const editor = useEditor({
     },
     handlePaste: (view, event) => {
       if (props.readOnly) return false
+      const html = event.clipboardData?.getData('text/html')
+      if (html) {
+        const parsed = new DOMParser().parseFromString(html, 'text/html')
+        if ((summaryRange(view.state) && parsed.querySelector('.editor-summary, details'))
+          || parsed.querySelector('.editor-summary .editor-summary, details details')) {
+          event.preventDefault()
+          $q.notify({type: 'warning', message: '折叠内容不能嵌套，请先取消内层折叠'})
+          return true
+        }
+      }
       const files = event.clipboardData?.files
       if (files && files.length > 0) {
         event.preventDefault()
         emit('pasteAttachments', Array.from(files))
+        return true
+      }
+      if (view.state.selection.$from.parent.type.name === 'summaryTitle') {
+        event.preventDefault()
+        view.dispatch(view.state.tr.insertText((event.clipboardData?.getData('text/plain') ?? '').replace(/\r?\n/g, ' ')))
         return true
       }
       return pasteEditorMarkdown(view, event)
@@ -381,7 +361,6 @@ watch(() => props.modelValue, (newVal) => {
 watch(() => props.readOnly, value => {
   editor.value?.setEditable(!value)
   if (value) {
-    showSummaryDialog.value = false
     showBlockOrderDialog.value = false
     showTableDialog.value = false
     editor.value?.commands.blur()
@@ -496,98 +475,45 @@ function insertAttachments(insertions: readonly AttachmentInsertion[], atEnd: bo
     chain.setTextSelection(currentEditor.state.doc.content.size)
   } else {
     chain.focus()
+    const summary = summaryRange(currentEditor.state)
+    if (summary && currentEditor.state.selection.$from.parent.type.name === 'summaryTitle') {
+      chain.enterSummaryBody()
+    }
   }
   return chain.insertContent(attachmentInsertionsToEditorContent(insertions)).run()
 }
 
 function openSelectedSummaryDialog() {
-  const currentEditor = editor.value
-  if (!currentEditor) return
-  const selection = currentEditor.state.selection
-  if (selection instanceof NodeSelection && selection.node.type.name === 'summaryNode') {
-    openSummaryDialog(selection.from, {
-      summary: selection.node.attrs.summary,
-      content: selection.node.attrs.content,
+  if (props.readOnly) return
+  const current = editor.value
+  if (!current) return
+  if (!current.state.selection.empty && !summaryRange(current.state)) {
+    const document = current.state.doc
+    const selection = current.state.selection
+    const targets: {position: number; title: string}[] = []
+    document.forEach((node, position) => {
+      if (node.type.name === 'summaryNode') targets.push({position, title: node.firstChild?.textContent || '未命名折叠内容'})
     })
-    return
-  }
-
-  if (!selection.empty) {
-    const source = readPlainTextSelection(currentEditor.state)
-    if (!source) {
-      $q.notify({type: 'warning', message: '选区只能包含普通文字'})
+    if (targets.length) {
+      const run = (position?: number) => {
+        if (current.state.doc !== document) {
+          $q.notify({type: 'warning', message: '正文已发生变化，请重新选择内容'})
+          return
+        }
+        const chain = current.chain().command(({tr}) => {tr.setSelection(selection); return true})
+        const ok = position === undefined ? chain.insertSummary().focus().run() : chain.appendToSummary(position).focus().run()
+        if (!ok) $q.notify({type: 'warning', message: '当前选区不能放入折叠内容'})
+      }
+      void showEditorMenu([
+        [{label: '创建新的折叠内容', action: () => run()}],
+        targets.map(target => ({label: `添加到：${target.title}`, action: () => run(target.position)})),
+      ])
       return
     }
-    summarySourceSelection.value = source
-    summaryTargets.value = listSummaryTargets(currentEditor.state.doc)
-    summaryEditPosition.value = null
-    summaryText.value = ''
-    summaryContent.value = source.text
-    summaryDialogMode.value = summaryTargets.value.length > 0 ? 'selection' : 'edit'
-    showSummaryDialog.value = true
-    return
   }
-  openSummaryDialog()
-}
-
-function createSummaryFromSelection() {
-  summaryDialogMode.value = 'edit'
-}
-
-function appendSelectedText(target: SummaryTarget) {
-  const currentEditor = editor.value
-  const source = summarySourceSelection.value
-  if (!currentEditor || !source) return
-  const transaction = appendSelectionToSummary(currentEditor.state, source, target.position)
-  if (!transaction) {
-    $q.notify({type: 'warning', message: '选区已经发生变化，请重新选择文字'})
-    return
+  if (!editor.value?.chain().focus().insertSummary().run()) {
+    $q.notify({type: 'warning', message: '折叠内容不能嵌套，请选择折叠范围外的普通内容'})
   }
-  currentEditor.view.dispatch(transaction)
-  showSummaryDialog.value = false
-  currentEditor.commands.focus()
-}
-
-function saveSummary() {
-  const currentEditor = editor.value
-  const summary = summaryText.value.trim()
-  if (!currentEditor || !summary) return
-  const attrs = {summary, content: summaryContent.value.trim()}
-
-  const source = summarySourceSelection.value
-  if (source) {
-    const transaction = replaceSelectionWithSummary(currentEditor.state, source, attrs)
-    if (!transaction) {
-      $q.notify({type: 'warning', message: '选区已经发生变化，请重新选择文字'})
-      return
-    }
-    currentEditor.view.dispatch(transaction)
-    currentEditor.commands.focus()
-  } else if (summaryEditPosition.value === null) {
-    currentEditor.chain().focus().insertSummary(attrs).run()
-  } else {
-    const position = summaryEditPosition.value
-    currentEditor.commands.command(({tr}) => {
-      const node = tr.doc.nodeAt(position)
-      if (node?.type.name !== 'summaryNode') return false
-      tr.setNodeMarkup(position, undefined, attrs)
-      return true
-    })
-  }
-  showSummaryDialog.value = false
-}
-
-function deleteSummary() {
-  const currentEditor = editor.value
-  const position = summaryEditPosition.value
-  if (!currentEditor || position === null) return
-  currentEditor.commands.command(({tr}) => {
-    const node = tr.doc.nodeAt(position)
-    if (node?.type.name !== 'summaryNode') return false
-    tr.delete(position, position + node.nodeSize)
-    return true
-  })
-  showSummaryDialog.value = false
 }
 
 function openBlockOrderDialog() {
@@ -654,8 +580,10 @@ defineExpose({
   insertAudio: (id: string) => (editor.value?.chain().focus() as any).insertAudio({ id, src: props.attachmentMap[id] || '' }).run(),
   insertFile: (id: string, filename: string) => (editor.value?.chain().focus() as any)
     .insertFile({ id, filename }).run(),
-  insertLocation: (location: DiaryLocation) => (editor.value?.chain() as any)
-    .insertLocation(location).run(),
+  insertLocation: (location: DiaryLocation) => {
+    if (editor.value?.state.selection.$from.parent.type.name === 'summaryTitle') editor.value.commands.enterSummaryBody()
+    return editor.value?.chain().insertLocation(location).run()
+  },
   insertAttachments,
   openSummaryDialog: openSelectedSummaryDialog,
   openTableDialog,
@@ -700,19 +628,7 @@ defineExpose({
                                    :initial-attachment-id="batchDownloadInitialId"
                                    @download="attachmentIds => emit('saveDecryptAttachments', attachmentIds)"/>
     <TableInsertDialog v-model="showTableDialog" @insert="insertTable"/>
-    <SummaryEditorDialog
-      v-model="showSummaryDialog"
-      v-model:summary-text="summaryText"
-      v-model:summary-content="summaryContent"
-      :mode="summaryDialogMode"
-      :can-delete="summaryEditPosition !== null"
-      :targets="summaryTargets"
-      @create-from-selection="createSummaryFromSelection"
-      @append-selection="appendSelectedText"
-      @save="saveSummary"
-      @delete="deleteSummary"
-      @hide="resetSummaryDialogState"
-    />
+
     <DiaryBlockOrderDialog
       v-model="showBlockOrderDialog"
       :blocks="blockOrderBlocks"
@@ -866,95 +782,22 @@ defineExpose({
 <style lang="scss">
 .tiptap-wrapper {
   .editor-summary {
-    position: relative;
-    overflow: hidden;
-    margin: 0.75em 0;
-    border: 1px solid var(--pad-border-color-100);
-    border-radius: 10px;
-    background: var(--pad-bg-color-200);
-
-    > summary {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      list-style: none;
-      min-height: 24px;
-      padding: 10px 44px 10px 12px;
-      color: var(--pad-text-color-200);
-      font-weight: 600;
-      line-height: 1.45;
-      cursor: pointer;
-      user-select: none;
-
-      &::-webkit-details-marker { display: none; }
-      &::before {
-        content: '';
-        flex-shrink: 0;
-        width: 0;
-        height: 0;
-        border-top: 5px solid transparent;
-        border-bottom: 5px solid transparent;
-        border-left: 6px solid currentColor;
-        transition: transform 180ms ease;
-      }
-      > span { min-width: 0; overflow-wrap: anywhere; }
-    }
-    &[open] > summary::before { transform: rotate(90deg); }
-
-    .editor-summary-content {
-      box-sizing: border-box;
-      overflow: hidden;
-      padding: 10px 12px 12px;
-      border-top: 1px solid var(--pad-border-color-100);
-      color: var(--pad-text-color-300);
-      cursor: text;
-      line-height: 1.55;
-      user-select: text;
-      -webkit-user-select: text;
-      white-space: normal;
-      overflow-wrap: anywhere;
-
-      > :first-child { margin-top: 0; }
-      > :last-child { margin-bottom: 0; }
-      pre { overflow-x: auto; white-space: pre; padding: 10px; background: var(--pad-bg-color-100); }
-      blockquote { margin-inline: 0; padding-left: 12px; border-left: 3px solid var(--pad-border-color-300); }
-      a { color: var(--pad-primary-dark); text-decoration: underline; }
-      table { border-collapse: collapse; width: 100%; }
-      td, th { border: 1px solid var(--pad-border-color-200); padding: 6px 8px; }
-      li[data-type="taskItem"] {
-        list-style: none;
-        &::before { content: '☐ '; }
-        &[data-checked="true"]::before { content: '☑ '; }
-      }
-    }
-
-    .editor-summary-edit {
-      position: absolute;
-      top: 5px;
-      right: 7px;
-      display: grid;
-      place-items: center;
-      width: 30px;
-      height: 30px;
-      padding: 0;
-      border: 0;
-      border-radius: 8px;
-      color: var(--pad-text-color-400);
-      background: transparent;
-      font-size: 17px;
-      cursor: pointer;
-
-      &:hover,
-      &:focus-visible {
-        color: var(--pad-primary-dark);
-        background: color-mix(in srgb, var(--pad-primary-color) 14%, transparent);
-      }
-    }
+    position: relative; margin: .65em 0; padding-left: 24px;
+    color: var(--pad-text-color-200);
+    .editor-summary-title { font-weight: 600; min-height: 1.5em; outline: none; }
+    .editor-summary-title:empty::before { content: '折叠标题'; color: var(--pad-text-color-400); pointer-events: none; }
+    .editor-summary-toggle { position: absolute; left: 0; top: 0; border: 0; background: transparent;
+      color: var(--pad-text-color-300); font-size: 18px; width: 24px; padding: 0; cursor: pointer; }
+    .editor-summary-content { min-height: 1.5em; padding-left: 8px; margin-top: .35em;
+      border-left: 2px solid transparent; }
+    &:focus-within .editor-summary-content { border-left-color: var(--pad-border-color-300); }
+    .editor-summary-actions { display: none; gap: 12px; padding: 4px 8px; flex-wrap: wrap; }
+    &:focus-within .editor-summary-actions { display: flex; }
+    .editor-summary-actions button { font-size: 12px; background: transparent; border: 0;
+      padding: 4px 0; color: var(--pad-text-color-400); cursor: pointer; }
+    &.is-collapsed .editor-summary-content, &.is-collapsed .editor-summary-actions { display: none; }
   }
-
-  @media (prefers-reduced-motion: reduce) {
-    .editor-summary > summary::before { transition: none; }
-  }
+  &.is-read-only .editor-summary-actions { display: none; }
 
   .editor-location {
     display: flex;

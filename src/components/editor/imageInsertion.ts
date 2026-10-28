@@ -17,6 +17,7 @@ export function insertImageAndMoveCursorAfter(
   editor: Editor,
   attrs: InsertedImageAttributes,
 ): boolean {
+  if (editor.state.selection.$from.parent.type.name === 'summaryTitle') editor.commands.enterSummaryBody()
   if (!editor.commands.insertImage(attrs)) return false
 
   let imagePosition: number | null = null

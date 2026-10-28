@@ -19,11 +19,22 @@ function attachment(id: string, filename = `${id}.bin`): AttachmentMeta {
 }
 
 describe('diary attachment references', () => {
+  it('never treats files inside a collapsed Summary as unused attachments', () => {
+    const content: DiaryContent = {nodes:[{type:'summary',summary:'隐藏的附件',content:[
+      {type:'image',attachmentId:'image',size:'normal'}, {type:'audio',attachmentId:'audio'},
+      {type:'video',attachmentId:'video'}, {type:'file',attachmentId:'file'},
+      {type:'album',id:'album',attachmentIds:['image','other'],displayMode:'horizontalList'},
+    ]}]};
+    expect([...collectReferencedAttachmentIds(content)]).toEqual(['image','audio','video','file','other']);
+    expect(findUnusedAttachments(content, ['image','audio','video','file','other','unused'].map(id => attachment(id))))
+      .toEqual([attachment('unused')]);
+  });
+
   it('collects stable IDs from single nodes and albums', () => {
     const content: DiaryContent = {
       nodes: [
         { type: 'markdown', text: '正文' },
-        { type: 'summary', summary: '外显', content: '内部' },
+        { type: 'summary', summary: '外显', content: [{type: 'markdown', text: '内部'}] },
         { type: 'image', attachmentId: 'image-1', size: 'normal' },
         { type: 'audio', attachmentId: 'audio-1' },
         {

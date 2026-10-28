@@ -16,7 +16,7 @@ export function diaryContentToMarkdown(
       case 'markdown': return node.text;
       case 'summary':
         return `<details>\n<summary>${escapeHtml(node.summary)}</summary>\n\n`
-          + `${node.content}\n\n</details>`;
+          + `${diaryContentToMarkdown({nodes: node.content}, attachments)}\n\n</details>`;
       case 'location': {
         const location = node.location;
         const accuracy = location.horizontalAccuracyMeters === null

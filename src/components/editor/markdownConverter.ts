@@ -35,7 +35,7 @@ export function diaryContentToHtml(
       case 'markdown':
         return markdownToHtml(node.text)
       case 'summary':
-        return renderSummary(node.summary, node.content)
+        return renderSummary(node.summary, node.content, attachmentMap, attachmentFilenames)
       case 'location':
         return renderLocation(node.location)
       case 'image':
@@ -93,15 +93,14 @@ function elementToStructuredNode(element: HTMLElement): DiaryContentNode | null 
   const tag = element.tagName.toUpperCase()
   const attachmentId = element.dataset.id
 
-  if (tag === 'DETAILS' && element.classList.contains('editor-summary')) {
+  if (tag === 'SECTION' && element.classList.contains('editor-summary')) {
+    const body = element.querySelector<HTMLElement>(':scope > [data-summary-body]');
+    const content = htmlToDiaryContent(body?.innerHTML ?? '').nodes;
+    if (content.some(node => node.type === 'summary')) throw new Error('折叠内容不能嵌套');
     return {
       type: 'summary',
-      summary: element.dataset.summary
-        ?? element.querySelector('summary')?.textContent
-        ?? '',
-      content: element.dataset.content
-        ?? element.querySelector('.editor-summary-content')?.textContent
-        ?? '',
+      summary: element.querySelector(':scope > [data-summary-title]')?.textContent ?? '',
+      content: content.filter(node => node.type !== 'summary'),
     }
   }
 
@@ -152,11 +151,12 @@ function renderImage(
   return `<img src="${escapeAttr(url)}" data-id="${escapeAttr(attachmentId)}"${sizeAttr}>`
 }
 
-function renderSummary(summary: string, content: string): string {
-  return `<details class="editor-summary" data-summary="${escapeAttr(summary)}" data-content="${escapeAttr(content)}">`
-    + `<summary>${escapeHtml(summary)}</summary>`
-    + `<div class="editor-summary-content">${renderSummaryMarkdown(content)}</div>`
-    + '</details>'
+function renderSummary(summary: string, content: Exclude<DiaryContentNode, {type: 'summary'}>[],
+  attachmentMap: Record<string, string>, attachmentFilenames: Record<string, string>): string {
+  return '<section class="editor-summary">'
+    + `<div data-summary-title class="editor-summary-title">${escapeHtml(summary)}</div>`
+    + `<div data-summary-body class="editor-summary-content">${content.map(node => node.type === 'markdown' ? renderSummaryMarkdown(node.text) : diaryContentToHtml({nodes: [node]}, attachmentMap, attachmentFilenames)).join('') || '<p></p>'}</div>`
+    + '</section>'
 }
 
 function renderLocation(location: DiaryLocation): string {

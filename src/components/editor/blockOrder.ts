@@ -125,7 +125,7 @@ function describeStructuredNode(
     case 'summaryNode':
       return {
         title: '折叠内容',
-        preview: stringAttr(node.attrs?.summary) || '未命名折叠内容',
+        preview: nodeText(node.content?.[0] ?? {type: 'summaryTitle'}) || '未命名折叠内容',
         icon: 'unfold_more',
       };
     case 'locationNode': {

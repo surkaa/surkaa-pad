@@ -1,227 +1,195 @@
 import {Node as TiptapNode, mergeAttributes} from '@tiptap/vue-3';
-import type {Node as ProseMirrorNode} from '@tiptap/pm/model';
-import type {NodeView} from '@tiptap/pm/view';
-import {openUrl} from '@tauri-apps/plugin-opener';
-import {renderSummaryMarkdown} from '../markdownParser';
+import {Fragment} from '@tiptap/pm/model';
+import {Selection, TextSelection, NodeSelection, type EditorState} from '@tiptap/pm/state';
 
-function createContentElement(source: string) {
-  const content = document.createElement('div');
-  content.className = 'editor-summary-content';
-  content.innerHTML = renderSummaryMarkdown(source);
-  return content;
+export function summaryRange(state: EditorState) {
+  const {selection} = state;
+  if (selection instanceof NodeSelection && selection.node.type.name === 'summaryNode') {
+    return {node: selection.node, pos: selection.from};
+  }
+  for (let depth = selection.$from.depth; depth > 0; depth--) {
+    if (selection.$from.node(depth).type.name === 'summaryNode') {
+      return {node: selection.$from.node(depth), pos: selection.$from.before(depth)};
+    }
+  }
+  return null;
 }
 
-export interface SummaryAttributes {
-  summary: string;
-  content: string;
-}
-
-export interface SummaryNodeOptions {
-  onEdit: (position: number, attrs: SummaryAttributes) => void;
-}
+const SummaryTitle = TiptapNode.create({
+  name: 'summaryTitle', content: 'text*', marks: '', defining: true,
+  parseHTML: () => [{tag: '[data-summary-title]'}],
+  renderHTML: ({HTMLAttributes}) => ['div', mergeAttributes(HTMLAttributes, {'data-summary-title': '', class: 'editor-summary-title'}), 0],
+});
+const SummaryBody = TiptapNode.create({
+  name: 'summaryBody', content: '(block|diaryBlock)+', isolating: true, defining: true,
+  parseHTML: () => [{tag: '[data-summary-body]'}],
+  renderHTML: ({HTMLAttributes}) => ['div', mergeAttributes(HTMLAttributes, {'data-summary-body': '', class: 'editor-summary-content'}), 0],
+});
 
 declare module '@tiptap/vue-3' {
   interface Commands<ReturnType> {
     summaryNode: {
-      insertSummary: (attrs: SummaryAttributes) => ReturnType;
+      insertSummary: () => ReturnType;
+      exitSummary: () => ReturnType;
+      unwrapSummary: () => ReturnType;
+      appendToSummary: (position: number) => ReturnType;
+      enterSummaryBody: () => ReturnType;
     };
   }
 }
 
-function createSummaryNodeView(
-  initialNode: ProseMirrorNode,
-  getPos: () => number | undefined,
-  onEdit: SummaryNodeOptions['onEdit'],
-): NodeView {
-  let currentNode = initialNode;
-  const dom = document.createElement('details');
-  const summary = document.createElement('summary');
-  const summaryText = document.createElement('span');
-  const content = document.createElement('div');
-  const editButton = document.createElement('button');
-  let toggleAnimation: Animation | null = null;
-
-  dom.className = 'editor-summary';
-  dom.contentEditable = 'false';
-  content.className = 'editor-summary-content';
-  editButton.type = 'button';
-  editButton.className = 'editor-summary-edit';
-  editButton.title = '编辑折叠内容';
-  editButton.setAttribute('aria-label', '编辑折叠内容');
-  editButton.textContent = '✎';
-  summary.append(summaryText, editButton);
-  dom.append(summary, content);
-
-  const sync = (node: ProseMirrorNode) => {
-    currentNode = node;
-    dom.dataset.summary = node.attrs.summary;
-    dom.dataset.content = node.attrs.content;
-    summaryText.textContent = node.attrs.summary;
-    content.innerHTML = renderSummaryMarkdown(node.attrs.content);
-  };
-  sync(initialNode);
-
-  const handleEdit = (event: Event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const position = getPos();
-    if (typeof position === 'number') {
-      onEdit(position, {
-        summary: currentNode.attrs.summary,
-        content: currentNode.attrs.content,
-      });
-    }
-  };
-  editButton.addEventListener('click', handleEdit);
-  const handleLink = (event: MouseEvent) => {
-    const anchor = event.target instanceof Element ? event.target.closest('a') : null;
-    if (!anchor) return;
-    event.preventDefault();
-    if (['http:', 'https:'].includes(new URL(anchor.href).protocol)) {
-      void openUrl(anchor.href).catch(error => console.error('打开折叠内容链接失败:', error));
-    }
-  };
-  content.addEventListener('click', handleLink);
-
-  const disableDraggingForContentSelection = () => {
-    dom.draggable = false;
-  };
-  const enableDraggingFromSummary = () => {
-    dom.draggable = true;
-  };
-  content.addEventListener('pointerdown', disableDraggingForContentSelection);
-  content.addEventListener('mousedown', disableDraggingForContentSelection);
-  summary.addEventListener('pointerdown', enableDraggingFromSummary);
-  summary.addEventListener('mousedown', enableDraggingFromSummary);
-
-  const handleToggle = (event: MouseEvent) => {
-    if (editButton.contains(event.target as Node)) return;
-    event.preventDefault();
-    if (toggleAnimation) return;
-
-    const shouldOpen = !dom.open;
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    if (reduceMotion || typeof content.animate !== 'function') {
-      dom.open = shouldOpen;
-      return;
-    }
-
-    if (shouldOpen) dom.open = true;
-    const computedStyle = window.getComputedStyle(content);
-    const expandedFrame: Keyframe = {
-      height: `${content.scrollHeight}px`,
-      opacity: 1,
-      paddingTop: computedStyle.paddingTop,
-      paddingBottom: computedStyle.paddingBottom,
-    };
-    const collapsedFrame: Keyframe = {
-      height: '0px',
-      opacity: 0,
-      paddingTop: '0px',
-      paddingBottom: '0px',
-    };
-
-    toggleAnimation = content.animate(
-      shouldOpen ? [collapsedFrame, expandedFrame] : [expandedFrame, collapsedFrame],
-      {duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)'},
-    );
-    toggleAnimation.onfinish = () => {
-      if (!shouldOpen) dom.open = false;
-      toggleAnimation = null;
-    };
-    toggleAnimation.oncancel = () => {
-      toggleAnimation = null;
-    };
-  };
-  summary.addEventListener('click', handleToggle);
-
-  return {
-    dom,
-    update(node) {
-      if (node.type !== currentNode.type) return false;
-      sync(node);
-      return true;
-    },
-    stopEvent: event => {
-      const target = event.target as Node;
-      return editButton.contains(target) || content.contains(target);
-    },
-    ignoreMutation: () => true,
-    destroy() {
-      toggleAnimation?.cancel();
-      editButton.removeEventListener('click', handleEdit);
-      content.removeEventListener('click', handleLink);
-      content.removeEventListener('pointerdown', disableDraggingForContentSelection);
-      content.removeEventListener('mousedown', disableDraggingForContentSelection);
-      summary.removeEventListener('pointerdown', enableDraggingFromSummary);
-      summary.removeEventListener('mousedown', enableDraggingFromSummary);
-      summary.removeEventListener('click', handleToggle);
-    },
-  };
-}
-
-export const SummaryNode = TiptapNode.create<SummaryNodeOptions>({
-  name: 'summaryNode',
-
-  group: 'block',
-  atom: true,
-  selectable: true,
-  draggable: true,
-
-  addOptions() {
-    return {
-      onEdit: () => undefined,
-    };
-  },
-
-  addAttributes() {
-    return {
-      summary: {default: ''},
-      content: {default: ''},
-    };
-  },
-
-  parseHTML() {
-    return [{
-      tag: 'details.editor-summary',
-      getAttrs: element => {
-        const details = element as HTMLElement;
-        return {
-          summary: details.dataset.summary
-            ?? details.querySelector('summary')?.textContent
-            ?? '',
-          content: details.dataset.content
-            ?? details.querySelector('.editor-summary-content')?.textContent
-            ?? '',
-        };
-      },
-    }];
-  },
-
-  renderHTML({node}) {
-    return [
-      'details',
-      mergeAttributes({
-        class: 'editor-summary',
-        'data-summary': node.attrs.summary,
-        'data-content': node.attrs.content,
-        contenteditable: 'false',
-      }),
-      ['summary', node.attrs.summary],
-      createContentElement(node.attrs.content),
-    ];
-  },
-
+/** 标题和正文均由当前 ProseMirror 管理，不是预览 HTML 或第二个编辑器。 */
+export const SummaryNode = TiptapNode.create({
+  name: 'summaryNode', group: 'summaryBlock', content: 'summaryTitle summaryBody',
+  isolating: true, defining: true, draggable: true,
+  addExtensions() { return [SummaryTitle, SummaryBody]; },
+  parseHTML: () => [{tag: 'section.editor-summary'}],
+  renderHTML: ({HTMLAttributes}) => ['section', mergeAttributes(HTMLAttributes, {class: 'editor-summary'}), 0],
   addNodeView() {
-    return ({node, getPos}) => createSummaryNodeView(node, getPos, this.options.onEdit);
+    return ({node, getPos, editor}) => {
+      let current = node;
+      let open = true;
+      const dom = document.createElement('section'); dom.className = 'editor-summary';
+      const contentDOM = document.createElement('div'); contentDOM.className = 'editor-summary-nodes';
+      const toggle = document.createElement('button');
+      toggle.type = 'button'; toggle.className = 'editor-summary-toggle'; toggle.contentEditable = 'false';
+      const footer = document.createElement('div'); footer.className = 'editor-summary-actions'; footer.contentEditable = 'false';
+      const exit = document.createElement('button'); exit.type = 'button'; exit.textContent = '在下方继续正文';
+      const unwrap = document.createElement('button'); unwrap.type = 'button'; unwrap.textContent = '取消折叠，保留内容';
+      footer.append(exit, unwrap); dom.append(toggle, contentDOM, footer);
+      const sync = () => {
+        dom.classList.toggle('is-collapsed', !open);
+        toggle.textContent = open ? '▾' : '▸';
+        toggle.setAttribute('aria-label', open ? '收起折叠内容' : '展开折叠内容');
+        toggle.setAttribute('aria-expanded', String(open));
+      };
+      const preventFocus = (event: Event) => event.preventDefault();
+      toggle.addEventListener('mousedown', preventFocus);
+      footer.addEventListener('mousedown', preventFocus);
+      toggle.onclick = () => {
+        const pos = getPos();
+        if (open && typeof pos === 'number' && editor.state.selection.from > pos + current.firstChild!.nodeSize + 1
+          && editor.state.selection.to < pos + current.nodeSize) {
+          editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos + 2)));
+        }
+        open = !open; sync();
+      };
+      const atSummary = () => {
+        const pos = getPos();
+        if (typeof pos !== 'number' || !editor.isEditable) return false;
+        editor.commands.setTextSelection(pos + 2);
+        return true;
+      };
+      exit.onclick = () => { if (atSummary()) editor.chain().exitSummary().focus().run(); };
+      unwrap.onclick = () => { if (atSummary()) editor.chain().unwrapSummary().focus().run(); };
+      sync();
+      return {
+        dom, contentDOM,
+        update(next) { if (next.type !== current.type) return false; current = next; return true; },
+        stopEvent(event) { return event.target instanceof window.Node && (toggle.contains(event.target) || footer.contains(event.target)); },
+        ignoreMutation(mutation) {
+          return mutation.type !== 'selection' && (mutation.target === dom || toggle.contains(mutation.target) || footer.contains(mutation.target));
+        },
+        destroy() { toggle.onmousedown = null; toggle.onclick = null; exit.onclick = null; unwrap.onclick = null; },
+      };
+    };
   },
-
   addCommands() {
     return {
-      insertSummary: attrs => ({commands}) => commands.insertContent({
-        type: this.name,
-        attrs,
-      }),
+      enterSummaryBody: () => ({state, tr, dispatch}) => {
+        const target = summaryRange(state); if (!target) return false;
+        const start = target.pos + target.node.firstChild!.nodeSize + 2;
+        if (dispatch) {
+          if (!target.node.lastChild!.firstChild?.isTextblock) tr.insert(start, state.schema.nodes.paragraph.create());
+          tr.setSelection(TextSelection.create(tr.doc, start + 1)).scrollIntoView();
+        }
+        return true;
+      },
+      appendToSummary: position => ({state, tr, dispatch}) => {
+        if (!this.editor.isEditable || state.selection.empty || summaryRange(state)) return false;
+        const target = state.doc.nodeAt(position);
+        if (target?.type !== this.type || (state.selection.from < position + target.nodeSize && state.selection.to > position)) return false;
+        let content = state.doc.slice(state.selection.from, state.selection.to).content;
+        if (content.firstChild?.isInline) content = Fragment.from(state.schema.nodes.paragraph.create(null, content));
+        if (!state.schema.nodes.summaryBody.validContent(content)) return false;
+        let nested = false; content.descendants(node => {if (node.type === this.type) nested = true;});
+        if (nested) return false;
+        if (dispatch) {
+          tr.deleteSelection();
+          const mapped = tr.mapping.map(position);
+          const updated = tr.doc.nodeAt(mapped)!;
+          const end = mapped + updated.nodeSize - 2;
+          tr.insert(end, content);
+          tr.setSelection(Selection.near(tr.doc.resolve(end), 1)).scrollIntoView();
+        }
+        return true;
+      },
+      insertSummary: () => ({state, tr, dispatch}) => {
+        if (!this.editor.isEditable) return false;
+        if (summaryRange(state)) return false;
+        let nested = false;
+        state.doc.nodesBetween(state.selection.from, state.selection.to, node => {
+          if (node.type.name === 'summaryNode') nested = true;
+        });
+        if (nested) return false;
+        let content = state.selection.empty ? Fragment.from(state.schema.nodes.paragraph.create())
+          : state.doc.slice(state.selection.from, state.selection.to).content;
+        if (content.firstChild?.isInline) content = Fragment.from(state.schema.nodes.paragraph.create(null, content));
+        if (!state.schema.nodes.summaryBody.validContent(content)) return false;
+        if (dispatch) {
+          const title = state.schema.nodes.summaryTitle.create();
+          const body = state.schema.nodes.summaryBody.create(null, content);
+          tr.replaceSelectionWith(this.type.create(null, [title, body]));
+          let position: number | null = null;
+          tr.doc.descendants((node, pos) => {
+            if (position === null && node.type === this.type && pos >= Math.max(0, state.selection.from - 1)) position = pos;
+          });
+          if (position !== null) tr.setSelection(TextSelection.create(tr.doc, position + 2));
+          tr.scrollIntoView();
+        }
+        return true;
+      },
+      exitSummary: () => ({state, tr, dispatch}) => {
+        const target = summaryRange(state); if (!target) return false;
+        if (dispatch) {
+          const end = target.pos + target.node.nodeSize;
+          if (tr.doc.nodeAt(end)?.type.name !== 'paragraph') tr.insert(end, state.schema.nodes.paragraph.create());
+          tr.setSelection(TextSelection.create(tr.doc, end + 1)).scrollIntoView();
+        }
+        return true;
+      },
+      unwrapSummary: () => ({state, tr, dispatch}) => {
+        const target = summaryRange(state); if (!target) return false;
+        if (dispatch) {
+          const title = state.schema.nodes.paragraph.create(null, target.node.firstChild!.content);
+          const nodes = [title]; target.node.lastChild!.forEach(node => nodes.push(node));
+          tr.replaceWith(target.pos, target.pos + target.node.nodeSize, nodes);
+          tr.setSelection(Selection.near(tr.doc.resolve(target.pos + 1))).scrollIntoView();
+        }
+        return true;
+      },
+    };
+  },
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => {
+        const {$from, empty} = this.editor.state.selection;
+        const target = summaryRange(this.editor.state);
+        if (!empty || !target) return false;
+        if ($from.parent.type.name === 'summaryTitle') {
+          return this.editor.commands.enterSummaryBody();
+        }
+        if ($from.parent.type.name === 'paragraph' && !$from.parent.content.size
+          && $from.depth > 1 && $from.node($from.depth - 1).type.name === 'summaryBody'
+          && $from.index($from.depth - 1) === $from.node($from.depth - 1).childCount - 1) {
+          return this.editor.commands.exitSummary();
+        }
+        return false;
+      },
+      Backspace: () => {
+        const {$from, empty} = this.editor.state.selection;
+        return empty && $from.parent.type.name === 'summaryTitle' && $from.parentOffset === 0;
+      },
     };
   },
 });

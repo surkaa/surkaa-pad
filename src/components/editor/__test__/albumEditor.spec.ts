@@ -9,6 +9,20 @@ import {
 } from '../albumEditor'
 
 describe('createAlbumDocument', () => {
+  it('creates, changes and splits albums inside a fold without moving them outside', () => {
+    const document: EditorJsonNode = {type:'doc',content:[{type:'summaryNode',content:[
+      {type:'summaryTitle',content:[{type:'text',text:'标题'}]},
+      {type:'summaryBody',content:[{type:'imageNode',attrs:{id:'a'}},{type:'imageNode',attrs:{id:'b'}}]},
+    ]},{type:'paragraph',content:[{type:'text',text:'外部'}]}]};
+    const created = createAlbumDocument(document,['a','b'],'a','new','stackedCards',{a:'url-a',b:'url-b'});
+    expect(listAlbums(created)[0]).toMatchObject({id:'new',images:['a','b']});
+    const updated = changeAlbumDisplayMode(created,'new','horizontalList');
+    expect(listAlbums(updated)[0].displayMode).toBe('horizontalList');
+    const split = splitAlbumDocument(updated,'new','a',{type:'all'});
+    expect(split.content?.[0].content?.[1].content?.map(node => node.type)).toEqual(['imageNode','imageNode']);
+    expect(split.content?.[1]).toEqual(document.content?.[1]);
+  });
+
   it('inserts the album at the initial image position and removes selected images', () => {
     const document = {
       type: 'doc',

@@ -91,6 +91,8 @@ describe('shouldPreventEditorFocus', () => {
     summary.append(content)
 
     expect(shouldPreventEditorFocus(content, 'android')).toBe(false)
+    const title = document.createElement('div'); title.className = 'editor-summary-title'; summary.append(title)
+    expect(shouldPreventEditorFocus(title, 'android')).toBe(false)
     expect(shouldPreventEditorFocus(summary, 'android')).toBe(true)
   })
 

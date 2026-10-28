@@ -54,7 +54,7 @@ describe.each([false, true])('editor table integration (dark=%s)', dark => {
     currentPlatform.value = platform; Dark.set(dark);
     const {editor, update, openTableDialog} = await mount('正文', {
       readOnly: true,
-      modelValue: {nodes: [{type: 'file', attachmentId: 'file-1'}, {type: 'summary', summary: '外显', content: '内部文字'}]},
+      modelValue: {nodes: [{type: 'file', attachmentId: 'file-1'}, {type: 'summary', summary: '外显', content: [{type: 'markdown', text: '内部文字'}]}]},
       attachments: [{id: 'file-1', filename: 'test.txt', mimetype: 'text/plain', size: 4,
         encrypted: false, nonce: [], algorithm: 'AES-256-CTR'}],
     });
@@ -62,7 +62,7 @@ describe.each([false, true])('editor table integration (dark=%s)', dark => {
     expect(host.querySelector('.is-read-only')).not.toBeNull();
     openTableDialog(); await settle();
     expect(document.querySelector('.table-insert-dialog')).toBeNull();
-    host.querySelector('.editor-summary-edit')!.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+    host.querySelector('.editor-summary-toggle')!.dispatchEvent(new MouseEvent('click', {bubbles: true}));
     await settle();
     expect(document.querySelector('.summary-editor-dialog')).toBeNull();
     host.querySelector('.editor-file-attachment .file-name')!

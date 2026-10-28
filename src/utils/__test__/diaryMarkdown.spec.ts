@@ -33,7 +33,7 @@ describe('diary Markdown clipboard content', () => {
 
   it('escapes the Summary title while preserving its Markdown body verbatim', () => {
     expect(diaryContentToMarkdown({nodes: [
-      {type: 'summary', summary: '<标题>&', content: '## 内容\n\n**加粗**\n\n```html\n<div>代码</div>\n```'},
+      {type: 'summary', summary: '<标题>&', content: [{type: 'markdown', text: '## 内容\n\n**加粗**\n\n```html\n<div>代码</div>\n```'}]},
     ]})).toBe('<details>\n<summary>&lt;标题&gt;&amp;</summary>\n\n'
       + '## 内容\n\n**加粗**\n\n```html\n<div>代码</div>\n```\n\n</details>');
   });

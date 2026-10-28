@@ -18,8 +18,10 @@ export function collectReferencedAttachmentIds(content: DiaryContent): Set<strin
       case 'file':
         ids.add(node.attachmentId)
         break
-      case 'markdown':
       case 'summary':
+        for (const id of collectReferencedAttachmentIds({nodes: node.content})) ids.add(id)
+        break
+      case 'markdown':
         break
     }
   }
