@@ -19,6 +19,8 @@ pub enum AttachmentProcessEvent {
     Completed(AttachmentMeta, String),
     /// 不返回数据但仍成功的场景
     CompletedWithoutData,
+    /// 文件已关闭并成功导出；返回仅在本次运行中有效的下载位置句柄。
+    CompletedWithDownloadLocation(String),
     Error(String),
 }
 

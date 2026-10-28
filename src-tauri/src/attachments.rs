@@ -9,6 +9,7 @@ pub(crate) mod batch_export;
 pub mod chunked_upload;
 pub mod chunked_upload_command;
 mod embedded_media;
+pub(crate) mod export_location;
 
 #[cfg(test)]
 mod attachment_tests;

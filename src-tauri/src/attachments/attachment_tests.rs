@@ -570,7 +570,8 @@ mod tests {
                     assert!(meta.encrypted, "旋转后应保持加密状态");
                     completed = true;
                 }
-                AttachmentProcessEvent::CompletedWithoutData => {
+                AttachmentProcessEvent::CompletedWithoutData
+                | AttachmentProcessEvent::CompletedWithDownloadLocation(_) => {
                     panic!("旋转不应该出现这个状态")
                 }
                 AttachmentProcessEvent::Error(e) => {
@@ -684,7 +685,8 @@ mod tests {
                 AttachmentProcessEvent::Error(error) => {
                     panic!("主动缓存附件失败: {error}")
                 }
-                AttachmentProcessEvent::Completed(_, _) => {
+                AttachmentProcessEvent::Completed(_, _)
+                | AttachmentProcessEvent::CompletedWithDownloadLocation(_) => {
                     panic!("主动缓存不应返回附件元数据")
                 }
             }
@@ -763,6 +765,9 @@ mod tests {
                 AttachmentProcessEvent::Finalizing => {}
                 AttachmentProcessEvent::Completed(m, _) => attachment = Some(m),
                 AttachmentProcessEvent::CompletedWithoutData => {}
+                AttachmentProcessEvent::CompletedWithDownloadLocation(_) => {
+                    panic!("上传不应返回下载位置")
+                }
                 AttachmentProcessEvent::Error(e) => panic!("添加附件失败: {}", e),
             }
         }

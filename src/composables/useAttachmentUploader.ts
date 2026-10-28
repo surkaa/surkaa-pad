@@ -169,6 +169,7 @@ export function useAttachmentUploader(diaryId: Ref<string>) {
           break;
         }
         case 'completedWithoutData':
+        case 'completedWithDownloadLocation':
           settleTask(key);
           break;
         case 'error':

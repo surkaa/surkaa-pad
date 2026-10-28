@@ -1,4 +1,5 @@
 use super::attachment_types::AttachmentProcessEvent;
+use super::export_location::{completed_export, ExportLocation};
 use super::{AttachmentError, AttachmentMeta};
 use crate::diaries::get_diary;
 use crate::error::AppError;
@@ -384,7 +385,13 @@ pub async fn cmd_save_decrypt_attachments(
             result = work => result,
         };
         let _ = event.send(match result {
-            Ok(()) => AttachmentProcessEvent::CompletedWithoutData,
+            Ok(()) => completed_export(
+                &app_handle,
+                ExportLocation {
+                    path: directory,
+                    directory: true,
+                },
+            ),
             Err(error) => AttachmentProcessEvent::Error(error.to_string()),
         });
     })))
@@ -465,6 +472,22 @@ pub(crate) mod android {
             .inner()
             .0
             .run_mobile_plugin("deleteFile", DeleteFile { uri })
+            .map_err(|error| AttachmentError::FileOperationFailed(error.to_string()))?;
+        Ok(())
+    }
+    pub(crate) fn open_location(
+        app: &AppHandle,
+        uri: &str,
+        directory: bool,
+    ) -> Result<(), AttachmentError> {
+        let _: serde_json::Value = app
+            .state::<AndroidExport<tauri::Wry>>()
+            .inner()
+            .0
+            .run_mobile_plugin(
+                "openLocation",
+                serde_json::json!({"uri": uri, "directory": directory}),
+            )
             .map_err(|error| AttachmentError::FileOperationFailed(error.to_string()))?;
         Ok(())
     }

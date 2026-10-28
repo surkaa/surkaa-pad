@@ -71,6 +71,7 @@ use crate::attachments::batch_export::cmd_save_decrypt_attachments;
 use crate::attachments::chunked_upload_command::{
     cmd_abort_chunked_upload, cmd_finish_chunked_upload, cmd_start_chunked_upload, cmd_upload_chunk,
 };
+use crate::attachments::export_location::{cmd_open_attachment_download_location, ExportLocations};
 use crate::attachments::{bind_attachment_server, start_attachment_server};
 use crate::cryptos::crypto_command::{
     cmd_biometric_unlock, cmd_decrypt_data, cmd_encrypt_data, cmd_encrypt_info, cmd_unlock,
@@ -223,6 +224,7 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_caching_attachment,
             cmd_save_decrypt_attachment,
             cmd_save_decrypt_attachments,
+            cmd_open_attachment_download_location,
             cmd_open_html_attachment,
             cmd_update_attachment_filename,
             cmd_update_attachment_audio_info,
@@ -268,6 +270,7 @@ pub fn run() {
     let builder = generate_specta_builder();
 
     let app_builder = tauri::Builder::default()
+        .manage(ExportLocations::default())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         // 注册文件系统插件

@@ -5,6 +5,7 @@ use crate::attachments::attachment::{
 };
 use crate::attachments::attachment_open::open_html_attachment;
 use crate::attachments::attachment_types::AttachmentProcessEvent;
+use crate::attachments::export_location::{completed_export, ExportLocation};
 use crate::attachments::AudioWaveform;
 use crate::attachments::SharedAttachmentSource;
 use crate::diaries::{get_diary, update_diary_attachment_audio_info};
@@ -457,7 +458,7 @@ pub async fn cmd_save_decrypt_attachment(
     option.write(true).truncate(true).create(true);
     let file = app_handle
         .fs()
-        .open(filepath, option)
+        .open(filepath.clone(), option)
         .map_err(|e| AppError {
             error_type: "io".into(),
             message: e.to_string(),
@@ -473,15 +474,20 @@ pub async fn cmd_save_decrypt_attachment(
                 return;
             }
         };
-        save_decrypt_attachment(
-            &state,
-            Arc::new(event),
-            &id,
-            attachment_id,
-            attachment,
-            file,
-        )
-        .await;
+        let event = Arc::new(event);
+        let result =
+            save_decrypt_attachment(&state, event.clone(), &id, attachment_id, attachment, file)
+                .await;
+        let _ = event.send(match result {
+            Ok(()) => completed_export(
+                &app_handle,
+                ExportLocation {
+                    path: filepath,
+                    directory: false,
+                },
+            ),
+            Err(error) => AttachmentProcessEvent::Error(error.to_string()),
+        });
     }))
 }
 

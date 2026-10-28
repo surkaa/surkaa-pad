@@ -891,6 +891,17 @@ async cmdSaveDecryptAttachments(event: TAURI_CHANNEL<AttachmentProcessEvent>, id
 }
 },
 /**
+ * 仅接受本进程成功下载后产生的句柄，不接收前端文件路径或 URL。
+ */
+async cmdOpenAttachmentDownloadLocation(token: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_open_attachment_download_location", { token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 使用附件专属的本地 HTTP URL 将 HTML 交给系统浏览器打开。
  * 前端只能提供日记和附件 ID，后端会再次校验附件类型。
  * # Arguments
@@ -1295,7 +1306,11 @@ export type AttachmentProcessEvent = { event: "started" } |
 /**
  * 不返回数据但仍成功的场景
  */
-{ event: "completedWithoutData" } | { event: "error"; data: string }
+{ event: "completedWithoutData" } | 
+/**
+ * 文件已关闭并成功导出；返回仅在本次运行中有效的下载位置句柄。
+ */
+{ event: "completedWithDownloadLocation"; data: string } | { event: "error"; data: string }
 export type AttachmentSettings = { defaultImageSizeIsSmall: boolean; encryptImageAttachments: boolean; encryptAudioAttachments: boolean; encryptVideoAttachments: boolean; encryptFileAttachments: boolean }
 export type AttachmentTypeFilter = "image" | "audio" | "video" | "other"
 /**

@@ -20,6 +20,8 @@ export interface UploadTask {
   phase: UploadTaskPhase;
   direction: AttachmentTransferDirection;
   error?: string;
+  /** 本次运行中成功导出的保存位置句柄；缓存下载不会返回它。 */
+  downloadLocationToken?: string;
 }
 
 export function createUploadTask(
@@ -66,7 +68,8 @@ export function uploadTasksDialogTitle(tasks: UploadTask[]): string {
 export function applyUploadTaskEvent(task: UploadTask, message: AttachmentProcessEvent): boolean {
   if (isUploadTaskTerminal(task)) {
     const completedAfterCancellation = task.status === 'canceled'
-      && (message.event === 'completed' || message.event === 'completedWithoutData');
+      && (message.event === 'completed' || message.event === 'completedWithoutData'
+        || message.event === 'completedWithDownloadLocation');
     if (!completedAfterCancellation) return false;
   }
 
@@ -90,8 +93,12 @@ export function applyUploadTaskEvent(task: UploadTask, message: AttachmentProces
       break;
     case 'completed':
     case 'completedWithoutData':
+    case 'completedWithDownloadLocation':
       task.status = 'completed';
       task.progress = 1;
+      if (message.event === 'completedWithDownloadLocation' && task.direction === 'download') {
+        task.downloadLocationToken = message.data;
+      }
       delete task.error;
       break;
     case 'error':

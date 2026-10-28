@@ -18,6 +18,18 @@ function mount() {
 afterEach(() => { app?.unmount(); app = undefined; document.body.innerHTML = ''; vi.clearAllMocks(); });
 
 describe('目录选择取消的下载任务收尾', () => {
+  it('收到导出完成和位置句柄后结清任务，但不当成上传更新编辑器链接', async () => {
+    const uploader = mount();
+    const key = uploader.createTask('批量下载', false, 'download');
+    const success = vi.fn(); const channel = uploader.createUploadChannel(key, success);
+    channel.onmessage({event: 'completedWithDownloadLocation', data: 'saved-location'});
+    expect(uploader.uploadTaskMap.value[key]).toMatchObject({status: 'completed', downloadLocationToken: 'saved-location'});
+    expect(uploader.allUploadsSettled.value).toBe(true);
+    expect(success).not.toHaveBeenCalled();
+    expect(await uploader.cancelUploadTask(key)).toBe(true); expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(uploader.resetUploadTasks()).toBe(true);
+  });
+
   it('关闭选择器后结清任务，允许下次下载，不产生失败通知', async () => {
     const uploader = mount();
     const key = uploader.createTask('批量下载', false, 'download');

@@ -44,7 +44,11 @@
           </q-item>
         </q-list>
       </q-card-section>
-      <q-card-actions align="right">
+      <q-card-actions align="right" class="upload-task-actions">
+        <q-btn v-for="task in completedDownloads" :key="task.id"
+          flat icon="folder_open" label="打开下载位置" color="primary" :title="task.filename"
+          :loading="openingToken === task.downloadLocationToken" :disable="openingToken !== null"
+          @click="openDownloadLocation(task.downloadLocationToken!)"/>
         <q-btn
           v-if="hasActiveTasks"
           flat
@@ -59,7 +63,10 @@
 </template>
 
 <script setup lang="ts">
-import {computed} from 'vue';
+import {computed, ref} from 'vue';
+import {useQuasar} from 'quasar';
+import api from '../../utils/api';
+import {formatError} from '../../utils/formatError';
 import {
   hasActiveUploadTasks,
   isUploadTaskProgressIndeterminate,
@@ -76,6 +83,22 @@ const emit = defineEmits<{
   (event: 'cancel-all'): void;
 }>();
 const hasActiveTasks = computed(() => hasActiveUploadTasks(props.tasks));
+const completedDownloads = computed(() => props.allSettled ? props.tasks.filter(task =>
+  task.direction === 'download' && task.status === 'completed' && !!task.downloadLocationToken,
+) : []);
+const openingToken = ref<string | null>(null);
+const $q = useQuasar();
+async function openDownloadLocation(token: string) {
+  if (openingToken.value !== null) return;
+  openingToken.value = token;
+  try {
+    await api.cmdOpenAttachmentDownloadLocation(token);
+  } catch (error) {
+    $q.notify({type: 'negative', message: `打开下载位置失败：${formatError(error)}`});
+  } finally {
+    openingToken.value = null;
+  }
+}
 
 function uploadTaskIcon(task: UploadTask) {
   if (task.status === 'completed') return 'check_circle';
@@ -91,6 +114,7 @@ function uploadTaskColor(task: UploadTask) {
 </script>
 
 <style scoped>
+.upload-task-actions { flex-wrap: wrap; gap: 4px; }
 .upload-task-filename {
   color: var(--pad-text-color-200) !important;
 }

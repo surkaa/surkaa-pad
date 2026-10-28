@@ -687,9 +687,8 @@ pub async fn save_decrypt_attachment(
     attachment_id: String,
     attachment: AttachmentMeta,
     mut file: File,
-) {
+) -> Result<(), AttachmentError> {
     let (crypto, store) = (state.crypto(), state.diary_store());
-    let event_res_clone = event.clone();
     let _ = event.send(AttachmentProcessEvent::Started);
     let logic = async move {
         let stream = store
@@ -717,16 +716,11 @@ pub async fn save_decrypt_attachment(
                 ));
             }
         }
+        file.flush()?;
+        drop(file);
         Ok::<(), AttachmentError>(())
     };
-    match logic.await {
-        Err(e) => {
-            let _ = event_res_clone.send(AttachmentProcessEvent::Error(e.to_string()));
-        }
-        Ok(_) => {
-            let _ = event_res_clone.send(AttachmentProcessEvent::CompletedWithoutData);
-        }
-    }
+    logic.await
 }
 
 pub async fn update_attachment_filename(

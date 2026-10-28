@@ -12,6 +12,27 @@ import {
 } from '../uploadTasks';
 
 describe('upload task domain model', () => {
+  it('records the download location only on a successful exported download, not uploads or cache downloads', () => {
+    const download = createUploadTask('saved', 'report.pdf', 'download');
+    expect(download.downloadLocationToken).toBeUndefined();
+    applyUploadTaskEvent(download, {event: 'completedWithDownloadLocation', data: 'saved-location'});
+    expect(download).toMatchObject({status: 'completed', progress: 1, downloadLocationToken: 'saved-location'});
+    expect(hasActiveUploadTasks([download])).toBe(false);
+    expect(applyUploadTaskEvent(download, {event: 'error', data: 'late error'})).toBe(false);
+    const cached = createUploadTask('cache', 'cached.pdf', 'download');
+    applyUploadTaskEvent(cached, {event: 'completedWithoutData'});
+    expect(cached.downloadLocationToken).toBeUndefined();
+    const upload = createUploadTask('upload', 'report.pdf');
+    applyUploadTaskEvent(upload, {event: 'completedWithDownloadLocation', data: 'invalid-for-upload'});
+    expect(upload.downloadLocationToken).toBeUndefined();
+  });
+
+  it('keeps the download location if committed completion arrives just after cancellation', () => {
+    const task = createUploadTask('saved', 'report.pdf', 'download'); task.status = 'canceled';
+    expect(applyUploadTaskEvent(task, {event: 'completedWithDownloadLocation', data: 'saved-location'})).toBe(true);
+    expect(task.status).toBe('completed'); expect(task.downloadLocationToken).toBe('saved-location');
+  });
+
   it('shows a newly queued task as waiting', () => {
     const task = createQueuedUploadTask('queued', 'queued.mp4');
 
