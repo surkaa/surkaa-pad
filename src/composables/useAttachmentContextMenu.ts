@@ -91,19 +91,21 @@ export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) 
       return
     }
 
+    const groups = [buttons]
     if (found.type === 'image') {
-      addImageActions(buttons, found)
+      addImageActions(buttons, found, groups)
     }
     if (found.type === 'file') {
       addRenameAction(buttons, found.attachmentId, attachment.filename)
     }
 
-    await showMenu([buttons])
+    await showMenu(groups)
   }
 
   function addImageActions(
     buttons: MenuAction[],
     found: AttachmentNodeMatch,
+    groups: MenuAction[][],
   ) {
     const album = found.el.closest('.editor-image-album') as HTMLElement | null
     const isAlbumImage = Boolean(album)
@@ -114,26 +116,28 @@ export function useAttachmentContextMenu(options: AttachmentContextMenuOptions) 
         action: () => resizeImage(found.attachmentId, isSmall),
       })
     }
-    buttons.push(
+    const rotations: MenuAction[] = [
       { label: '顺时针旋转90°', action: () => options.rotate(found.attachmentId, 90) },
       { label: '逆时针旋转90°', action: () => options.rotate(found.attachmentId, -90) },
       { label: '旋转180°', action: () => options.rotate(found.attachmentId, 180) },
-    )
+    ]
 
     if (!isAlbumImage) {
-      buttons.push({
+      const albumActions: MenuAction[] = [{
         label: '创建图集',
         action: () => options.albumActions.startAlbumSelection(found.attachmentId),
-      })
+      }]
       if (options.editor.value && listAlbums(options.editor.value.getJSON()).length > 0) {
-        buttons.push({
+        albumActions.push({
           label: '加入已有图集',
           action: () => options.albumActions.openAlbumInsertDialog(found.attachmentId),
         })
       }
+      groups.push(rotations, albumActions)
       return
     }
 
+    buttons.push(...rotations)
     const albumId = album?.dataset.id || ''
     const currentMode = album?.dataset.displayMode
     if (currentMode === 'stackedCards') {
