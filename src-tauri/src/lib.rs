@@ -60,6 +60,9 @@ use crate::ai::session_command::{
 use crate::android_share::{cmd_ack_pending_android_share, cmd_list_pending_android_shares};
 use crate::app_config::{AppConfigStore, APP_CONFIG_FILENAME};
 use crate::attachments::archive_preview::cmd_preview_archive_attachment;
+use crate::attachments::archive_preview::entry_command::{
+    cmd_open_archive_entry_html, cmd_prepare_archive_entry, cmd_release_archive_entry,
+};
 use crate::attachments::attachment_command::{
     cmd_add_attachment, cmd_add_attachment_memory, cmd_add_image_attachment_from_camera,
     cmd_add_shared_attachment, cmd_caching_attachment, cmd_delete_attachment,
@@ -115,6 +118,11 @@ use tauri::{App, Manager};
 fn run_setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     tauri_plugin_log::log::info!("[startup] Rust setup started");
     let paths = app.handle().path();
+    if let Err(error) = attachments::archive_preview::preview_cache::cleanup_stale(
+        &paths.app_cache_dir()?.join("archive-entry-previews"),
+    ) {
+        tauri_plugin_log::log::warn!("[archive preview] 无法清理过期加密缓存: {error}");
+    }
     if let Err(error) = attachments::cleanup_legacy_html_temp_files(&paths.app_cache_dir()?) {
         tauri_plugin_log::log::warn!(
             "[attachment open] failed to clean legacy HTML files: {error}"
@@ -230,6 +238,9 @@ fn generate_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cmd_update_attachment_filename,
             cmd_update_attachment_audio_info,
             cmd_preview_archive_attachment,
+            cmd_prepare_archive_entry,
+            cmd_release_archive_entry,
+            cmd_open_archive_entry_html,
             // 分片上传
             cmd_start_chunked_upload,
             cmd_upload_chunk,

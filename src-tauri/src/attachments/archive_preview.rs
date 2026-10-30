@@ -14,6 +14,9 @@ use crate::error::AppError;
 use crate::state::AppState;
 use crate::utils::message_sender::MessageSender;
 
+pub(crate) mod entry;
+pub(crate) mod entry_command;
+pub(crate) mod preview_cache;
 mod range_reader;
 
 use range_reader::{DiaryAttachmentRangeSource, SeekableRangeReader};
@@ -63,6 +66,7 @@ pub struct ArchivePreview {
     pub is_solid: bool,
     pub encrypted: bool,
     pub entries: Vec<ArchivePreviewEntry>,
+    pub revision: String,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -181,6 +185,12 @@ async fn run_archive_preview(
         .ok_or_else(|| {
             ArchivePreviewError::InvalidArchive(format!("附件不存在：{attachment_id}"))
         })?;
+    let revision = entry_command::source_revision(&state, &diary_id, &attachment_id).await?;
+    let verification_state = state.clone();
+    let verification_id = diary_id.clone();
+    let verification_attachment_id = attachment_id.clone();
+    let mut attachment = attachment;
+    attachment.etag = Some(revision.clone());
     let archive_size = store
         .get_attachment_size(&diary_id, &attachment_id, attachment.etag.as_deref())
         .await
@@ -205,7 +215,7 @@ async fn run_archive_preview(
         )
     });
 
-    tokio::select! {
+    let result = tokio::select! {
         _ = cancellation.cancelled() => {
             parse_cancellation.cancel();
             // spawn_blocking 无法强制中止；等待 Range 读取响应取消，避免任务脱离存储操作锁继续访问对象。
@@ -223,7 +233,22 @@ async fn run_archive_preview(
                 }
             }
         }
+    };
+    let mut preview = result?;
+    if revision
+        != entry_command::source_revision(
+            &verification_state,
+            &verification_id,
+            &verification_attachment_id,
+        )
+        .await?
+    {
+        return Err(ArchivePreviewError::InvalidArchive(
+            "压缩包已变化，请重新打开目录".into(),
+        ));
     }
+    preview.revision = revision;
+    Ok(preview)
 }
 
 fn cancelled_io() -> std::io::Error {
@@ -301,19 +326,7 @@ fn preview_seven_zip<R: Read + Seek>(
 ) -> Result<ArchivePreview, ArchivePreviewError> {
     let password_value = password.unwrap_or_default();
     let password = sevenz_rust2::Password::new(password_value);
-    let archive = sevenz_rust2::Archive::read(&mut reader, &password).map_err(|error| {
-        use sevenz_rust2::Error;
-        match error {
-            Error::PasswordRequired if password_value.is_empty() => {
-                ArchivePreviewError::PasswordRequired
-            }
-            Error::PasswordRequired | Error::MaybeBadPassword(_) => {
-                ArchivePreviewError::InvalidPassword
-            }
-            Error::Io(error, _) => ArchivePreviewError::Io(error),
-            other => ArchivePreviewError::InvalidArchive(other.to_string()),
-        }
-    })?;
+    let archive = entry::read_bounded_seven_zip(&mut reader, &password)?;
     ensure_entry_count(archive.files.len())?;
 
     let encrypted = archive.blocks.iter().any(|block| {
@@ -373,6 +386,7 @@ fn build_preview(
         is_solid,
         encrypted,
         entries,
+        revision: String::new(),
     })
 }
 
@@ -457,6 +471,183 @@ mod tests {
 
     const PLAIN_SEVEN_Z: &str = "N3q8ryccAAPFVQ6hkQAAAAAAAAAhAAAAAAAAALz3Ey0AMxpJ1reRjN5PbnHnTQdyp1DzcTM5VWztEUaO/w5KQAAAAIEzB64P0B3SfJ8/R0FnN9Z25l7u6gTp5NJ7TyE+pM4A6htaK47zOKPmYkViCGBcQwNXjP7cf2WdZBzYc2CMoFSB5uiNUIYNIvzQ+C53Dy4AaVH8hLAUbgaH3jl1jNP2kOo9GTmknt6h//+DRwAAFwYhAQlwAAcLAQABIwMBAQVdAACAAAyAogoBfV1qRgAA";
     const ENCRYPTED_SEVEN_Z: &str = "N3q8ryccAATTIEOsgAAAAAAAAAAuAAAAAAAAAGT7LqbyWJG2NLKlQ9TUF7X2jeW2xmC6bo9eP2YPeeyhWKL/0RrS+DWWjNwZPhIpEzw181gfE19d0ivb+cTXE8jn4dEaGGBl731cukMmVSdpD1b4Kr0FSbAMaukuXH2LrVUOfYHvcasNhpJEw3Sp83TxKfTeyUJo4ymzgZbZth4bqo9BbBcGEAEJcAAHCwEAASQG8QcBElMPdznbYE8TDQsVayWhjxXfMQxiCgFwuLliAAA=";
+
+    fn extract_test(
+        bytes: &[u8],
+        index: usize,
+        path: &str,
+        size: u64,
+        password: Option<&str>,
+    ) -> Result<(Vec<u8>, Vec<entry::ArchiveEntryProgress>), ArchivePreviewError> {
+        let progress = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = progress.clone();
+        let mut control = entry::EntryControl::new(
+            CancellationToken::new(),
+            std::sync::Arc::new(move |value| sink.lock().unwrap().push(value)),
+        );
+        let mut output = Vec::new();
+        entry::extract_entry(
+            Cursor::new(bytes),
+            &entry::EntryRequest {
+                index,
+                path,
+                size,
+                password,
+            },
+            &mut output,
+            &mut control,
+        )?;
+        let events = progress.lock().unwrap().clone();
+        Ok((output, events))
+    }
+
+    #[test]
+    fn extracts_only_requested_zip_entry_and_reports_byte_progress() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("first.txt", options).unwrap();
+        writer.write_all(b"not requested").unwrap();
+        let expected = vec![b'A'; 3 * 1024 * 1024];
+        writer.start_file("second.txt", options).unwrap();
+        writer.write_all(&expected).unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        let (actual, progress) =
+            extract_test(&bytes, 1, "second.txt", expected.len() as u64, None).unwrap();
+        assert_eq!(actual, expected);
+        assert!(progress.len() > 10 && progress.len() <= 102);
+        assert_eq!(
+            progress.last().unwrap().processed_bytes,
+            expected.len() as u64
+        );
+        assert_eq!(progress.last().unwrap().total_bytes, expected.len() as u64);
+        assert!(progress
+            .windows(2)
+            .all(|p| p[0].processed_bytes <= p[1].processed_bytes));
+    }
+
+    #[test]
+    fn extracts_aes_zip_and_requires_the_correct_password() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "secret.json",
+                SimpleFileOptions::default().with_aes_encryption(zip::AesMode::Aes256, "password"),
+            )
+            .unwrap();
+        writer.write_all(b"{\"secret\":true}").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        assert!(matches!(
+            extract_test(&bytes, 0, "secret.json", 15, None),
+            Err(ArchivePreviewError::PasswordRequired)
+        ));
+        assert!(matches!(
+            extract_test(&bytes, 0, "secret.json", 15, Some("wrong")),
+            Err(ArchivePreviewError::InvalidPassword)
+        ));
+        assert_eq!(
+            extract_test(&bytes, 0, "secret.json", 15, Some("password"))
+                .unwrap()
+                .0,
+            b"{\"secret\":true}"
+        );
+    }
+
+    #[test]
+    fn refuses_changed_entries_traversal_links_nested_archives_and_wrong_sizes() {
+        let bytes = zip_bytes();
+        for (index, path, size) in [
+            (1, "other.txt", 5),
+            (1, "资料/readme.txt", 6),
+            (0, "资料/", 0),
+            (999, "missing", 0),
+        ] {
+            assert!(extract_test(&bytes, index, path, size, None).is_err());
+        }
+        for path in ["../evil.txt", "/root.txt", "C:/evil.txt", "nested.zip"] {
+            let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            writer
+                .start_file(path, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"12345").unwrap();
+            let bytes = writer.finish().unwrap().into_inner();
+            assert!(extract_test(&bytes, 0, path, 5, None).is_err(), "{path}");
+        }
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .add_symlink("link.txt", "outside", SimpleFileOptions::default())
+            .unwrap();
+        assert!(extract_test(
+            &writer.finish().unwrap().into_inner(),
+            0,
+            "link.txt",
+            7,
+            None
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn rejects_corrupt_zip_instead_of_publishing_partial_data() {
+        let mut bytes = zip_bytes();
+        let pos = bytes
+            .windows(5)
+            .position(|value| value == b"hello")
+            .unwrap();
+        bytes[pos] ^= 1;
+        assert!(extract_test(&bytes, 1, "资料/readme.txt", 5, None).is_err());
+    }
+
+    #[test]
+    fn extracts_every_seven_zip_entry_including_solid_blocks() {
+        for (fixture, password) in [(PLAIN_SEVEN_Z, None), (ENCRYPTED_SEVEN_Z, Some("correct"))] {
+            let bytes = decode_fixture(fixture);
+            let preview =
+                preview_archive(Cursor::new(&bytes), bytes.len() as u64, password).unwrap();
+            for (index, item) in preview
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, item)| !item.is_directory)
+            {
+                let (output, progress) =
+                    extract_test(&bytes, index, &item.path, item.size, password).unwrap();
+                assert_eq!(output.len() as u64, item.size);
+                if let Some(last) = progress.last() {
+                    assert_eq!(last.processed_bytes, last.total_bytes);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cancellation_and_declared_limits_fail_before_writing_output() {
+        let token = CancellationToken::new();
+        token.cancel();
+        let mut control = entry::EntryControl::new(token, std::sync::Arc::new(|_| {}));
+        let mut output = Vec::new();
+        assert!(entry::extract_entry(
+            Cursor::new(zip_bytes()),
+            &entry::EntryRequest {
+                index: 1,
+                path: "资料/readme.txt",
+                size: 5,
+                password: None
+            },
+            &mut output,
+            &mut control
+        )
+        .is_err());
+        assert!(output.is_empty());
+        assert!(extract_test(
+            &zip_bytes(),
+            1,
+            "资料/readme.txt",
+            entry::MAX_ENTRY_BYTES + 1,
+            None
+        )
+        .is_err());
+    }
 
     fn zip_bytes() -> Vec<u8> {
         let mut output = Cursor::new(Vec::new());

@@ -82,6 +82,38 @@ fn parse_cursor(
     attachment: &AttachmentMeta,
     size: u64,
 ) -> Result<Cursor, ServerError> {
+    parse_source_cursor(
+        query,
+        diary_id,
+        &attachment.id,
+        attachment.etag.as_deref(),
+        size,
+    )
+}
+
+pub(super) async fn preview_source<F, Fut>(
+    query: Option<&str>,
+    resource_id: &str,
+    size: u64,
+    read: F,
+) -> Result<JsonlPage, ServerError>
+where
+    F: FnMut(u64, u64) -> Fut,
+    Fut: Future<Output = Result<Vec<u8>, ServerError>>,
+{
+    let cursor = parse_source_cursor(query, "archive-entry", resource_id, None, size)?;
+    tokio::time::timeout(Duration::from_secs(30), read_page(cursor, read))
+        .await
+        .map_err(|_| ServerError::BadRequest("读取 JSONL 超时，请稍后重试"))?
+}
+
+fn parse_source_cursor(
+    query: Option<&str>,
+    diary_id: &str,
+    attachment_id: &str,
+    etag: Option<&str>,
+    size: u64,
+) -> Result<Cursor, ServerError> {
     let mut encoded = None;
     for component in query.unwrap_or_default().split('&') {
         if let Some(("cursor", value)) = component.split_once('=') {
@@ -95,9 +127,9 @@ fn parse_cursor(
             offset: 0,
             line_number: 1,
             size,
-            etag: attachment.etag.clone(),
+            etag: etag.map(str::to_owned),
             diary_id: diary_id.into(),
-            attachment_id: attachment.id.clone(),
+            attachment_id: attachment_id.into(),
         });
     };
     if encoded.len() > 4096 {
@@ -109,9 +141,9 @@ fn parse_cursor(
     let cursor: Cursor =
         serde_json::from_slice(&bytes).map_err(|_| ServerError::BadRequest("无效的 JSONL 游标"))?;
     if cursor.size != size
-        || cursor.etag != attachment.etag
+        || cursor.etag.as_deref() != etag
         || cursor.diary_id != diary_id
-        || cursor.attachment_id != attachment.id
+        || cursor.attachment_id != attachment_id
     {
         return Err(ServerError::BadRequest("附件已变化，请重新打开 JSONL 预览"));
     }

@@ -89,9 +89,11 @@ thiserror = "2"
 fs4 = "1"
 dunce = "1"
 eventsource-stream = "0.2"
-# 压缩包预览仅解析目录元数据；关闭默认解压算法，避免引入无关依赖。
-zip = { version = "6.0.0", default-features = false }
+# 条目预览按需启用常见 ZIP 解码与 AES；使用纯 Rust 后端，不引入系统解压程序。
+zip = { version = "6.0.0", default-features = false, features = ["deflate-flate2-zlib-rs", "aes-crypto"] }
 sevenz-rust2 = { version = "0.22.2", default-features = false, features = ["aes256"] }
+crc32fast = "1"
+tempfile = "3"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-biometric = "2.5.0"
@@ -103,8 +105,6 @@ rustls-platform-verifier = "0.6"
 jni = { version = "0.21", default-features = false }
 
 [dev-dependencies]
-# 临时文件夹
-tempfile = "3"
 # 读取.env文件
 dotenvy = "0.15"
 # 测试时保持互斥运行

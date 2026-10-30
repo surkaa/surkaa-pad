@@ -223,6 +223,7 @@ impl AppState {
     pub fn set_remote_enabled(&self, enabled: bool) {
         let previous = self.remote_enabled.swap(enabled, Ordering::Relaxed);
         if previous != enabled {
+            self.attachment_server.entry_previews.clear();
             self.ai_session_repository.invalidate_reconciliation();
             self.diary_edits.invalidate_all();
         }

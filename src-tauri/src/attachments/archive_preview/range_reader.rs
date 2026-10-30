@@ -117,6 +117,7 @@ pub(super) struct SeekableRangeReader<S> {
     cache: HashMap<u64, Vec<u8>>,
     lru: VecDeque<u64>,
     fetched_bytes: u64,
+    fetch_limit: u64,
 }
 
 impl<S> SeekableRangeReader<S> {
@@ -128,7 +129,13 @@ impl<S> SeekableRangeReader<S> {
             cache: HashMap::new(),
             lru: VecDeque::new(),
             fetched_bytes: 0,
+            fetch_limit: MAX_FETCHED_BYTES,
         }
+    }
+
+    pub(super) fn with_fetch_limit(mut self, limit: u64) -> Self {
+        self.fetch_limit = limit;
+        self
     }
 }
 
@@ -142,10 +149,13 @@ impl<S: ArchiveRangeSource> SeekableRangeReader<S> {
             .saturating_add(RANGE_CHUNK_SIZE.saturating_sub(1))
             .min(self.length.saturating_sub(1));
         let expected = end.saturating_sub(start).saturating_add(1);
-        if self.fetched_bytes.saturating_add(expected) > MAX_FETCHED_BYTES {
+        if self.fetched_bytes.saturating_add(expected) > self.fetch_limit {
             return Err(io::Error::new(
                 io::ErrorKind::FileTooLarge,
-                "压缩包目录读取量超过 32 MiB 安全限制",
+                format!(
+                    "压缩包读取量超过 {} MiB 安全限制",
+                    self.fetch_limit / 1024 / 1024
+                ),
             ));
         }
         let data = self.source.read_range(start, end)?;

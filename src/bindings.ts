@@ -983,6 +983,25 @@ async cmdPreviewArchiveAttachment(event: TAURI_CHANNEL<ArchivePreviewEvent>, dia
     else return { status: "error", error: e  as any };
 }
 },
+async cmdPrepareArchiveEntry(target: ArchiveEntryTarget, password: string | null, event: TAURI_CHANNEL<ArchiveEntryEvent>) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_prepare_archive_entry", { target, password, event }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cmdReleaseArchiveEntry(id: string, remove: boolean) : Promise<void> {
+    await TAURI_INVOKE("cmd_release_archive_entry", { id, remove });
+},
+async cmdOpenArchiveEntryHtml(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cmd_open_archive_entry_html", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * 初始化分片上传
  * # Arguments
@@ -1282,8 +1301,12 @@ export type AiSessionMeta = { version: number; id: string; title: string; aiTitl
 export type AiUsage = { promptTokens: number; completionTokens: number; totalTokens: number }
 export type AlbumDisplayMode = "horizontalList" | "stackedCards"
 export type AppError = { error_type: string; message: string }
+export type ArchiveEntryEvent = { event: "started" } | { event: "reading"; data: { bytes: number } } | { event: "progress"; data: { progress: ArchiveEntryProgress } } | { event: "completed"; data: { resource: PreparedArchiveEntry } } | { event: "passwordRequired"; data: { invalidPassword: boolean } } | { event: "cancelled" } | { event: "error"; data: { message: string } }
+export type ArchiveEntryPhase = "preparing" | "extracting" | "verifying"
+export type ArchiveEntryProgress = { phase: ArchiveEntryPhase; processedBytes: number; totalBytes: number }
+export type ArchiveEntryTarget = { diaryId: string; attachmentId: string; index: number; path: string; size: number; revision: string }
 export type ArchiveFormat = "zip" | "sevenZip"
-export type ArchivePreview = { format: ArchiveFormat; archiveSize: number; fileCount: number; directoryCount: number; uncompressedSize: number; isSolid: boolean; encrypted: boolean; entries: ArchivePreviewEntry[] }
+export type ArchivePreview = { format: ArchiveFormat; archiveSize: number; fileCount: number; directoryCount: number; uncompressedSize: number; isSolid: boolean; encrypted: boolean; entries: ArchivePreviewEntry[]; revision: string }
 export type ArchivePreviewEntry = { path: string; isDirectory: boolean; size: number; compressedSize: number; modifiedAt: string | null; encrypted: boolean | null }
 export type ArchivePreviewEvent = { event: "started" } | { event: "completed"; data: { preview: ArchivePreview } } | { event: "passwordRequired"; data: { invalidPassword: boolean } } | { event: "cancelled" } | { event: "error"; data: { message: string } }
 export type AttachmentCacheInfo = { cachedFiles: number; cachedBytes: number; limitBytes: number; maxFileSizeBytes: number }
@@ -1444,6 +1467,7 @@ export type PendingAndroidShare = { id: string; subject?: string | null; text?: 
  * 分享批次中的一个文件。`uri` 仅作为 Android 临时授权的读取入口，不会被持久化。
  */
 export type PendingAndroidShareItem = { id: string; uri: string; displayName: string; mimeType?: string | null; size?: number | null }
+export type PreparedArchiveEntry = { id: string; filename: string; mimetype: string; size: number; url: string }
 export type SearchDiariesEvent = { event: "match"; data: DiarySummary } | { event: "unmatch"; data: string } | { event: "finished" } | { event: "error"; data: string }
 /**
  * Android ContentProvider 提供的分享附件信息。

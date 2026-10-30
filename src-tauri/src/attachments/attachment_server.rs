@@ -48,6 +48,8 @@ const PDF_VIEW: &str = "pdf";
 const JSONL_VIEW: &str = "jsonl";
 type ResponseBody = UnsyncBoxBody<Bytes, io::Error>;
 
+#[path = "archive_preview/http.rs"]
+mod archive_entry_http;
 #[path = "jsonl_preview.rs"]
 mod jsonl_preview;
 
@@ -86,6 +88,7 @@ struct AttachmentRequestPermit {
 
 #[derive(Clone)]
 pub struct AttachmentServerHandle {
+    pub(crate) entry_previews: Arc<super::archive_preview::entry_command::EntryPreviews>,
     origin: Arc<str>,
     token_secret: Arc<[u8; 32]>,
     motion_photo_cache: Arc<DashMap<(String, String), MotionPhotoCacheEntry>>,
@@ -95,6 +98,7 @@ pub struct AttachmentServerHandle {
 impl AttachmentServerHandle {
     fn new(address: SocketAddr, token_secret: [u8; 32]) -> Self {
         Self {
+            entry_previews: Arc::default(),
             origin: format!("http://{}", address).into(),
             token_secret: Arc::new(token_secret),
             motion_photo_cache: Arc::new(DashMap::new()),
@@ -122,6 +126,10 @@ impl AttachmentServerHandle {
 
     pub fn html_url(&self, diary_id: &str, attachment_id: &str) -> String {
         format!("{}&view={HTML_VIEW}", self.url(diary_id, attachment_id))
+    }
+
+    pub(crate) fn entry_url(&self, id: &str) -> String {
+        format!("{}/archive-entry/{id}", self.origin)
     }
 
     #[cfg(test)]
@@ -187,6 +195,7 @@ impl AttachmentServerHandle {
     #[cfg(test)]
     pub fn for_test() -> Self {
         Self {
+            entry_previews: Arc::default(),
             origin: "http://127.0.0.1:1".into(),
             token_secret: Arc::new([7; 32]),
             motion_photo_cache: Arc::new(DashMap::new()),
@@ -229,9 +238,14 @@ async fn run_attachment_server(listener: TcpListener, state: AppState) {
         }
     };
     log::info!("附件 HTTP 服务已监听 {address}");
+    let mut cleanup = tokio::time::interval(std::time::Duration::from_secs(60));
 
     loop {
-        let (stream, _) = match listener.accept().await {
+        let accepted = tokio::select! {
+            _ = cleanup.tick() => { attachment_server.entry_previews.expire(); continue; },
+            result = listener.accept() => result,
+        };
+        let (stream, _) = match accepted {
             Ok(connection) => connection,
             Err(error) => {
                 log::error!("附件 HTTP 服务接受连接失败: {error}");
@@ -381,6 +395,17 @@ async fn process_attachment(
         return Err(ServerError::MethodNotAllowed);
     }
     let attachment_view = parse_attachment_view(request.uri().query())?;
+
+    if request.uri().path().starts_with("/archive-entry/") {
+        return archive_entry_http::process(
+            state,
+            attachment_server,
+            global_permit,
+            request,
+            attachment_view,
+        )
+        .await;
+    }
 
     let path = request.uri().path().trim_start_matches('/');
     let segments: Vec<&str> = path.split('/').collect();
@@ -868,6 +893,201 @@ mod tests {
     use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
     use tempfile::TempDir;
 
+    fn preview_zip(contents: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::{Cursor, Write};
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, bytes) in contents {
+            writer
+                .start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+
+    async fn prepare_test_entry(
+        server: &TestServer,
+        index: u32,
+        path: &str,
+        size: u64,
+    ) -> crate::attachments::archive_preview::entry_command::PreparedArchiveEntry {
+        use crate::attachments::archive_preview::entry_command::*;
+        persist_test_manifest(server).await;
+        let attachment = &server
+            .state
+            .diary_cache()
+            .get("archive")
+            .unwrap()
+            .0
+            .attachments[0];
+        prepare_entry(
+            &server.state,
+            &ArchiveEntryTarget {
+                diary_id: "archive".into(),
+                attachment_id: attachment.id.clone(),
+                index,
+                path: path.into(),
+                size,
+                revision: attachment.etag.clone().unwrap(),
+            },
+            None,
+            server._temp_dir.path().join("preview-cache"),
+            &tauri::ipc::Channel::new(|_| Ok(())),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn persist_test_manifest(server: &TestServer) {
+        let store = server.state.diary_store();
+        if store.get_manifest_etag("archive").await.unwrap().is_none() {
+            let manifest = server.state.diary_cache().get("archive").unwrap().0;
+            let bytes = server
+                .state
+                .crypto()
+                .encrypt(&serde_json::to_vec(&manifest).unwrap())
+                .unwrap();
+            let etag = store.upload_manifest("archive", &bytes).await.unwrap();
+            server.state.diary_cache().insert("archive", manifest, etag);
+        }
+    }
+
+    #[tokio::test]
+    async fn archive_entry_isolated_capability_supports_ranges_jsonl_and_revocation() {
+        let jsonl = (0..25)
+            .map(|i| format!("{{\"index\":{i}}}\n"))
+            .collect::<String>();
+        let contents: &[(&str, &[u8])] = &[
+            ("data.jsonl", jsonl.as_bytes()),
+            (
+                "page.html",
+                b"<script>document.body.textContent='hello'</script>",
+            ),
+        ];
+        let archive = preview_zip(contents);
+        for encrypted in [false, true] {
+            let server =
+                start_test_server("archive", "a.zip", "application/zip", &archive, encrypted).await;
+            let resource =
+                prepare_test_entry(&server, 0, contents[0].0, contents[0].1.len() as u64).await;
+            let reused =
+                prepare_test_entry(&server, 0, contents[0].0, contents[0].1.len() as u64).await;
+            assert_eq!(resource.id, reused.id);
+            let client = reqwest::Client::new();
+            let response = client
+                .get(&resource.url)
+                .header(RANGE, "bytes=5-19")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+            assert_eq!(
+                response.headers()[CONTENT_RANGE],
+                format!("bytes 5-19/{}", jsonl.len())
+            );
+            assert_eq!(
+                response.bytes().await.unwrap().as_ref(),
+                &jsonl.as_bytes()[5..20]
+            );
+            let response = client.head(&resource.url).send().await.unwrap();
+            assert_eq!(response.headers()[CONTENT_LENGTH], jsonl.len().to_string());
+            let mut url = format!("{}?view=jsonl", resource.url);
+            for expected in [10, 10, 5] {
+                let page: serde_json::Value =
+                    client.get(&url).send().await.unwrap().json().await.unwrap();
+                assert_eq!(page["lines"].as_array().unwrap().len(), expected);
+                if let Some(cursor) = page["nextCursor"].as_str() {
+                    url = format!("{}?view=jsonl&cursor={cursor}", resource.url);
+                }
+            }
+            for suffix in ["/../page.html", "/other", "?view=html", "?view=pdf"] {
+                assert_ne!(
+                    client
+                        .get(format!("{}{suffix}", resource.url))
+                        .send()
+                        .await
+                        .unwrap()
+                        .status(),
+                    StatusCode::OK
+                );
+            }
+            server.handle.entry_previews.release(&resource.id, true);
+            assert_eq!(
+                client.get(&resource.url).send().await.unwrap().status(),
+                StatusCode::NOT_FOUND
+            );
+            let html =
+                prepare_test_entry(&server, 1, contents[1].0, contents[1].1.len() as u64).await;
+            let response = client
+                .get(format!("{}?view=html", html.url))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(response.headers()[CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with("text/html"));
+            assert_eq!(response.bytes().await.unwrap().as_ref(), contents[1].1);
+            server
+                .state
+                .persist_key_change(Some("pending".into()))
+                .unwrap();
+            assert_eq!(
+                client.get(&html.url).send().await.unwrap().status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn archive_entry_rejects_stale_source_and_renamed_nested_archive() {
+        use crate::attachments::archive_preview::entry_command::*;
+        let inner = preview_zip(&[("hello.txt", b"hello")]);
+        let outer = preview_zip(&[("renamed.txt", &inner)]);
+        let server = start_test_server("archive", "a.zip", "application/zip", &outer, true).await;
+        persist_test_manifest(&server).await;
+        let revision = server
+            .state
+            .diary_cache()
+            .get("archive")
+            .unwrap()
+            .0
+            .attachments[0]
+            .etag
+            .clone()
+            .unwrap();
+        let mut target = ArchiveEntryTarget {
+            diary_id: "archive".into(),
+            attachment_id: "a.zip".into(),
+            index: 0,
+            path: "renamed.txt".into(),
+            size: inner.len() as u64,
+            revision: "stale".into(),
+        };
+        for expected in ["已变化", "嵌套压缩包"] {
+            let error = prepare_entry(
+                &server.state,
+                &target,
+                None,
+                server._temp_dir.path().join("preview-cache"),
+                &tauri::ipc::Channel::new(|_| Ok(())),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains(expected), "{error}");
+            target.revision = revision.clone();
+        }
+        assert_eq!(
+            std::fs::read_dir(server._temp_dir.path().join("preview-cache"))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
     #[tokio::test]
     async fn streaming_response_keeps_storage_lock_until_body_is_dropped() {
         let temp = tempfile::tempdir().unwrap();
@@ -927,6 +1147,7 @@ mod tests {
     impl Drop for TestServer {
         fn drop(&mut self) {
             self.task.abort();
+            self.handle.entry_previews.clear();
         }
     }
 
@@ -1263,6 +1484,155 @@ mod tests {
                 StatusCode::BAD_REQUEST
             );
         }
+    }
+
+    #[tokio::test]
+    async fn real_oss_archive_entry_preview_reads_only_isolated_test_objects() {
+        use crate::attachments::archive_preview::entry_command::*;
+        assert_eq!(
+            std::env::var("ALIYUN_BUCKET_NAME").unwrap(),
+            "surkaa-test",
+            "只允许测试桶"
+        );
+        let (client, guard) = crate::test_utils::TestOssGuard::new(OssClient::from_env()).await;
+        let text = "archive-entry\n".repeat(100_000);
+        let archive = preview_zip(&[
+            ("large.txt", text.as_bytes()),
+            ("small.json", b"{\"ok\":true}"),
+        ]);
+        for encrypted in [false, true] {
+            let key =
+                crate::object_locations::ObjectLocations::diary_attachment("archive", "a.zip");
+            let signed = reqwest::Url::parse(&client.direct_url(&key).await.unwrap()).unwrap();
+            assert!(urlencoding::decode(signed.path())
+                .unwrap()
+                .starts_with("/rust-tests/"));
+            let crypto = Crypto::new();
+            crypto.init_by_dek_string("42".repeat(32)).unwrap();
+            let stream = create_mock_stream(archive.clone(), 64 * 1024);
+            let (stream, nonce) = if encrypted {
+                crypto.encrypt_streaming(stream).unwrap()
+            } else {
+                (stream, vec![])
+            };
+            let etag = client
+                .upload(&key, archive.len() as u64, stream, "application/zip")
+                .await
+                .unwrap();
+            let temp = tempfile::tempdir().unwrap();
+            let los = LocalObjectStore::new(temp.path().into());
+            let (listener, handle) = bind_attachment_server().unwrap();
+            let state = AppState::from_parts_with_attachment_server(
+                crypto,
+                client.clone(),
+                los.clone(),
+                handle.clone(),
+            );
+            state.set_remote_enabled(true);
+            state.diary_cache().insert(
+                "archive",
+                DiaryManifest {
+                    id: "archive".into(),
+                    algorithm: Gcm,
+                    content: DiaryContent::default(),
+                    created: 0,
+                    updated: 0,
+                    version: CURRENT_VERSION,
+                    attachments: vec![AttachmentMeta {
+                        id: "a.zip".into(),
+                        filename: "a.zip".into(),
+                        mimetype: "application/zip".into(),
+                        size: archive.len() as u64,
+                        encrypted,
+                        nonce,
+                        algorithm: Ctr,
+                        etag: Some(etag.clone()),
+                        content_info: None,
+                    }],
+                },
+                "placeholder".into(),
+            );
+            // 写入与真实应用一致的加密 manifest；附件直接上传 OSS，不预置本地缓存。
+            let manifest = state.diary_cache().get("archive").unwrap().0;
+            let data = state
+                .crypto()
+                .encrypt(&serde_json::to_vec(&manifest).unwrap())
+                .unwrap();
+            let manifest_etag = client
+                .upload(
+                    &crate::object_locations::ObjectLocations::diary_manifest("archive"),
+                    data.len() as u64,
+                    create_mock_stream(data, 64 * 1024),
+                    "application/octet-stream",
+                )
+                .await
+                .unwrap();
+            state
+                .diary_cache()
+                .insert("archive", manifest, manifest_etag);
+            let task = tokio::spawn(run_attachment_server(listener, state.clone()));
+            let server = TestServer {
+                _temp_dir: temp,
+                handle,
+                state,
+                task,
+            };
+            let resource = prepare_test_entry(&server, 0, "large.txt", text.len() as u64).await;
+            assert_eq!(
+                reqwest::get(&resource.url)
+                    .await
+                    .unwrap()
+                    .text()
+                    .await
+                    .unwrap(),
+                text
+            );
+            assert!(
+                los.get(&key).await.unwrap().is_none(),
+                "按需读取不能写透整个压缩包"
+            );
+            assert_eq!(
+                client.get_metadata(&key).await.unwrap().etag,
+                Some(etag.clone()),
+                "原附件不可被改写"
+            );
+            // 同一个 manifest 仍持有旧 ETag 时，修改对象后也必须拒绝复用旧的预览缓存。
+            client
+                .upload(
+                    &key,
+                    7,
+                    create_mock_stream(b"changed".to_vec(), 7),
+                    "application/zip",
+                )
+                .await
+                .unwrap();
+            let target = ArchiveEntryTarget {
+                diary_id: "archive".into(),
+                attachment_id: "a.zip".into(),
+                index: 0,
+                path: "large.txt".into(),
+                size: text.len() as u64,
+                revision: etag,
+            };
+            let error = prepare_entry(
+                &server.state,
+                &target,
+                None,
+                server._temp_dir.path().join("preview-cache"),
+                &tauri::ipc::Channel::new(|_| Ok(())),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains("已变化"));
+            drop(server);
+        }
+        guard.cleanup().await;
+        let (objects, next) = client.list("", None).await.unwrap();
+        assert!(
+            objects.is_empty() && next.is_none(),
+            "本次测试对象没有清理干净"
+        );
     }
 
     #[tokio::test]
