@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import vue from "@vitejs/plugin-vue";
 import {quasar, transformAssetUrls} from "@quasar/vite-plugin";
 import {execFileSync} from "node:child_process";
+import {configDefaults} from 'vitest/config';
 
 function gitCommitHash() {
     const environmentHash = process.env.GITHUB_SHA || process.env.VITE_GIT_COMMIT;
@@ -36,6 +37,7 @@ export default defineConfig(async ({mode}) => {
             })
         ],
         clearScreen: false,
+        test: {exclude: [...configDefaults.exclude, '**/.pnpm-store/**']},
         server: {
             port,
             strictPort: true,

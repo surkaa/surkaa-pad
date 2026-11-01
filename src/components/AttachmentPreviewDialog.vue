@@ -10,8 +10,9 @@
       :class="{'attachment-preview-card--maximized': isMaximized}"
     >
       <q-card-section class="attachment-preview-header row items-center no-wrap">
-        <q-icon :name="previewIcon" size="24px" color="primary"/>
-        <div class="attachment-preview-title ellipsis">{{ attachment?.filename || '附件预览' }}</div>
+        <q-btn v-if="selectedEntry" flat round dense icon="arrow_back" aria-label="返回压缩包目录" @click="selectedEntry = null"/>
+        <q-icon v-else :name="previewIcon" size="24px" color="primary"/>
+        <div class="attachment-preview-title ellipsis" :title="selectedEntry?.path">{{ selectedEntry?.label || attachment?.filename || '附件预览' }}</div>
         <q-space/>
         <q-btn
           v-if="!$q.screen.lt.sm"
@@ -28,6 +29,25 @@
       </q-card-section>
       <q-separator/>
 
+      <ArchiveAttachmentPreview
+        v-if="kind === 'archive' && archivePreview"
+        v-show="!selectedEntry"
+        :preview="archivePreview"
+        @open-entry="selectedEntry = $event"
+      />
+      <ArchiveEntryPreview
+        v-if="selectedEntry && archivePreview && attachment"
+        :key="selectedEntry.key"
+        :diary-id="diaryId"
+        :attachment-id="attachment.id"
+        :entry="selectedEntry"
+        :revision="archivePreview.revision"
+        :solid="archivePreview.isSolid"
+        @back="selectedEntry = null"
+        @prepared="trackResource"
+      />
+
+      <template v-if="!selectedEntry">
       <div v-if="loading" class="attachment-preview-state">
         <q-spinner color="primary" size="36px"/>
         <span>{{ loadingText }}</span>
@@ -78,13 +98,10 @@
         v-html="renderSafeMarkdown(sourceText)"
       />
       <pre v-else-if="kind === 'text'" class="attachment-preview-text">{{ sourceText }}</pre>
-      <ArchiveAttachmentPreview
-        v-else-if="kind === 'archive' && archivePreview"
-        :preview="archivePreview"
-      />
-      <div v-else class="attachment-preview-state">
+      <div v-else-if="kind !== 'archive'" class="attachment-preview-state">
         <span>当前附件暂不支持预览</span>
       </div>
+      </template>
 
       <q-separator/>
       <q-card-actions align="right" class="attachment-preview-actions">
@@ -122,6 +139,8 @@ import {formatError} from '../utils/formatError';
 import JsonTreeViewer from './JsonTreeViewer.vue';
 import ArchiveAttachmentPreview from './ArchiveAttachmentPreview.vue';
 import JsonlAttachmentPreview from './JsonlAttachmentPreview.vue';
+import ArchiveEntryPreview from './ArchiveEntryPreview.vue';
+import type {ArchiveTreeNode} from '../utils/archivePreview';
 
 const PdfAttachmentPreview = defineAsyncComponent(() => import('./PdfAttachmentPreview.vue'));
 
@@ -141,12 +160,15 @@ const jsonParsed = ref(false);
 const jsonError = ref('');
 const fatalError = ref('');
 const archivePreview = shallowRef<ArchivePreview>();
+const selectedEntry = shallowRef<ArchiveTreeNode | null>(null);
 const passwordRequired = ref(false);
 const invalidPassword = ref(false);
 const archivePassword = ref('');
 let loadController: AbortController | null = null;
 let loadRevision = 0;
 let activeArchiveTask = '';
+const preparedResources = new Set<string>();
+let disposed = false;
 
 const kind = computed<AttachmentPreviewKind | null>(() => (
   props.attachment ? attachmentPreviewKind(props.attachment) : null
@@ -181,7 +203,12 @@ watch(
   {immediate: true},
 );
 
-onBeforeUnmount(cancelLoad);
+onBeforeUnmount(() => {disposed = true; cancelLoad(); resetPreview();});
+
+function trackResource(id: string) {
+  if (disposed || !props.modelValue) void api.cmdReleaseArchiveEntry(id, true).catch(() => undefined);
+  else preparedResources.add(id);
+}
 
 async function loadPreview() {
   cancelLoad();
@@ -283,6 +310,9 @@ function retryArchivePreview() {
 }
 
 function resetPreview() {
+  for (const id of preparedResources) void api.cmdReleaseArchiveEntry(id, true).catch(() => undefined);
+  preparedResources.clear();
+  selectedEntry.value = null;
   sourceText.value = '';
   jsonSource.value = undefined;
   jsonParsed.value = false;

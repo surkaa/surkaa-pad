@@ -1,0 +1,36 @@
+// 日记节点与只读文件预览共用同一音频播放器样式。
+.tiptap-wrapper, .attachment-audio-preview {
+  .editor-audio-attachment {
+    position: relative;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    box-sizing: border-box;
+    width: min(100%, var(--editor-audio-width, 220px));
+    min-height: 68px;
+    padding: 10px 14px;
+    border: 1px solid var(--pad-border-color-200);
+    border-radius: var(--pad-radius-xl);
+    background: linear-gradient(135deg, var(--pad-bg-color-200), color-mix(in srgb, var(--pad-primary-color) 7%, var(--pad-bg-color-100)));
+    box-shadow: var(--pad-shadow-sm);
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+    .editor-audio-play {
+      display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
+      border: 0; border-radius: var(--pad-radius-full);
+      color: var(--pad-text-color-light); background: var(--pad-primary-gradient);
+      box-shadow: var(--pad-shadow-sm); cursor: pointer;
+      transition: transform var(--pad-transition-fast), opacity var(--pad-transition-fast);
+      &:active {transform: scale(.94);}
+      &:disabled {cursor: default; opacity: .55;}
+    }
+    .editor-audio-play-icon {padding-left: 2px; font-size: 15px; line-height: 1;}
+    .editor-audio-waveform {min-width: 0; height: 44px; overflow: hidden; border-radius: var(--pad-radius-md); &--native {cursor: pointer;}}
+    .editor-audio-native-waveform {display: block; width: 100%; height: 44px;}
+    .editor-audio-time {min-width: 38px; color: var(--pad-text-color-300); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;}
+    .editor-audio-status {position: absolute; right: 14px; bottom: 2px; color: var(--pad-text-color-400); font-size: 10px;}
+    .editor-audio-native-backend {display: none;}
+  }
+}

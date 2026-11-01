@@ -1,6 +1,7 @@
 import type {ArchivePreviewEntry} from '../bindings';
 
 export interface ArchiveTreeNode extends ArchivePreviewEntry {
+  sourceIndex: number | null;
   key: string;
   label: string;
   depth: number;
@@ -49,6 +50,7 @@ export function buildArchiveTree(entries: ArchivePreviewEntry[]): ArchiveTreeNod
     }
     parentChildren.push({
       ...entry,
+      sourceIndex: index,
       key: `file:${index}:${entry.path}`,
       label,
       depth,
@@ -93,6 +95,7 @@ function ensureDirectory(
   const existing = directories.get(path);
   if (existing) return existing;
   const directory: MutableArchiveTreeNode = {
+    sourceIndex: null,
     key: `dir:${path}`,
     path,
     label,

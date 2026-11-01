@@ -1,16 +1,15 @@
 <template>
-  <q-dialog
-      no-refocus
+  <component
+      :is="embedded ? 'div' : QDialog"
+      :class="{'image-preview-host': embedded}"
+      v-bind="embedded ? {} : {noRefocus: true, maximized: true, transitionShow: 'fade', transitionHide: 'fade'}"
       ref="dialogRef"
-      maximized
-      transition-show="fade"
-      transition-hide="fade"
       @hide="onDialogHide"
   >
     <div
         ref="viewportRef"
         class="image-preview"
-        :class="{'is-manipulating': isManipulating, 'is-zoomed': transform.scale > 1}"
+        :class="{'is-manipulating': isManipulating, 'is-zoomed': transform.scale > 1, 'image-preview--embedded': embedded}"
         @click="handleBackdropClick"
         @dblclick.prevent="handleDoubleClick"
         @wheel.prevent="handleWheel"
@@ -65,6 +64,7 @@
       />
 
       <q-btn
+          v-if="!embedded"
           flat
           round
           dense
@@ -107,12 +107,12 @@
         />
       </div>
     </div>
-  </q-dialog>
+  </component>
 </template>
 
 <script setup lang="ts">
 import {computed, onBeforeUnmount, reactive, ref, watch} from 'vue';
-import {useDialogPluginComponent} from 'quasar';
+import {QDialog, useDialogPluginComponent} from 'quasar';
 import {
   MAX_IMAGE_PREVIEW_SCALE,
   MIN_IMAGE_PREVIEW_SCALE,
@@ -126,6 +126,7 @@ import {buildMotionPhotoVideoUrl} from '../utils/motionPhoto';
 
 const props = defineProps<{
   src: string;
+  embedded?: boolean;
 }>();
 
 defineEmits([
@@ -319,7 +320,7 @@ function handlePointerEnd(event: PointerEvent) {
 }
 
 function handleBackdropClick(event: MouseEvent) {
-  if (event.target === event.currentTarget && !gestureMoved) {
+  if (!props.embedded && event.target === event.currentTarget && !gestureMoved) {
     onDialogCancel();
   }
   gestureMoved = false;
@@ -402,6 +403,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', handleResize));
     cursor: grabbing;
   }
 }
+
+.image-preview-host {display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden;}
+.image-preview--embedded {width: 100%; height: 100%; flex: 1; min-height: 0;}
+.image-preview--embedded .image-preview__image,
+.image-preview--embedded .image-preview__video {max-width: 95%; max-height: 95%;}
 
 .image-preview__image,
 .image-preview__video {

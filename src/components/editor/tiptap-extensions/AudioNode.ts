@@ -2,6 +2,7 @@ import {Node as TiptapNode, mergeAttributes} from '@tiptap/vue-3'
 import type {Node as ProseMirrorNode} from '@tiptap/pm/model'
 import type {NodeView} from '@tiptap/pm/view'
 import type {AttachmentMeta, AudioWaveform} from '../../../bindings'
+import '../../../styles/audioPlayer.scss'
 import {
   AUDIO_WAVEFORM_PEAK_COUNT,
   AUDIO_WAVEFORM_VERSION,
@@ -15,7 +16,7 @@ import {
 } from '../../../utils/audioWaveform'
 
 export interface AudioNodeOptions {
-  getAttachment: (attachmentId: string) => AttachmentMeta | null
+  getAttachment: (attachmentId: string) => Pick<AttachmentMeta, 'size' | 'contentInfo'> | null
   onAudioInfoGenerated: (
     attachmentId: string,
     durationMs: number,
@@ -39,7 +40,7 @@ declare module '@tiptap/vue-3' {
   }
 }
 
-function createAudioNodeView(
+export function createAudioNodeView(
   initialNode: ProseMirrorNode,
   options: AudioNodeOptions,
 ): NodeView {

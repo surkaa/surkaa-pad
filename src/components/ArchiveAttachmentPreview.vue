@@ -38,9 +38,13 @@
       <div
         :key="item.key"
         class="archive-row"
-        :class="{'archive-row--directory': item.isDirectory}"
+        :class="{'archive-row--directory': item.isDirectory, 'archive-row--file': !item.isDirectory}"
+        role="button"
+        tabindex="0"
         :style="{'--archive-depth': item.depth}"
-        @click="item.isDirectory && toggleDirectory(item.key)"
+        @click="activate(item)"
+        @keydown.enter.prevent="activate(item)"
+        @keydown.space.prevent="activate(item)"
       >
         <q-icon
           class="archive-toggle"
@@ -82,6 +86,7 @@ import {
 } from '../utils/archivePreview';
 
 const props = defineProps<{preview: ArchivePreview}>();
+const emit = defineEmits<{(event: 'open-entry', entry: ArchiveTreeNode): void}>();
 const $q = useQuasar();
 const query = ref('');
 const roots = shallowRef<ArchiveTreeNode[]>([]);
@@ -106,6 +111,11 @@ function toggleDirectory(key: string) {
   if (next.has(key)) next.delete(key);
   else next.add(key);
   expanded.value = next;
+}
+
+function activate(item: ArchiveTreeNode) {
+  if (item.isDirectory) toggleDirectory(item.key);
+  else emit('open-entry', item);
 }
 
 function directoryToggleIcon(key: string): string {
@@ -182,11 +192,11 @@ function fileIcon(path: string): string {
   border-bottom: 1px solid color-mix(in srgb, var(--pad-border-color-100) 55%, transparent);
 }
 
-.archive-row--directory {
+.archive-row--directory, .archive-row--file {
   cursor: pointer;
 }
 
-.archive-row--directory:hover {
+.archive-row:hover, .archive-row:focus-visible {
   background: color-mix(in srgb, var(--q-primary) 8%, transparent);
 }
 
