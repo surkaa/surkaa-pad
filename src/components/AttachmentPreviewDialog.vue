@@ -37,6 +37,7 @@
       />
       <ArchiveEntryPreview
         v-if="selectedEntry && archivePreview && attachment"
+        ref="entryPreview"
         :key="selectedEntry.key"
         :diary-id="diaryId"
         :attachment-id="attachment.id"
@@ -111,7 +112,7 @@
           icon="content_copy"
           label="复制内容"
           color="primary"
-          :disable="loading || Boolean(fatalError) || !sourceText"
+          :disable="!copyReady"
           @click="copyContent"
         />
         <q-btn flat label="关闭" color="primary" v-close-popup/>
@@ -161,6 +162,7 @@ const jsonError = ref('');
 const fatalError = ref('');
 const archivePreview = shallowRef<ArchivePreview>();
 const selectedEntry = shallowRef<ArchiveTreeNode | null>(null);
+const entryPreview = ref<InstanceType<typeof ArchiveEntryPreview>>();
 const passwordRequired = ref(false);
 const invalidPassword = ref(false);
 const archivePassword = ref('');
@@ -186,9 +188,12 @@ const previewIcon = computed(() => previewIcons[kind.value || 'text']);
 const loadingText = computed(() => (
   kind.value === 'archive' ? '正在读取压缩包目录…' : '正在读取附件…'
 ));
-const canCopyContent = computed(() => (
-  kind.value === 'json' || kind.value === 'markdown' || kind.value === 'text'
-));
+const canCopyContent = computed(() => selectedEntry.value
+  ? Boolean(entryPreview.value?.canCopy)
+  : kind.value === 'json' || kind.value === 'markdown' || kind.value === 'text');
+const copyReady = computed(() => selectedEntry.value
+  ? Boolean(entryPreview.value?.copyReady)
+  : !loading.value && !fatalError.value && Boolean(sourceText.value));
 
 watch(
   () => [props.modelValue, props.attachment?.id, props.url] as const,
@@ -336,6 +341,10 @@ function cancelLoad() {
 }
 
 async function copyContent() {
+  if (selectedEntry.value) {
+    await entryPreview.value?.copy();
+    return;
+  }
   try {
     await copyTextToClipboard(sourceText.value);
     $q.notify({type: 'positive', message: '附件内容已复制'});

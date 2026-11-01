@@ -25,7 +25,7 @@
     <span>{{ error }}</span>
     <q-btn flat label="返回目录" color="primary" @click="emit('back')"/>
   </div>
-  <FilePreviewContent v-else-if="resource" :resource="resource"/>
+  <FilePreviewContent v-else-if="resource" ref="contentPreview" :resource="resource"/>
 </template>
 
 <script setup lang="ts">
@@ -49,6 +49,10 @@ const password = ref('');
 const progress = shallowRef<ArchiveEntryProgress | null>(null);
 const readBytes = ref(0);
 const resource = shallowRef<PreparedArchiveEntry>();
+const contentPreview = ref<InstanceType<typeof FilePreviewContent>>();
+const canCopy = computed(() => contentPreview.value?.canCopy ?? false);
+const copyReady = computed(() => contentPreview.value?.copyReady ?? false);
+defineExpose({canCopy, copyReady, copy: () => contentPreview.value?.copy()});
 const error = ref('');
 let task = '';
 let generation = 0;

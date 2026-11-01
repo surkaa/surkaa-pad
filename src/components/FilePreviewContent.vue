@@ -24,9 +24,6 @@
   <div v-else-if="kind === 'markdown'" class="file-preview-markdown" @click="openLink" v-html="renderSafeMarkdown(text)"/>
   <pre v-else-if="kind === 'text'" class="file-preview-text">{{ text }}</pre>
   <div v-else class="file-preview-state">暂不支持预览此类文件</div>
-  <div v-if="canCopy && !loading && !error" class="file-preview-copy">
-    <q-btn flat color="primary" icon="content_copy" label="复制内容" @click="copy"/>
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -50,6 +47,8 @@ const $q = useQuasar();
 const kind = computed(() => archiveEntryKind(props.resource));
 const canCopy = computed(() => ['json', 'markdown', 'text'].includes(kind.value || ''));
 const loading = ref(false); const error = ref(''); const text = ref('');
+const copyReady = computed(() => canCopy.value && !loading.value && !error.value);
+defineExpose({canCopy, copyReady, copy});
 const json = shallowRef<unknown>(); const jsonParsed = ref(false); const jsonError = ref('');
 let controller: AbortController | undefined;
 watch(() => props.resource, async resource => {
@@ -70,6 +69,7 @@ watch(() => props.resource, async resource => {
 onBeforeUnmount(() => controller?.abort());
 
 async function copy() {
+  if (!copyReady.value) return;
   try {await copyTextToClipboard(text.value); $q.notify({type: 'positive', message: '文件内容已复制'});}
   catch (cause) {$q.notify({type: 'negative', message: formatError(cause)});}
 }
@@ -94,5 +94,4 @@ async function openLink(event: MouseEvent) {
 .file-preview-text, .file-preview-markdown {flex: 1; min-height: 0; overflow: auto; padding: 18px 22px; margin: 0; color: var(--pad-text-color-200); background: var(--pad-bg-color-100); user-select: text; -webkit-user-select: text; overflow-wrap: anywhere; line-height: 1.65;}
 .file-preview-text {white-space: pre-wrap; font: 14px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;}
 .file-preview-markdown :deep(*) {max-width: 100%;}
-.file-preview-copy {flex: none; text-align: right;}
 </style>
