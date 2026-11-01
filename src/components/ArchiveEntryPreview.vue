@@ -2,8 +2,13 @@
   <div v-if="loading" class="archive-entry-state" role="status" aria-live="polite">
     <q-icon name="unarchive" color="primary" size="36px"/>
     <strong>{{ phaseLabel }}</strong>
-    <PreviewProgressBar class="archive-entry-progress" rounded size="8px" :value="progressValue"/>
-    <span v-if="progressValue !== undefined">{{ Math.floor(progressValue * 100) }}% · {{ formatBytes(progress!.processedBytes) }} / {{ formatBytes(progress!.totalBytes) }}</span>
+    <PreviewProgressBar class="archive-entry-progress" rounded size="8px" :value="progressValue" :instant-feedback="progress?.phase !== 'extracting'"/>
+    <span>
+      {{ Math.floor(progressValue * 100) }}%
+      <template v-if="progress?.phase === 'extracting' && progress.totalBytes > 0">
+        · {{ formatBytes(progress.processedBytes) }} / {{ formatBytes(progress.totalBytes) }}
+      </template>
+    </span>
     <span>已读取压缩数据 {{ formatBytes(readBytes) }}</span>
     <span v-if="solid">固实压缩需处理目标文件所在的完整压缩块</span>
     <q-btn flat label="取消加载" color="primary" @click="emit('back')"/>

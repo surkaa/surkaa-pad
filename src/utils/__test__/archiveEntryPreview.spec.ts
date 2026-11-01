@@ -26,16 +26,21 @@ describe('archive entry preview classification and identity', () => {
 });
 
 describe('archive entry progress', () => {
-  it('is indeterminate until a real byte total is known', () => {
-    expect(archiveEntryProgressValue(null)).toBeUndefined();
-    for (const phase of ['preparing', 'verifying'] as const) expect(archiveEntryProgressValue({phase, processedBytes: 1, totalBytes: 10})).toBeUndefined();
-    for (const totalBytes of [0, -1, NaN, Infinity]) expect(archiveEntryProgressValue({phase: 'extracting', processedBytes: 1, totalBytes})).toBeUndefined();
+  it('keeps preparation empty and verification full regardless of their byte counters', () => {
+    expect(archiveEntryProgressValue(null)).toBe(0);
+    for (const [processedBytes, totalBytes] of [[0, 0], [50, 100], [100, 100], [NaN, Infinity]]) {
+      expect(archiveEntryProgressValue({phase: 'preparing', processedBytes, totalBytes})).toBe(0);
+      expect(archiveEntryProgressValue({phase: 'verifying', processedBytes, totalBytes})).toBe(1);
+    }
+  });
+  it('keeps extraction empty until a valid byte total is known, including empty files', () => {
+    for (const totalBytes of [0, -1, NaN, Infinity]) expect(archiveEntryProgressValue({phase: 'extracting', processedBytes: 1, totalBytes})).toBe(0);
   });
   it('uses byte fractions and clamps invalid endpoints', () => {
     const progress = {phase: 'extracting' as const, totalBytes: 100, processedBytes: 25};
     expect(archiveEntryProgressValue(progress)).toBe(.25);
     expect(archiveEntryProgressValue({...progress, processedBytes: -10})).toBe(0);
     expect(archiveEntryProgressValue({...progress, processedBytes: 200})).toBe(1);
-    expect(archiveEntryProgressValue({...progress, processedBytes: NaN})).toBeUndefined();
+    expect(archiveEntryProgressValue({...progress, processedBytes: NaN})).toBe(0);
   });
 });

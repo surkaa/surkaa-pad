@@ -15,7 +15,9 @@ export function archiveEntryKind(resource: Pick<PreparedArchiveEntry, 'filename'
   return kind === 'archive' ? null : kind;
 }
 
-export function archiveEntryProgressValue(progress: ArchiveEntryProgress | null): number | undefined {
-  if (!progress || progress.phase !== 'extracting' || !Number.isFinite(progress.totalBytes) || !Number.isFinite(progress.processedBytes) || progress.totalBytes <= 0) return undefined;
+export function archiveEntryProgressValue(progress: ArchiveEntryProgress | null): number {
+  // 准备阶段不展示虚拟进度，校验阶段也不再退回等待动画。
+  if (progress?.phase === 'verifying') return 1;
+  if (!progress || progress.phase !== 'extracting' || !Number.isFinite(progress.totalBytes) || !Number.isFinite(progress.processedBytes) || progress.totalBytes <= 0) return 0;
   return Math.max(0, Math.min(1, progress.processedBytes / progress.totalBytes));
 }

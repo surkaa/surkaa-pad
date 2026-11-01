@@ -30,15 +30,22 @@ describe('archive entry loading', () => {
   it.each([false, true])('shows real byte progress and separate network reads (dark=%s)', async dark => {
     Dark.set(dark); await mount({solid: true});
     expect(document.body.textContent).toContain('正在准备读取');
-    expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBeNull();
-    const waitingModel = document.querySelector('.q-linear-progress__model');
+    expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('0');
+    const waitingModel = document.querySelector<HTMLElement>('.q-linear-progress__model')!;
+    expect(waitingModel.style.transform).toBe('scale3d(0,1,1)');
+    expect(waitingModel.classList.contains('q-linear-progress__model--without-transition')).toBe(true);
+    expect(document.querySelector('.q-linear-progress__model--indeterminate')).toBeNull();
     channel.onmessage({event: 'reading', data: {bytes: 1024 * 1024}});
+    channel.onmessage({event: 'progress', data: {progress: {phase: 'preparing', processedBytes: 40, totalBytes: 100}}});
+    await nextTick();
+    expect(waitingModel.style.transform).toBe('scale3d(0,1,1)');
     channel.onmessage({event: 'progress', data: {progress: {phase: 'extracting', processedBytes: 50, totalBytes: 100}}});
     await nextTick();
     expect(document.body.textContent).toContain('50%');
     const realModel = document.querySelector<HTMLElement>('.q-linear-progress__model')!;
-    expect(realModel).not.toBe(waitingModel);
+    expect(realModel).toBe(waitingModel);
     expect(realModel.style.transform).toBe('scale3d(0.5,1,1)');
+    expect(realModel.classList.contains('q-linear-progress__model--with-transition')).toBe(true);
     channel.onmessage({event: 'progress', data: {progress: {phase: 'extracting', processedBytes: 75, totalBytes: 100}}});
     await nextTick();
     expect(document.body.textContent).toContain('75%');
@@ -48,6 +55,13 @@ describe('archive entry loading', () => {
     expect(document.body.textContent).toContain('固实压缩');
     channel.onmessage({event: 'progress', data: {progress: {phase: 'verifying', processedBytes: 0, totalBytes: 0}}});
     await nextTick(); expect(document.body.textContent).toContain('正在校验');
+    expect(document.body.textContent).toContain('100%');
+    expect(document.body.textContent).not.toContain('0 B / 0 B');
+    expect(realModel.style.transform).toBe('scale3d(1,1,1)');
+    expect(realModel.classList.contains('q-linear-progress__model--without-transition')).toBe(true);
+    expect(document.querySelector('.q-linear-progress__model--indeterminate')).toBeNull();
+    channel.onmessage({event: 'reading', data: {bytes: 2 * 1024 * 1024}});
+    await nextTick(); expect(realModel.style.transform).toBe('scale3d(1,1,1)');
   });
 
   it('cancels pending tasks and discards late completed resources after unmount', async () => {
