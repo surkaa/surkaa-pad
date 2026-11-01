@@ -2,7 +2,7 @@
   <div v-if="loading" class="archive-entry-state" role="status" aria-live="polite">
     <q-icon name="unarchive" color="primary" size="36px"/>
     <strong>{{ phaseLabel }}</strong>
-    <q-linear-progress class="archive-entry-progress" rounded size="8px" color="primary" :value="progressValue" :indeterminate="progressValue === undefined"/>
+    <PreviewProgressBar class="archive-entry-progress" rounded size="8px" :value="progressValue"/>
     <span v-if="progressValue !== undefined">{{ Math.floor(progressValue * 100) }}% · {{ formatBytes(progress!.processedBytes) }} / {{ formatBytes(progress!.totalBytes) }}</span>
     <span>已读取压缩数据 {{ formatBytes(readBytes) }}</span>
     <span v-if="solid">固实压缩需处理目标文件所在的完整压缩块</span>
@@ -33,6 +33,7 @@ import {formatBytes} from '../utils/format';
 import {formatError} from '../utils/formatError';
 import {archiveEntryKind, archiveEntryProgressValue} from '../utils/archiveEntryPreview';
 import FilePreviewContent from './FilePreviewContent.vue';
+import PreviewProgressBar from './PreviewProgressBar.vue';
 
 const props = defineProps<{diaryId: string; attachmentId: string; entry: ArchiveTreeNode; revision: string; solid?: boolean}>();
 const emit = defineEmits<{(event: 'back'): void; (event: 'prepared', id: string): void}>();

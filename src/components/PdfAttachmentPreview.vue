@@ -12,11 +12,9 @@
         <q-tooltip>适应宽度</q-tooltip>
       </q-btn>
     </div>
-    <q-linear-progress
+    <PreviewProgressBar
       v-if="loading"
-      :value="loadProgress"
-      :indeterminate="totalBytes <= 0"
-      color="primary"
+      :value="totalBytes > 0 ? loadProgress : undefined"
     />
 
     <div v-if="fatalError" class="pdf-preview-state pdf-preview-error">
@@ -51,6 +49,7 @@
 
 <script setup lang="ts">
 import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue';
+import PreviewProgressBar from './PreviewProgressBar.vue';
 import type {
   PDFDocumentLoadingTask,
   PDFDocumentProxy,
