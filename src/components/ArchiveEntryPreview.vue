@@ -52,7 +52,8 @@ const resource = shallowRef<PreparedArchiveEntry>();
 const contentPreview = ref<InstanceType<typeof FilePreviewContent>>();
 const canCopy = computed(() => contentPreview.value?.canCopy ?? false);
 const copyReady = computed(() => contentPreview.value?.copyReady ?? false);
-defineExpose({canCopy, copyReady, copy: () => contentPreview.value?.copy()});
+defineExpose({canCopy, copyReady, copy: () => contentPreview.value?.copy(),
+  dismissOverlay: () => contentPreview.value?.dismissOverlay() ?? false});
 const error = ref('');
 let task = '';
 let generation = 0;

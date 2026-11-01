@@ -7,7 +7,7 @@ import type {ArchiveEntryEvent, ArchivePreviewEvent, AttachmentMeta} from '../..
 const mocks = vi.hoisted(() => ({list: vi.fn(), prepare: vi.fn(), cancel: vi.fn(), release: vi.fn(), copy: vi.fn()}));
 vi.mock('../../utils/api', () => ({default: {cmdPreviewArchiveAttachment: mocks.list, cmdPrepareArchiveEntry: mocks.prepare,
   cmdCancelTask: mocks.cancel, cmdReleaseArchiveEntry: mocks.release}}));
-vi.mock('@tauri-apps/api/core', () => ({Channel: class {onmessage = (_message: unknown) => undefined;}}));
+vi.mock('@tauri-apps/api/core', () => ({isTauri: () => false, Channel: class {onmessage = (_message: unknown) => undefined;}}));
 vi.mock('@tauri-apps/plugin-opener', () => ({openUrl: vi.fn()}));
 vi.mock('../../utils/clipboard', () => ({copyTextToClipboard: mocks.copy}));
 let app: App | undefined;

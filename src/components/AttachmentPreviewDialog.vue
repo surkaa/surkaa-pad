@@ -3,7 +3,8 @@
     no-refocus
     :maximized="isMaximized"
     :model-value="modelValue"
-    @update:model-value="emit('update:modelValue', $event)"
+    @escape-key="markEscapeBack"
+    @update:model-value="updateVisible"
   >
     <q-card
       class="attachment-preview-card"
@@ -122,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch} from 'vue';
+import {computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, shallowRef, watch} from 'vue';
 import {useQuasar} from 'quasar';
 import {Channel} from '@tauri-apps/api/core';
 import {openUrl} from '@tauri-apps/plugin-opener';
@@ -142,6 +143,7 @@ import ArchiveAttachmentPreview from './ArchiveAttachmentPreview.vue';
 import JsonlAttachmentPreview from './JsonlAttachmentPreview.vue';
 import ArchiveEntryPreview from './ArchiveEntryPreview.vue';
 import type {ArchiveTreeNode} from '../utils/archivePreview';
+import {useAndroidBackButton} from '../composables/useAndroidBackButton';
 
 const PdfAttachmentPreview = defineAsyncComponent(() => import('./PdfAttachmentPreview.vue'));
 
@@ -171,6 +173,30 @@ let loadRevision = 0;
 let activeArchiveTask = '';
 const preparedResources = new Set<string>();
 let disposed = false;
+let escapeBack = false;
+
+useAndroidBackButton(() => props.modelValue, goBack);
+
+function goBack() {
+  if (!props.modelValue || disposed) return;
+  if (entryPreview.value?.dismissOverlay()) return;
+  if (selectedEntry.value) selectedEntry.value = null;
+  else emit('update:modelValue', false);
+}
+
+function markEscapeBack() {
+  // QDialog 仅向最上层弹窗派发 escape-key，随后同步请求关闭。
+  // 保留它的弹窗栈优先级，只把本层的这一次关闭请求转换成“返回”。
+  escapeBack = true;
+  void nextTick(() => {escapeBack = false;});
+}
+
+function updateVisible(visible: boolean) {
+  const fromEscape = escapeBack;
+  escapeBack = false;
+  if (!visible && fromEscape) goBack();
+  else emit('update:modelValue', visible);
+}
 
 const kind = computed<AttachmentPreviewKind | null>(() => (
   props.attachment ? attachmentPreviewKind(props.attachment) : null

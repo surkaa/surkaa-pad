@@ -48,9 +48,10 @@ const kind = computed(() => archiveEntryKind(props.resource));
 const canCopy = computed(() => ['json', 'markdown', 'text'].includes(kind.value || ''));
 const loading = ref(false); const error = ref(''); const text = ref('');
 const copyReady = computed(() => canCopy.value && !loading.value && !error.value);
-defineExpose({canCopy, copyReady, copy});
+defineExpose({canCopy, copyReady, copy, dismissOverlay});
 const json = shallowRef<unknown>(); const jsonParsed = ref(false); const jsonError = ref('');
 let controller: AbortController | undefined;
+let htmlConfirmation: ReturnType<typeof $q.dialog> | undefined;
 watch(() => props.resource, async resource => {
   controller?.abort(); const active = new AbortController(); controller = active;
   loading.value = false; error.value = ''; text.value = ''; json.value = undefined; jsonParsed.value = false; jsonError.value = '';
@@ -66,7 +67,7 @@ watch(() => props.resource, async resource => {
   } catch (cause) {if (!active.signal.aborted) error.value = formatError(cause);}
   finally {if (!active.signal.aborted) loading.value = false;}
 }, {immediate: true});
-onBeforeUnmount(() => controller?.abort());
+onBeforeUnmount(() => {controller?.abort(); htmlConfirmation?.hide();});
 
 async function copy() {
   if (!copyReady.value) return;
@@ -74,10 +75,21 @@ async function copy() {
   catch (cause) {$q.notify({type: 'negative', message: formatError(cause)});}
 }
 function openHtml() {
-  $q.dialog({title: '打开 HTML 文件', message: '只打开你信任的文件。页面中的 JavaScript 可以访问网络；请勿在其中输入主密码等敏感信息。',
-    cancel: true, ok: {label: '信任并打开', color: 'primary'}, persistent: true}).onOk(async () => {
-    try {await api.cmdOpenArchiveEntryHtml(props.resource.id);} catch (cause) {error.value = formatError(cause);}
+  if (htmlConfirmation) return;
+  const resourceId = props.resource.id;
+  const confirmation = $q.dialog({title: '打开 HTML 文件', message: '只打开你信任的文件。页面中的 JavaScript 可以访问网络；请勿在其中输入主密码等敏感信息。',
+    cancel: true, ok: {label: '信任并打开', color: 'primary'}, noBackdropDismiss: true});
+  htmlConfirmation = confirmation;
+  confirmation.onOk(async () => {
+    try {await api.cmdOpenArchiveEntryHtml(resourceId);} catch (cause) {error.value = formatError(cause);}
+  }).onDismiss(() => {
+    if (htmlConfirmation === confirmation) htmlConfirmation = undefined;
   });
+}
+function dismissOverlay(): boolean {
+  if (!htmlConfirmation) return false;
+  htmlConfirmation.hide();
+  return true;
 }
 async function openLink(event: MouseEvent) {
   const anchor = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>('a[href]');
