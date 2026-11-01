@@ -75,6 +75,23 @@ afterEach(() => {
 });
 
 describe.each([false, true])('日记列表上下文菜单（深色=%s）', dark => {
+  it('renders pinned cards in configured order and leaves the ordinary list in its original order', async () => {
+    Dark.set(dark); const {config, data} = await mount([...ids].reverse());
+    const extra = '8215021834821';
+    data.diaryIds = [...ids, extra]; data.diarySummaries[extra] = summary(extra); await settle();
+    const pinnedOrder = () => [...host.querySelectorAll<HTMLElement>('.pinned-diaries [data-diary-id]')].map(card => card.dataset.diaryId);
+    const ordinaryOrder = () => [...host.querySelectorAll<HTMLElement>('[data-diary-id]')]
+      .filter(card => !card.closest('.pinned-diaries')).map(card => card.dataset.diaryId);
+    expect(pinnedOrder()).toEqual([...ids].reverse()); expect(ordinaryOrder()).toEqual([extra]);
+    const cards = new Map(ids.map(id => [id, card(id)]));
+    const originalIds = [...data.diaryIds];
+    await config.saveNormalConfig('pinned_diary_ids', [...ids]); await settle();
+    expect(pinnedOrder()).toEqual(ids); expect(ordinaryOrder()).toEqual([extra]); expect(data.diaryIds).toEqual(originalIds);
+    ids.forEach(id => expect(card(id)).toBe(cards.get(id)));
+    await config.saveNormalConfig('pinned_diary_ids', [ids[1]!]); await settle();
+    expect(ordinaryOrder()).toEqual([ids[0], extra]);
+  });
+
   it('pins/unpins immediately without navigating, and updates the existing cloud-synced setting', async () => {
     Dark.set(dark);
     const {config, data} = await mount();

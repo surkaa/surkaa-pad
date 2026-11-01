@@ -133,20 +133,13 @@ useDiaryListShortcuts(diaryListShortcuts, {
 });
 
 const groupedDiaryIds = computed(() => {
-  const pinned: string[] = [];
-  const unpinned: string[] = [];
-
-  // 遍历当前的 diaryIds，按是否置顶分发到两个数组中
-  diaryIds.value.forEach(id => {
-    if (pinnedDiaryIds.value.includes(id)) {
-      pinned.push(id);
-    } else {
-      unpinned.push(id);
-    }
-  });
-
-  // 分组渲染：置顶在前，未置顶在后。
-  return {pinned, unpinned};
+  const pinned = new Set(pinnedDiaryIds.value);
+  const listed = new Set(diaryIds.value);
+  // 置顶区严格遵循已保存的顺序；普通日记仍保留原来的分页顺序。
+  return {
+    pinned: [...pinned].filter(id => listed.has(id)),
+    unpinned: diaryIds.value.filter(id => !pinned.has(id)),
+  };
 });
 
 watch(pinnedDiaryIds, (newPinnedIds) => {

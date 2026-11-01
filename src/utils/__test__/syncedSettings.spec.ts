@@ -99,6 +99,17 @@ describe('synced settings', () => {
     setActivePinia(createPinia());
   });
 
+  it('preserves the chosen pinned diary order when collecting and applying cloud settings', async () => {
+    const store = useConfigStore();
+    const order = ['8215021834822', '8215021834823', '8215021834821'];
+    await store.saveNormalConfig('pinned_diary_ids', order);
+    const settings = await collectSyncedSettings(store);
+    expect(settings.pinnedDiaryIds).toEqual(order);
+    await store.saveNormalConfig('pinned_diary_ids', [...order].reverse());
+    await applySyncedSettings(store, settings);
+    expect(await store.getNormalConfig('pinned_diary_ids')).toEqual(order);
+  });
+
   it('collects only portable settings and excludes credentials and device settings', async () => {
     const store = useConfigStore();
     await store.saveNormalConfig('app-theme', 'light');
